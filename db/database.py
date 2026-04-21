@@ -30,49 +30,218 @@ def db_session():
 def init_db():
     with db_session() as conn:
         conn.executescript("""
+
+            -- ================================================================
+            -- USUARIOS DEL SISTEMA
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre        TEXT NOT NULL,
+                email         TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                rol           TEXT NOT NULL CHECK(rol IN (
+                                  'sistema','rrhh','gerencia','administracion','encargado')),
+                activo        INTEGER NOT NULL DEFAULT 1,
+                creado_en     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
+
+            -- ================================================================
+            -- EMPLEADOS — legajo completo
+            -- ================================================================
             CREATE TABLE IF NOT EXISTS empleados (
-                user_id     TEXT PRIMARY KEY,
-                nombre      TEXT NOT NULL,
-                departamento TEXT,
-                turno       TEXT,
-                activo      INTEGER NOT NULL DEFAULT 1,
-                creado_en   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id          TEXT UNIQUE,
+                nombre           TEXT NOT NULL,
+                apellido         TEXT NOT NULL,
+                dni              TEXT,
+                cuil             TEXT,
+                fecha_nacimiento TEXT,
+                fecha_ingreso    TEXT,
+                fecha_egreso     TEXT,
+                cargo            TEXT,
+                departamento     TEXT,
+                categoria        TEXT,
+                telefono         TEXT,
+                email            TEXT,
+                domicilio        TEXT,
+                activo           INTEGER NOT NULL DEFAULT 1,
+                observaciones    TEXT,
+                creado_en        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                modificado_en    TEXT
             );
 
+            -- ================================================================
+            -- HORARIOS
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS horarios (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre    TEXT NOT NULL,
+                tipo      TEXT NOT NULL CHECK(tipo IN ('simple','cortado')),
+                activo    INTEGER NOT NULL DEFAULT 1,
+                creado_en TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
+
+            -- 1 bloque para simple, 2 para cortado
+            CREATE TABLE IF NOT EXISTS horarios_bloques (
+                id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+                horario_id                 INTEGER NOT NULL,
+                bloque                     INTEGER NOT NULL CHECK(bloque IN (1,2)),
+                hora_entrada               TEXT NOT NULL,
+                hora_salida                TEXT NOT NULL,
+                cruza_medianoche           INTEGER NOT NULL DEFAULT 0,
+                tolerancia_entrada_antes   INTEGER NOT NULL DEFAULT 15,
+                tolerancia_entrada_despues INTEGER NOT NULL DEFAULT 60,
+                tolerancia_tarde           INTEGER NOT NULL DEFAULT 10,
+                tolerancia_salida_antes    INTEGER NOT NULL DEFAULT 30,
+                tolerancia_salida_despues  INTEGER NOT NULL DEFAULT 60,
+                UNIQUE (horario_id, bloque),
+                FOREIGN KEY (horario_id) REFERENCES horarios(id)
+            );
+
+            -- ================================================================
+            -- CALENDARIOS — patrón de semana laboral
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS calendarios (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre            TEXT NOT NULL,
+                cantidad_francos  INTEGER NOT NULL DEFAULT 1,
+                trabaja_lunes     INTEGER NOT NULL DEFAULT 1,
+                trabaja_martes    INTEGER NOT NULL DEFAULT 1,
+                trabaja_miercoles INTEGER NOT NULL DEFAULT 1,
+                trabaja_jueves    INTEGER NOT NULL DEFAULT 1,
+                trabaja_viernes   INTEGER NOT NULL DEFAULT 1,
+                trabaja_sabado    INTEGER NOT NULL DEFAULT 1,
+                trabaja_domingo   INTEGER NOT NULL DEFAULT 1,
+                activo            INTEGER NOT NULL DEFAULT 1,
+                creado_en         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
+
+            -- ================================================================
+            -- ASIGNACIONES — empleado → horario + calendario base
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS asignaciones (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id   INTEGER NOT NULL,
+                horario_id    INTEGER NOT NULL,
+                calendario_id INTEGER NOT NULL,
+                fecha_desde   TEXT NOT NULL,
+                fecha_hasta   TEXT,
+                FOREIGN KEY (empleado_id)   REFERENCES empleados(id),
+                FOREIGN KEY (horario_id)    REFERENCES horarios(id),
+                FOREIGN KEY (calendario_id) REFERENCES calendarios(id)
+            );
+
+            -- ================================================================
+            -- PROGRAMACIÓN SEMANAL — define el franco rotativo
+            -- NULL en un día = franco ese día
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS programacion_semanal (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id          INTEGER NOT NULL,
+                fecha_lunes          TEXT NOT NULL,
+                lunes_horario_id     INTEGER,
+                martes_horario_id    INTEGER,
+                miercoles_horario_id INTEGER,
+                jueves_horario_id    INTEGER,
+                viernes_horario_id   INTEGER,
+                sabado_horario_id    INTEGER,
+                domingo_horario_id   INTEGER,
+                UNIQUE (empleado_id, fecha_lunes),
+                FOREIGN KEY (empleado_id) REFERENCES empleados(id)
+            );
+
+            -- ================================================================
+            -- FERIADOS
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS feriados (
+                id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                fecha  TEXT UNIQUE NOT NULL,
+                nombre TEXT NOT NULL,
+                tipo   TEXT NOT NULL DEFAULT 'nacional'
+                           CHECK(tipo IN ('nacional','provincial','local'))
+            );
+
+            -- ================================================================
+            -- FICHAJES
+            -- ================================================================
             CREATE TABLE IF NOT EXISTS fichajes (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id     TEXT NOT NULL,
-                timestamp   TEXT NOT NULL,
-                tipo        TEXT,         -- 'entrada' | 'salida' | NULL (sin calcular)
-                punch_raw   INTEGER NOT NULL DEFAULT 0,
-                status_raw  INTEGER NOT NULL DEFAULT 0,
-                creado_en   TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id    INTEGER,
+                user_id        TEXT NOT NULL,
+                timestamp      TEXT NOT NULL,
+                tipo           TEXT CHECK(tipo IN ('entrada','salida')),
+                bloque         INTEGER,
+                punch_raw      INTEGER NOT NULL DEFAULT 0,
+                status_raw     INTEGER NOT NULL DEFAULT 0,
+                es_manual      INTEGER NOT NULL DEFAULT 0,
+                motivo_manual  TEXT,
+                cargado_por    INTEGER,
+                creado_en      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 UNIQUE (user_id, timestamp),
-                FOREIGN KEY (user_id) REFERENCES empleados(user_id)
+                FOREIGN KEY (empleado_id) REFERENCES empleados(id),
+                FOREIGN KEY (cargado_por) REFERENCES usuarios(id)
             );
 
+            -- ================================================================
+            -- ALIVIADAS — ausencia autorizada en bloque de turno cortado
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS aliviadas (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id    INTEGER NOT NULL,
+                fecha          TEXT NOT NULL,
+                bloque         TEXT NOT NULL CHECK(bloque IN ('1','2','ambos')),
+                autorizado_por INTEGER NOT NULL,
+                observaciones  TEXT,
+                creado_en      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                UNIQUE (empleado_id, fecha, bloque),
+                FOREIGN KEY (empleado_id)    REFERENCES empleados(id),
+                FOREIGN KEY (autorizado_por) REFERENCES usuarios(id)
+            );
+
+            -- ================================================================
+            -- INCONSISTENCIAS
+            -- ================================================================
             CREATE TABLE IF NOT EXISTS inconsistencias (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id     TEXT NOT NULL,
-                fecha       TEXT NOT NULL,
-                motivo      TEXT NOT NULL,
-                resuelta    INTEGER NOT NULL DEFAULT 0,
-                creado_en   TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id  INTEGER,
+                user_id      TEXT,
+                fecha        TEXT NOT NULL,
+                tipo         TEXT NOT NULL,
+                motivo       TEXT NOT NULL,
+                resuelta     INTEGER NOT NULL DEFAULT 0,
+                resuelta_por INTEGER,
+                creado_en    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                FOREIGN KEY (empleado_id)  REFERENCES empleados(id),
+                FOREIGN KEY (resuelta_por) REFERENCES usuarios(id)
             );
 
+            -- ================================================================
+            -- LOG DE SINCRONIZACIÓN
+            -- ================================================================
             CREATE TABLE IF NOT EXISTS sync_log (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                iniciado_en     TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-                finalizado_en   TEXT,
-                registros_leidos    INTEGER DEFAULT 0,
-                registros_nuevos    INTEGER DEFAULT 0,
-                error           TEXT
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                iniciado_en      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                finalizado_en    TEXT,
+                registros_leidos INTEGER DEFAULT 0,
+                registros_nuevos INTEGER DEFAULT 0,
+                error            TEXT
             );
 
-            CREATE INDEX IF NOT EXISTS idx_fichajes_user_fecha
+            -- ================================================================
+            -- ÍNDICES
+            -- ================================================================
+            CREATE INDEX IF NOT EXISTS idx_fichajes_user_ts
                 ON fichajes (user_id, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_fichajes_empleado_ts
+                ON fichajes (empleado_id, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_asignaciones_empleado
+                ON asignaciones (empleado_id, fecha_desde);
+            CREATE INDEX IF NOT EXISTS idx_programacion_empleado
+                ON programacion_semanal (empleado_id, fecha_lunes);
+            CREATE INDEX IF NOT EXISTS idx_aliviadas_empleado
+                ON aliviadas (empleado_id, fecha);
+            CREATE INDEX IF NOT EXISTS idx_inconsistencias_empleado
+                ON inconsistencias (empleado_id, fecha);
 
-            CREATE INDEX IF NOT EXISTS idx_inconsistencias_user_fecha
-                ON inconsistencias (user_id, fecha);
         """)
     logger.info("Base de datos inicializada: %s", DB_PATH)

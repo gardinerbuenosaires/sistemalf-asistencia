@@ -75,18 +75,25 @@ def _save_attendances(attendances) -> int:
     ]
 
     with db_session() as conn:
+        # Cache user_id → empleado_id para evitar consultas repetidas
+        cache: dict[str, int | None] = {}
+
         for user_id, ts, punch, status in rows:
-            # Asegurar que el empleado exista (registro mínimo si es desconocido)
-            conn.execute(
-                "INSERT OR IGNORE INTO empleados (user_id, nombre) VALUES (?, ?)",
-                (user_id, f"Empleado {user_id}"),
-            )
+            if user_id not in cache:
+                row = conn.execute(
+                    "SELECT id FROM empleados WHERE user_id = ?", (user_id,)
+                ).fetchone()
+                cache[user_id] = row["id"] if row else None
+
+            empleado_id = cache[user_id]
+
             cur = conn.execute(
                 """
-                INSERT OR IGNORE INTO fichajes (user_id, timestamp, punch_raw, status_raw)
-                VALUES (?, ?, ?, ?)
+                INSERT OR IGNORE INTO fichajes
+                    (empleado_id, user_id, timestamp, punch_raw, status_raw)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (user_id, ts, punch, status),
+                (empleado_id, user_id, ts, punch, status),
             )
             if cur.rowcount:
                 nuevos += 1

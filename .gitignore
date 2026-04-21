@@ -1,0 +1,23 @@
+# Base de datos
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Variables de entorno
+.env
+.env.local
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini

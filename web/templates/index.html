@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  header { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 1.2rem; }
+  #sync-status { font-size: 0.85rem; opacity: 0.8; }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+  .card h3 { font-size: 0.85rem; color: #888; margin-bottom: 8px; }
+  .card .value { font-size: 2rem; font-weight: bold; }
+  .card.alert .value { color: #e74c3c; }
+  .section { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 24px; }
+  .section h2 { font-size: 1rem; margin-bottom: 16px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th { text-align: left; padding: 8px; background: #f8f9fa; border-bottom: 2px solid #dee2e6; }
+  td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
+  tr:hover td { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
+  .badge.entrada { background: #d4edda; color: #155724; }
+  .badge.salida { background: #cce5ff; color: #004085; }
+  .badge.sin-tipo { background: #fff3cd; color: #856404; }
+  .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+  .btn-primary { background: #2c3e50; color: white; }
+  .btn-primary:hover { background: #3d5166; }
+  .filters { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: flex-end; }
+  .filters label { font-size: 0.85rem; color: #666; }
+  .filters input, .filters select { display: block; padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 0.9rem; margin-top: 4px; }
+  #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 12px 20px; border-radius: 8px; display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Sistema de Fichaje Biométrico</h1>
+  <span id="sync-status">Cargando...</span>
+</header>
+
+<main>
+
+  <div class="cards">
+    <div class="card">
+      <h3>Fichajes hoy</h3>
+      <div class="value" id="cnt-hoy">—</div>
+    </div>
+    <div class="card alert">
+      <h3>Inconsistencias pendientes</h3>
+      <div class="value" id="cnt-inconsistencias">—</div>
+    </div>
+    <div class="card">
+      <h3>Empleados activos</h3>
+      <div class="value" id="cnt-empleados">—</div>
+    </div>
+    <div class="card">
+      <h3>Última sincronización</h3>
+      <div class="value" style="font-size:1rem;margin-top:4px" id="ultima-sync">—</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Fichajes</h2>
+    <div class="filters">
+      <div>
+        <label>Empleado</label>
+        <select id="filter-empleado"><option value="">Todos</option></select>
+      </div>
+      <div>
+        <label>Fecha</label>
+        <input type="date" id="filter-fecha">
+      </div>
+      <div style="align-self:flex-end">
+        <button class="btn btn-primary" onclick="loadFichajes()">Filtrar</button>
+        <button class="btn btn-primary" style="margin-left:8px;background:#27ae60" onclick="syncNow()">Sincronizar ahora</button>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Empleado</th><th>Nombre</th><th>Fecha / Hora</th><th>Tipo</th></tr>
+      </thead>
+      <tbody id="tabla-fichajes"><tr><td colspan="4">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Inconsistencias pendientes</h2>
+    <table>
+      <thead>
+        <tr><th>Empleado</th><th>Nombre</th><th>Fecha</th><th>Motivo</th></tr>
+      </thead>
+      <tbody id="tabla-inconsistencias"><tr><td colspan="4">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+const today = new Date().toISOString().slice(0, 10);
+document.getElementById("filter-fecha").value = today;
+
+async function api(path) {
+  const r = await fetch(path);
+  return r.json();
+}
+
+function badge(tipo) {
+  if (!tipo) return '<span class="badge sin-tipo">?</span>';
+  return `<span class="badge ${tipo}">${tipo}</span>`;
+}
+
+function toast(msg, ms = 3000) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", ms);
+}
+
+async function loadEmpleados() {
+  const empleados = await api("/api/empleados");
+  document.getElementById("cnt-empleados").textContent = empleados.length;
+  const sel = document.getElementById("filter-empleado");
+  empleados.forEach(e => {
+    const opt = document.createElement("option");
+    opt.value = e.user_id;
+    opt.textContent = `${e.nombre} (${e.user_id})`;
+    sel.appendChild(opt);
+  });
+  return empleados;
+}
+
+async function loadFichajes() {
+  const uid = document.getElementById("filter-empleado").value;
+  const fecha = document.getElementById("filter-fecha").value;
+  let url = `/api/fichajes?limit=200`;
+  if (uid) url += `&user_id=${uid}`;
+  if (fecha) url += `&fecha=${fecha}`;
+
+  const [fichajes, empleados] = await Promise.all([api(url), api("/api/empleados")]);
+  const empMap = Object.fromEntries(empleados.map(e => [e.user_id, e.nombre]));
+
+  if (fecha === today) document.getElementById("cnt-hoy").textContent = fichajes.length;
+
+  const tbody = document.getElementById("tabla-fichajes");
+  if (!fichajes.length) {
+    tbody.innerHTML = "<tr><td colspan='4'>Sin registros</td></tr>";
+    return;
+  }
+  tbody.innerHTML = fichajes.map(f => `
+    <tr>
+      <td>${f.user_id}</td>
+      <td>${empMap[f.user_id] || "—"}</td>
+      <td>${f.timestamp}</td>
+      <td>${badge(f.tipo)}</td>
+    </tr>
+  `).join("");
+}
+
+async function loadInconsistencias() {
+  const data = await api("/api/inconsistencias?resuelta=0");
+  document.getElementById("cnt-inconsistencias").textContent = data.length;
+  const tbody = document.getElementById("tabla-inconsistencias");
+  if (!data.length) {
+    tbody.innerHTML = "<tr><td colspan='4'>Sin inconsistencias pendientes</td></tr>";
+    return;
+  }
+  tbody.innerHTML = data.map(i => `
+    <tr>
+      <td>${i.user_id}</td>
+      <td>${i.nombre || "—"}</td>
+      <td>${i.fecha}</td>
+      <td>${i.motivo}</td>
+    </tr>
+  `).join("");
+}
+
+async function loadSyncLog() {
+  const logs = await api("/api/sync/log?limit=1");
+  if (logs.length) {
+    const l = logs[0];
+    document.getElementById("ultima-sync").textContent = l.finalizado_en || l.iniciado_en;
+    document.getElementById("sync-status").textContent =
+      `Última sync: ${l.registros_nuevos} nuevos de ${l.registros_leidos} leídos`;
+  }
+}
+
+async function syncNow() {
+  toast("Sincronizando con el dispositivo...", 60000);
+  try {
+    const r = await api("/api/sync/now");
+    toast(`Sync OK: ${r.nuevos} nuevos de ${r.leidos} registros`);
+    loadFichajes();
+    loadInconsistencias();
+    loadSyncLog();
+  } catch (e) {
+    toast("Error al sincronizar: " + e.message);
+  }
+}
+
+async function init() {
+  await loadEmpleados();
+  await Promise.all([loadFichajes(), loadInconsistencias(), loadSyncLog()]);
+}
+
+init();
+// Refresca cada 2 minutos
+setInterval(() => { loadFichajes(); loadInconsistencias(); loadSyncLog(); }, 120000);
+</script>
+</body>
+</html>

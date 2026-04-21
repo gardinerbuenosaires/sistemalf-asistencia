@@ -117,12 +117,25 @@ def init_db():
             );
 
             -- ================================================================
-            -- ASIGNACIONES — empleado → horario + calendario base
+            -- CALENDARIOS — detalle por día de semana
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS calendarios_dias (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                calendario_id INTEGER NOT NULL,
+                dia_semana    INTEGER NOT NULL CHECK(dia_semana BETWEEN 0 AND 6),
+                horario_id    INTEGER,
+                UNIQUE (calendario_id, dia_semana),
+                FOREIGN KEY (calendario_id) REFERENCES calendarios(id),
+                FOREIGN KEY (horario_id)    REFERENCES horarios(id)
+            );
+
+            -- ================================================================
+            -- ASIGNACIONES — empleado → calendario base
             -- ================================================================
             CREATE TABLE IF NOT EXISTS asignaciones (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 empleado_id   INTEGER NOT NULL,
-                horario_id    INTEGER NOT NULL,
+                horario_id    INTEGER,
                 calendario_id INTEGER NOT NULL,
                 fecha_desde   TEXT NOT NULL,
                 fecha_hasta   TEXT,
@@ -214,6 +227,28 @@ def init_db():
                 FOREIGN KEY (empleado_id)  REFERENCES empleados(id),
                 FOREIGN KEY (resuelta_por) REFERENCES usuarios(id)
             );
+
+            -- ================================================================
+            -- PLANIFICACIÓN DIARIA
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS planificacion (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id  INTEGER NOT NULL,
+                fecha        TEXT NOT NULL,
+                horario_id   INTEGER,
+                es_franco    INTEGER NOT NULL DEFAULT 0,
+                observacion  TEXT,
+                creado_por   INTEGER,
+                creado_en    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                modificado_en TEXT,
+                UNIQUE (empleado_id, fecha),
+                FOREIGN KEY (empleado_id) REFERENCES empleados(id),
+                FOREIGN KEY (horario_id)  REFERENCES horarios(id),
+                FOREIGN KEY (creado_por)  REFERENCES usuarios(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_planificacion_fecha
+                ON planificacion (fecha, empleado_id);
 
             -- ================================================================
             -- LOG DE SINCRONIZACIÓN

@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendarios — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  header { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .9rem; }
+  header h1 { font-size: 1.2rem; }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; }
+  .section { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .section-header h2 { font-size: 1rem; }
+
+  /* Lista */
+  .cal-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 6px; cursor: pointer; border: 2px solid transparent; margin-bottom: 6px; background: #f8f9fa; }
+  .cal-item:hover { background: #e9ecef; }
+  .cal-item.activo { border-color: #2c3e50; background: #eef2f5; }
+  .cal-item-info { flex: 1; }
+  .cal-item-nombre { font-weight: bold; font-size: .9rem; }
+  .cal-item-sub { font-size: .75rem; color: #888; margin-top: 2px; }
+  .cal-item-actions { display: flex; gap: 6px; }
+
+  /* Semana preview */
+  .semana-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-top: 8px; }
+  .dia-badge { text-align: center; padding: 3px 2px; border-radius: 4px; font-size: .7rem; }
+  .dia-badge .dia-nombre { color: #888; font-size: .65rem; }
+  .dia-badge .dia-horario { font-weight: bold; font-size: .7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dia-badge.franco { background: #fff3cd; }
+  .dia-badge.simple { background: #d4edda; }
+  .dia-badge.cortado { background: #cce5ff; }
+  .dia-badge.vacio { background: #f8f9fa; color: #ccc; }
+
+  /* Form */
+  .form-group { margin-bottom: 14px; }
+  label { font-size: .82rem; color: #666; font-weight: bold; display: block; margin-bottom: 4px; }
+  input[type=text] { width: 100%; padding: 8px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: .9rem; }
+  input:focus { outline: none; border-color: #2c3e50; }
+
+  .dias-form { display: grid; grid-template-columns: 80px 1fr; gap: 6px 12px; align-items: center; margin-top: 8px; }
+  .dia-label { font-size: .85rem; font-weight: bold; color: #555; }
+  select.dia-select { width: 100%; padding: 6px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; }
+  select.dia-select.franco { background: #fff9e6; }
+  select.dia-select.simple { background: #f0fbf3; }
+  select.dia-select.cortado { background: #f0f7ff; }
+
+  .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: .9rem; }
+  .btn-primary { background: #2c3e50; color: white; }
+  .btn-primary:hover { background: #3d5166; }
+  .btn-danger { background: #e74c3c; color: white; font-size: .8rem; padding: 4px 10px; }
+  .btn-sm { padding: 4px 10px; font-size: .8rem; }
+  .btn-secondary { background: #6c757d; color: white; }
+
+  /* Asignación */
+  .asig-section { margin-top: 20px; border-top: 1px solid #eee; padding-top: 16px; }
+  .empleado-list { max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; }
+  .empleado-chk { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid #f0f0f0; font-size: .85rem; cursor: pointer; }
+  .empleado-chk:hover { background: #f8f9fa; }
+  .empleado-chk.ya-asignado { background: #f0faf4; }
+  .empleado-chk input { cursor: pointer; }
+  .asig-filtro { width: 100%; padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; margin-bottom: 6px; }
+  .asig-acciones { display: flex; gap: 8px; margin-top: 6px; align-items: center; flex-wrap: wrap; }
+  .asig-acciones input[type=date] { padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; }
+
+  #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 7px; display: none; z-index: 200; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/">&#8592; Inicio</a>
+  <h1>Calendarios</h1>
+</header>
+
+<main>
+  <!-- Lista de calendarios -->
+  <div>
+    <div class="section">
+      <div class="section-header">
+        <h2>Calendarios</h2>
+        <button class="btn btn-primary btn-sm" onclick="nuevoCalendario()">+ Nuevo</button>
+      </div>
+      <div id="lista-calendarios">Cargando...</div>
+    </div>
+  </div>
+
+  <!-- Editor + asignación -->
+  <div>
+    <div class="section" id="panel-editor">
+      <div class="section-header">
+        <h2 id="editor-titulo">Nuevo calendario</h2>
+        <div>
+          <button class="btn btn-primary btn-sm" onclick="guardarCalendario()">Guardar</button>
+          <button class="btn btn-sm" style="background:#eee;margin-left:6px" onclick="cancelarEditor()">Cancelar</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Nombre</label>
+        <input type="text" id="f-nombre" placeholder="Ej: Mozo cortado - franco jueves">
+      </div>
+
+      <label>Horario por día</label>
+      <div class="dias-form" id="dias-form"></div>
+
+      <!-- Asignación a empleados -->
+      <div class="asig-section" id="asig-section" style="display:none">
+        <h2 style="font-size:.95rem;margin-bottom:12px">Asignar a empleados</h2>
+        <input class="asig-filtro" id="asig-filtro" type="text" placeholder="Buscar empleado..." oninput="filtrarEmpleados()">
+        <div class="empleado-list" id="empleado-list"></div>
+        <div class="asig-acciones">
+          <label style="font-size:.82rem">Desde:</label>
+          <input type="date" id="asig-desde">
+          <button class="btn btn-primary btn-sm" onclick="asignarEmpleados()">Asignar seleccionados</button>
+          <button class="btn btn-sm" style="background:#eee" onclick="desmarcarTodos()">Desmarcar todos</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const DIAS_NOMBRES = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+const DIAS_CORTOS  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+
+let horarios = [];
+let empleados = [];
+let editandoId = null;
+let todosEmpleados = [];
+let asignadosIds = new Set();
+
+function toast(msg, ms=2500) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", ms);
+}
+
+function diaBadge(dia) {
+  if (!dia || dia.horario_id === null) return `<div class="dia-badge franco"><div class="dia-nombre">${DIAS_CORTOS[dia?.dia_semana ?? 0]}</div><div class="dia-horario">FRANCO</div></div>`;
+  const tipo = dia.horario_tipo || "simple";
+  const nombre = (dia.horario_nombre || "?").split(" ")[0];
+  return `<div class="dia-badge ${tipo}"><div class="dia-nombre">${DIAS_CORTOS[dia.dia_semana]}</div><div class="dia-horario" title="${dia.horario_nombre}">${nombre}</div></div>`;
+}
+
+async function cargarLista() {
+  const res = await fetch("/api/calendarios");
+  const cals = await res.json();
+  const cont = document.getElementById("lista-calendarios");
+  if (!cals.length) { cont.innerHTML = '<p style="color:#aaa;font-size:.85rem">Sin calendarios. Creá el primero.</p>'; return; }
+
+  cont.innerHTML = cals.map(c => {
+    // Ordenar días
+    const dias = Array.from({length:7}, (_,i) => c.dias.find(d=>d.dia_semana===i) || {dia_semana:i, horario_id:null, horario_tipo:null, horario_nombre:null});
+    const preview = dias.map(d => diaBadge(d)).join("");
+    return `
+      <div class="cal-item" id="cal-item-${c.id}" onclick="editarCalendario(${c.id})">
+        <div class="cal-item-info">
+          <div class="cal-item-nombre">${c.nombre}</div>
+          <div class="semana-grid">${preview}</div>
+          <div class="cal-item-sub" style="margin-top:4px">${c.empleados_asignados} empleados asignados</div>
+        </div>
+        <div class="cal-item-actions" onclick="event.stopPropagation()">
+          <button class="btn btn-danger" onclick="eliminarCalendario(${c.id},'${c.nombre}')">&#10005;</button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function buildDiasForm(valoresIniciales = {}) {
+  const cont = document.getElementById("dias-form");
+  const opts = `<option value="">— Franco —</option>` +
+    horarios.map(h => `<option value="${h.id}">${h.nombre}</option>`).join("");
+
+  cont.innerHTML = DIAS_NOMBRES.map((nombre, i) => {
+    const val = valoresIniciales[i] ?? "";
+    return `
+      <span class="dia-label">${nombre}</span>
+      <select class="dia-select" id="dia-${i}" onchange="colorSelect(this)">
+        ${opts}
+      </select>`;
+  }).join("");
+
+  // Setear valores y colores
+  DIAS_NOMBRES.forEach((_, i) => {
+    const sel = document.getElementById(`dia-${i}`);
+    sel.value = valoresIniciales[i] ?? "";
+    colorSelect(sel);
+  });
+}
+
+function colorSelect(sel) {
+  const hid = sel.value;
+  if (!hid) { sel.className = "dia-select franco"; return; }
+  const h = horarios.find(x => x.id == hid);
+  sel.className = "dia-select " + (h ? h.tipo : "simple");
+}
+
+function nuevoCalendario() {
+  editandoId = null;
+  document.getElementById("editor-titulo").textContent = "Nuevo calendario";
+  document.getElementById("f-nombre").value = "";
+  buildDiasForm();
+  document.getElementById("asig-section").style.display = "none";
+  document.querySelectorAll(".cal-item").forEach(el => el.classList.remove("activo"));
+}
+
+async function editarCalendario(id) {
+  editandoId = id;
+  const res = await fetch(`/api/calendarios/${id}`);
+  const cal = await res.json();
+  document.getElementById("editor-titulo").textContent = cal.nombre;
+  document.getElementById("f-nombre").value = cal.nombre;
+
+  const vals = {};
+  cal.dias.forEach(d => vals[d.dia_semana] = d.horario_id || "");
+  buildDiasForm(vals);
+
+  // Mostrar asignación con empleados ya asignados marcados
+  asignadosIds = new Set(cal.empleados_asignados_ids || []);
+  document.getElementById("asig-section").style.display = "block";
+  document.getElementById("asig-desde").value = new Date().toISOString().slice(0,10);
+  renderEmpleados();
+
+  document.querySelectorAll(".cal-item").forEach(el => el.classList.remove("activo"));
+  document.getElementById(`cal-item-${id}`)?.classList.add("activo");
+}
+
+function cancelarEditor() {
+  editandoId = null;
+  document.getElementById("f-nombre").value = "";
+  buildDiasForm();
+  document.getElementById("asig-section").style.display = "none";
+  document.querySelectorAll(".cal-item").forEach(el => el.classList.remove("activo"));
+}
+
+async function guardarCalendario() {
+  const nombre = document.getElementById("f-nombre").value.trim();
+  if (!nombre) { toast("Ingresá el nombre"); return; }
+
+  const dias = Array.from({length:7}, (_,i) => ({
+    dia_semana: i,
+    horario_id: parseInt(document.getElementById(`dia-${i}`).value) || null
+  }));
+
+  const url = editandoId ? `/api/calendarios/${editandoId}` : "/api/calendarios";
+  const method = editandoId ? "PUT" : "POST";
+
+  const res = await fetch(url, {
+    method, headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({nombre, dias})
+  });
+  if (res.ok) {
+    const cal = await res.json();
+    editandoId = cal.id;
+    toast(method === "POST" ? "Calendario creado" : "Calendario guardado");
+    await cargarLista();
+    document.getElementById(`cal-item-${cal.id}`)?.classList.add("activo");
+    document.getElementById("asig-section").style.display = "block";
+    document.getElementById("asig-desde").value = new Date().toISOString().slice(0,10);
+    renderEmpleados();
+  } else {
+    const err = await res.json();
+    toast("Error: " + (err.detail || "desconocido"));
+  }
+}
+
+async function eliminarCalendario(id, nombre) {
+  if (!confirm(`¿Eliminar "${nombre}"?`)) return;
+  const res = await fetch(`/api/calendarios/${id}`, {method:"DELETE"});
+  if (res.ok) { toast("Eliminado"); cargarLista(); cancelarEditor(); }
+  else { const e = await res.json(); toast("Error: " + e.detail); }
+}
+
+// ── Asignación ────────────────────────────────────────────────────────────────
+
+function renderEmpleados() {
+  const filtro = (document.getElementById("asig-filtro")?.value || "").toLowerCase();
+  const lista = document.getElementById("empleado-list");
+  const mostrar = filtro
+    ? todosEmpleados.filter(e => `${e.apellido} ${e.nombre}`.toLowerCase().includes(filtro))
+    : todosEmpleados;
+  lista.innerHTML = mostrar.map(e => {
+    const asignado = asignadosIds.has(e.id);
+    return `<label class="empleado-chk${asignado ? " ya-asignado" : ""}">
+      <input type="checkbox" class="chk-emp" value="${e.id}"${asignado ? " checked" : ""}>
+      <span>${e.apellido}${e.nombre ? ", "+e.nombre.split(" ")[0] : ""} <small style="color:#888">${e.cargo||""}</small></span>
+      ${asignado ? '<small style="color:#27ae60;font-weight:bold;margin-left:auto">✓ asignado</small>' : ""}
+    </label>`;
+  }).join("");
+}
+
+function filtrarEmpleados() { renderEmpleados(); }
+function desmarcarTodos() { document.querySelectorAll(".chk-emp").forEach(c => c.checked = false); }
+
+async function asignarEmpleados() {
+  if (!editandoId) { toast("Guardá el calendario primero"); return; }
+  const desde = document.getElementById("asig-desde").value;
+  if (!desde) { toast("Seleccioná fecha desde"); return; }
+  const ids = [...document.querySelectorAll(".chk-emp:checked")].map(c => parseInt(c.value));
+  if (!ids.length) { toast("Seleccioná al menos un empleado"); return; }
+
+  const res = await fetch("/api/calendarios/asignar", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({empleado_ids: ids, calendario_id: editandoId, fecha_desde: desde})
+  });
+  if (res.ok) {
+    const r = await res.json();
+    toast(`${r.asignados} empleado${r.asignados !== 1 ? "s" : ""} asignado${r.asignados !== 1 ? "s" : ""}`);
+    // Recargar el calendario para actualizar qué empleados están asignados
+    const calRes = await fetch(`/api/calendarios/${editandoId}`);
+    const cal = await calRes.json();
+    asignadosIds = new Set(cal.empleados_asignados_ids || []);
+    renderEmpleados();
+    await cargarLista();
+    document.getElementById(`cal-item-${editandoId}`)?.classList.add("activo");
+  } else {
+    toast("Error al asignar");
+  }
+}
+
+async function init() {
+  const [hRes, eRes] = await Promise.all([
+    fetch("/api/horarios"),
+    fetch("/api/empleados")
+  ]);
+  horarios = await hRes.json();
+  todosEmpleados = await eRes.json();
+  buildDiasForm();
+  cargarLista();
+}
+
+init();
+</script>
+</body>
+</html>

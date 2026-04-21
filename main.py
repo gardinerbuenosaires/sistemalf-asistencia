@@ -8,6 +8,10 @@ from contextlib import asynccontextmanager
 from config import API_HOST, API_PORT
 from db.database import init_db
 from sync.scheduler import start_scheduler
+from api.horarios import router as horarios_router
+from api.planificacion import router as planificacion_router
+from api.calendarios import router as calendarios_router
+from api.empleados import router as empleados_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,11 +36,35 @@ app = FastAPI(
 )
 
 app.mount("/static", StaticFiles(directory="web/static"), name="static")
+app.include_router(horarios_router)
+app.include_router(planificacion_router)
+app.include_router(calendarios_router)
+app.include_router(empleados_router)
 
 
 @app.get("/", include_in_schema=False)
 def root():
     return FileResponse("web/templates/index.html")
+
+
+@app.get("/horarios", include_in_schema=False)
+def page_horarios():
+    return FileResponse("web/templates/horarios.html")
+
+
+@app.get("/planificacion", include_in_schema=False)
+def page_planificacion():
+    return FileResponse("web/templates/planificacion.html")
+
+
+@app.get("/calendarios", include_in_schema=False)
+def page_calendarios():
+    return FileResponse("web/templates/calendarios.html")
+
+
+@app.get("/empleados", include_in_schema=False)
+def page_empleados():
+    return FileResponse("web/templates/empleados.html")
 
 
 # --- Rutas de la API (se expanden en etapas siguientes) ---
@@ -111,7 +139,50 @@ def get_empleados():
     from db.database import db_session
     with db_session() as conn:
         rows = conn.execute(
-            "SELECT * FROM empleados WHERE activo = 1 ORDER BY nombre"
+            "SELECT * FROM empleados WHERE activo = 1 ORDER BY apellido, nombre"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/empleados/sync-dispositivo", tags=["empleados"])
+def sync_empleados_dispositivo():
+    """Importa desde el ZKTeco los usuarios que aún no existen como empleados."""
+    from sync.downloader import sync_users
+    return sync_users()
+
+
+@app.get("/api/presencia/hoy", tags=["presencia"])
+def presencia_hoy():
+    """
+    Empleados con entrada activa hoy (entrada sin salida posterior).
+    Agrupa por cargo para la vista del encargado.
+    """
+    from db.database import db_session
+    from datetime import date
+    hoy = date.today().isoformat()
+    with db_session() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                e.user_id,
+                e.nombre,
+                e.apellido,
+                e.cargo,
+                f.timestamp AS hora_entrada
+            FROM fichajes f
+            JOIN empleados e ON e.id = f.empleado_id
+            WHERE date(f.timestamp) = ?
+              AND f.tipo = 'entrada'
+              AND NOT EXISTS (
+                SELECT 1 FROM fichajes f2
+                WHERE f2.empleado_id = f.empleado_id
+                  AND f2.tipo = 'salida'
+                  AND date(f2.timestamp) = ?
+                  AND f2.timestamp > f.timestamp
+              )
+            ORDER BY e.cargo, f.timestamp
+            """,
+            (hoy, hoy),
         ).fetchall()
     return [dict(r) for r in rows]
 

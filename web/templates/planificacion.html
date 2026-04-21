@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planificación — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem; }
+  header { background: #2c3e50; color: white; padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
+  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .85rem; }
+  header a:hover { color: white; }
+  header h1 { font-size: 1.1rem; flex: 1; }
+
+  .nav-semana { display: flex; align-items: center; gap: 10px; }
+  .nav-semana button { background: rgba(255,255,255,.15); border: none; color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: .9rem; }
+  .nav-semana button:hover { background: rgba(255,255,255,.25); }
+  .nav-semana span { font-size: .85rem; opacity: .9; min-width: 180px; text-align: center; }
+
+  main { padding: 16px; overflow-x: auto; }
+
+  .grilla-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); overflow: hidden; }
+
+  table { width: 100%; border-collapse: collapse; min-width: 900px; }
+  thead th { padding: 10px 8px; text-align: center; font-size: .8rem; border-bottom: 2px solid #dee2e6; background: #f8f9fa; position: sticky; top: 0; z-index: 10; }
+  thead th.col-nombre { text-align: left; padding-left: 12px; min-width: 180px; }
+  thead th.hoy { background: #e8f4fd; color: #004085; }
+
+  tbody tr:hover td { background: #fafafa; }
+  tr.grupo-header td { background: #2c3e50; color: white; font-size: .75rem; font-weight: bold; text-transform: uppercase; letter-spacing: .05em; padding: 5px 12px; }
+
+  td { padding: 3px 4px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  td.col-nombre { padding: 6px 12px; font-weight: bold; white-space: nowrap; }
+  td.col-dia { text-align: center; }
+
+  .celda {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 90px; padding: 4px 6px; border-radius: 4px;
+    cursor: pointer; font-size: .75rem; font-weight: bold;
+    border: 1px solid transparent; transition: filter .1s;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px;
+  }
+  .celda:hover { filter: brightness(.92); }
+  .celda.vacia { background: #f8f9fa; color: #bbb; border: 1px dashed #ddd; font-weight: normal; }
+  .celda.franco { background: #fff3cd; color: #856404; border-color: #ffc107; }
+  .celda.simple { background: #d4edda; color: #155724; }
+  .celda.cortado { background: #cce5ff; color: #004085; }
+  .celda.hoy { box-shadow: 0 0 0 2px #007bff; }
+
+  /* Modal */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; }
+  .overlay.active { display: flex; align-items: center; justify-content: center; }
+  .modal { background: white; border-radius: 10px; padding: 24px; width: 340px; }
+  .modal h3 { font-size: 1rem; margin-bottom: 4px; }
+  .modal .subtitulo { font-size: .8rem; color: #888; margin-bottom: 16px; }
+  .opciones { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+  .opcion { padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: .85rem; border: 1px solid #dee2e6; }
+  .opcion:hover { background: #f0f4f8; }
+  .opcion.franco-opt { background: #fff3cd; border-color: #ffc107; color: #856404; }
+  .opcion.vaciar-opt { color: #e74c3c; border-color: #e74c3c; }
+  .opcion.simple { border-left: 4px solid #28a745; }
+  .opcion.cortado { border-left: 4px solid #007bff; }
+  .modal-footer { margin-top: 14px; text-align: right; }
+  .btn-cancel { background: #eee; border: none; padding: 7px 16px; border-radius: 5px; cursor: pointer; }
+
+  #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 7px; display: none; z-index: 200; font-size: .85rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/">&#8592; Inicio</a>
+  <h1>Planificación semanal</h1>
+  <div class="nav-semana">
+    <button onclick="cambiarSemana(-7)">&#8592;</button>
+    <span id="label-semana">Cargando...</span>
+    <button onclick="cambiarSemana(7)">&#8594;</button>
+    <button onclick="irHoy()" style="font-size:.75rem;padding:5px 8px">Hoy</button>
+    <button onclick="generarSemana()" style="font-size:.75rem;padding:5px 10px;background:#27ae60;border-color:transparent" title="Pre-completar desde calendarios asignados">Generar desde calendarios</button>
+  </div>
+</header>
+
+<main>
+  <div class="grilla-wrap">
+    <table id="tabla-plan">
+      <thead id="thead-plan"></thead>
+      <tbody id="tbody-plan"></tbody>
+    </table>
+  </div>
+</main>
+
+<!-- Modal selección -->
+<div class="overlay" id="overlay" onclick="cerrarModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="modal-nombre"></h3>
+    <div class="subtitulo" id="modal-fecha"></div>
+    <div class="opciones" id="modal-opciones"></div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const DIAS_NOMBRES = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+const DIAS_CORTOS  = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+const hoy = new Date().toISOString().slice(0,10);
+
+let fechaRef = hoy;
+let horarios = [];
+let modalCtx = null;
+
+function toast(msg, ms=2500) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", ms);
+}
+
+function lunes(fechaStr) {
+  const d = new Date(fechaStr + "T12:00:00");
+  const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
+  d.setDate(d.getDate() - dow);
+  return d.toISOString().slice(0,10);
+}
+
+function cambiarSemana(dias) {
+  const d = new Date(fechaRef + "T12:00:00");
+  d.setDate(d.getDate() + dias);
+  fechaRef = d.toISOString().slice(0,10);
+  cargar();
+}
+
+function irHoy() { fechaRef = hoy; cargar(); }
+
+function formatFecha(iso) {
+  const [y,m,d] = iso.split("-");
+  return `${d}/${m}`;
+}
+
+function celda(plan, fecha, empleadoId, empleadoNombre) {
+  const esHoy = fecha === hoy;
+  let cls, txt;
+  if (!plan) {
+    cls = "vacia"; txt = "—";
+  } else if (plan.es_franco) {
+    cls = "franco"; txt = "FRANCO";
+  } else {
+    cls = plan.horario_tipo || "simple";
+    txt = plan.horario_nombre || "?";
+  }
+  if (esHoy) cls += " hoy";
+  return `<span class="celda ${cls}"
+    onclick="abrirModal(${empleadoId}, '${fecha}', '${empleadoNombre.replace(/'/g,"\\'")}', ${plan ? JSON.stringify(JSON.stringify(plan)) : 'null'})"
+    title="${txt}">${txt}</span>`;
+}
+
+async function cargar() {
+  const res = await fetch(`/api/planificacion/semana?fecha=${fechaRef}`);
+  const data = await res.json();
+  horarios = data.horarios;
+
+  const lun = new Date(data.lunes + "T12:00:00");
+  const dom = new Date(data.dias[6] + "T12:00:00");
+  document.getElementById("label-semana").textContent =
+    `${formatFecha(data.lunes)} al ${formatFecha(data.dias[6])}`;
+
+  // Cabecera
+  const thead = document.getElementById("thead-plan");
+  thead.innerHTML = `<tr>
+    <th class="col-nombre">Empleado</th>
+    ${data.dias.map((d,i) => `
+      <th class="${d === hoy ? 'hoy' : ''}">
+        ${DIAS_CORTOS[i]}<br><small>${formatFecha(d)}</small>
+      </th>`).join("")}
+  </tr>`;
+
+  // Cuerpo agrupado por cargo
+  const tbody = document.getElementById("tbody-plan");
+  let html = "";
+  let cargoActual = null;
+
+  for (const emp of data.empleados) {
+    const cargo = emp.empleado.cargo || "Sin cargo";
+    if (cargo !== cargoActual) {
+      html += `<tr class="grupo-header"><td colspan="8">${cargo}</td></tr>`;
+      cargoActual = cargo;
+    }
+    const nombre = `${emp.empleado.apellido}${emp.empleado.nombre ? ", " + emp.empleado.nombre.split(" ")[0] : ""}`;
+    html += `<tr>
+      <td class="col-nombre" title="${nombre}">${nombre}</td>
+      ${data.dias.map(d => `<td class="col-dia">${celda(emp.dias[d], d, emp.empleado.id, nombre)}</td>`).join("")}
+    </tr>`;
+  }
+  tbody.innerHTML = html;
+}
+
+function abrirModal(empleadoId, fecha, nombre, planJson) {
+  const plan = planJson ? JSON.parse(planJson) : null;
+  modalCtx = { empleadoId, fecha };
+
+  document.getElementById("modal-nombre").textContent = nombre;
+  const [y,m,d] = fecha.split("-");
+  const diaIdx = new Date(fecha + "T12:00:00").getDay();
+  const diaNombre = DIAS_NOMBRES[diaIdx === 0 ? 6 : diaIdx - 1];
+  document.getElementById("modal-fecha").textContent = `${diaNombre} ${d}/${m}/${y}`;
+
+  const cont = document.getElementById("modal-opciones");
+  let html = "";
+
+  // Franco
+  html += `<div class="opcion franco-opt" onclick="asignar(${empleadoId}, '${fecha}', null, true)">FRANCO</div>`;
+
+  // Horarios
+  for (const h of horarios) {
+    const activo = plan && !plan.es_franco && plan.horario_id === h.id ? " ✓" : "";
+    html += `<div class="opcion ${h.tipo}" onclick="asignar(${empleadoId}, '${fecha}', ${h.id}, false)">${h.nombre}${activo}</div>`;
+  }
+
+  // Limpiar
+  if (plan) {
+    html += `<div class="opcion vaciar-opt" onclick="asignar(${empleadoId}, '${fecha}', null, false)">Quitar asignación</div>`;
+  }
+
+  cont.innerHTML = html;
+  document.getElementById("overlay").classList.add("active");
+}
+
+function cerrarModal(e) {
+  if (e && e.target !== document.getElementById("overlay")) return;
+  document.getElementById("overlay").classList.remove("active");
+}
+
+async function asignar(empleadoId, fecha, horarioId, esFranco) {
+  document.getElementById("overlay").classList.remove("active");
+  const res = await fetch("/api/planificacion", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ empleado_id: empleadoId, fecha, horario_id: horarioId, es_franco: esFranco }),
+  });
+  if (res.ok) {
+    const data = await res.json();
+    const msg = data.accion === "eliminado" ? "Asignación eliminada" :
+                esFranco ? "Franco asignado" : "Horario asignado";
+    toast(msg);
+    cargar();
+  } else {
+    toast("Error al guardar");
+  }
+}
+
+async function generarSemana() {
+  const res = await fetch(`/api/calendarios/generar-semana?fecha=${fechaRef}`, {
+    method: "POST"
+  });
+  if (res.ok) {
+    const r = await res.json();
+    toast(`Generado: ${r.generados} celdas nuevas, ${r.omitidos} ya existían`);
+    cargar();
+  } else {
+    toast("Error al generar semana");
+  }
+}
+
+cargar();
+</script>
+</body>
+</html>

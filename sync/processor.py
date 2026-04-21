@@ -61,8 +61,8 @@ def process_pending() -> dict:
         for user_id, fecha, motivo in inconsistencias:
             conn.execute(
                 """
-                INSERT INTO inconsistencias (user_id, fecha, motivo)
-                SELECT ?, ?, ?
+                INSERT INTO inconsistencias (user_id, fecha, tipo, motivo)
+                SELECT ?, ?, 'fichaje_impar', ?
                 WHERE NOT EXISTS (
                     SELECT 1 FROM inconsistencias
                     WHERE user_id = ? AND fecha = ? AND motivo = ? AND resuelta = 0

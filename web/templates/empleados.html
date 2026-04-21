@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Empleados — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  header { background: #2c3e50; color: white; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .9rem; }
+  header a:hover { color: white; }
+  header h1 { font-size: 1.2rem; flex: 1; }
+
+  main { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px; max-width: 1300px; margin: 0 auto; align-items: start; }
+
+  .panel { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+  .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid #eee; }
+  .panel-header h2 { font-size: .95rem; }
+
+  /* Lista */
+  .buscar { width: 100%; padding: 8px 12px; border: none; border-bottom: 1px solid #eee; font-size: .85rem; outline: none; }
+  .buscar:focus { background: #fafeff; }
+  .emp-list { max-height: calc(100vh - 160px); overflow-y: auto; }
+  .emp-item { display: flex; align-items: center; padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #f5f5f5; gap: 10px; }
+  .emp-item:hover { background: #f8f9fa; }
+  .emp-item.activo { background: #eef2f5; border-left: 3px solid #2c3e50; }
+  .emp-avatar { width: 34px; height: 34px; border-radius: 50%; background: #2c3e50; color: white; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: bold; flex-shrink: 0; }
+  .emp-info { flex: 1; min-width: 0; }
+  .emp-nombre { font-weight: bold; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .emp-sub { font-size: .75rem; color: #888; margin-top: 1px; }
+  .badge-inactivo { font-size: .7rem; background: #f8d7da; color: #721c24; padding: 1px 6px; border-radius: 10px; }
+
+  /* Formulario */
+  .form-scroll { padding: 20px; max-height: calc(100vh - 120px); overflow-y: auto; }
+  .form-section { margin-bottom: 20px; }
+  .form-section-title { font-size: .75rem; font-weight: bold; text-transform: uppercase; letter-spacing: .06em; color: #888; margin-bottom: 10px; padding-bottom: 4px; border-bottom: 1px solid #eee; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  .form-grid.cols-1 { grid-template-columns: 1fr; }
+  .form-group { display: flex; flex-direction: column; gap: 3px; }
+  .form-group.span-2 { grid-column: span 2; }
+  label { font-size: .78rem; color: #666; font-weight: bold; }
+  input[type=text], input[type=date], input[type=email], input[type=tel], select, textarea {
+    padding: 7px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: .88rem; font-family: inherit; width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: #2c3e50; }
+  textarea { resize: vertical; min-height: 60px; }
+
+  .form-footer { display: flex; gap: 8px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid #eee; margin-top: 4px; }
+  .btn { padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: .88rem; font-weight: bold; }
+  .btn-primary { background: #2c3e50; color: white; }
+  .btn-primary:hover { background: #3d5166; }
+  .btn-secondary { background: #eee; color: #555; }
+  .btn-secondary:hover { background: #ddd; }
+  .btn-danger { background: #e74c3c; color: white; }
+  .btn-sm { padding: 5px 12px; font-size: .8rem; font-weight: normal; }
+
+  .empty-state { padding: 40px 20px; text-align: center; color: #aaa; font-size: .9rem; }
+
+  .cal-vigente { background: #f0faf4; border: 1px solid #b2dfdb; border-radius: 6px; padding: 10px 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .cal-nombre { font-weight: bold; font-size: .9rem; color: #1a6b4a; flex: 1; }
+  .cal-desde { font-size: .78rem; color: #555; }
+  .cal-link { font-size: .78rem; color: #2c3e50; text-decoration: none; border: 1px solid #2c3e50; border-radius: 4px; padding: 2px 8px; white-space: nowrap; }
+  .cal-link:hover { background: #2c3e50; color: white; }
+  .cal-sin-asignar { font-size: .85rem; color: #888; padding: 8px 0; }
+  .cal-sin-asignar a { color: #2c3e50; }
+  .cal-historial-label { font-size: .72rem; color: #aaa; margin-top: 10px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  .cal-historial-item { font-size: .78rem; color: #777; padding: 2px 0; display: flex; justify-content: space-between; }
+  .cal-historial-item span { color: #aaa; }
+  .cal-asignar { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+
+  #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 7px; display: none; z-index: 200; font-size: .88rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/">&#8592; Inicio</a>
+  <h1>Empleados</h1>
+  <nav style="display:flex;gap:14px">
+    <a href="/calendarios">Calendarios</a>
+    <a href="/planificacion">Planificación</a>
+  </nav>
+</header>
+
+<main>
+  <!-- Lista -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Empleados (<span id="cnt">0</span>)</h2>
+      <button class="btn btn-primary btn-sm" onclick="nuevoEmpleado()">+ Nuevo</button>
+    </div>
+    <input class="buscar" id="buscar" type="text" placeholder="Buscar por nombre, apellido, cargo..." oninput="filtrar()">
+    <div class="emp-list" id="emp-list"><div class="empty-state">Cargando...</div></div>
+  </div>
+
+  <!-- Formulario -->
+  <div class="panel" id="panel-form">
+    <div class="panel-header">
+      <h2 id="form-titulo">Seleccioná un empleado</h2>
+      <div id="form-acciones" style="display:none;gap:8px;display:none">
+        <button class="btn btn-danger btn-sm" id="btn-toggle-activo" onclick="toggleActivo()"></button>
+        <button class="btn btn-secondary btn-sm" onclick="cancelar()">Cancelar</button>
+        <button class="btn btn-primary btn-sm" onclick="guardar()">Guardar</button>
+      </div>
+    </div>
+
+    <div class="form-scroll" id="form-contenido">
+      <div class="empty-state">Seleccioná un empleado de la lista o creá uno nuevo.</div>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+let todos = [];
+let calendarios = [];
+let editandoId = null;
+let editandoActivo = 1;
+
+function toast(msg, ms = 2500) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", ms);
+}
+
+function iniciales(apellido, nombre) {
+  return ((apellido[0] || "") + (nombre[0] || "")).toUpperCase();
+}
+
+function filtrar() {
+  const q = document.getElementById("buscar").value.toLowerCase();
+  const mostrar = q
+    ? todos.filter(e => `${e.apellido} ${e.nombre} ${e.cargo||""}`.toLowerCase().includes(q))
+    : todos;
+  renderLista(mostrar);
+}
+
+function renderLista(lista) {
+  const cont = document.getElementById("emp-list");
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty-state">Sin resultados.</div>';
+    return;
+  }
+  cont.innerHTML = lista.map(e => `
+    <div class="emp-item${e.id === editandoId ? " activo" : ""}" id="emp-item-${e.id}" onclick="editarEmpleado(${e.id})">
+      <div class="emp-avatar">${iniciales(e.apellido, e.nombre)}</div>
+      <div class="emp-info">
+        <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}</div>
+        <div class="emp-sub">${[e.cargo, e.departamento].filter(Boolean).join(" · ") || "Sin cargo"}</div>
+      </div>
+    </div>`).join("");
+}
+
+async function cargar() {
+  const res = await fetch("/api/empleados?todos=true");
+  todos = await res.json();
+  document.getElementById("cnt").textContent = todos.filter(e => e.activo).length;
+  filtrar();
+}
+
+function buildCalendarioSection(asignaciones = []) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const vigente = asignaciones.find(a =>
+    a.fecha_desde <= hoy && (a.fecha_hasta === null || a.fecha_hasta >= hoy)
+  );
+  const historial = asignaciones.filter(a => a !== vigente).slice(0, 3);
+
+  let html = `<div class="form-section">
+    <div class="form-section-title">Calendario asignado</div>`;
+
+  if (vigente) {
+    html += `<div class="cal-vigente">
+      <div class="cal-nombre">${vigente.calendario_nombre}</div>
+      <div class="cal-desde">desde ${vigente.fecha_desde}${vigente.fecha_hasta ? " hasta " + vigente.fecha_hasta : ""}</div>
+      <a href="/calendarios" class="cal-link">Ver calendarios</a>
+    </div>`;
+  } else {
+    html += `<div class="cal-sin-asignar">Sin calendario asignado — <a href="/calendarios">asignar desde Calendarios</a></div>`;
+  }
+
+  if (historial.length) {
+    html += `<div class="cal-historial-label">Historial:</div>`;
+    html += historial.map(a =>
+      `<div class="cal-historial-item">${a.calendario_nombre} <span>${a.fecha_desde} → ${a.fecha_hasta || "activo"}</span></div>`
+    ).join("");
+  }
+
+  const calOpts = calendarios.map(c =>
+    `<option value="${c.id}"${vigente && vigente.calendario_id === c.id ? " selected" : ""}>${c.nombre}</option>`
+  ).join("");
+
+  html += `<div class="cal-asignar">
+    <select id="asig-cal-id" style="flex:1">
+      <option value="">— Elegir calendario —</option>
+      ${calOpts}
+    </select>
+    <label style="font-size:.78rem;color:#666;white-space:nowrap">Desde</label>
+    <input type="date" id="asig-cal-desde" value="${new Date().toISOString().slice(0,10)}" style="width:140px">
+    <button class="btn btn-primary btn-sm" onclick="asignarCalendario()">Asignar</button>
+  </div>`;
+
+  html += `</div>`;
+  return html;
+}
+
+function buildForm(e = {}, asignaciones = []) {
+  return `
+    <form id="emp-form" onsubmit="return false">
+      <div class="form-section">
+        <div class="form-section-title">Datos personales</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Apellido *</label>
+            <input type="text" id="f-apellido" value="${e.apellido||""}" required>
+          </div>
+          <div class="form-group">
+            <label>Nombre *</label>
+            <input type="text" id="f-nombre" value="${e.nombre||""}" required>
+          </div>
+          <div class="form-group">
+            <label>DNI</label>
+            <input type="text" id="f-dni" value="${e.dni||""}">
+          </div>
+          <div class="form-group">
+            <label>CUIL</label>
+            <input type="text" id="f-cuil" value="${e.cuil||""}" placeholder="20-12345678-9">
+          </div>
+          <div class="form-group">
+            <label>Fecha de nacimiento</label>
+            <input type="date" id="f-nacimiento" value="${e.fecha_nacimiento||""}">
+          </div>
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="tel" id="f-telefono" value="${e.telefono||""}">
+          </div>
+          <div class="form-group span-2">
+            <label>Email</label>
+            <input type="email" id="f-email" value="${e.email||""}">
+          </div>
+          <div class="form-group span-2">
+            <label>Domicilio</label>
+            <input type="text" id="f-domicilio" value="${e.domicilio||""}">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Datos laborales</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Cargo</label>
+            <input type="text" id="f-cargo" value="${e.cargo||""}">
+          </div>
+          <div class="form-group">
+            <label>Departamento</label>
+            <input type="text" id="f-departamento" value="${e.departamento||""}">
+          </div>
+          <div class="form-group">
+            <label>Categoría</label>
+            <input type="text" id="f-categoria" value="${e.categoria||""}">
+          </div>
+          <div class="form-group">
+            <label>Código dispositivo</label>
+            <input type="text" id="f-userid" value="${e.user_id||""}" ${e.user_id ? "readonly style='background:#f8f9fa;color:#888'" : ""}>
+          </div>
+          <div class="form-group">
+            <label>Fecha de ingreso</label>
+            <input type="date" id="f-ingreso" value="${e.fecha_ingreso||""}">
+          </div>
+          <div class="form-group">
+            <label>Fecha de egreso</label>
+            <input type="date" id="f-egreso" value="${e.fecha_egreso||""}">
+          </div>
+        </div>
+      </div>
+
+      ${editandoId ? buildCalendarioSection(asignaciones) : ""}
+
+      <div class="form-section">
+        <div class="form-section-title">Observaciones</div>
+        <div class="form-grid cols-1">
+          <div class="form-group">
+            <textarea id="f-obs">${e.observaciones||""}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-footer">
+        <button class="btn btn-danger btn-sm" id="btn-toggle-activo" onclick="toggleActivo()" style="${!editandoId ? 'display:none' : ''}">
+          ${e.activo ? "Dar de baja" : "Reactivar"}
+        </button>
+        <button class="btn btn-secondary" onclick="cancelar()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardar()">Guardar</button>
+      </div>
+    </form>`;
+}
+
+function nuevoEmpleado() {
+  editandoId = null;
+  editandoActivo = 1;
+  document.getElementById("form-titulo").textContent = "Nuevo empleado";
+  document.getElementById("form-contenido").innerHTML = buildForm();
+  document.querySelectorAll(".emp-item").forEach(el => el.classList.remove("activo"));
+}
+
+async function editarEmpleado(id) {
+  const [eRes, aRes] = await Promise.all([
+    fetch(`/api/empleados/${id}`),
+    fetch(`/api/calendarios/asignaciones/empleado/${id}`)
+  ]);
+  const e = await eRes.json();
+  const asignaciones = await aRes.json();
+  editandoId = id;
+  editandoActivo = e.activo;
+  document.getElementById("form-titulo").textContent = `${e.apellido}, ${e.nombre}`;
+  document.getElementById("form-contenido").innerHTML = buildForm(e, asignaciones);
+  document.querySelectorAll(".emp-item").forEach(el => el.classList.remove("activo"));
+  document.getElementById(`emp-item-${id}`)?.classList.add("activo");
+}
+
+function cancelar() {
+  editandoId = null;
+  document.getElementById("form-titulo").textContent = "Seleccioná un empleado";
+  document.getElementById("form-contenido").innerHTML = '<div class="empty-state">Seleccioná un empleado de la lista o creá uno nuevo.</div>';
+  document.querySelectorAll(".emp-item").forEach(el => el.classList.remove("activo"));
+}
+
+function getFormData() {
+  return {
+    apellido: document.getElementById("f-apellido").value.trim(),
+    nombre: document.getElementById("f-nombre").value.trim(),
+    dni: document.getElementById("f-dni").value.trim() || null,
+    cuil: document.getElementById("f-cuil").value.trim() || null,
+    fecha_nacimiento: document.getElementById("f-nacimiento").value || null,
+    fecha_ingreso: document.getElementById("f-ingreso").value || null,
+    fecha_egreso: document.getElementById("f-egreso").value || null,
+    cargo: document.getElementById("f-cargo").value.trim() || null,
+    departamento: document.getElementById("f-departamento").value.trim() || null,
+    categoria: document.getElementById("f-categoria").value.trim() || null,
+    telefono: document.getElementById("f-telefono").value.trim() || null,
+    email: document.getElementById("f-email").value.trim() || null,
+    domicilio: document.getElementById("f-domicilio").value.trim() || null,
+    observaciones: document.getElementById("f-obs").value.trim() || null,
+    activo: editandoActivo,
+  };
+}
+
+async function guardar() {
+  const data = getFormData();
+  if (!data.apellido || !data.nombre) { toast("Apellido y nombre son obligatorios"); return; }
+
+  const url = editandoId ? `/api/empleados/${editandoId}` : "/api/empleados";
+  const method = editandoId ? "PUT" : "POST";
+  const res = await fetch(url, { method, headers: {"Content-Type":"application/json"}, body: JSON.stringify(data) });
+
+  if (res.ok) {
+    const e = await res.json();
+    editandoId = e.id;
+    toast(method === "POST" ? "Empleado creado" : "Cambios guardados");
+    await cargar();
+    document.getElementById(`emp-item-${e.id}`)?.classList.add("activo");
+    document.getElementById("form-titulo").textContent = `${e.apellido}, ${e.nombre}`;
+  } else {
+    const err = await res.json().catch(() => ({}));
+    toast("Error: " + (err.detail || "desconocido"));
+  }
+}
+
+async function toggleActivo() {
+  if (!editandoId) return;
+  const data = getFormData();
+  editandoActivo = editandoActivo ? 0 : 1;
+  data.activo = editandoActivo;
+  const res = await fetch(`/api/empleados/${editandoId}`, {
+    method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data)
+  });
+  if (res.ok) {
+    toast(editandoActivo ? "Empleado reactivado" : "Empleado dado de baja");
+    await cargar();
+    await editarEmpleado(editandoId);
+  }
+}
+
+async function asignarCalendario() {
+  const calId = parseInt(document.getElementById("asig-cal-id").value);
+  const desde = document.getElementById("asig-cal-desde").value;
+  if (!calId) { toast("Seleccioná un calendario"); return; }
+  if (!desde) { toast("Ingresá la fecha desde"); return; }
+
+  const res = await fetch("/api/calendarios/asignar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ empleado_ids: [editandoId], calendario_id: calId, fecha_desde: desde })
+  });
+  if (res.ok) {
+    toast("Calendario asignado");
+    await editarEmpleado(editandoId);
+  } else {
+    toast("Error al asignar");
+  }
+}
+
+async function init() {
+  const [_, cRes] = await Promise.all([cargar(), fetch("/api/calendarios")]);
+  calendarios = await cRes.json();
+}
+
+init();
+</script>
+</body>
+</html>

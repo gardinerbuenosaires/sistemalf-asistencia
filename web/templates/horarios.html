@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Horarios — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  header { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .9rem; }
+  header a:hover { color: white; }
+  header h1 { font-size: 1.2rem; }
+  main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .section { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 24px; }
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .section-header h2 { font-size: 1rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th { text-align: left; padding: 8px; background: #f8f9fa; border-bottom: 2px solid #dee2e6; }
+  td { padding: 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  tr:hover td { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: .8rem; font-weight: bold; }
+  .badge.simple { background: #d4edda; color: #155724; }
+  .badge.cortado { background: #cce5ff; color: #004085; }
+  .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: .9rem; }
+  .btn-primary { background: #2c3e50; color: white; }
+  .btn-primary:hover { background: #3d5166; }
+  .btn-danger { background: #e74c3c; color: white; }
+  .btn-danger:hover { background: #c0392b; }
+  .btn-sm { padding: 4px 10px; font-size: .8rem; }
+  .btn-link { background: none; border: none; color: #2c3e50; cursor: pointer; text-decoration: underline; font-size: .9rem; padding: 0; }
+
+  /* Modal */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; }
+  .overlay.active { display: flex; align-items: center; justify-content: center; }
+  .modal { background: white; border-radius: 10px; padding: 28px; width: 100%; max-width: 620px; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 1.1rem; margin-bottom: 20px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: .82rem; color: #666; font-weight: bold; }
+  input, select { padding: 8px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: .9rem; }
+  input:focus, select:focus { outline: none; border-color: #2c3e50; }
+  .bloque-section { border: 1px solid #dee2e6; border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+  .bloque-section h4 { font-size: .85rem; color: #555; margin-bottom: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .tolerancias { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+  .tolerancias .form-group label { font-size: .75rem; }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  .bloque-horario { font-size: .82rem; color: #555; }
+
+  #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 12px 20px; border-radius: 8px; display: none; z-index: 200; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/">&#8592; Inicio</a>
+  <h1>Configuración de Horarios</h1>
+  <nav style="display:flex;gap:14px;margin-left:auto">
+    <a href="/planificacion">Planificación</a>
+    <a href="/calendarios">Calendarios</a>
+  </nav>
+</header>
+
+<main>
+  <div class="section">
+    <div class="section-header">
+      <h2>Horarios definidos</h2>
+      <button class="btn btn-primary" onclick="abrirFormulario()">+ Nuevo horario</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Tipo</th>
+          <th>Bloques</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-horarios">
+        <tr><td colspan="4">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<!-- Modal -->
+<div class="overlay" id="overlay" onclick="cerrarFormulario(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="modal-titulo">Nuevo horario</h3>
+
+    <div class="form-row">
+      <div class="form-group full">
+        <label>Nombre del horario</label>
+        <input type="text" id="f-nombre" placeholder="Ej: Mozo día, Cocinero noche...">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group full">
+        <label>Tipo de turno</label>
+        <select id="f-tipo" onchange="onTipoChange()">
+          <option value="simple">Simple (1 bloque)</option>
+          <option value="cortado">Cortado (2 bloques)</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="bloque-1" class="bloque-section">
+      <h4 id="bloque-1-titulo">Horario</h4>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Entrada</label>
+          <input type="time" id="b1-entrada">
+        </div>
+        <div class="form-group">
+          <label>Salida</label>
+          <input type="time" id="b1-salida">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label>
+          <input type="checkbox" id="b1-cruza"> Cruza medianoche
+        </label>
+      </div>
+      <div class="tolerancias">
+        <div class="form-group">
+          <label>Tolerancia entrada antes (min)</label>
+          <input type="number" id="b1-te-antes" value="15" min="0">
+        </div>
+        <div class="form-group">
+          <label>Tolerancia entrada después (min)</label>
+          <input type="number" id="b1-te-despues" value="60" min="0">
+        </div>
+        <div class="form-group">
+          <label>Tolerancia tarde (min)</label>
+          <input type="number" id="b1-tarde" value="10" min="0">
+        </div>
+        <div class="form-group">
+          <label>Tolerancia salida antes (min)</label>
+          <input type="number" id="b1-ts-antes" value="30" min="0">
+        </div>
+        <div class="form-group">
+          <label>Tolerancia salida después (min)</label>
+          <input type="number" id="b1-ts-despues" value="60" min="0">
+        </div>
+      </div>
+    </div>
+
+    <div id="bloque-2" class="bloque-section" style="display:none">
+      <h4>2° Bloque</h4>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Entrada</label>
+          <input type="time" id="b2-entrada">
+        </div>
+        <div class="form-group">
+          <label>Salida</label>
+          <input type="time" id="b2-salida">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label>
+          <input type="checkbox" id="b2-cruza"> Cruza medianoche
+        </label>
+      </div>
+      <div class="tolerancias">
+        <div class="form-group">
+          <label>Tolerancia entrada antes (min)</label>
+          <input type="number" id="b2-te-antes" value="15" min="0">
+        </div>
+        <div class="form-group">
+          <label>Tolerancia entrada después (min)</label>
+          <input type="number" id="b2-te-despues" value="60" min="0">
+        </div>
+        <div class="form-group">
+          <label>Tolerancia tarde (min)</label>
+          <input type="number" id="b2-tarde" value="10" min="0">
+        </div>
+        <div class="form-group">
+          <label>Tolerancia salida antes (min)</label>
+          <input type="number" id="b2-ts-antes" value="30" min="0">
+        </div>
+        <div class="form-group">
+          <label>Tolerancia salida después (min)</label>
+          <input type="number" id="b2-ts-despues" value="60" min="0">
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn" style="background:#eee" onclick="cerrarFormulario()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarHorario()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let editandoId = null;
+
+function toast(msg, ms = 3000) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", ms);
+}
+
+function onTipoChange() {
+  const tipo = document.getElementById("f-tipo").value;
+  document.getElementById("bloque-2").style.display = tipo === "cortado" ? "block" : "none";
+  document.getElementById("bloque-1-titulo").textContent = tipo === "cortado" ? "1° Bloque" : "Horario";
+}
+
+function abrirFormulario(horario = null) {
+  editandoId = horario ? horario.id : null;
+  document.getElementById("modal-titulo").textContent = horario ? "Editar horario" : "Nuevo horario";
+
+  if (horario) {
+    document.getElementById("f-nombre").value = horario.nombre;
+    document.getElementById("f-tipo").value = horario.tipo;
+    const b1 = horario.bloques[0];
+    document.getElementById("b1-entrada").value = b1.hora_entrada;
+    document.getElementById("b1-salida").value = b1.hora_salida;
+    document.getElementById("b1-cruza").checked = !!b1.cruza_medianoche;
+    document.getElementById("b1-te-antes").value = b1.tolerancia_entrada_antes;
+    document.getElementById("b1-te-despues").value = b1.tolerancia_entrada_despues;
+    document.getElementById("b1-tarde").value = b1.tolerancia_tarde;
+    document.getElementById("b1-ts-antes").value = b1.tolerancia_salida_antes;
+    document.getElementById("b1-ts-despues").value = b1.tolerancia_salida_despues;
+    if (horario.tipo === "cortado" && horario.bloques[1]) {
+      const b2 = horario.bloques[1];
+      document.getElementById("b2-entrada").value = b2.hora_entrada;
+      document.getElementById("b2-salida").value = b2.hora_salida;
+      document.getElementById("b2-cruza").checked = !!b2.cruza_medianoche;
+      document.getElementById("b2-te-antes").value = b2.tolerancia_entrada_antes;
+      document.getElementById("b2-te-despues").value = b2.tolerancia_entrada_despues;
+      document.getElementById("b2-tarde").value = b2.tolerancia_tarde;
+      document.getElementById("b2-ts-antes").value = b2.tolerancia_salida_antes;
+      document.getElementById("b2-ts-despues").value = b2.tolerancia_salida_despues;
+    }
+  } else {
+    document.getElementById("f-nombre").value = "";
+    document.getElementById("f-tipo").value = "simple";
+    ["b1-entrada","b1-salida","b2-entrada","b2-salida"].forEach(id => document.getElementById(id).value = "");
+    ["b1-cruza","b2-cruza"].forEach(id => document.getElementById(id).checked = false);
+    ["b1-te-antes","b2-te-antes"].forEach(id => document.getElementById(id).value = 15);
+    ["b1-te-despues","b2-te-despues"].forEach(id => document.getElementById(id).value = 60);
+    ["b1-tarde","b2-tarde"].forEach(id => document.getElementById(id).value = 10);
+    ["b1-ts-antes","b2-ts-antes"].forEach(id => document.getElementById(id).value = 30);
+    ["b1-ts-despues","b2-ts-despues"].forEach(id => document.getElementById(id).value = 60);
+  }
+  onTipoChange();
+  document.getElementById("overlay").classList.add("active");
+}
+
+function cerrarFormulario(e) {
+  if (e && e.target !== document.getElementById("overlay")) return;
+  document.getElementById("overlay").classList.remove("active");
+}
+
+function getBloque(n) {
+  return {
+    bloque: n,
+    hora_entrada: document.getElementById(`b${n}-entrada`).value,
+    hora_salida: document.getElementById(`b${n}-salida`).value,
+    cruza_medianoche: document.getElementById(`b${n}-cruza`).checked,
+    tolerancia_entrada_antes: parseInt(document.getElementById(`b${n}-te-antes`).value),
+    tolerancia_entrada_despues: parseInt(document.getElementById(`b${n}-te-despues`).value),
+    tolerancia_tarde: parseInt(document.getElementById(`b${n}-tarde`).value),
+    tolerancia_salida_antes: parseInt(document.getElementById(`b${n}-ts-antes`).value),
+    tolerancia_salida_despues: parseInt(document.getElementById(`b${n}-ts-despues`).value),
+  };
+}
+
+async function guardarHorario() {
+  const nombre = document.getElementById("f-nombre").value.trim();
+  const tipo = document.getElementById("f-tipo").value;
+  if (!nombre) { toast("Ingresá el nombre del horario"); return; }
+
+  const bloques = [getBloque(1)];
+  if (tipo === "cortado") bloques.push(getBloque(2));
+
+  for (const b of bloques) {
+    if (!b.hora_entrada || !b.hora_salida) {
+      toast("Completá los horarios de entrada y salida"); return;
+    }
+  }
+
+  const url = editandoId ? `/api/horarios/${editandoId}` : "/api/horarios";
+  const method = editandoId ? "PUT" : "POST";
+
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre, tipo, bloques }),
+  });
+
+  if (res.ok) {
+    toast(editandoId ? "Horario actualizado" : "Horario creado");
+    document.getElementById("overlay").classList.remove("active");
+    cargarHorarios();
+  } else {
+    const err = await res.json();
+    toast("Error: " + (err.detail || "desconocido"));
+  }
+}
+
+async function eliminarHorario(id, nombre) {
+  if (!confirm(`¿Eliminar el horario "${nombre}"?`)) return;
+  const res = await fetch(`/api/horarios/${id}`, { method: "DELETE" });
+  if (res.ok) {
+    toast("Horario eliminado");
+    cargarHorarios();
+  } else {
+    const err = await res.json();
+    toast("Error: " + (err.detail || "no se pudo eliminar"));
+  }
+}
+
+function formatBloques(bloques) {
+  return bloques.map(b => {
+    const cruza = b.cruza_medianoche ? " (+1)" : "";
+    return `<span class="bloque-horario">${b.hora_entrada} – ${b.hora_salida}${cruza}</span>`;
+  }).join("<br>");
+}
+
+async function cargarHorarios() {
+  const res = await fetch("/api/horarios");
+  const horarios = await res.json();
+  const tbody = document.getElementById("tabla-horarios");
+  if (!horarios.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#aaa">Sin horarios definidos</td></tr>';
+    return;
+  }
+  tbody.innerHTML = horarios.map(h => `
+    <tr>
+      <td><strong>${h.nombre}</strong></td>
+      <td><span class="badge ${h.tipo}">${h.tipo}</span></td>
+      <td>${formatBloques(h.bloques)}</td>
+      <td>
+        <button class="btn btn-sm btn-primary" onclick="abrirFormulario(${JSON.stringify(h).replace(/"/g, '&quot;')})">Editar</button>
+        <button class="btn btn-sm btn-danger" style="margin-left:6px" onclick="eliminarHorario(${h.id}, '${h.nombre}')">Eliminar</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+cargarHorarios();
+</script>
+</body>
+</html>

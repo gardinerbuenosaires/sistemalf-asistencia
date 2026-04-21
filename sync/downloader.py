@@ -1,5 +1,5 @@
 """
-Descarga registros del dispositivo ZKTeco y los almacena en SQLite.
+Descarga registros y usuarios del dispositivo ZKTeco y los almacena en SQLite.
 
 No se llama a disable_device() ni clear_attendance() para no interferir
 con el software Enterprise del fabricante que corre en paralelo.
@@ -98,6 +98,74 @@ def _save_attendances(attendances) -> int:
             if cur.rowcount:
                 nuevos += 1
 
+    return nuevos
+
+
+def sync_users() -> dict:
+    """
+    Conecta al dispositivo, descarga la lista de usuarios y crea los empleados
+    que aún no existen en la BD (por user_id). No modifica registros existentes.
+    Devuelve {leidos, nuevos, errores}.
+    """
+    result = {"leidos": 0, "nuevos": 0, "error": None}
+    conn_zk = None
+    try:
+        logger.info("Conectando a %s:%s para sync de usuarios...", DEVICE_IP, DEVICE_PORT)
+        conn_zk = _connect()
+        users = conn_zk.get_users()
+        result["leidos"] = len(users)
+        logger.info("Usuarios leídos del dispositivo: %d", result["leidos"])
+        result["nuevos"] = _save_users(users)
+        logger.info("Empleados nuevos creados: %d", result["nuevos"])
+    except Exception as exc:
+        result["error"] = str(exc)
+        logger.error("Error en sync_users: %s", exc)
+    finally:
+        if conn_zk:
+            try:
+                conn_zk.disconnect()
+            except Exception:
+                pass
+    return result
+
+
+def _save_users(users) -> int:
+    """
+    Inserta empleados nuevos a partir de los usuarios del dispositivo.
+    Usa user_id como clave — si ya existe, lo omite.
+    El campo name del ZKTeco suele ser 'APELLIDO NOMBRE' o 'NOMBRE APELLIDO';
+    se guarda el nombre completo en apellido y nombre vacío hasta enriquecer con Excel.
+    """
+    nuevos = 0
+    with db_session() as conn:
+        existentes = {
+            row[0]
+            for row in conn.execute("SELECT user_id FROM empleados WHERE user_id IS NOT NULL")
+        }
+        for u in users:
+            uid = str(u.user_id).strip()
+            if not uid or uid in existentes:
+                continue
+            nombre_raw = (u.name or "").strip()
+            partes = nombre_raw.split()
+            if len(partes) >= 2:
+                apellido = partes[0]
+                nombre = " ".join(partes[1:])
+            else:
+                apellido = nombre_raw
+                nombre = ""
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO empleados (user_id, nombre, apellido, activo)
+                VALUES (?, ?, ?, 1)
+                """,
+                (uid, nombre, apellido),
+            )
+            if conn.execute(
+                "SELECT changes()"
+            ).fetchone()[0]:
+                nuevos += 1
+                existentes.add(uid)
     return nuevos
 
 

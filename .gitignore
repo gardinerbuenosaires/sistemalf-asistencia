@@ -21,3 +21,16 @@ env/
 # Windows
 Thumbs.db
 desktop.ini
+
+# Datos exportados del dispositivo / archivos sensibles
+usuarios_zk.json
+registros_zk.json
+*.xls
+*.xlsx
+*.bak
+
+# Claude Code
+.claude/
+
+# Capturas de horarios
+horarios/

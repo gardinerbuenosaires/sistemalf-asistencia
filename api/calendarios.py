@@ -10,8 +10,9 @@ DIAS = ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]
 
 
 class DiaIn(BaseModel):
-    dia_semana: int   # 0=lunes … 6=domingo
-    horario_id: Optional[int] = None  # None = franco
+    dia_semana: int
+    horario_id: Optional[int] = None   # None = usa horario_base del empleado, o franco si es_franco
+    es_franco: bool = False            # True = día libre
 
 
 class CalendarioIn(BaseModel):
@@ -79,8 +80,8 @@ def create_calendario(data: CalendarioIn):
         cid = cur.lastrowid
         for d in data.dias:
             conn.execute(
-                "INSERT INTO calendarios_dias (calendario_id, dia_semana, horario_id) VALUES (?,?,?)",
-                (cid, d.dia_semana, d.horario_id)
+                "INSERT INTO calendarios_dias (calendario_id, dia_semana, horario_id, es_franco) VALUES (?,?,?,?)",
+                (cid, d.dia_semana, d.horario_id, int(d.es_franco))
             )
         return _get_calendario(conn, cid)
 
@@ -97,8 +98,8 @@ def update_calendario(cid: int, data: CalendarioIn):
         conn.execute("DELETE FROM calendarios_dias WHERE calendario_id=?", (cid,))
         for d in data.dias:
             conn.execute(
-                "INSERT INTO calendarios_dias (calendario_id, dia_semana, horario_id) VALUES (?,?,?)",
-                (cid, d.dia_semana, d.horario_id)
+                "INSERT INTO calendarios_dias (calendario_id, dia_semana, horario_id, es_franco) VALUES (?,?,?,?)",
+                (cid, d.dia_semana, d.horario_id, int(d.es_franco))
             )
         return _get_calendario(conn, cid)
 
@@ -183,14 +184,14 @@ def generar_semana(fecha: str):
             if a["empleado_id"] not in asig_map:
                 asig_map[a["empleado_id"]] = a["calendario_id"]
 
-        # Cargar días de cada calendario
+        # Cargar días de cada calendario (incluye es_franco)
         cal_cache = {}
         for eid, cid in asig_map.items():
             if cid not in cal_cache:
                 dias_cal = conn.execute(
-                    "SELECT dia_semana, horario_id FROM calendarios_dias WHERE calendario_id=?", (cid,)
+                    "SELECT dia_semana, horario_id, es_franco FROM calendarios_dias WHERE calendario_id=?", (cid,)
                 ).fetchall()
-                cal_cache[cid] = {r["dia_semana"]: r["horario_id"] for r in dias_cal}
+                cal_cache[cid] = {r["dia_semana"]: dict(r) for r in dias_cal}
 
         # Planificación ya existente en la semana
         existentes = set()
@@ -207,8 +208,9 @@ def generar_semana(fecha: str):
                 if (eid, fecha_dia) in existentes:
                     omitidos += 1
                     continue
-                horario_id = cal_dias.get(i)  # None = franco
-                es_franco = 1 if horario_id is None else 0
+                dia = cal_dias.get(i, {})
+                es_franco = int(dia.get("es_franco", 0))
+                horario_id = None if es_franco else dia.get("horario_id")
                 conn.execute(
                     "INSERT OR IGNORE INTO planificacion (empleado_id, fecha, horario_id, es_franco) VALUES (?,?,?,?)",
                     (eid, fecha_dia, horario_id, es_franco)

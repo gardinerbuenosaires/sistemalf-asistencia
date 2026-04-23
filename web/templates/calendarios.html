@@ -142,7 +142,8 @@ function toast(msg, ms=2500) {
 }
 
 function diaBadge(dia) {
-  if (!dia || dia.horario_id === null) return `<div class="dia-badge franco"><div class="dia-nombre">${DIAS_CORTOS[dia?.dia_semana ?? 0]}</div><div class="dia-horario">FRANCO</div></div>`;
+  if (!dia || dia.es_franco) return `<div class="dia-badge franco"><div class="dia-nombre">${DIAS_CORTOS[dia?.dia_semana ?? 0]}</div><div class="dia-horario">FRANCO</div></div>`;
+  if (!dia.horario_id) return `<div class="dia-badge vacio"><div class="dia-nombre">${DIAS_CORTOS[dia.dia_semana]}</div><div class="dia-horario">—</div></div>`;
   const tipo = dia.horario_tipo || "simple";
   const nombre = (dia.horario_nombre || "?").split(" ")[0];
   return `<div class="dia-badge ${tipo}"><div class="dia-nombre">${DIAS_CORTOS[dia.dia_semana]}</div><div class="dia-horario" title="${dia.horario_nombre}">${nombre}</div></div>`;
@@ -173,31 +174,31 @@ async function cargarLista() {
 }
 
 function buildDiasForm(valoresIniciales = {}) {
+  // valoresIniciales[i] = {horario_id, es_franco}
   const cont = document.getElementById("dias-form");
-  const opts = `<option value="">— Franco —</option>` +
+  const opts = `<option value="FRANCO">— Franco —</option>` +
     horarios.map(h => `<option value="${h.id}">${h.nombre}</option>`).join("");
 
-  cont.innerHTML = DIAS_NOMBRES.map((nombre, i) => {
-    const val = valoresIniciales[i] ?? "";
-    return `
+  cont.innerHTML = DIAS_NOMBRES.map((nombre, i) => `
       <span class="dia-label">${nombre}</span>
       <select class="dia-select" id="dia-${i}" onchange="colorSelect(this)">
         ${opts}
-      </select>`;
-  }).join("");
+      </select>`).join("");
 
-  // Setear valores y colores
   DIAS_NOMBRES.forEach((_, i) => {
     const sel = document.getElementById(`dia-${i}`);
-    sel.value = valoresIniciales[i] ?? "";
+    const v = valoresIniciales[i];
+    if (!v || v.es_franco || !v.horario_id) sel.value = "FRANCO";
+    else sel.value = String(v.horario_id);
     colorSelect(sel);
   });
 }
 
 function colorSelect(sel) {
-  const hid = sel.value;
-  if (!hid) { sel.className = "dia-select franco"; return; }
-  const h = horarios.find(x => x.id == hid);
+  const v = sel.value;
+  if (v === "FRANCO") { sel.className = "dia-select franco"; return; }
+  sel.style.background = "";
+  const h = horarios.find(x => x.id == v);
   sel.className = "dia-select " + (h ? h.tipo : "simple");
 }
 
@@ -218,7 +219,7 @@ async function editarCalendario(id) {
   document.getElementById("f-nombre").value = cal.nombre;
 
   const vals = {};
-  cal.dias.forEach(d => vals[d.dia_semana] = d.horario_id || "");
+  cal.dias.forEach(d => vals[d.dia_semana] = {horario_id: d.horario_id, es_franco: d.es_franco});
   buildDiasForm(vals);
 
   // Mostrar asignación con empleados ya asignados marcados
@@ -243,10 +244,14 @@ async function guardarCalendario() {
   const nombre = document.getElementById("f-nombre").value.trim();
   if (!nombre) { toast("Ingresá el nombre"); return; }
 
-  const dias = Array.from({length:7}, (_,i) => ({
-    dia_semana: i,
-    horario_id: parseInt(document.getElementById(`dia-${i}`).value) || null
-  }));
+  const dias = Array.from({length:7}, (_,i) => {
+    const v = document.getElementById(`dia-${i}`).value;
+    return {
+      dia_semana: i,
+      es_franco:  v === "FRANCO",
+      horario_id: v !== "FRANCO" ? parseInt(v) : null
+    };
+  });
 
   const url = editandoId ? `/api/calendarios/${editandoId}` : "/api/calendarios";
   const method = editandoId ? "PUT" : "POST";

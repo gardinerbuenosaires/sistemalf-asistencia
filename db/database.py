@@ -32,6 +32,27 @@ def init_db():
         conn.executescript("""
 
             -- ================================================================
+            -- ROLES Y PERMISOS
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS roles (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre      TEXT UNIQUE NOT NULL,
+                descripcion TEXT,
+                nivel       INTEGER NOT NULL DEFAULT 1,
+                activo      INTEGER NOT NULL DEFAULT 1,
+                creado_en   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS permisos (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                rol_id  INTEGER NOT NULL,
+                modulo  TEXT NOT NULL,
+                accion  TEXT NOT NULL,
+                UNIQUE (rol_id, modulo, accion),
+                FOREIGN KEY (rol_id) REFERENCES roles(id) ON DELETE CASCADE
+            );
+
+            -- ================================================================
             -- USUARIOS DEL SISTEMA
             -- ================================================================
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -39,10 +60,10 @@ def init_db():
                 nombre        TEXT NOT NULL,
                 email         TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                rol           TEXT NOT NULL CHECK(rol IN (
-                                  'sistema','rrhh','gerencia','administracion','encargado')),
+                rol_id        INTEGER,
                 activo        INTEGER NOT NULL DEFAULT 1,
-                creado_en     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+                creado_en     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                FOREIGN KEY (rol_id) REFERENCES roles(id)
             );
 
             -- ================================================================
@@ -124,6 +145,7 @@ def init_db():
                 calendario_id INTEGER NOT NULL,
                 dia_semana    INTEGER NOT NULL CHECK(dia_semana BETWEEN 0 AND 6),
                 horario_id    INTEGER,
+                es_franco     INTEGER NOT NULL DEFAULT 0,
                 UNIQUE (calendario_id, dia_semana),
                 FOREIGN KEY (calendario_id) REFERENCES calendarios(id),
                 FOREIGN KEY (horario_id)    REFERENCES horarios(id)
@@ -251,6 +273,37 @@ def init_db():
                 ON planificacion (fecha, empleado_id);
 
             -- ================================================================
+            -- RESULTADOS DIARIOS — veredicto por empleado por día
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS resultados_dia (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id           INTEGER NOT NULL,
+                fecha                 TEXT NOT NULL,
+                horario_id            INTEGER,
+                es_franco             INTEGER NOT NULL DEFAULT 0,
+                estado                TEXT NOT NULL DEFAULT 'pendiente',
+                -- bloque 1
+                b1_entrada            TEXT,
+                b1_salida             TEXT,
+                b1_minutos_tarde      INTEGER,
+                b1_salida_anticipada  INTEGER NOT NULL DEFAULT 0,
+                b1_ausente            INTEGER NOT NULL DEFAULT 0,
+                -- bloque 2 (solo turnos cortados)
+                b2_entrada            TEXT,
+                b2_salida             TEXT,
+                b2_minutos_tarde      INTEGER,
+                b2_salida_anticipada  INTEGER NOT NULL DEFAULT 0,
+                b2_ausente            INTEGER NOT NULL DEFAULT 0,
+                procesado_en          TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                UNIQUE (empleado_id, fecha),
+                FOREIGN KEY (empleado_id) REFERENCES empleados(id),
+                FOREIGN KEY (horario_id)  REFERENCES horarios(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_resultados_fecha
+                ON resultados_dia (fecha, empleado_id);
+
+            -- ================================================================
             -- LOG DE SINCRONIZACIÓN
             -- ================================================================
             CREATE TABLE IF NOT EXISTS sync_log (
@@ -279,4 +332,14 @@ def init_db():
                 ON inconsistencias (empleado_id, fecha);
 
         """)
+        _migrate(conn)
     logger.info("Base de datos inicializada: %s", DB_PATH)
+
+
+def _migrate(conn):
+    """Migraciones incrementales para bases de datos existentes."""
+    cols_cd = {r[1] for r in conn.execute("PRAGMA table_info(calendarios_dias)").fetchall()}
+    if "es_franco" not in cols_cd:
+        conn.execute("ALTER TABLE calendarios_dias ADD COLUMN es_franco INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE calendarios_dias SET es_franco=1 WHERE horario_id IS NULL")
+        logger.info("Migración: columna es_franco agregada a calendarios_dias")

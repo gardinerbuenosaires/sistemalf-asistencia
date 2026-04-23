@@ -1,9 +1,10 @@
 import logging
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Cookie, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from config import API_HOST, API_PORT
 from db.database import init_db
@@ -12,6 +13,9 @@ from api.horarios import router as horarios_router
 from api.planificacion import router as planificacion_router
 from api.calendarios import router as calendarios_router
 from api.empleados import router as empleados_router
+from api.resultados import router as resultados_router
+from api.auth import router as auth_router
+from auth.core import decode_token, ensure_admin, check_page_auth
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,9 +26,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    ensure_admin()
     start_scheduler()
     yield
 
@@ -40,31 +47,48 @@ app.include_router(horarios_router)
 app.include_router(planificacion_router)
 app.include_router(calendarios_router)
 app.include_router(empleados_router)
+app.include_router(resultados_router)
+app.include_router(auth_router)
 
+
+def _auth(request: Request, modulo: str, accion: str = "ver"):
+    return check_page_auth(request.cookies.get("session"), modulo, accion)
+
+
+@app.get("/login", include_in_schema=False)
+def page_login(): return FileResponse("web/templates/login.html")
 
 @app.get("/", include_in_schema=False)
-def root():
-    return FileResponse("web/templates/index.html")
-
+def root(request: Request):
+    return FileResponse("web/templates/index.html") if _auth(request, "dashboard") else RedirectResponse("/login")
 
 @app.get("/horarios", include_in_schema=False)
-def page_horarios():
-    return FileResponse("web/templates/horarios.html")
-
+def page_horarios(request: Request):
+    return FileResponse("web/templates/horarios.html") if _auth(request, "horarios") else RedirectResponse("/login")
 
 @app.get("/planificacion", include_in_schema=False)
-def page_planificacion():
-    return FileResponse("web/templates/planificacion.html")
-
+def page_planificacion(request: Request):
+    return FileResponse("web/templates/planificacion.html") if _auth(request, "planificacion") else RedirectResponse("/login")
 
 @app.get("/calendarios", include_in_schema=False)
-def page_calendarios():
-    return FileResponse("web/templates/calendarios.html")
-
+def page_calendarios(request: Request):
+    return FileResponse("web/templates/calendarios.html") if _auth(request, "calendarios") else RedirectResponse("/login")
 
 @app.get("/empleados", include_in_schema=False)
-def page_empleados():
-    return FileResponse("web/templates/empleados.html")
+def page_empleados(request: Request):
+    return FileResponse("web/templates/empleados.html") if _auth(request, "empleados") else RedirectResponse("/login")
+
+@app.get("/asistencia", include_in_schema=False)
+def page_asistencia(request: Request):
+    return FileResponse("web/templates/asistencia.html") if _auth(request, "asistencia") else RedirectResponse("/login")
+
+@app.get("/usuarios", include_in_schema=False)
+def page_usuarios(request: Request):
+    return FileResponse("web/templates/usuarios.html") if _auth(request, "usuarios") else RedirectResponse("/login")
+
+@app.get("/roles", include_in_schema=False)
+def page_roles(request: Request):
+    return FileResponse("web/templates/roles.html") if _auth(request, "roles") else RedirectResponse("/login")
 
 
 # --- Rutas de la API (se expanden en etapas siguientes) ---
@@ -95,7 +119,9 @@ def sync_log(limit: int = 20):
 
 
 @app.get("/api/fichajes", tags=["fichajes"])
-def get_fichajes(user_id: str | None = None, fecha: str | None = None, limit: int = 100):
+def get_fichajes(user_id: str | None = None, fecha: str | None = None,
+                 fecha_desde: str | None = None, fecha_hasta: str | None = None,
+                 limit: int = 100):
     """Consulta fichajes con filtros opcionales."""
     from db.database import db_session
     clauses = []
@@ -106,6 +132,12 @@ def get_fichajes(user_id: str | None = None, fecha: str | None = None, limit: in
     if fecha:
         clauses.append("date(timestamp) = ?")
         params.append(fecha)
+    if fecha_desde:
+        clauses.append("date(timestamp) >= ?")
+        params.append(fecha_desde)
+    if fecha_hasta:
+        clauses.append("date(timestamp) <= ?")
+        params.append(fecha_hasta)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     params.append(limit)
     with db_session() as conn:

@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asistencia — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem; }
+  header { background: #2c3e50; color: white; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .88rem; }
+  header a:hover { color: white; }
+  header h1 { font-size: 1.1rem; flex: 1; }
+
+  main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+  /* Filtros */
+  .filtros { background: white; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 16px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .filtros .fg { display: flex; flex-direction: column; gap: 3px; }
+  .filtros label { font-size: .75rem; color: #666; font-weight: bold; }
+  .filtros select, .filtros input[type=date] { padding: 7px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; }
+  .filtros select { min-width: 220px; }
+  .btn { padding: 7px 16px; border: none; border-radius: 5px; cursor: pointer; font-size: .85rem; font-weight: bold; }
+  .btn-primary { background: #2c3e50; color: white; }
+  .btn-primary:hover { background: #3d5166; }
+  .btn-green { background: #27ae60; color: white; }
+  .btn-green:hover { background: #219a52; }
+
+  /* Cards resumen */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card { background: white; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,.1); text-align: center; }
+  .card .label { font-size: .72rem; color: #888; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+  .card .valor { font-size: 1.6rem; font-weight: bold; }
+  .card.ok    .valor { color: #27ae60; }
+  .card.tarde .valor { color: #e67e22; }
+  .card.aus   .valor { color: #e74c3c; }
+  .card.franco .valor { color: #3498db; }
+
+  /* Tabla */
+  .tabla-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); overflow: hidden; }
+  .tabla-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #eee; }
+  .tabla-header h2 { font-size: .9rem; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { padding: 9px 10px; text-align: left; background: #f8f9fa; border-bottom: 2px solid #dee2e6; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #666; white-space: nowrap; }
+  tbody td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  tbody tr:hover td { background: #fafafa; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .emp-cell { font-weight: bold; }
+  .emp-cargo { font-size: .75rem; color: #888; margin-top: 1px; }
+
+  /* Badges de estado */
+  .estado { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: .75rem; font-weight: bold; white-space: nowrap; }
+  .estado.ok                      { background: #d4edda; color: #155724; }
+  .estado.tarde                   { background: #fde8cc; color: #7d4800; }
+  .estado.ausente                 { background: #f8d7da; color: #721c24; }
+  .estado.franco                  { background: #cce5ff; color: #004085; }
+  .estado.salida_anticipada       { background: #fff3cd; color: #856404; }
+  .estado.tarde_y_salida_anticipada { background: #f5c6cb; color: #7d0000; }
+  .estado.b1_ausente, .estado.b2_ausente { background: #e2d9f3; color: #4a235a; }
+  .estado.sin_horario             { background: #e2e3e5; color: #383d41; }
+
+  .hora { font-family: monospace; font-size: .82rem; }
+  .hora.ok   { color: #155724; }
+  .hora.tard { color: #c0392b; }
+  .hora.null { color: #ccc; }
+
+  .tard-badge { font-size: .75rem; background: #fde8cc; color: #7d4800; padding: 1px 6px; border-radius: 8px; margin-left: 4px; }
+
+  .empty { text-align: center; padding: 40px; color: #aaa; }
+
+  /* Fichajes agrupados */
+  .row-impar td { background: #fff9f4; }
+  .row-impar:hover td { background: #fff3e6 !important; }
+  .fich-hora { font-family: monospace; font-size: .85rem; }
+  .fich-vacio { color: #e0e0e0; font-family: monospace; }
+  .cnt-impar { color: #c0392b; font-weight: bold; }
+  .cnt-par   { color: #888; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab { padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: .85rem; border: 2px solid transparent; background: white; color: #555; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .tab.activo { background: #2c3e50; color: white; border-color: #2c3e50; }
+
+  #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 7px; display: none; z-index: 200; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/">&#8592; Inicio</a>
+  <h1>Asistencia</h1>
+  <nav style="display:flex;gap:14px">
+    <a href="/planificacion">Planificación</a>
+    <a href="/empleados">Empleados</a>
+  </nav>
+</header>
+
+<main>
+
+  <!-- Filtros -->
+  <div class="filtros">
+    <div class="fg">
+      <label>Empleado</label>
+      <select id="f-empleado">
+        <option value="">Todos los empleados</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Desde</label>
+      <input type="date" id="f-desde">
+    </div>
+    <div class="fg">
+      <label>Hasta</label>
+      <input type="date" id="f-hasta">
+    </div>
+    <button class="btn btn-primary" onclick="cargar()">Filtrar</button>
+    <button class="btn btn-green" onclick="procesar()" title="Re-procesar el período seleccionado contra la planificación">&#8635; Procesar</button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab activo" id="tab-resultados" onclick="switchTab('resultados')">Resultados evaluados</div>
+    <div class="tab" id="tab-fichajes" onclick="switchTab('fichajes')">Fichajes crudos</div>
+  </div>
+
+  <!-- Cards -->
+  <div class="cards" id="cards" style="display:none">
+    <div class="card"><div class="label">Planificados</div><div class="valor" id="c-total">—</div></div>
+    <div class="card ok"><div class="label">OK</div><div class="valor" id="c-ok">—</div></div>
+    <div class="card tarde"><div class="label">Tarde</div><div class="valor" id="c-tarde">—</div></div>
+    <div class="card aus"><div class="label">Ausentes</div><div class="valor" id="c-aus">—</div></div>
+    <div class="card franco"><div class="label">Francos</div><div class="valor" id="c-franco">—</div></div>
+  </div>
+
+  <!-- Tabla resultados -->
+  <div class="tabla-wrap" id="wrap-resultados">
+    <div class="tabla-header">
+      <h2 id="tabla-titulo">Resultados</h2>
+      <span id="tabla-count" style="font-size:.78rem;color:#888"></span>
+    </div>
+    <div id="tabla-body"><div class="empty">Aplicá un filtro para ver resultados.</div></div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+const hoy = new Date().toISOString().slice(0,10);
+const primerDiaMes = hoy.slice(0,7) + "-01";
+let tabActual = "resultados";
+let todosEmpleados = [];
+
+document.getElementById("f-desde").value = primerDiaMes;
+document.getElementById("f-hasta").value = hoy;
+
+function toast(msg, ms=3000) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display="none", ms);
+}
+
+function switchTab(tab) {
+  tabActual = tab;
+  document.getElementById("tab-resultados").className = "tab" + (tab==="resultados"?" activo":"");
+  document.getElementById("tab-fichajes").className   = "tab" + (tab==="fichajes"  ?" activo":"");
+  document.getElementById("cards").style.display = tab==="resultados" ? "grid" : "none";
+  cargar();
+}
+
+function estadoBadge(estado) {
+  if (!estado) return '<span class="estado sin_horario">—</span>';
+  const labels = {
+    ok: "OK", tarde: "Tarde", ausente: "Ausente", franco: "Franco",
+    salida_anticipada: "Salida anticipada",
+    tarde_y_salida_anticipada: "Tarde + s.anticipada",
+    b1_ausente: "Falta bloque 1", b2_ausente: "Falta bloque 2",
+    sin_horario: "Sin horario"
+  };
+  return `<span class="estado ${estado}">${labels[estado]||estado}</span>`;
+}
+
+function fmtHora(ts) {
+  if (!ts) return '<span class="hora null">—</span>';
+  return `<span class="hora">${ts.slice(11,16)}</span>`;
+}
+
+function fmtTarde(min) {
+  if (!min) return "";
+  const h = Math.floor(min/60), m = min%60;
+  return `<span class="tard-badge">+${h>0?h+"h":""}${m>0?m+"min":""}</span>`;
+}
+
+async function cargarEmpleados() {
+  const res = await fetch("/api/empleados");
+  todosEmpleados = await res.json();
+  const sel = document.getElementById("f-empleado");
+  todosEmpleados.forEach(e => {
+    const opt = document.createElement("option");
+    opt.value = e.id;
+    opt.textContent = `${e.apellido}${e.nombre ? ", "+e.nombre.split(" ")[0] : ""} ${e.cargo ? "("+e.cargo+")" : ""}`;
+    sel.appendChild(opt);
+  });
+}
+
+async function cargar() {
+  if (tabActual === "resultados") await cargarResultados();
+  else await cargarFichajes();
+}
+
+async function cargarResultados() {
+  const desde  = document.getElementById("f-desde").value;
+  const hasta  = document.getElementById("f-hasta").value;
+  const empId  = document.getElementById("f-empleado").value;
+  if (!desde || !hasta) return;
+
+  let url, rows;
+  if (empId) {
+    url = `/api/resultados/empleado/${empId}?fecha_desde=${desde}&fecha_hasta=${hasta}`;
+  } else {
+    url = `/api/resultados/semana?fecha=${desde}`;
+    // Para rangos multi-semana hacemos el resumen
+  }
+
+  // Para rango general usamos resumen
+  if (!empId && desde !== hasta) {
+    const res = await fetch(`/api/resultados/resumen?fecha_desde=${desde}&fecha_hasta=${hasta}`);
+    rows = await res.json();
+    renderResumen(rows, desde, hasta);
+    return;
+  }
+
+  const res = await fetch(url);
+  rows = await res.json();
+  renderDetalle(rows);
+}
+
+function renderResumen(rows, desde, hasta) {
+  document.getElementById("cards").style.display = "none";
+  document.getElementById("tabla-titulo").textContent = `Resumen por empleado`;
+  document.getElementById("tabla-count").textContent = `${desde} al ${hasta} · ${rows.length} empleados`;
+
+  if (!rows.length) { document.getElementById("tabla-body").innerHTML = '<div class="empty">Sin datos para el período.</div>'; return; }
+
+  const html = `<table>
+    <thead><tr>
+      <th>Empleado</th><th>Cargo</th>
+      <th style="text-align:center">Planificados</th>
+      <th style="text-align:center">OK</th>
+      <th style="text-align:center">Francos</th>
+      <th style="text-align:center">Tarde</th>
+      <th style="text-align:center">Ausentes</th>
+      <th style="text-align:center">S.Anticipada</th>
+      <th style="text-align:center">Min. tarde</th>
+    </tr></thead>
+    <tbody>${rows.filter(r => r.dias_planificados > 0).map(r => `
+      <tr>
+        <td class="emp-cell" style="cursor:pointer" onclick="verEmpleado(${r.id})">${r.apellido}${r.nombre?", "+r.nombre.split(" ")[0]:""}</td>
+        <td style="color:#888;font-size:.8rem">${r.cargo||"—"}</td>
+        <td style="text-align:center">${r.dias_planificados}</td>
+        <td style="text-align:center;color:#27ae60;font-weight:bold">${r.dias_ok}</td>
+        <td style="text-align:center;color:#3498db">${r.dias_franco}</td>
+        <td style="text-align:center;color:#e67e22;font-weight:bold">${r.dias_tarde||0}</td>
+        <td style="text-align:center;color:#e74c3c;font-weight:bold">${r.dias_ausente}</td>
+        <td style="text-align:center;color:#856404">${r.dias_salida_ant||0}</td>
+        <td style="text-align:center">${r.total_minutos_tarde||0}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table>`;
+  document.getElementById("tabla-body").innerHTML = html;
+}
+
+function renderDetalle(rows) {
+  document.getElementById("tabla-count").textContent = `${rows.length} registros`;
+
+  // Cards resumen
+  const noFranco = rows.filter(r => !r.es_franco);
+  document.getElementById("cards").style.display = "grid";
+  document.getElementById("c-total").textContent  = noFranco.length;
+  document.getElementById("c-ok").textContent     = rows.filter(r=>r.estado==="ok").length;
+  document.getElementById("c-tarde").textContent  = rows.filter(r=>r.estado&&r.estado.includes("tarde")).length;
+  document.getElementById("c-aus").textContent    = rows.filter(r=>r.estado==="ausente").length;
+  document.getElementById("c-franco").textContent = rows.filter(r=>r.estado==="franco").length;
+
+  if (!rows.length) { document.getElementById("tabla-body").innerHTML = '<div class="empty">Sin resultados para el período.</div>'; return; }
+
+  const tieneNombre = rows[0].apellido !== undefined;
+  const html = `<table>
+    <thead><tr>
+      ${tieneNombre ? "<th>Empleado</th>" : ""}
+      <th>Fecha</th><th>Horario</th><th>Estado</th>
+      <th>Entrada B1</th><th>Salida B1</th>
+      <th>Entrada B2</th><th>Salida B2</th>
+      <th>Tardanza</th>
+    </tr></thead>
+    <tbody>${rows.map(r => `
+      <tr>
+        ${tieneNombre ? `<td><div class="emp-cell">${r.apellido}${r.nombre?", "+r.nombre.split(" ")[0]:""}</div><div class="emp-cargo">${r.cargo||""}</div></td>` : ""}
+        <td>${fmtFecha(r.fecha)}</td>
+        <td style="font-size:.78rem;color:#555">${r.horario_nombre||"—"}</td>
+        <td>${estadoBadge(r.estado)}</td>
+        <td>${fmtHora(r.b1_entrada)}</td>
+        <td>${fmtHora(r.b1_salida)}</td>
+        <td>${fmtHora(r.b2_entrada)}</td>
+        <td>${fmtHora(r.b2_salida)}</td>
+        <td>${fmtTarde(r.b1_minutos_tarde)}${fmtTarde(r.b2_minutos_tarde)}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table>`;
+  document.getElementById("tabla-body").innerHTML = html;
+}
+
+async function cargarFichajes() {
+  const desde = document.getElementById("f-desde").value;
+  const hasta = document.getElementById("f-hasta").value;
+  const empId = document.getElementById("f-empleado").value;
+  document.getElementById("cards").style.display = "none";
+
+  let url = `/api/fichajes?limit=3000`;
+  if (empId) {
+    const emp = todosEmpleados.find(e => e.id == empId);
+    if (emp?.user_id) url += `&user_id=${emp.user_id}`;
+  }
+  if (desde) url += `&fecha_desde=${desde}`;
+  if (hasta) url += `&fecha_hasta=${hasta}`;
+
+  const res = await fetch(url);
+  const rows = await res.json();
+
+  // Agrupar por empleado + fecha
+  const empMap = Object.fromEntries(todosEmpleados.map(e => [e.user_id, e]));
+  const grupos = {};
+  for (const f of rows) {
+    const fecha = f.timestamp.slice(0, 10);
+    const key   = `${f.user_id}_${fecha}`;
+    if (!grupos[key]) {
+      const e = empMap[f.user_id];
+      grupos[key] = {
+        fecha,
+        nombre: e ? `${e.apellido}${e.nombre ? ", "+e.nombre.split(" ")[0] : ""}` : f.user_id,
+        cargo:  e?.cargo || "",
+        ts: []
+      };
+    }
+    grupos[key].ts.push(f.timestamp);
+  }
+
+  // Ordenar por fecha asc, luego nombre
+  const lista = Object.values(grupos)
+    .map(g => { g.ts.sort(); return g; })
+    .sort((a, b) => a.fecha !== b.fecha ? a.fecha.localeCompare(b.fecha) : a.nombre.localeCompare(b.nombre));
+
+  const maxCols = Math.min(Math.max(4, ...lista.map(g => g.ts.length)), 8);
+
+  document.getElementById("tabla-titulo").textContent = "Fichajes por persona por día";
+  document.getElementById("tabla-count").textContent =
+    `${lista.length} persona-días · ${rows.length} registros` +
+    (rows.length >= 3000 ? " (límite alcanzado, acotar período)" : "");
+
+  if (!lista.length) {
+    document.getElementById("tabla-body").innerHTML = '<div class="empty">Sin fichajes para el período.</div>';
+    return;
+  }
+
+  const colHeaders = Array.from({length: maxCols}, (_, i) =>
+    `<th style="text-align:center">${i+1}°</th>`).join("");
+
+  const bodyRows = lista.map(g => {
+    const n      = g.ts.length;
+    const impar  = n % 2 !== 0;
+    const celdas = Array.from({length: maxCols}, (_, i) =>
+      i < n
+        ? `<td style="text-align:center" class="fich-hora">${g.ts[i].slice(11,16)}</td>`
+        : `<td style="text-align:center" class="fich-vacio">—</td>`
+    ).join("");
+    return `<tr class="${impar ? "row-impar" : ""}">
+      <td><div class="emp-cell">${g.nombre}</div><div class="emp-cargo">${g.cargo}</div></td>
+      <td>${fmtFecha(g.fecha)}</td>
+      ${celdas}
+      <td style="text-align:center" class="${impar ? "cnt-impar" : "cnt-par"}">${n}${impar ? " ⚠" : ""}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("tabla-body").innerHTML = `<table>
+    <thead><tr>
+      <th>Empleado</th><th>Fecha</th>${colHeaders}<th style="text-align:center">N°</th>
+    </tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table>`;
+}
+
+function fmtFecha(iso) {
+  if (!iso) return "—";
+  const [y,m,d] = iso.split("-");
+  const dias = ["dom","lun","mar","mié","jue","vie","sáb"];
+  const dia = dias[new Date(iso+"T12:00:00").getDay()];
+  return `<span title="${iso}">${dia} ${d}/${m}</span>`;
+}
+
+function verEmpleado(id) {
+  document.getElementById("f-empleado").value = id;
+  cargarResultados();
+}
+
+async function procesar() {
+  const desde = document.getElementById("f-desde").value;
+  const hasta = document.getElementById("f-hasta").value;
+  if (!desde || !hasta) { toast("Seleccioná el período"); return; }
+
+  // Si el período incluye hoy, avisar sobre bloques que aún no cerraron
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (hasta >= hoy) {
+    const bRes = await fetch("/api/resultados/bloques-pendientes");
+    const pendientes = await bRes.json();
+    if (pendientes.length) {
+      const lista = pendientes.map(p =>
+        `• ${p.horario} bloque ${p.bloque} — salida ${p.hora_salida}`
+      ).join("\n");
+      const ok = confirm(
+        `Atención: los siguientes bloques aún no cerraron su horario de salida:\n\n${lista}\n\n` +
+        `Los resultados de esos empleados pueden estar incompletos y cambiar cuando ficheen la salida. ` +
+        `El sistema los re-evaluará automáticamente al cierre de cada bloque.\n\n` +
+        `¿Procesamos igual?`
+      );
+      if (!ok) return;
+    }
+  }
+
+  toast("Procesando...", 10000);
+  const res = await fetch(`/api/resultados/procesar?fecha_desde=${desde}&fecha_hasta=${hasta}`, { method: "POST" });
+  const r = await res.json();
+  toast(`Procesado: ${r.evaluados} días-empleado — ${r.ok} OK, ${r.tarde} tarde, ${r.ausente} ausentes`);
+  cargar();
+}
+
+// Ajustar el endpoint de fichajes para aceptar rango
+async function init() {
+  await cargarEmpleados();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -111,6 +111,7 @@ const hoy = new Date().toISOString().slice(0,10);
 let fechaRef = hoy;
 let horarios = [];
 let modalCtx = null;
+let planData = {};  // clave: "empleadoId_fecha"
 
 function toast(msg, ms=2500) {
   const el = document.getElementById("toast");
@@ -152,8 +153,9 @@ function celda(plan, fecha, empleadoId, empleadoNombre) {
     txt = plan.horario_nombre || "?";
   }
   if (esHoy) cls += " hoy";
+  const nombreEsc = empleadoNombre.replace(/'/g, "\\'");
   return `<span class="celda ${cls}"
-    onclick="abrirModal(${empleadoId}, '${fecha}', '${empleadoNombre.replace(/'/g,"\\'")}', ${plan ? JSON.stringify(JSON.stringify(plan)) : 'null'})"
+    onclick="abrirModal(${empleadoId}, '${fecha}', '${nombreEsc}')"
     title="${txt}">${txt}</span>`;
 }
 
@@ -161,6 +163,14 @@ async function cargar() {
   const res = await fetch(`/api/planificacion/semana?fecha=${fechaRef}`);
   const data = await res.json();
   horarios = data.horarios;
+
+  // Indexar plan por clave para el modal
+  planData = {};
+  for (const emp of data.empleados) {
+    for (const [fecha, p] of Object.entries(emp.dias)) {
+      if (p) planData[`${emp.empleado.id}_${fecha}`] = p;
+    }
+  }
 
   const lun = new Date(data.lunes + "T12:00:00");
   const dom = new Date(data.dias[6] + "T12:00:00");
@@ -197,8 +207,8 @@ async function cargar() {
   tbody.innerHTML = html;
 }
 
-function abrirModal(empleadoId, fecha, nombre, planJson) {
-  const plan = planJson ? JSON.parse(planJson) : null;
+function abrirModal(empleadoId, fecha, nombre) {
+  const plan = planData[`${empleadoId}_${fecha}`] || null;
   modalCtx = { empleadoId, fecha };
 
   document.getElementById("modal-nombre").textContent = nombre;

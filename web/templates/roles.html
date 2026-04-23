@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roles — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  header { background: #2c3e50; color: white; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .9rem; }
+  header a:hover { color: white; }
+  header h1 { font-size: 1.1rem; flex: 1; }
+
+  main { padding: 20px; max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+
+  .panel { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+  .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid #eee; }
+  .panel-header h2 { font-size: .95rem; }
+
+  .rol-item { display: flex; align-items: center; justify-content: space-between; padding: 11px 16px; cursor: pointer; border-bottom: 1px solid #f5f5f5; gap: 10px; }
+  .rol-item:hover { background: #f8f9fa; }
+  .rol-item.activo { background: #eef2f5; border-left: 3px solid #2c3e50; }
+  .rol-nombre { font-weight: bold; font-size: .88rem; }
+  .rol-nivel { font-size: .72rem; color: #aaa; }
+  .rol-desc { font-size: .75rem; color: #888; margin-top: 2px; }
+
+  /* Editor */
+  .editor { padding: 20px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr 80px; gap: 12px; margin-bottom: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 3px; }
+  label { font-size: .78rem; color: #666; font-weight: bold; }
+  input[type=text], input[type=number], textarea {
+    padding: 7px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: .88rem; width: 100%;
+  }
+  input:focus, textarea:focus { outline: none; border-color: #2c3e50; }
+
+  /* Matriz de permisos */
+  .matriz-titulo { font-size: .78rem; font-weight: bold; color: #666; text-transform: uppercase;
+                   letter-spacing: .05em; margin: 16px 0 10px; }
+  .matriz { width: 100%; border-collapse: collapse; }
+  .matriz th { padding: 7px 10px; background: #f8f9fa; border-bottom: 2px solid #dee2e6;
+               font-size: .75rem; text-transform: uppercase; color: #666; text-align: center; }
+  .matriz th.col-modulo { text-align: left; min-width: 130px; }
+  .matriz td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; text-align: center; vertical-align: middle; }
+  .matriz td.modulo-name { text-align: left; font-size: .85rem; font-weight: bold; }
+  .matriz tr:hover td { background: #fafafa; }
+
+  .chk-perm { width: 18px; height: 18px; cursor: pointer; accent-color: #2c3e50; }
+  .col-all { background: #f0f4f8; }
+
+  .btn { padding: 8px 16px; border: none; border-radius: 5px; cursor: pointer; font-size: .85rem; font-weight: bold; }
+  .btn-primary   { background: #2c3e50; color: white; }
+  .btn-primary:hover { background: #3d5166; }
+  .btn-secondary { background: #eee; color: #555; }
+  .btn-danger    { background: #e74c3c; color: white; }
+  .btn-sm { padding: 4px 12px; font-size: .78rem; font-weight: normal; }
+
+  .form-footer { display: flex; gap: 8px; justify-content: flex-end; padding-top: 14px; border-top: 1px solid #eee; margin-top: 8px; }
+  .empty { padding: 30px; text-align: center; color: #aaa; font-size: .88rem; }
+  #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 7px; display: none; z-index: 200; }
+
+  .nivel-bar { height: 4px; border-radius: 2px; background: #2c3e50; margin-top: 3px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/">&#8592; Inicio</a>
+  <h1>Gestión de roles</h1>
+  <a href="/usuarios">Usuarios</a>
+</header>
+
+<main>
+  <!-- Lista de roles -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Roles</h2>
+      <button class="btn btn-primary btn-sm" onclick="nuevoRol()">+ Nuevo</button>
+    </div>
+    <div id="roles-list"><div class="empty">Cargando...</div></div>
+  </div>
+
+  <!-- Editor -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2 id="editor-titulo">Seleccioná un rol</h2>
+      <div style="display:flex;gap:8px" id="editor-acciones" style="display:none"></div>
+    </div>
+    <div id="editor-contenido">
+      <div class="empty">Seleccioná un rol de la lista o creá uno nuevo.</div>
+    </div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const MODULO_LABELS = {
+  dashboard: "Dashboard", empleados: "Empleados", horarios: "Horarios",
+  planificacion: "Planificación", calendarios: "Calendarios",
+  asistencia: "Asistencia", resultados: "Resultados",
+  usuarios: "Usuarios", roles: "Roles", sync: "Sincronización"
+};
+const ACCION_LABELS = { ver: "Ver", editar: "Editar", eliminar: "Eliminar", procesar: "Procesar" };
+
+let roles = [];
+let modulos = [];
+let acciones = [];
+let editandoId = null;
+
+function toast(msg, ms=2500) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display="none", ms);
+}
+
+async function cargar() {
+  const [rRes, mRes] = await Promise.all([
+    fetch("/api/roles"),
+    fetch("/api/roles/modulos")
+  ]);
+  roles   = await rRes.json();
+  const m = await mRes.json();
+  modulos  = m.modulos;
+  acciones = m.acciones;
+  renderLista();
+}
+
+function renderLista() {
+  const cont = document.getElementById("roles-list");
+  if (!roles.length) { cont.innerHTML = '<div class="empty">Sin roles.</div>'; return; }
+  cont.innerHTML = roles.map(r => `
+    <div class="rol-item${r.id===editandoId?" activo":""}" id="rol-item-${r.id}" onclick="editarRol(${r.id})">
+      <div style="flex:1">
+        <div class="rol-nombre">${r.nombre}</div>
+        <div class="rol-desc">${r.descripcion||""}</div>
+        <div class="nivel-bar" style="width:${Math.min(r.nivel,100)}%"></div>
+      </div>
+      <div class="rol-nivel">Nivel ${r.nivel}</div>
+    </div>`).join("");
+}
+
+function nuevoRol() {
+  editandoId = null;
+  document.getElementById("editor-titulo").textContent = "Nuevo rol";
+  document.querySelectorAll(".rol-item").forEach(el=>el.classList.remove("activo"));
+  renderEditor();
+}
+
+function editarRol(id) {
+  editandoId = id;
+  const rol = roles.find(r=>r.id===id);
+  document.getElementById("editor-titulo").textContent = rol.nombre;
+  document.querySelectorAll(".rol-item").forEach(el=>el.classList.remove("activo"));
+  document.getElementById(`rol-item-${id}`)?.classList.add("activo");
+  renderEditor(rol);
+}
+
+function renderEditor(rol={}) {
+  const permsActuales = new Set((rol.permisos||[]).map(p=>`${p.modulo}|${p.accion}`));
+
+  const html = `
+  <div class="editor">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Nombre del rol</label>
+        <input type="text" id="f-nombre" value="${rol.nombre||""}">
+      </div>
+      <div class="form-group">
+        <label>Descripción</label>
+        <input type="text" id="f-desc" value="${rol.descripcion||""}">
+      </div>
+      <div class="form-group">
+        <label>Nivel</label>
+        <input type="number" id="f-nivel" value="${rol.nivel||1}" min="1" max="100">
+      </div>
+    </div>
+
+    <div class="matriz-titulo">Permisos</div>
+    <table class="matriz">
+      <thead>
+        <tr>
+          <th class="col-modulo">Módulo</th>
+          ${acciones.map(a=>`<th>${ACCION_LABELS[a]||a}</th>`).join("")}
+          <th class="col-all">Todo</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${modulos.map(m => {
+          const todosCheck = acciones.every(a => permsActuales.has(`${m}|${a}`));
+          return `<tr>
+            <td class="modulo-name">${MODULO_LABELS[m]||m}</td>
+            ${acciones.map(a => `
+              <td>
+                <input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
+                  ${permsActuales.has(`${m}|${a}`)?" checked":""}
+                  onchange="onPermChange(this)">
+              </td>`).join("")}
+            <td class="col-all">
+              <input type="checkbox" class="chk-all" data-m="${m}"
+                ${todosCheck?" checked":""}
+                onchange="toggleModulo(this,'${m}')">
+            </td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+
+    <div class="form-footer">
+      ${rol.id ? `<button class="btn btn-danger btn-sm" onclick="eliminar(${rol.id})">Eliminar rol</button>` : ""}
+      <button class="btn btn-secondary" onclick="cancelar()">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardar()">Guardar</button>
+    </div>
+  </div>`;
+
+  document.getElementById("editor-contenido").innerHTML = html;
+}
+
+function onPermChange(chk) {
+  const m = chk.dataset.m;
+  const todos = document.querySelectorAll(`.chk-perm[data-m="${m}"]`);
+  const allChecked = [...todos].every(c=>c.checked);
+  document.querySelector(`.chk-all[data-m="${m}"]`).checked = allChecked;
+}
+
+function toggleModulo(chk, modulo) {
+  const checked = chk.checked;
+  document.querySelectorAll(`.chk-perm[data-m="${modulo}"]`).forEach(c => c.checked = checked);
+}
+
+function cancelar() {
+  editandoId = null;
+  document.getElementById("editor-titulo").textContent = "Seleccioná un rol";
+  document.getElementById("editor-contenido").innerHTML = '<div class="empty">Seleccioná un rol o creá uno nuevo.</div>';
+  document.querySelectorAll(".rol-item").forEach(el=>el.classList.remove("activo"));
+}
+
+async function guardar() {
+  const nombre = document.getElementById("f-nombre").value.trim();
+  const desc   = document.getElementById("f-desc").value.trim();
+  const nivel  = parseInt(document.getElementById("f-nivel").value) || 1;
+  if (!nombre) { toast("El nombre es obligatorio"); return; }
+
+  // Guardar o crear el rol
+  let rid = editandoId;
+  if (rid) {
+    const r = await fetch(`/api/roles/${rid}`, {
+      method: "PUT",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({nombre, descripcion: desc, nivel})
+    });
+    if (!r.ok) { toast("Error al guardar"); return; }
+  } else {
+    const r = await fetch("/api/roles", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({nombre, descripcion: desc, nivel})
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(()=>({}));
+      toast("Error: " + (e.detail||"desconocido")); return;
+    }
+    const data = await r.json();
+    rid = data.id;
+    editandoId = rid;
+  }
+
+  // Guardar permisos
+  const permisos = [...document.querySelectorAll(".chk-perm:checked")].map(c => ({
+    modulo: c.dataset.m, accion: c.dataset.a
+  }));
+  const pr = await fetch(`/api/roles/${rid}/permisos`, {
+    method: "PUT",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({permisos})
+  });
+  if (!pr.ok) { toast("Error al guardar permisos"); return; }
+
+  toast("Rol guardado");
+  await cargar();
+  document.getElementById(`rol-item-${rid}`)?.classList.add("activo");
+  editarRol(rid);
+}
+
+async function eliminar(id) {
+  const rol = roles.find(r=>r.id===id);
+  if (!confirm(`¿Eliminar el rol "${rol?.nombre}"?`)) return;
+  const res = await fetch(`/api/roles/${id}`, { method:"DELETE" });
+  if (res.ok) { toast("Rol eliminado"); cancelar(); await cargar(); }
+  else { const e=await res.json().catch(()=>({})); toast("Error: "+(e.detail||"desconocido")); }
+}
+
+cargar();
+</script>
+</body>
+</html>

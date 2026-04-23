@@ -51,6 +51,10 @@
     <a href="/planificacion" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Planificación</a>
     <a href="/calendarios" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Calendarios</a>
     <a href="/empleados" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Empleados</a>
+    <a href="/asistencia" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Asistencia</a>
+    <a href="/usuarios" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Usuarios</a>
+    <span id="user-info" style="font-size:.78rem;opacity:.7;margin-left:8px"></span>
+    <a href="#" onclick="logout()" style="color:rgba(255,255,255,.6);font-size:.8rem;text-decoration:none">Salir</a>
     <span id="sync-status" style="font-size:.85rem;opacity:.8">Cargando...</span>
   </nav>
 </header>
@@ -121,6 +125,15 @@
 
 <script>
 const today = new Date().toISOString().slice(0, 10);
+
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  window.location.href = "/login";
+}
+
+fetch("/api/auth/me").then(r=>r.ok?r.json():null).then(u=>{
+  if (u) document.getElementById("user-info").textContent = u.nombre;
+});
 document.getElementById("filter-fecha").value = today;
 
 async function api(path) {

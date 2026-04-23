@@ -114,8 +114,11 @@
 <div id="toast"></div>
 
 <script>
+const DIAS_NOMBRES = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+
 let todos = [];
 let calendarios = [];
+let horarios = [];
 let editandoId = null;
 let editandoActivo = 1;
 
@@ -168,8 +171,35 @@ function buildCalendarioSection(asignaciones = []) {
   );
   const historial = asignaciones.filter(a => a !== vigente).slice(0, 3);
 
+  const diasOpts = `<option value="FRANCO">— Franco —</option>` +
+    horarios.map(h => `<option value="${h.id}">${h.nombre}</option>`).join("");
+
   let html = `<div class="form-section">
-    <div class="form-section-title">Calendario asignado</div>`;
+    <div class="form-section-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Calendario asignado</span>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="toggleNuevoCalendario()">+ Crear nuevo</button>
+    </div>
+
+    <div id="nuevo-cal-panel" style="display:none;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;padding:14px;margin-bottom:14px">
+      <div class="form-group" style="margin-bottom:10px">
+        <label>Nombre del calendario</label>
+        <input type="text" id="nuevo-cal-nombre" placeholder="Ej: Mozo — Franco lunes">
+      </div>
+      <div style="font-size:.75rem;font-weight:bold;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Horario por día</div>
+      <div style="display:grid;grid-template-columns:95px 1fr;gap:5px 10px;align-items:center;margin-bottom:12px">
+        ${DIAS_NOMBRES.map((d, i) => `
+          <span style="font-size:.83rem;font-weight:bold;color:#555">${d}</span>
+          <select id="nuevo-dia-${i}" style="padding:5px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.82rem">
+            ${diasOpts}
+          </select>`).join("")}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label style="font-size:.78rem;color:#666;white-space:nowrap">Vigente desde</label>
+        <input type="date" id="nuevo-cal-desde" value="${hoy}" style="padding:5px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.82rem;width:140px">
+        <button type="button" class="btn btn-primary btn-sm" onclick="crearYAsignarCalendario()">Crear y asignar</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="toggleNuevoCalendario(false)">Cancelar</button>
+      </div>
+    </div>`;
 
   if (vigente) {
     html += `<div class="cal-vigente">
@@ -178,7 +208,7 @@ function buildCalendarioSection(asignaciones = []) {
       <a href="/calendarios" class="cal-link">Ver calendarios</a>
     </div>`;
   } else {
-    html += `<div class="cal-sin-asignar">Sin calendario asignado — <a href="/calendarios">asignar desde Calendarios</a></div>`;
+    html += `<div class="cal-sin-asignar">Sin calendario asignado</div>`;
   }
 
   if (historial.length) {
@@ -192,13 +222,13 @@ function buildCalendarioSection(asignaciones = []) {
     `<option value="${c.id}"${vigente && vigente.calendario_id === c.id ? " selected" : ""}>${c.nombre}</option>`
   ).join("");
 
-  html += `<div class="cal-asignar">
+  html += `<div class="cal-asignar" style="margin-top:10px">
     <select id="asig-cal-id" style="flex:1">
-      <option value="">— Elegir calendario —</option>
+      <option value="">— Asignar calendario existente —</option>
       ${calOpts}
     </select>
     <label style="font-size:.78rem;color:#666;white-space:nowrap">Desde</label>
-    <input type="date" id="asig-cal-desde" value="${new Date().toISOString().slice(0,10)}" style="width:140px">
+    <input type="date" id="asig-cal-desde" value="${hoy}" style="width:140px">
     <button class="btn btn-primary btn-sm" onclick="asignarCalendario()">Asignar</button>
   </div>`;
 
@@ -403,9 +433,63 @@ async function asignarCalendario() {
   }
 }
 
+function toggleNuevoCalendario(forzar) {
+  const panel = document.getElementById("nuevo-cal-panel");
+  if (!panel) return;
+  const mostrar = forzar !== undefined ? forzar : panel.style.display === "none";
+  panel.style.display = mostrar ? "block" : "none";
+}
+
+async function crearYAsignarCalendario() {
+  const nombre = document.getElementById("nuevo-cal-nombre").value.trim();
+  if (!nombre) { toast("Ingresá el nombre del calendario"); return; }
+  const desde = document.getElementById("nuevo-cal-desde").value;
+  if (!desde) { toast("Ingresá la fecha desde"); return; }
+
+  const dias = Array.from({length: 7}, (_, i) => {
+    const v = document.getElementById(`nuevo-dia-${i}`).value;
+    return {
+      dia_semana: i,
+      es_franco:  v === "FRANCO",
+      horario_id: v !== "FRANCO" ? parseInt(v) : null
+    };
+  });
+
+  const crRes = await fetch("/api/calendarios", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({nombre, dias})
+  });
+  if (!crRes.ok) {
+    const e = await crRes.json().catch(() => ({}));
+    toast("Error al crear: " + (e.detail || "desconocido"));
+    return;
+  }
+  const cal = await crRes.json();
+
+  const asRes = await fetch("/api/calendarios/asignar", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({empleado_ids: [editandoId], calendario_id: cal.id, fecha_desde: desde})
+  });
+
+  if (asRes.ok) {
+    toast("Calendario creado y asignado");
+    // Actualizar lista de calendarios para que aparezca en el selector
+    const cRes = await fetch("/api/calendarios");
+    calendarios = await cRes.json();
+    await editarEmpleado(editandoId);
+  } else {
+    toast("Calendario creado, error al asignar");
+  }
+}
+
 async function init() {
-  const [_, cRes] = await Promise.all([cargar(), fetch("/api/calendarios")]);
+  const [_, cRes, hRes] = await Promise.all([
+    cargar(), fetch("/api/calendarios"), fetch("/api/horarios")
+  ]);
   calendarios = await cRes.json();
+  horarios = await hRes.json();
 }
 
 init();

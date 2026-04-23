@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iniciar sesión — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { background: white; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,.12); padding: 40px 36px; width: 100%; max-width: 360px; }
+  .logo { text-align: center; margin-bottom: 28px; }
+  .logo h1 { font-size: 1.2rem; color: #2c3e50; margin-top: 8px; }
+  .logo p { font-size: .8rem; color: #888; margin-top: 4px; }
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: .78rem; color: #666; font-weight: bold; margin-bottom: 4px; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid #ced4da; border-radius: 5px; font-size: .9rem; }
+  input:focus { outline: none; border-color: #2c3e50; }
+  .btn { width: 100%; padding: 11px; background: #2c3e50; color: white; border: none; border-radius: 6px; font-size: .95rem; font-weight: bold; cursor: pointer; margin-top: 8px; }
+  .btn:hover { background: #3d5166; }
+  .error { background: #f8d7da; color: #721c24; padding: 10px 14px; border-radius: 5px; font-size: .85rem; margin-bottom: 16px; display: none; }
+  .icono { font-size: 2.4rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="icono">🏢</div>
+    <h1>Sistema de Fichaje</h1>
+    <p>Gardiner Buenos Aires</p>
+  </div>
+  <div class="error" id="error"></div>
+  <div class="form-group">
+    <label>Email</label>
+    <input type="email" id="email" placeholder="usuario@dominio.com" autofocus>
+  </div>
+  <div class="form-group">
+    <label>Contraseña</label>
+    <input type="password" id="password" onkeydown="if(event.key==='Enter') login()">
+  </div>
+  <button class="btn" onclick="login()">Ingresar</button>
+</div>
+
+<script>
+async function login() {
+  const email    = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const errEl    = document.getElementById("error");
+  errEl.style.display = "none";
+
+  if (!email || !password) { showError("Completá todos los campos"); return; }
+
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+
+  if (res.ok) {
+    window.location.href = "/";
+  } else {
+    const data = await res.json().catch(() => ({}));
+    showError(data.detail || "Error al iniciar sesión");
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById("error");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+</script>
+</body>
+</html>

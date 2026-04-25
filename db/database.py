@@ -343,3 +343,27 @@ def _migrate(conn):
         conn.execute("ALTER TABLE calendarios_dias ADD COLUMN es_franco INTEGER NOT NULL DEFAULT 0")
         conn.execute("UPDATE calendarios_dias SET es_franco=1 WHERE horario_id IS NULL")
         logger.info("Migración: columna es_franco agregada a calendarios_dias")
+
+    cols_rd = {r[1] for r in conn.execute("PRAGMA table_info(resultados_dia)").fetchall()}
+    nuevas_rd = {
+        "b1_entrada_id":         "INTEGER REFERENCES fichajes(id)",
+        "b1_salida_id":          "INTEGER REFERENCES fichajes(id)",
+        "b2_entrada_id":         "INTEGER REFERENCES fichajes(id)",
+        "b2_salida_id":          "INTEGER REFERENCES fichajes(id)",
+        "b1_sin_salida":         "INTEGER NOT NULL DEFAULT 0",
+        "b2_sin_salida":         "INTEGER NOT NULL DEFAULT 0",
+        "corregido_manualmente": "INTEGER NOT NULL DEFAULT 0",
+        "corregido_por":         "INTEGER REFERENCES usuarios(id)",
+        "corregido_en":          "TEXT",
+    }
+    for col, tipo in nuevas_rd.items():
+        if col not in cols_rd:
+            conn.execute(f"ALTER TABLE resultados_dia ADD COLUMN {col} {tipo}")
+            logger.info("Migración: columna %s agregada a resultados_dia", col)
+
+    cols_p = {r[1] for r in conn.execute("PRAGMA table_info(planificacion)").fetchall()}
+    if "auto_generado" not in cols_p:
+        conn.execute("ALTER TABLE planificacion ADD COLUMN auto_generado INTEGER NOT NULL DEFAULT 0")
+        # Todo lo existente vino del generador automático — tratar como auto_generado
+        conn.execute("UPDATE planificacion SET auto_generado = 1")
+        logger.info("Migración: columna auto_generado agregada a planificacion")

@@ -26,7 +26,7 @@ MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync"
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir"]
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}
 _cache: dict[int, tuple[float, set]] = {}
@@ -143,7 +143,7 @@ PERMISOS_DEFAULT = {
         "planificacion": ["ver","editar"],
         "calendarios":   ["ver","editar","eliminar"],
         "asistencia":    ["ver"],
-        "resultados":    ["ver","procesar"],
+        "resultados":    ["ver","procesar","corregir"],
         "sync":          ["procesar"],
     },
     "administracion": {

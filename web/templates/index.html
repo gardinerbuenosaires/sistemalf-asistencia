@@ -1,8 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <title>Sistema de Fichaje</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -45,7 +47,10 @@
 <body>
 
 <header>
-  <h1>Sistema de Fichaje Biométrico</h1>
+  <div style="display:flex;align-items:center;gap:10px">
+    <img src="/static/img/logo_icono.svg" alt="" style="height:32px">
+    <h1>Sistema de Fichaje Biométrico</h1>
+  </div>
   <nav style="display:flex;gap:16px">
     <a href="/horarios" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Horarios</a>
     <a href="/planificacion" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Planificación</a>
@@ -83,6 +88,18 @@
   <div class="section">
     <h2>Presencia ahora <span id="cnt-presentes" style="font-size:.85rem;color:#888;font-weight:normal;margin-left:8px"></span></h2>
     <div id="presencia-container"><p class="presencia-empty">Cargando...</p></div>
+    <div id="presencia-ausentes-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid #eee">
+      <h3 style="font-size:.8rem;font-weight:bold;text-transform:uppercase;color:#e74c3c;letter-spacing:.05em;margin-bottom:10px">
+        No ficharon <span id="cnt-ausentes" style="font-weight:normal"></span>
+      </h3>
+      <div id="presencia-ausentes" class="presencia-grid"></div>
+    </div>
+    <div id="presencia-sin-plan-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid #eee">
+      <h3 style="font-size:.8rem;font-weight:bold;text-transform:uppercase;color:#e67e22;letter-spacing:.05em;margin-bottom:10px">
+        Sin planificación asignada <span id="cnt-sin-plan" style="font-weight:normal"></span>
+      </h3>
+      <div id="presencia-sin-plan" class="presencia-grid"></div>
+    </div>
   </div>
 
   <div class="section">
@@ -234,29 +251,22 @@ async function syncNow() {
   }
 }
 
-async function loadPresencia() {
-  const data = await api("/api/presencia/hoy");
-  document.getElementById("cnt-presentes").textContent = `(${data.length} personas)`;
-
-  const container = document.getElementById("presencia-container");
-  if (!data.length) {
+function renderGrupos(personas, container) {
+  if (!personas.length) {
     container.innerHTML = '<p class="presencia-empty">Sin personal presente en este momento.</p>';
     return;
   }
-
-  // Agrupar por cargo
   const grupos = {};
-  data.forEach(p => {
+  personas.forEach(p => {
     const cargo = p.cargo || "Sin cargo";
     if (!grupos[cargo]) grupos[cargo] = [];
     grupos[cargo].push(p);
   });
-
-  container.innerHTML = Object.entries(grupos).map(([cargo, personas]) => `
+  container.innerHTML = Object.entries(grupos).map(([cargo, lista]) => `
     <div class="presencia-cargo">
-      <h3>${cargo} (${personas.length})</h3>
+      <h3>${cargo} (${lista.length})</h3>
       <div class="presencia-grid">
-        ${personas.map(p => `
+        ${lista.map(p => `
           <div class="presencia-item">
             <span class="presencia-hora">${p.hora_entrada.slice(11,16)}</span>
             <span class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</span>
@@ -265,6 +275,53 @@ async function loadPresencia() {
       </div>
     </div>
   `).join("");
+}
+
+async function loadPresencia() {
+  const data     = await api("/api/presencia/hoy");
+  const conPlan  = data.con_planificacion || [];
+  const sinPlan  = data.sin_planificacion || [];
+  const ausentes = data.ausentes          || [];
+
+  document.getElementById("cnt-presentes").textContent = `(${conPlan.length} personas)`;
+  renderGrupos(conPlan, document.getElementById("presencia-container"));
+
+  const wrapAus = document.getElementById("presencia-ausentes-wrap");
+  if (ausentes.length) {
+    wrapAus.style.display = "block";
+    document.getElementById("cnt-ausentes").textContent = `(${ausentes.length})`;
+    const grupos = {};
+    ausentes.forEach(p => {
+      const cargo = p.cargo || "Sin cargo";
+      if (!grupos[cargo]) grupos[cargo] = [];
+      grupos[cargo].push(p);
+    });
+    document.getElementById("presencia-ausentes").innerHTML =
+      Object.entries(grupos).map(([cargo, lista]) => `
+        <div class="presencia-cargo">
+          <h3>${cargo} (${lista.length})</h3>
+          <div class="presencia-grid">
+            ${lista.map(p => `
+              <div class="presencia-item" style="background:#fdf0f0;border-left-color:#e74c3c">
+                <span class="presencia-hora" style="color:#e74c3c">${p.hora_entrada_plan}</span>
+                <span class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `).join("");
+  } else {
+    wrapAus.style.display = "none";
+  }
+
+  const wrapSin = document.getElementById("presencia-sin-plan-wrap");
+  if (sinPlan.length) {
+    wrapSin.style.display = "block";
+    document.getElementById("cnt-sin-plan").textContent = `(${sinPlan.length})`;
+    renderGrupos(sinPlan, document.getElementById("presencia-sin-plan"));
+  } else {
+    wrapSin.style.display = "none";
+  }
 }
 
 async function init() {

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Registro de bloques ya evaluados hoy para no re-ejecutar innecesariamente
 _bloques_evaluados_hoy: set[str] = set()
 _fecha_ultimo_reset = None
+_fecha_ultima_generacion: str | None = None
 
 
 def _run_sync():
@@ -79,6 +80,34 @@ def _check_y_evaluar():
                 logger.error("Error en evaluación automática: %s", e)
 
 
+def _generar_planificacion_auto():
+    """
+    Genera planificación automática para la semana actual y la siguiente.
+    Corre una vez por día a la madrugada. Respeta entradas manuales.
+    """
+    global _fecha_ultima_generacion
+    ahora = datetime.now()
+    hoy   = str(ahora.date())
+
+    if _fecha_ultima_generacion == hoy:
+        return
+    if ahora.hour not in (1, 2):
+        return
+
+    try:
+        from api.calendarios import generar_semana
+        totales = {"generados": 0, "omitidos": 0}
+        for w in range(5):  # semana actual + 4 semanas más (~1 mes)
+            fecha = str((ahora + timedelta(weeks=w)).date())
+            r = generar_semana(fecha)
+            totales["generados"] += r.get("generados", 0)
+            totales["omitidos"]  += r.get("omitidos", 0)
+        _fecha_ultima_generacion = hoy
+        logger.info("Planificación automática desde %s: %s", hoy, totales)
+    except Exception as e:
+        logger.error("Error en generación automática de planificación: %s", e)
+
+
 def start_scheduler():
     sync_interval = SYNC_INTERVAL_MINUTES * 60
 
@@ -95,10 +124,17 @@ def start_scheduler():
             _check_y_evaluar()
             time.sleep(300)  # cada 5 minutos
 
+    def plan_loop():
+        time.sleep(120)
+        while True:
+            _generar_planificacion_auto()
+            time.sleep(3600)  # revisar cada hora, ejecuta solo entre 01:00 y 02:59
+
     threading.Thread(target=sync_loop, daemon=True, name="sync-scheduler").start()
     threading.Thread(target=eval_loop, daemon=True, name="eval-scheduler").start()
+    threading.Thread(target=plan_loop, daemon=True, name="plan-scheduler").start()
 
     logger.info(
-        "Scheduler iniciado: sync cada %d min, evaluación automática cada 5 min",
+        "Scheduler iniciado: sync cada %d min, evaluación automática cada 5 min, planificación diaria a la 01:00",
         SYNC_INTERVAL_MINUTES
     )

@@ -186,37 +186,135 @@ def sync_empleados_dispositivo():
 @app.get("/api/presencia/hoy", tags=["presencia"])
 def presencia_hoy():
     """
-    Empleados con entrada activa hoy (entrada sin salida posterior).
-    Agrupa por cargo para la vista del encargado.
+    Empleados actualmente en su turno: tienen b*_entrada asignado pero no b*_salida,
+    y la ventana del bloque aún no cerró (hora_salida + tolerancia_salida_despues).
+    Usa el mismo greedy del evaluador — no depende del campo tipo del ZKTeco.
     """
     from db.database import db_session
-    from datetime import date
-    hoy = date.today().isoformat()
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    from sync.evaluador import _clasificar_fichajes, _dt
+
+    ahora  = datetime.now()
+    hoy    = str(ahora.date())
+    manana = str((ahora + timedelta(days=1)).date())
+
     with db_session() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                e.user_id,
-                e.nombre,
-                e.apellido,
-                e.cargo,
-                f.timestamp AS hora_entrada
-            FROM fichajes f
-            JOIN empleados e ON e.id = f.empleado_id
-            WHERE date(f.timestamp) = ?
-              AND f.tipo = 'entrada'
-              AND NOT EXISTS (
-                SELECT 1 FROM fichajes f2
-                WHERE f2.empleado_id = f.empleado_id
-                  AND f2.tipo = 'salida'
-                  AND date(f2.timestamp) = ?
-                  AND f2.timestamp > f.timestamp
-              )
-            ORDER BY e.cargo, f.timestamp
-            """,
-            (hoy, hoy),
+        planes = conn.execute(
+            """SELECT p.empleado_id, p.horario_id,
+                      e.user_id, e.nombre, e.apellido, e.cargo
+               FROM planificacion p
+               JOIN empleados e ON e.id = p.empleado_id
+               WHERE p.fecha = ? AND p.es_franco = 0 AND p.horario_id IS NOT NULL""",
+            (hoy,)
         ).fetchall()
-    return [dict(r) for r in rows]
+
+        eids_con_plan = {p["empleado_id"] for p in planes}
+
+        hids = list({p["horario_id"] for p in planes}) if planes else []
+        bloques_map: dict = defaultdict(list)
+        if hids:
+            ph = ",".join("?" * len(hids))
+            for b in conn.execute(
+                f"SELECT * FROM horarios_bloques WHERE horario_id IN ({ph}) ORDER BY horario_id, bloque",
+                hids
+            ).fetchall():
+                bloques_map[b["horario_id"]].append(dict(b))
+
+        # Fichajes de hoy de todos los empleados (con y sin plan)
+        todos_fichajes = conn.execute(
+            """SELECT f.empleado_id, f.timestamp,
+                      e.user_id, e.nombre, e.apellido, e.cargo
+               FROM fichajes f
+               JOIN empleados e ON e.id = f.empleado_id
+               WHERE date(f.timestamp) IN (?,?)
+               ORDER BY f.empleado_id, f.timestamp""",
+            (hoy, manana)
+        ).fetchall()
+
+    fich_map: dict = defaultdict(list)
+    for f in todos_fichajes:
+        fich_map[f["empleado_id"]].append(dict(f))
+
+    con_plan   = []
+    sin_plan   = []
+    ausentes   = []
+    fecha      = ahora.date()
+
+    # — Empleados con planificación: greedy completo —
+    for plan in planes:
+        eid     = plan["empleado_id"]
+        bloques = bloques_map.get(plan["horario_id"], [])
+        if not bloques:
+            continue
+
+        fichajes_emp = [f for f in fich_map[eid] if f["timestamp"][:10] in (hoy, manana)]
+        slots = _clasificar_fichajes(fichajes_emp, bloques, fecha)
+
+        for b in bloques:
+            bn        = b["bloque"]
+            f_entrada = slots.get(f"b{bn}_entrada")
+            f_salida  = slots.get(f"b{bn}_salida")
+
+            t_entrada = _dt(fecha, b["hora_entrada"])
+            cruza     = bool(b["cruza_medianoche"])
+            t_salida  = _dt(fecha, b["hora_salida"], dia_sig=cruza)
+
+            if not f_entrada:
+                # Ausente: la ventana de entrada ya cerró (pasó la tolerancia)
+                tol_entrada = timedelta(minutes=b.get("tolerancia_entrada_despues", 60))
+                if ahora > t_entrada + tol_entrada and ahora < t_salida + timedelta(hours=2):
+                    ausentes.append({
+                        "user_id":           plan["user_id"],
+                        "nombre":            plan["nombre"],
+                        "apellido":          plan["apellido"],
+                        "cargo":             plan["cargo"],
+                        "hora_entrada_plan": b["hora_entrada"],
+                        "bloque":            bn,
+                    })
+                continue
+
+            if f_salida:
+                continue
+
+            margen = timedelta(minutes=b.get("tolerancia_salida_despues", 60))
+            if ahora > t_salida + margen:
+                continue
+
+            con_plan.append({
+                "user_id":      plan["user_id"],
+                "nombre":       plan["nombre"],
+                "apellido":     plan["apellido"],
+                "cargo":        plan["cargo"],
+                "hora_entrada": f_entrada["timestamp"],
+                "bloque":       bn,
+            })
+
+    # — Empleados sin planificación: heurística de paridad —
+    vistos = {p["user_id"] for p in con_plan}
+    for eid, fichajes in fich_map.items():
+        if eid in eids_con_plan:
+            continue
+        fichajes_hoy = [f for f in fichajes if f["timestamp"][:10] == hoy]
+        if not fichajes_hoy or len(fichajes_hoy) % 2 == 0:
+            continue  # par = probablemente salió
+        ultimo = fichajes_hoy[-1]
+        if ultimo["user_id"] in vistos:
+            continue
+        sin_plan.append({
+            "user_id":       ultimo["user_id"],
+            "nombre":        ultimo["nombre"],
+            "apellido":      ultimo["apellido"],
+            "cargo":         ultimo["cargo"],
+            "hora_entrada":  fichajes_hoy[0]["timestamp"],
+            "ultimo_fichaje": ultimo["timestamp"],
+            "cant_fichajes": len(fichajes_hoy),
+        })
+
+    con_plan.sort(key=lambda p: (p["cargo"] or "", p["hora_entrada"]))
+    sin_plan.sort(key=lambda p: (p["cargo"] or "", p["hora_entrada"]))
+    ausentes.sort(key=lambda p: (p["cargo"] or "", p["hora_entrada_plan"]))
+    return {"con_planificacion": con_plan, "sin_planificacion": sin_plan, "ausentes": ausentes}
 
 
 if __name__ == "__main__":

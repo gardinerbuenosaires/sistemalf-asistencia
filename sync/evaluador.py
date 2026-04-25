@@ -26,8 +26,9 @@ def _dt(fecha: date, hora_str: str, dia_sig: bool = False) -> datetime:
 
 def _clasificar_fichajes(fichajes: list, bloques: list, fecha: date) -> dict:
     """
-    Asigna cada fichaje al slot del horario más cercano (greedy por distancia mínima).
-    Retorna {slot_name: fichaje_dict | None}.
+    Asigna cada fichaje al slot del horario más cercano. Si varios fichajes
+    caen en el mismo slot (vestuario, re-fichaje por duda), se resuelve por
+    dirección: el más temprano para entradas, el más tardío para salidas.
     """
     slots = []
     for b in bloques:
@@ -36,25 +37,28 @@ def _clasificar_fichajes(fichajes: list, bloques: list, fecha: date) -> dict:
         slots.append((f"b{bn}_entrada", _dt(fecha, b["hora_entrada"])))
         slots.append((f"b{bn}_salida",  _dt(fecha, b["hora_salida"], dia_sig=cruza)))
 
-    resultado = {nombre: None for nombre, _ in slots}
-    if not fichajes:
-        return resultado
+    # Fichajes a más de 4 horas de cualquier slot son de otro día (ej: salida nocturna
+    # que cruza medianoche y queda en la fecha siguiente, donde no corresponde).
+    MAX_DIST_MIN = 240
 
-    # Todas las combinaciones (fichaje, slot) ordenadas por distancia
-    candidatos = []
-    for fi, f in enumerate(fichajes):
+    acumulados: dict[str, list] = {nombre: [] for nombre, _ in slots}
+
+    for f in fichajes:
         ft = datetime.fromisoformat(f["timestamp"])
-        for slot_nombre, slot_time in slots:
-            dist = abs((ft - slot_time).total_seconds() / 60)
-            candidatos.append((dist, fi, slot_nombre))
-    candidatos.sort()
-
-    usados_fichaje = set()
-    for dist, fi, slot_nombre in candidatos:
-        if fi in usados_fichaje or resultado[slot_nombre] is not None:
+        nearest = min(slots, key=lambda s: abs((ft - s[1]).total_seconds()))
+        dist_min = abs((ft - nearest[1]).total_seconds()) / 60
+        if dist_min > MAX_DIST_MIN:
             continue
-        usados_fichaje.add(fi)
-        resultado[slot_nombre] = fichajes[fi]
+        acumulados[nearest[0]].append(f)
+
+    resultado: dict[str, dict | None] = {}
+    for slot_nombre, candidatos in acumulados.items():
+        if not candidatos:
+            resultado[slot_nombre] = None
+        elif slot_nombre.endswith("_entrada"):
+            resultado[slot_nombre] = min(candidatos, key=lambda f: f["timestamp"])
+        else:
+            resultado[slot_nombre] = max(candidatos, key=lambda f: f["timestamp"])
 
     return resultado
 
@@ -77,6 +81,7 @@ def _evaluar_bloque(bloque: dict, fecha: date, f_entrada, f_salida) -> dict:
             minutos_tarde = int((real_entrada - t_entrada).total_seconds() // 60)
 
     salida_anticipada = False
+    sin_salida = f_entrada is not None and f_salida is None
     if f_salida:
         real_salida   = datetime.fromisoformat(f_salida["timestamp"])
         limite_salida = t_salida - timedelta(minutes=bloque["tolerancia_salida_antes"])
@@ -89,6 +94,7 @@ def _evaluar_bloque(bloque: dict, fecha: date, f_entrada, f_salida) -> dict:
         "salida":            f_salida["timestamp"]  if f_salida  else None,
         "minutos_tarde":     minutos_tarde,
         "salida_anticipada": salida_anticipada,
+        "sin_salida":        sin_salida,
     }
 
 
@@ -96,16 +102,19 @@ def _calcular_estado(b1: dict, b2: dict | None) -> str:
     if b1["ausente"] and (b2 is None or b2["ausente"]):
         return "ausente"
 
-    tarde = bool(b1.get("minutos_tarde")) or bool(b2 and b2.get("minutos_tarde"))
-    ant   = b1["salida_anticipada"] or (b2 and b2["salida_anticipada"])
+    tarde     = bool(b1.get("minutos_tarde")) or bool(b2 and b2.get("minutos_tarde"))
+    ant       = b1["salida_anticipada"] or (b2 and b2["salida_anticipada"])
+    sin_sal   = b1.get("sin_salida") or (b2 and b2.get("sin_salida"))
 
     if b2 is not None:
         if b1["ausente"]: return "b1_ausente"
         if b2["ausente"]: return "b2_ausente"
 
-    if tarde and ant: return "tarde_y_salida_anticipada"
-    if tarde:         return "tarde"
-    if ant:           return "salida_anticipada"
+    if tarde and sin_sal: return "tarde_y_sin_salida"
+    if tarde and ant:     return "tarde_y_salida_anticipada"
+    if tarde:             return "tarde"
+    if sin_sal:           return "sin_salida"
+    if ant:               return "salida_anticipada"
     return "ok"
 
 
@@ -140,11 +149,57 @@ def horarios_sin_cerrar(fecha_str: str | None = None) -> list[dict]:
     return pendientes
 
 
-def evaluar_fecha(fecha_str: str) -> dict:
+def recalcular_resultado(empleado_id: int, fecha_str: str):
+    """
+    Re-evalúa estado/tardanzas de un resultado ya existente usando los timestamps
+    actuales en la fila (tras una corrección manual). No toca los fichaje_ids
+    ni los campos de auditoría.
+    """
+    fecha = date.fromisoformat(fecha_str)
+    with db_session() as conn:
+        r = conn.execute(
+            "SELECT * FROM resultados_dia WHERE empleado_id=? AND fecha=?",
+            (empleado_id, fecha_str)
+        ).fetchone()
+        if not r or r["es_franco"] or not r["horario_id"]:
+            return
+        r = dict(r)
+        bloques = [dict(b) for b in conn.execute(
+            "SELECT * FROM horarios_bloques WHERE horario_id=? ORDER BY bloque",
+            (r["horario_id"],)
+        ).fetchall()]
+        if not bloques:
+            return
+
+        def _faux(ts):
+            return {"timestamp": ts} if ts else None
+
+        b1r = _evaluar_bloque(bloques[0], fecha, _faux(r["b1_entrada"]), _faux(r["b1_salida"]))
+        b2r = None
+        if len(bloques) > 1:
+            b2r = _evaluar_bloque(bloques[1], fecha, _faux(r["b2_entrada"]), _faux(r["b2_salida"]))
+        estado = _calcular_estado(b1r, b2r)
+
+        conn.execute(
+            """UPDATE resultados_dia SET
+               estado=?,
+               b1_minutos_tarde=?, b1_salida_anticipada=?, b1_ausente=?, b1_sin_salida=?,
+               b2_minutos_tarde=?, b2_salida_anticipada=?, b2_ausente=?, b2_sin_salida=?
+               WHERE empleado_id=? AND fecha=?""",
+            (estado,
+             b1r.get("minutos_tarde"), int(b1r.get("salida_anticipada", False)),
+             int(b1r.get("ausente", False)), int(b1r.get("sin_salida", False)),
+             (b2r or {}).get("minutos_tarde"), int((b2r or {}).get("salida_anticipada", False)),
+             int((b2r or {}).get("ausente", False)), int((b2r or {}).get("sin_salida", False)),
+             empleado_id, fecha_str)
+        )
+
+
+def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True) -> dict:
     """Procesa todos los empleados con planificación en fecha_str."""
     fecha     = date.fromisoformat(fecha_str)
     fecha_sig = str(fecha + timedelta(days=1))
-    resumen   = {"evaluados": 0, "ok": 0, "tarde": 0, "ausente": 0, "franco": 0, "otros": 0}
+    resumen   = {"evaluados": 0, "ok": 0, "tarde": 0, "ausente": 0, "franco": 0, "otros": 0, "saltados": 0}
 
     with db_session() as conn:
         planes = conn.execute(
@@ -155,6 +210,14 @@ def evaluar_fecha(fecha_str: str) -> dict:
 
         if not planes:
             return resumen
+
+        corregidos: set[int] = set()
+        if respetar_correcciones:
+            rows_c = conn.execute(
+                "SELECT empleado_id FROM resultados_dia WHERE fecha=? AND corregido_manualmente=1",
+                (fecha_str,)
+            ).fetchall()
+            corregidos = {r["empleado_id"] for r in rows_c}
 
         hids = list({p["horario_id"] for p in planes if p["horario_id"]})
         bloques_map: dict[int, list] = defaultdict(list)
@@ -184,6 +247,12 @@ def evaluar_fecha(fecha_str: str) -> dict:
             eid = plan["empleado_id"]
             p   = dict(plan)
 
+            if eid in corregidos:
+                resumen["saltados"] += 1
+                continue
+
+            b1_entrada_id = b1_salida_id = b2_entrada_id = b2_salida_id = None
+
             if p["es_franco"]:
                 estado, b1r, b2r = "franco", {}, {}
             elif not p["horario_id"]:
@@ -194,6 +263,10 @@ def evaluar_fecha(fecha_str: str) -> dict:
                     estado, b1r, b2r = "sin_horario", {}, {}
                 else:
                     slots = _clasificar_fichajes(fich_map[eid], bloques, fecha)
+                    b1_entrada_id = (slots.get("b1_entrada") or {}).get("id")
+                    b1_salida_id  = (slots.get("b1_salida")  or {}).get("id")
+                    b2_entrada_id = (slots.get("b2_entrada") or {}).get("id")
+                    b2_salida_id  = (slots.get("b2_salida")  or {}).get("id")
                     b1r = _evaluar_bloque(
                         bloques[0], fecha,
                         slots.get("b1_entrada"), slots.get("b1_salida")
@@ -209,24 +282,34 @@ def evaluar_fecha(fecha_str: str) -> dict:
             conn.execute(
                 """INSERT INTO resultados_dia
                    (empleado_id, fecha, horario_id, es_franco, estado,
-                    b1_entrada, b1_salida, b1_minutos_tarde, b1_salida_anticipada, b1_ausente,
-                    b2_entrada, b2_salida, b2_minutos_tarde, b2_salida_anticipada, b2_ausente,
+                    b1_entrada, b1_salida, b1_minutos_tarde, b1_salida_anticipada, b1_ausente, b1_sin_salida,
+                    b2_entrada, b2_salida, b2_minutos_tarde, b2_salida_anticipada, b2_ausente, b2_sin_salida,
+                    b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id,
+                    corregido_manualmente, corregido_por, corregido_en,
                     procesado_en)
-                   VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, datetime('now','localtime'))
+                   VALUES (?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, 0,NULL,NULL, datetime('now','localtime'))
                    ON CONFLICT(empleado_id, fecha) DO UPDATE SET
                    horario_id=excluded.horario_id, es_franco=excluded.es_franco, estado=excluded.estado,
                    b1_entrada=excluded.b1_entrada, b1_salida=excluded.b1_salida,
                    b1_minutos_tarde=excluded.b1_minutos_tarde,
                    b1_salida_anticipada=excluded.b1_salida_anticipada, b1_ausente=excluded.b1_ausente,
+                   b1_sin_salida=excluded.b1_sin_salida,
                    b2_entrada=excluded.b2_entrada, b2_salida=excluded.b2_salida,
                    b2_minutos_tarde=excluded.b2_minutos_tarde,
                    b2_salida_anticipada=excluded.b2_salida_anticipada, b2_ausente=excluded.b2_ausente,
+                   b2_sin_salida=excluded.b2_sin_salida,
+                   b1_entrada_id=excluded.b1_entrada_id, b1_salida_id=excluded.b1_salida_id,
+                   b2_entrada_id=excluded.b2_entrada_id, b2_salida_id=excluded.b2_salida_id,
+                   corregido_manualmente=0, corregido_por=NULL, corregido_en=NULL,
                    procesado_en=datetime('now','localtime')""",
                 (eid, fecha_str, p.get("horario_id"), p["es_franco"], estado,
                  b1r.get("entrada"), b1r.get("salida"), b1r.get("minutos_tarde"),
                  int(b1r.get("salida_anticipada", False)), int(b1r.get("ausente", False)),
+                 int(b1r.get("sin_salida", False)),
                  (b2r or {}).get("entrada"), (b2r or {}).get("salida"), (b2r or {}).get("minutos_tarde"),
-                 int((b2r or {}).get("salida_anticipada", False)), int((b2r or {}).get("ausente", False)))
+                 int((b2r or {}).get("salida_anticipada", False)), int((b2r or {}).get("ausente", False)),
+                 int((b2r or {}).get("sin_salida", False)),
+                 b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id)
             )
 
             resumen["evaluados"] += 1
@@ -240,13 +323,13 @@ def evaluar_fecha(fecha_str: str) -> dict:
     return resumen
 
 
-def evaluar_rango(fecha_desde: str, fecha_hasta: str) -> dict:
+def evaluar_rango(fecha_desde: str, fecha_hasta: str, respetar_correcciones: bool = True) -> dict:
     """Evalúa todos los días entre dos fechas."""
     d = date.fromisoformat(fecha_desde)
     h = date.fromisoformat(fecha_hasta)
-    total = {"evaluados": 0, "ok": 0, "tarde": 0, "ausente": 0, "franco": 0, "otros": 0}
+    total = {"evaluados": 0, "ok": 0, "tarde": 0, "ausente": 0, "franco": 0, "otros": 0, "saltados": 0}
     while d <= h:
-        r = evaluar_fecha(str(d))
+        r = evaluar_fecha(str(d), respetar_correcciones=respetar_correcciones)
         for k in total:
             total[k] += r.get(k, 0)
         d += timedelta(days=1)

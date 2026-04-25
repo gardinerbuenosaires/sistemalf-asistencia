@@ -121,10 +121,23 @@ def delete_calendario(cid: int):
 
 @router.post("/asignar")
 def asignar(data: AsignacionIn):
-    """Asigna un calendario a uno o varios empleados."""
+    """
+    Asigna un calendario a uno o varios empleados.
+    Borra todo lo auto-generado desde fecha_desde en adelante y
+    regenera los próximos 30 días. Las entradas manuales no se tocan.
+    """
+    from datetime import date as dt
+    d_desde = dt.fromisoformat(data.fecha_desde)
+    d_hasta = d_desde + timedelta(days=30)
+
     with db_session() as conn:
+        dias_cal = conn.execute(
+            "SELECT dia_semana, horario_id, es_franco FROM calendarios_dias WHERE calendario_id=?",
+            (data.calendario_id,)
+        ).fetchall()
+        cal_map = {r["dia_semana"]: dict(r) for r in dias_cal}
+
         for eid in data.empleado_ids:
-            # Cerrar asignación vigente si existe
             conn.execute(
                 "UPDATE asignaciones SET fecha_hasta=? "
                 "WHERE empleado_id=? AND (fecha_hasta IS NULL OR fecha_hasta >= ?)",
@@ -135,6 +148,29 @@ def asignar(data: AsignacionIn):
                 "VALUES (?, ?, NULL, ?, ?)",
                 (eid, data.calendario_id, data.fecha_desde, data.fecha_hasta)
             )
+            # Borrar TODO lo auto-generado desde fecha_desde en adelante
+            conn.execute(
+                "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= ? AND auto_generado=1",
+                (eid, data.fecha_desde)
+            )
+            # Entradas manuales existentes en el rango (no tocar)
+            manuales = {r["fecha"] for r in conn.execute(
+                "SELECT fecha FROM planificacion WHERE empleado_id=? AND fecha >= ? AND fecha <= ? AND auto_generado=0",
+                (eid, data.fecha_desde, str(d_hasta))
+            ).fetchall()}
+            # Generar día a día los próximos 30 días
+            cur = d_desde
+            while cur <= d_hasta:
+                if str(cur) not in manuales:
+                    dia = cal_map.get(cur.weekday(), {})
+                    es_franco = int(dia.get("es_franco", 0))
+                    horario_id = None if es_franco else dia.get("horario_id")
+                    conn.execute(
+                        "INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, auto_generado) VALUES (?,?,?,?,1)",
+                        (eid, str(cur), horario_id, es_franco)
+                    )
+                cur += timedelta(days=1)
+
     return {"ok": True, "asignados": len(data.empleado_ids)}
 
 
@@ -148,6 +184,26 @@ def asignaciones_empleado(empleado_id: int):
             (empleado_id,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+@router.delete("/asignaciones/{asignacion_id}")
+def eliminar_asignacion(asignacion_id: int):
+    """
+    Elimina una asignación de calendario y borra la planificación futura
+    auto-generada del empleado (desde hoy en adelante).
+    Las entradas manuales (auto_generado=0) se respetan.
+    """
+    with db_session() as conn:
+        row = conn.execute("SELECT empleado_id FROM asignaciones WHERE id=?", (asignacion_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Asignación no encontrada")
+        eid = row["empleado_id"]
+        conn.execute("DELETE FROM asignaciones WHERE id=?", (asignacion_id,))
+        conn.execute(
+            "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= date('now','localtime') AND auto_generado=1",
+            (eid,)
+        )
+    return {"ok": True}
 
 
 @router.post("/generar-semana")
@@ -193,26 +249,32 @@ def generar_semana(fecha: str):
                 ).fetchall()
                 cal_cache[cid] = {r["dia_semana"]: dict(r) for r in dias_cal}
 
-        # Planificación ya existente en la semana
-        existentes = set()
+        # Borrar entradas auto-generadas de la semana (respeta las manuales auto_generado=0)
+        conn.execute(
+            "DELETE FROM planificacion WHERE fecha >= ? AND fecha <= ? AND auto_generado = 1",
+            (dias[0], dias[6])
+        )
+
+        # Planificación manual que queda (no tocar)
+        manuales = set()
         for r in conn.execute(
-            "SELECT empleado_id, fecha FROM planificacion WHERE fecha >= ? AND fecha <= ?",
+            "SELECT empleado_id, fecha FROM planificacion WHERE fecha >= ? AND fecha <= ? AND auto_generado = 0",
             (dias[0], dias[6])
         ).fetchall():
-            existentes.add((r["empleado_id"], r["fecha"]))
+            manuales.add((r["empleado_id"], r["fecha"]))
 
-        # Insertar los que faltan
+        # Insertar desde calendarios, respetando entradas manuales
         for eid, cid in asig_map.items():
             cal_dias = cal_cache.get(cid, {})
             for i, fecha_dia in enumerate(dias):
-                if (eid, fecha_dia) in existentes:
+                if (eid, fecha_dia) in manuales:
                     omitidos += 1
                     continue
                 dia = cal_dias.get(i, {})
                 es_franco = int(dia.get("es_franco", 0))
                 horario_id = None if es_franco else dia.get("horario_id")
                 conn.execute(
-                    "INSERT OR IGNORE INTO planificacion (empleado_id, fecha, horario_id, es_franco) VALUES (?,?,?,?)",
+                    "INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, auto_generado) VALUES (?,?,?,?,1)",
                     (eid, fecha_dia, horario_id, es_franco)
                 )
                 generados += 1

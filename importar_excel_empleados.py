@@ -18,7 +18,7 @@ def parse_codigo(val):
 def parse_nombre(val):
     partes = val.strip().split()
     if len(partes) >= 2:
-        return partes[0], " ".join(partes[1:])
+        return partes[-1], " ".join(partes[:-1])  # apellido=última, nombre=resto
     return partes[0] if partes else "", ""
 
 def parse_categoria(val):

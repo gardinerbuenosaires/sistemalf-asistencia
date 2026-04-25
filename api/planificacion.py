@@ -90,13 +90,14 @@ def set_dia(data: PlanDiaIn):
     with db_session() as conn:
         conn.execute(
             """
-            INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, observacion)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, observacion, auto_generado)
+            VALUES (?, ?, ?, ?, ?, 0)
             ON CONFLICT(empleado_id, fecha) DO UPDATE SET
-                horario_id    = excluded.horario_id,
-                es_franco     = excluded.es_franco,
-                observacion   = excluded.observacion,
-                modificado_en = datetime('now','localtime')
+                horario_id     = excluded.horario_id,
+                es_franco      = excluded.es_franco,
+                observacion    = excluded.observacion,
+                auto_generado  = 0,
+                modificado_en  = datetime('now','localtime')
             """,
             (data.empleado_id, data.fecha, data.horario_id,
              int(data.es_franco), data.observacion),

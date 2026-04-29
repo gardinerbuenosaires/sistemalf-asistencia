@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<title>Planilla Mensual — SistemAlf</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+
+header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px;
+         display: flex; align-items: center; justify-content: space-between; }
+nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; margin-left: 14px; }
+nav a:hover { opacity: 1; }
+
+.toolbar { background: white; border-bottom: 1px solid #e0e0e0; padding: 10px 16px;
+           display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.mes-nav { display: flex; align-items: center; gap: 10px; }
+.mes-nav button { background: #2c3e50; color: white; border: none; border-radius: 4px;
+                  padding: 5px 12px; cursor: pointer; font-size: .9rem; }
+.mes-nav button:hover { background: #3d5166; }
+#mes-label { font-weight: bold; font-size: 1rem; min-width: 140px; text-align: center;
+             text-transform: capitalize; }
+.btn-orden { padding: 5px 14px; border-radius: 4px; font-size: .85rem; cursor: pointer;
+             border: 1px solid #2c3e50; background: white; color: #2c3e50; }
+.btn-orden:hover { background: #eef; }
+.btn-orden.activo { background: #2c3e50; color: white; }
+.btn-sm { padding: 4px 10px; border-radius: 4px; font-size: .8rem; cursor: pointer;
+          border: none; }
+.btn-guardar-orden { background: #27ae60; color: white; }
+.btn-guardar-orden:hover { background: #1e8449; }
+.btn-cancelar-orden { background: #aaa; color: white; }
+.btn-cancelar-orden:hover { background: #888; }
+.btn-sep { background: #e67e22; color: white; }
+.btn-sep:hover { background: #ca6f1e; }
+#orden-bar { display: none; align-items: center; gap: 10px; }
+
+.tabs { display: flex; gap: 0; border-bottom: 2px solid #dee2e6; margin: 0 16px; }
+.tab-btn { padding: 8px 22px; background: none; border: none; cursor: pointer;
+           font-size: .9rem; color: #666; border-bottom: 3px solid transparent;
+           margin-bottom: -2px; }
+.tab-btn.active { color: #2c3e50; border-bottom-color: #2c3e50; font-weight: bold; }
+.tab-btn:hover:not(.active) { color: #333; background: #f8f9fa; }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.tabla-outer { overflow-x: auto; margin: 0; padding-bottom: 16px; }
+
+table.planilla {
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  width: max-content;
+}
+
+/* Cabecera días */
+table.planilla thead th {
+  background: #2c3e50; color: white;
+  padding: 0; text-align: center;
+  border-right: 1px solid #3d5166;
+  font-weight: normal;
+  position: sticky; top: 0; z-index: 4;
+}
+table.planilla thead th.col-cod   { width: 44px; min-width: 44px; z-index: 6; left: 0; }
+table.planilla thead th.col-nombre{ width: 180px; min-width: 180px; z-index: 6; left: 44px; text-align: left; padding-left: 8px; }
+table.planilla thead th.col-dia    { width: 28px; min-width: 28px; }
+table.planilla thead th.col-dia-co { width: 40px; min-width: 40px; }
+table.planilla thead th.col-sep   { width: 6px; min-width: 6px; background: #f4f6f9; border: none; }
+table.planilla thead th.col-res   { width: 34px; min-width: 34px; font-size: .65rem; }
+table.planilla thead th.col-dias  { width: 40px; min-width: 40px; font-size: .65rem; background: #1a252f; }
+
+th.domingo { background: #1a3a5c !important; }
+th.feriado  { background: #7d3c27 !important; }
+
+.celda-domingo { box-shadow: inset 0 3px 0 #A6A6A6 !important; }
+.celda-feriado { box-shadow: inset 0 3px 0 #FFAA00 !important; }
+
+.dow-num { display: flex; flex-direction: column; align-items: center;
+           justify-content: center; height: 34px; line-height: 1.2; }
+.dow-num .dow { font-size: .6rem; opacity: .8; }
+.dow-num .num { font-size: .8rem; font-weight: bold; }
+
+/* Filas empleados */
+table.planilla tbody tr { border-bottom: 1px solid #f0f0f0; }
+table.planilla tbody tr:hover td { filter: brightness(.95); }
+
+table.planilla tbody td {
+  padding: 0; text-align: center; vertical-align: middle;
+  border-right: 1px solid #e8e8e8;
+}
+table.planilla tbody td.col-cod {
+  position: sticky; left: 0; z-index: 2;
+  background: #f8f9fa; font-size: .7rem; color: #666;
+  border-right: 1px solid #dee2e6;
+}
+table.planilla tbody td.col-nombre {
+  position: sticky; left: 44px; z-index: 2;
+  background: white; text-align: left; padding: 0 8px;
+  font-size: .78rem; border-right: 2px solid #dee2e6;
+  max-width: 180px; overflow: hidden; text-overflow: ellipsis;
+}
+table.planilla tbody td.col-sep { background: #f4f6f9; border: none; }
+table.planilla tbody td.col-res { font-size: .72rem; color: #444; }
+table.planilla tbody td.col-dias { font-weight: bold; font-size: .78rem;
+                                    background: #eef0f2; border-left: 2px solid #dee2e6; }
+table.planilla tbody td.saldo-neg { color: #c0392b; font-weight: bold; }
+table.planilla tbody td.saldo-pos { color: #27ae60; font-weight: bold; }
+
+/* Fila separador */
+tr.fila-sep td {
+  background: #f0f0f0; font-size: .72rem; color: #555; font-weight: bold;
+  border-top: 2px solid #c8ccd0; border-bottom: 1px solid #d5d8da;
+  padding: 3px 8px; text-align: left;
+}
+tr.fila-sep td:first-child { position: sticky; left: 0; z-index: 2; }
+tr.fila-sep.dragging { opacity: .4; }
+
+/* Drag & drop */
+tr.drag-over-top td    { border-top: 3px solid #2c3e50 !important; }
+tr.drag-over-bottom td { border-bottom: 3px solid #2c3e50 !important; }
+
+tr[draggable="true"] { cursor: grab; }
+tr[draggable="true"]:active { cursor: grabbing; }
+.drag-handle { display: inline-block; width: 18px; text-align: center;
+               color: #aaa; font-size: 1rem; cursor: grab; user-select: none; }
+
+/* Celda de día - simple */
+.celda-simple {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .65rem; font-weight: bold; cursor: pointer;
+}
+.celda-simple:hover { outline: 2px solid #2c3e50; outline-offset: -2px; }
+
+/* Celda de día - cortado (2 bloques lado a lado) */
+.celda-cortado {
+  height: 28px;
+  display: flex; flex-direction: row; cursor: pointer;
+}
+.celda-bloque {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  font-size: .58rem; font-weight: bold;
+}
+.celda-bloque:first-child { border-right: 1px solid rgba(0,0,0,.15); }
+.celda-cortado:hover { outline: 2px solid #2c3e50; outline-offset: -2px; }
+
+/* Estado sin_plan / pendiente */
+.tipo-fuera    { background: #d5d8dc !important; }
+.tipo-pendiente{ background: #f8f9fa !important; }
+.tipo-sin_plan { background: #ffffff !important; }
+
+/* Modal novedad */
+#modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; }
+#modal {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  background: white; border-radius: 10px; padding: 24px; width: 320px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.2); z-index: 101;
+}
+#modal h3 { font-size: .95rem; margin-bottom: 4px; }
+#modal .subtitulo { font-size: .78rem; color: #888; margin-bottom: 16px; }
+.tipos-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-bottom: 16px; }
+.tipo-btn {
+  padding: 8px 4px; border: 2px solid #dee2e6; border-radius: 6px;
+  cursor: pointer; font-size: .75rem; font-weight: bold;
+  text-align: center; background: white; transition: all .15s;
+}
+.tipo-btn:hover { filter: brightness(1.15); }
+.tipo-btn.selected { outline: 3px solid #2c3e50; outline-offset: 2px; filter: brightness(1.1); }
+.bloque-sel { display: flex; gap: 8px; margin-bottom: 14px; }
+.bloque-btn { flex: 1; padding: 6px; border: 2px solid #dee2e6; border-radius: 6px;
+              cursor: pointer; font-size: .8rem; background: white; }
+.bloque-btn.selected { border-color: #2c3e50; background: #2c3e50; color: white; }
+.modal-actions { display: flex; gap: 8px; margin-top: 4px; }
+.modal-actions button { flex: 1; padding: 8px; border: none; border-radius: 6px;
+                         cursor: pointer; font-size: .85rem; }
+.btn-guardar { background: #2c3e50; color: white; }
+.btn-guardar:hover { background: #3d5166; }
+.btn-borrar  { background: #e74c3c; color: white; }
+.btn-borrar:hover  { background: #c0392b; }
+.btn-cancelar{ background: #eee; }
+.btn-cancelar:hover { background: #ddd; }
+#modal-estado-actual { font-size: .78rem; color: #888; margin-bottom: 12px; min-height: 18px; }
+
+#toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white;
+         padding: 10px 18px; border-radius: 8px; display: none; z-index: 200; font-size: .85rem; }
+
+.leyenda { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px;
+           background: white; border-bottom: 1px solid #eee; }
+.ley-item { display: flex; align-items: center; gap: 4px; font-size: .72rem; color: #555; }
+.ley-box { width: 16px; height: 16px; border-radius: 3px; display: inline-flex;
+           align-items: center; justify-content: center; font-size: .6rem; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf Check" style="height:44px">
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/horarios">Horarios</a>
+    <a href="/planificacion">Planificación</a>
+    <a href="/calendarios">Calendarios</a>
+    <a href="/empleados">Empleados</a>
+    <a href="/asistencia-mensual" style="opacity:1;font-weight:bold">Planilla</a>
+    <a href="/asistencia">Fichajes</a>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
+</header>
+
+<div class="toolbar">
+  <div class="mes-nav">
+    <button onclick="navegarMes(-1)">&#8592;</button>
+    <span id="mes-label">—</span>
+    <button onclick="navegarMes(1)">&#8594;</button>
+  </div>
+
+  <button class="btn-orden" id="btn-toggle-orden" onclick="toggleOrden()">Editar orden</button>
+
+  <div id="orden-bar">
+    <button class="btn-sm btn-sep" onclick="agregarSeparador()">+ Separador</button>
+    <button class="btn-sm btn-guardar-orden" onclick="guardarOrden()">Guardar orden</button>
+    <button class="btn-sm btn-cancelar-orden" onclick="cancelarOrden()">Cancelar</button>
+  </div>
+
+  <button class="btn-orden" onclick="importarFeriados()" title="Importar feriados desde argentinadatos.com">
+    Importar feriados
+  </button>
+  <span id="loading-msg" style="font-size:.85rem;color:#888"></span>
+</div>
+
+<div class="leyenda" id="leyenda"></div>
+
+<div style="display:flex; border-bottom:2px solid #dee2e6; background:white; padding: 0 16px; gap:0">
+  <button class="tab-btn active" data-tab="TM" onclick="switchTab('TM')">Mañana</button>
+  <button class="tab-btn"        data-tab="TN" onclick="switchTab('TN')">Noche</button>
+  <button class="tab-btn"        data-tab="CO" onclick="switchTab('CO')">Cortado</button>
+  <span id="conteos" style="margin-left:auto;font-size:.78rem;color:#888;align-self:center"></span>
+</div>
+
+<div class="tab-panel active" id="panel-TM"><div class="tabla-outer" id="tabla-TM"></div></div>
+<div class="tab-panel"        id="panel-TN"><div class="tabla-outer" id="tabla-TN"></div></div>
+<div class="tab-panel"        id="panel-CO"><div class="tabla-outer" id="tabla-CO"></div></div>
+
+<!-- Modal novedad -->
+<div id="modal-overlay" onclick="cerrarModal()"></div>
+<div id="modal" style="display:none">
+  <h3 id="modal-nombre"></h3>
+  <div class="subtitulo" id="modal-subtitulo"></div>
+  <div id="modal-estado-actual"></div>
+  <div id="bloque-sel-wrap" class="bloque-sel" style="display:none">
+    <button class="bloque-btn selected" data-b="1" onclick="selBloque(1)">Bloque 1</button>
+    <button class="bloque-btn"          data-b="2" onclick="selBloque(2)">Bloque 2</button>
+    <button class="bloque-btn"          data-b="0" onclick="selBloque(0)">Ambos</button>
+  </div>
+  <div class="tipos-grid" id="tipos-grid"></div>
+  <div class="modal-actions">
+    <button class="btn-guardar"  onclick="guardarNovedad()">Guardar</button>
+    <button class="btn-borrar"   id="btn-borrar"  onclick="borrarNovedad()" style="display:none">Quitar</button>
+    <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Paleta de colores por letra ───────────────────────────────────────────────
+const C = {
+  I:   {bg:'#ffffff', txt:'#000000'},
+  T:   {bg:'#E26B0A', txt:'#000000'},
+  F:   {bg:'#27ae60', txt:'#ffffff'},
+  FT:  {bg:'#27ae60', txt:'#ffffff'},
+  FD:  {bg:'#27ae60', txt:'#ffffff'},
+  A:   {bg:'#e74c3c', txt:'#000000'},
+  E:   {bg:'#FABF8F', txt:'#000000'},
+  ILT: {bg:'#C4D79B', txt:'#000000'},
+  V:   {bg:'#95B3D7', txt:'#000000'},
+  L:   {bg:'#92CDDC', txt:'#000000'},
+  LSG: {bg:'#B1A0C7', txt:'#000000'},
+  S:   {bg:'#DA9694', txt:'#000000'},
+  '@': {bg:'#FFC7CE', txt:'#000000'},
+  'X': {bg:'#808080', txt:'#ffffff'},
+  'O': {bg:'#404040', txt:'#ffffff'},
+};
+const TIPOS_NOVEDAD        = ['ILT','LSG','L','E','V','S','FT','FD'];
+const TIPOS_NOVEDAD_CORTADO = ['ILT','LSG','L','E','V','S','FT','FD','@'];
+const NOMBRES_LETRA = {
+  I:'Presente', T:'Tarde', F:'Franco', FT:'Franco Trabaj.', FD:'Franco Devuelto',
+  A:'Ausente', E:'Enfermedad', ILT:'ILT / Accidente',
+  V:'Vacaciones', L:'Licencia', LSG:'Lic. sin sueldo', S:'Suspendido', '@':'Aliviada'
+};
+const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio',
+                  'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+// ── Estado global ─────────────────────────────────────────────────────────────
+let mesActual = '';
+let datosActuales = null;
+let tabActiva = 'TM';
+let modalCtx = null;
+
+// Orden: { TM: [{empleado_id, etiqueta}|null], TN: [...], CO: [...] }
+// null en el array = orden API vacío (usar orden por defecto de la API)
+let ordenActual  = { TM: null, TN: null, CO: null };
+let ordenEdicion = { TM: null, TN: null, CO: null };  // copia durante edición
+let modoOrden = false;
+
+// ── Inicialización ────────────────────────────────────────────────────────────
+async function init() {
+  const hoy = new Date();
+  mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  construirLeyenda();
+  await Promise.all([cargar(), cargarOrdenes()]);
+}
+
+function construirLeyenda() {
+  const ley = document.getElementById('leyenda');
+  ley.innerHTML = Object.entries(NOMBRES_LETRA).map(([k,v]) => {
+    const col = C[k] || {bg:'#eee', txt:'#333'};
+    return `<span class="ley-item">
+      <span class="ley-box" style="background:${col.bg};color:${col.txt}">${k}</span>
+      ${v}
+    </span>`;
+  }).join('');
+}
+
+function navegarMes(delta) {
+  const [y, m] = mesActual.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  mesActual = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  cargar();
+}
+
+async function cargar() {
+  const [y, m] = mesActual.split('-').map(Number);
+  document.getElementById('mes-label').textContent = `${MESES_ES[m-1]} ${y}`;
+  document.getElementById('loading-msg').textContent = 'Cargando...';
+  try {
+    const r = await fetch(`/api/asistencia/mensual?mes=${mesActual}`);
+    datosActuales = await r.json();
+    renderTodo();
+    document.getElementById('loading-msg').textContent = '';
+  } catch(e) {
+    document.getElementById('loading-msg').textContent = 'Error al cargar';
+  }
+}
+
+async function cargarOrdenes() {
+  const grupos = ['TM','TN','CO'];
+  await Promise.all(grupos.map(async g => {
+    const r = await fetch(`/api/asistencia/orden/${g}`);
+    const rows = await r.json();
+    ordenActual[g] = rows.length ? rows : null;
+  }));
+}
+
+function switchTab(tab) {
+  tabActiva = tab;
+  document.querySelectorAll('.tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p =>
+    p.classList.toggle('active', p.id === `panel-${tab}`));
+}
+
+// ── Modo edición de orden ─────────────────────────────────────────────────────
+function toggleOrden() {
+  if (modoOrden) { cancelarOrden(); return; }
+  modoOrden = true;
+  // Inicializar copia de edición para el tab activo (y los otros vacíos)
+  ['TM','TN','CO'].forEach(g => {
+    ordenEdicion[g] = construirOrdenEdicion(g);
+  });
+  document.getElementById('btn-toggle-orden').classList.add('activo');
+  document.getElementById('btn-toggle-orden').textContent = 'Salir sin guardar';
+  document.getElementById('orden-bar').style.display = 'flex';
+  renderTodo();
+}
+
+function cancelarOrden() {
+  modoOrden = false;
+  ordenEdicion = { TM: null, TN: null, CO: null };
+  document.getElementById('btn-toggle-orden').classList.remove('activo');
+  document.getElementById('btn-toggle-orden').textContent = 'Editar orden';
+  document.getElementById('orden-bar').style.display = 'none';
+  renderTodo();
+}
+
+function construirOrdenEdicion(grupo) {
+  // Si ya hay un orden guardado, partimos de él
+  if (ordenActual[grupo]) {
+    return ordenActual[grupo].map(r => ({
+      empleado_id: r.empleado_id ?? null,
+      etiqueta:    r.etiqueta ?? null,
+    }));
+  }
+  // Si no, construimos desde los empleados que devolvió la API
+  const emps = datosActuales ? datosActuales[grupo] : [];
+  return emps.map(e => ({ empleado_id: e.id, etiqueta: null }));
+}
+
+function agregarSeparador() {
+  if (!modoOrden) return;
+  const etiqueta = prompt('Etiqueta del separador (opcional):') ?? '';
+  ordenEdicion[tabActiva].push({ empleado_id: null, etiqueta: etiqueta || null });
+  renderGrupoOrden(tabActiva);
+}
+
+async function guardarOrden() {
+  // Guardar los tres grupos a la vez
+  await Promise.all(['TM','TN','CO'].map(async g => {
+    const items = ordenEdicion[g] ?? construirOrdenEdicion(g);
+    await fetch(`/api/asistencia/orden/${g}`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(items),
+    });
+    ordenActual[g] = items.map((it, i) => ({ ...it, posicion: i }));
+  }));
+  toast('Orden guardado');
+  cancelarOrden();
+}
+
+// ── Renderizado ───────────────────────────────────────────────────────────────
+function renderTodo() {
+  const d = datosActuales;
+  if (!d) return;
+  ['TM','TN','CO'].forEach(g => {
+    if (modoOrden) {
+      renderGrupoOrden(g);
+    } else {
+      renderGrupo(g, d.dias, d[g]);
+    }
+  });
+  document.getElementById('conteos').textContent =
+    `TM: ${d.TM.length}  TN: ${d.TN.length}  CO: ${d.CO.length}`;
+}
+
+// ── Render planilla normal ────────────────────────────────────────────────────
+function ordenarEmpleados(grupo, empleados) {
+  const ord = ordenActual[grupo];
+  if (!ord || !ord.length) return empleados.map(e => ({ tipo:'emp', emp: e }));
+
+  const byId = {};
+  empleados.forEach(e => byId[e.id] = e);
+
+  const rows = [];
+  ord.forEach(item => {
+    if (item.empleado_id === null || item.empleado_id === undefined) {
+      rows.push({ tipo: 'sep', etiqueta: item.etiqueta });
+    } else {
+      const emp = byId[item.empleado_id];
+      if (emp) rows.push({ tipo: 'emp', emp });
+    }
+  });
+  // Empleados no incluidos en el orden guardado van al final
+  const yaIncluidos = new Set(ord.filter(x => x.empleado_id).map(x => x.empleado_id));
+  empleados.filter(e => !yaIncluidos.has(e.id)).forEach(e =>
+    rows.push({ tipo: 'emp', emp: e })
+  );
+  return rows;
+}
+
+function renderGrupo(grupo, dias, empleados) {
+  const cortado = grupo === 'CO';
+  const contenedor = document.getElementById(`tabla-${grupo}`);
+  if (!empleados.length) {
+    contenedor.innerHTML = '<p style="padding:24px;color:#aaa">Sin empleados para este mes.</p>';
+    return;
+  }
+
+  const resCols = cortado
+    ? ['transporte','saldo_francos','T','ILT','LSG','L','@','E','V','S','A','feriados_trabajados','dias']
+    : ['transporte','saldo_francos','T','ILT','LSG','L','E','V','S','A','feriados_trabajados','dias'];
+  const resLabels = {
+    transporte:'TRANS', saldo_francos:'SALDO', T:'T', ILT:'ILT', LSG:'LSG',
+    L:'L', '@':'@', E:'E', V:'V', S:'S', A:'A',
+    feriados_trabajados:'FERI.', dias:'DÍAS'
+  };
+  const totalCols = 2 + dias.length + 1 + resCols.length;
+
+  let html = '<table class="planilla"><thead><tr>';
+  html += '<th class="col-cod">COD</th>';
+  html += '<th class="col-nombre">APELLIDO Y NOMBRE</th>';
+  dias.forEach(dia => {
+    const base = cortado ? 'col-dia-co' : 'col-dia';
+    const cls = [base, dia.domingo ? 'domingo' : '', dia.feriado ? 'feriado' : ''].filter(Boolean).join(' ');
+    html += `<th class="${cls}"><div class="dow-num"><span class="dow">${dia.dow}</span><span class="num">${dia.num}</span></div></th>`;
+  });
+  html += '<th class="col-sep"></th>';
+  resCols.forEach(c =>
+    html += `<th class="col-res${c==='dias'?' col-dias':''}">${resLabels[c]}</th>`
+  );
+  html += '</tr></thead><tbody>';
+
+  const filas = ordenarEmpleados(grupo, empleados);
+  filas.forEach(fila => {
+    if (fila.tipo === 'sep') {
+      html += `<tr class="fila-sep"><td colspan="${totalCols}">${fila.etiqueta || ''}</td></tr>`;
+    } else {
+      html += cortado ? filaHtmlCortado(fila.emp, dias, resCols)
+                      : filaHtmlSimple(fila.emp, dias, resCols);
+    }
+  });
+
+  html += '</tbody></table>';
+  contenedor.innerHTML = html;
+}
+
+function filaHtmlSimple(emp, dias, resCols) {
+  let h = `<tr>
+    <td class="col-cod">${emp.cod || ''}</td>
+    <td class="col-nombre" title="${emp.apellido} ${emp.nombre} — ${emp.cargo}">${emp.apellido} ${emp.nombre}</td>`;
+  dias.forEach(dia => {
+    const c = emp.celdas[dia.fecha] || {letra:null, tipo:'sin_plan'};
+    const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
+    h += `<td style="padding:0">${celdaSimpleHtml(c, emp.id, dia.fecha, mark)}</td>`;
+  });
+  h += '<td class="col-sep"></td>';
+  resCols.forEach(col => {
+    const v = emp.totales[col] ?? 0;
+    const cls = col === 'saldo_francos' ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : '') : '';
+    h += `<td class="col-res${col==='dias'?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
+  });
+  return h + '</tr>';
+}
+
+function filaHtmlCortado(emp, dias, resCols) {
+  let h = `<tr>
+    <td class="col-cod">${emp.cod || ''}</td>
+    <td class="col-nombre" title="${emp.apellido} ${emp.nombre} — ${emp.cargo}">${emp.apellido} ${emp.nombre}</td>`;
+  dias.forEach(dia => {
+    const c = emp.celdas[dia.fecha] || {b1:{letra:null,tipo:'sin_plan'}, b2:{letra:null,tipo:'sin_plan'}};
+    const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
+    h += `<td style="padding:0">${celdaCortadoHtml(c, emp.id, dia.fecha, mark)}</td>`;
+  });
+  h += '<td class="col-sep"></td>';
+  resCols.forEach(col => {
+    const v = emp.totales[col] ?? 0;
+    const cls = col === 'saldo_francos' ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : '') : '';
+    h += `<td class="col-res${col==='dias'?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
+  });
+  return h + '</tr>';
+}
+
+// ── Render modo edición de orden ──────────────────────────────────────────────
+function renderGrupoOrden(grupo) {
+  const contenedor = document.getElementById(`tabla-${grupo}`);
+  const items = ordenEdicion[grupo] ?? construirOrdenEdicion(grupo);
+  const empsById = {};
+  (datosActuales[grupo] || []).forEach(e => empsById[e.id] = e);
+
+  let html = '<table class="planilla" id="orden-table-' + grupo + '" style="width:400px"><thead><tr>' +
+    '<th style="width:30px"></th>' +
+    '<th class="col-cod">COD</th>' +
+    '<th class="col-nombre" style="width:260px">APELLIDO Y NOMBRE</th>' +
+    '<th style="width:60px;font-size:.65rem;color:#aaa">acciones</th>' +
+    '</tr></thead><tbody id="orden-tbody-' + grupo + '">';
+
+  items.forEach((item, idx) => {
+    if (item.empleado_id === null || item.empleado_id === undefined) {
+      const etiq = item.etiqueta ? escHtml(item.etiqueta) : '';
+      html += `<tr class="fila-sep" draggable="true"
+          data-grupo="${grupo}" data-idx="${idx}"
+          ondragstart="onDragStart(event)" ondragover="onDragOver(event)"
+          ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <td><span class="drag-handle">⠿</span></td>
+        <td colspan="2" style="padding:2px 8px">
+          <input type="text" value="${etiq}" placeholder="Etiqueta..."
+            style="border:none;background:transparent;width:100%;font-size:.78rem;font-weight:bold"
+            onchange="actualizarEtiqueta('${grupo}',${idx},this.value)">
+        </td>
+        <td><button class="btn-sm" style="background:#e74c3c;color:white;font-size:.7rem"
+          onclick="eliminarFila('${grupo}',${idx})">✕</button></td>
+      </tr>`;
+    } else {
+      const emp = empsById[item.empleado_id];
+      const nombre = emp ? `${emp.apellido} ${emp.nombre}` : `#${item.empleado_id}`;
+      const cod = emp ? (emp.cod || '') : '';
+      html += `<tr draggable="true"
+          data-grupo="${grupo}" data-idx="${idx}"
+          ondragstart="onDragStart(event)" ondragover="onDragOver(event)"
+          ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <td><span class="drag-handle">⠿</span></td>
+        <td class="col-cod">${cod}</td>
+        <td class="col-nombre">${escHtml(nombre)}</td>
+        <td><button class="btn-sm" style="background:#e74c3c;color:white;font-size:.7rem"
+          onclick="eliminarFila('${grupo}',${idx})">✕</button></td>
+      </tr>`;
+    }
+  });
+
+  html += '</tbody></table>';
+  contenedor.innerHTML = html;
+}
+
+function actualizarEtiqueta(grupo, idx, valor) {
+  if (ordenEdicion[grupo]) ordenEdicion[grupo][idx].etiqueta = valor || null;
+}
+
+function eliminarFila(grupo, idx) {
+  if (!ordenEdicion[grupo]) return;
+  ordenEdicion[grupo].splice(idx, 1);
+  renderGrupoOrden(grupo);
+}
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+let dragSrcGrupo = null;
+let dragSrcIdx   = null;
+
+function onDragStart(e) {
+  dragSrcGrupo = e.currentTarget.dataset.grupo;
+  dragSrcIdx   = parseInt(e.currentTarget.dataset.idx);
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', dragSrcIdx);
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const tr = e.currentTarget;
+  const rect = tr.getBoundingClientRect();
+  const mid = rect.top + rect.height / 2;
+  tr.classList.remove('drag-over-top', 'drag-over-bottom');
+  tr.classList.add(e.clientY < mid ? 'drag-over-top' : 'drag-over-bottom');
+}
+
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over-top', 'drag-over-bottom');
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  const tr = e.currentTarget;
+  const destGrupo = tr.dataset.grupo;
+  const destIdx   = parseInt(tr.dataset.idx);
+  const insertAfter = tr.classList.contains('drag-over-bottom');
+  tr.classList.remove('drag-over-top', 'drag-over-bottom');
+  tr.closest('tr')?.classList.remove('dragging');
+
+  if (dragSrcGrupo !== destGrupo) return;
+  if (dragSrcIdx === destIdx) return;
+
+  const arr = ordenEdicion[destGrupo];
+  const [moved] = arr.splice(dragSrcIdx, 1);
+  let insertAt = destIdx;
+  if (dragSrcIdx < destIdx) insertAt = destIdx; else insertAt = destIdx;
+  if (insertAfter) insertAt = (dragSrcIdx < destIdx ? destIdx : destIdx + 1);
+  else             insertAt = (dragSrcIdx < destIdx ? destIdx - 1 : destIdx);
+  arr.splice(insertAt, 0, moved);
+
+  dragSrcGrupo = null;
+  dragSrcIdx   = null;
+  renderGrupoOrden(destGrupo);
+}
+
+// ── Celdas ────────────────────────────────────────────────────────────────────
+function celdaSimpleHtml(celda, eid, fecha, mark='') {
+  const {bg, txt, cls} = estiloBloque(celda);
+  const letra = celda.letra || '';
+  const novId = celda.nov_id ? `data-nov-id="${celda.nov_id}"` : '';
+  return `<div class="celda-simple ${cls} ${mark}" style="background:${bg};color:${txt}"
+    ${novId} onclick="abrirModal(${eid},'${fecha}',0,false)"
+    title="${letra || '—'}  ${fecha}">${letra}</div>`;
+}
+
+function celdaCortadoHtml(celda, eid, fecha, mark='') {
+  const b1 = celda.b1 || {letra:null, tipo:'sin_plan'};
+  const b2 = celda.b2 || {letra:null, tipo:'sin_plan'};
+  const s1 = estiloBloque(b1), s2 = estiloBloque(b2);
+  const nid1 = b1.nov_id ? `data-nov-id="${b1.nov_id}"` : '';
+  const nid2 = b2.nov_id ? `data-nov-id="${b2.nov_id}"` : '';
+  return `<div class="celda-cortado ${mark}" onclick="abrirModal(${eid},'${fecha}',1,true)" title="${(b1.letra||'—')}/${(b2.letra||'—')}  ${fecha}">
+    <div class="celda-bloque ${s1.cls}" style="background:${s1.bg};color:${s1.txt}" ${nid1}>${b1.letra||''}</div>
+    <div class="celda-bloque ${s2.cls}" style="background:${s2.bg};color:${s2.txt}" ${nid2}>${b2.letra||''}</div>
+  </div>`;
+}
+
+function estiloBloque(celda) {
+  if (celda.tipo === 'fuera')       return {bg:'#d5d8dc', txt:'#d5d8dc', cls:'tipo-fuera'};
+  if (celda.tipo === 'liquidacion') return {bg:'#5d6d7e', txt:'#ffffff', cls:''};
+  if (celda.tipo === 'pendiente')   return {bg:'#f0f3f5', txt:'#c0c8d0', cls:'tipo-pendiente'};
+  if (!celda.letra)                 return {bg:'#ffffff', txt:'transparent', cls:'tipo-sin_plan'};
+  const col = C[celda.letra] || {bg:'#eee', txt:'#333'};
+  return {bg: col.bg, txt: col.txt, cls: ''};
+}
+
+function fmtNum(v) {
+  if (v === 0 || v === '0') return '0';
+  if (typeof v === 'number' && v % 1 !== 0) return v.toFixed(1).replace('.0','');
+  return v;
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Modal de edición de novedad ───────────────────────────────────────────────
+function abrirModal(eid, fecha, bloqueInicial, esCortado) {
+  if (modoOrden) return;
+  const emp = encontrarEmp(eid);
+  if (!emp) return;
+
+  const celda = emp.celdas[fecha];
+  modalCtx = { eid, nombre: `${emp.apellido} ${emp.nombre}`, fecha, esCortado,
+               bloqueActivo: bloqueInicial };
+
+  document.getElementById('modal-nombre').textContent = modalCtx.nombre;
+  document.getElementById('modal-subtitulo').textContent =
+    `${fecha}  —  ${['Día completo','Bloque 1','Bloque 2'][bloqueInicial]}`;
+
+  const bsel = document.getElementById('bloque-sel-wrap');
+  bsel.style.display = esCortado ? 'flex' : 'none';
+  if (esCortado) selBloque(bloqueInicial, true);
+
+  let desc = '';
+  if (celda) {
+    if (esCortado) {
+      const b = bloqueInicial === 2 ? celda.b2 : celda.b1;
+      if (b && b.letra) desc = `Estado actual: ${b.letra} (${NOMBRES_LETRA[b.letra]||b.letra})`;
+    } else {
+      if (celda.letra) desc = `Estado actual: ${celda.letra} (${NOMBRES_LETRA[celda.letra]||celda.letra})`;
+    }
+  }
+  document.getElementById('modal-estado-actual').textContent = desc;
+
+  const tipos = esCortado ? TIPOS_NOVEDAD_CORTADO : TIPOS_NOVEDAD;
+  const grid = document.getElementById('tipos-grid');
+  grid.innerHTML = tipos.map(t => {
+    const col = C[t] || {bg:'#eee',txt:'#333'};
+    return `<button class="tipo-btn" data-tipo="${t}" onclick="selTipo('${t}')"
+      style="background:${col.bg};color:${col.txt};border-color:${col.bg}">${t}</button>`;
+  }).join('');
+
+  const novId = getNovId(celda, bloqueInicial, esCortado);
+  document.getElementById('btn-borrar').style.display = novId ? 'block' : 'none';
+  document.getElementById('btn-borrar').dataset.novId = novId || '';
+
+  document.getElementById('modal-overlay').style.display = 'block';
+  document.getElementById('modal').style.display = 'block';
+}
+
+function getNovId(celda, bloque, esCortado) {
+  if (!celda) return null;
+  if (esCortado) {
+    const b = bloque === 2 ? celda.b2 : celda.b1;
+    return b && b.nov_id ? b.nov_id : null;
+  }
+  return celda.nov_id || null;
+}
+
+function encontrarEmp(eid) {
+  if (!datosActuales) return null;
+  for (const g of ['TM','TN','CO']) {
+    const e = datosActuales[g].find(x => x.id === eid);
+    if (e) return e;
+  }
+  return null;
+}
+
+function selBloque(b, skipSubtitulo) {
+  modalCtx.bloqueActivo = b;
+  document.querySelectorAll('.bloque-btn').forEach(btn =>
+    btn.classList.toggle('selected', parseInt(btn.dataset.b) === b));
+  if (!skipSubtitulo)
+    document.getElementById('modal-subtitulo').textContent =
+      `${modalCtx.fecha}  —  ${['Día completo','Bloque 1','Bloque 2'][b]}`;
+}
+
+function selTipo(t) {
+  document.querySelectorAll('.tipo-btn').forEach(b =>
+    b.classList.toggle('selected', b.dataset.tipo === t));
+  // Aliviada requiere bloque específico
+  if (t === '@' && modalCtx?.esCortado && modalCtx.bloqueActivo === 0) {
+    selBloque(1);
+  }
+}
+
+async function guardarNovedad() {
+  const tipo = document.querySelector('.tipo-btn.selected')?.dataset.tipo;
+  if (!tipo) { toast('Seleccioná un tipo'); return; }
+  const { eid, fecha, bloqueActivo } = modalCtx;
+  const res = await fetch('/api/asistencia/novedades', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({empleado_id: eid, fecha, bloque: bloqueActivo, tipo}),
+  });
+  if (res.ok) { toast('Novedad guardada'); cerrarModal(); cargar(); }
+  else { const e = await res.json(); toast('Error: ' + (e.detail || 'desconocido')); }
+}
+
+async function borrarNovedad() {
+  const novId = document.getElementById('btn-borrar').dataset.novId;
+  if (!novId) return;
+  const res = await fetch(`/api/asistencia/novedades/${novId}`, {method:'DELETE'});
+  if (res.ok) { toast('Novedad eliminada'); cerrarModal(); cargar(); }
+  else toast('Error al eliminar');
+}
+
+function cerrarModal() {
+  document.getElementById('modal-overlay').style.display = 'none';
+  document.getElementById('modal').style.display = 'none';
+  modalCtx = null;
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 2800);
+}
+
+async function importarFeriados() {
+  const año = mesActual.split('-')[0];
+  if (!confirm(`¿Importar feriados ${año} desde argentinadatos.com?`)) return;
+  document.getElementById('loading-msg').textContent = 'Importando feriados...';
+  try {
+    const r = await fetch(`/api/feriados/importar/${año}`, {method:'POST'});
+    const d = await r.json();
+    if (!r.ok) { toast('Error: ' + (d.detail || r.status)); return; }
+    const msg = `Feriados ${d.anio}: ${d.nuevos} nuevos, ${d.eliminados} eliminados (${d.total_api} en API)`;
+    toast(msg);
+    cargar();
+  } catch(e) {
+    toast('Error al importar feriados');
+  } finally {
+    document.getElementById('loading-msg').textContent = '';
+  }
+}
+
+async function logout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  location.href = '/login';
+}
+
+init();
+</script>
+</body>
+</html>

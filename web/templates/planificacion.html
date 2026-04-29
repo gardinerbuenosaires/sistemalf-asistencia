@@ -80,6 +80,12 @@
     <button onclick="irHoy()" style="font-size:.75rem;padding:5px 8px">Hoy</button>
     <button onclick="generarSemana()" style="font-size:.75rem;padding:5px 10px;background:#27ae60;border-color:transparent" title="Pre-completar desde calendarios asignados">Generar desde calendarios</button>
   </div>
+  <select id="filtro-turno" onchange="filtrarTabla()"
+    style="padding:5px 10px;border-radius:4px;border:none;font-size:.85rem;outline:none;background:rgba(255,255,255,.15);color:white">
+    <option value="">Todos los turnos</option>
+  </select>
+  <input id="filtro-nombre" type="search" placeholder="Buscar empleado..." oninput="filtrarTabla()"
+    style="padding:5px 10px;border-radius:4px;border:none;font-size:.85rem;width:190px;outline:none">
 </header>
 
 <main>
@@ -113,7 +119,8 @@ const hoy = new Date().toISOString().slice(0,10);
 let fechaRef = hoy;
 let horarios = [];
 let modalCtx = null;
-let planData = {};  // clave: "empleadoId_fecha"
+let planData = {};        // clave: "empleadoId_fecha"
+let horarioTurnoMap = {}; // horario_id → turno_id
 
 function toast(msg, ms=2500) {
   const el = document.getElementById("toast");
@@ -166,6 +173,24 @@ async function cargar() {
   const data = await res.json();
   horarios = data.horarios;
 
+  // Mapa horario_id → turno_id para filtrado
+  horarioTurnoMap = {};
+  horarios.forEach(h => { horarioTurnoMap[h.id] = h.turno_id || null; });
+
+  // Poblar selector de turnos (solo la primera carga)
+  const sel = document.getElementById("filtro-turno");
+  if (sel.options.length === 1) {
+    const turnos = [...new Map(horarios.filter(h => h.turno_id).map(h => [h.turno_id, h])).values()];
+    // Pedir la lista completa de turnos para tener nombre y orden correctos
+    const tr = await fetch("/api/turnos").then(r => r.json());
+    tr.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.nombre;
+      sel.appendChild(opt);
+    });
+  }
+
   // Indexar plan por clave para el modal
   planData = {};
   for (const emp of data.empleados) {
@@ -201,12 +226,41 @@ async function cargar() {
       cargoActual = cargo;
     }
     const nombre = `${emp.empleado.apellido}${emp.empleado.nombre ? ", " + emp.empleado.nombre.split(" ")[0] : ""}`;
-    html += `<tr>
+    // Turnos que tiene este empleado esta semana
+    const turnosEmp = data.dias.map(d => emp.dias[d]?.horario_id ? horarioTurnoMap[emp.dias[d].horario_id] : null).filter(Boolean);
+    const dataTurnos = [...new Set(turnosEmp)].join(",");
+    html += `<tr data-nombre="${nombre.toLowerCase()}" data-turnos="${dataTurnos}">
       <td class="col-nombre" title="${nombre}">${nombre}</td>
       ${data.dias.map(d => `<td class="col-dia">${celda(emp.dias[d], d, emp.empleado.id, nombre)}</td>`).join("")}
     </tr>`;
   }
   tbody.innerHTML = html;
+  filtrarTabla();
+}
+
+function filtrarTabla() {
+  const q = (document.getElementById("filtro-nombre").value || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const turnoFiltro = document.getElementById("filtro-turno").value;
+  const filas = document.querySelectorAll("#tbody-plan tr");
+  let grupoHeader = null;
+  let grupoTieneVisible = false;
+
+  filas.forEach(tr => {
+    if (tr.classList.contains("grupo-header")) {
+      if (grupoHeader) grupoHeader.style.display = grupoTieneVisible ? "" : "none";
+      grupoHeader = tr;
+      grupoTieneVisible = false;
+    } else {
+      const nombre = (tr.dataset.nombre || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+      const turnos = (tr.dataset.turnos || "").split(",").filter(Boolean);
+      const matchNombre = !q || nombre.includes(q);
+      const matchTurno = !turnoFiltro || turnos.includes(turnoFiltro);
+      const visible = matchNombre && matchTurno;
+      tr.style.display = visible ? "" : "none";
+      if (visible) grupoTieneVisible = true;
+    }
+  });
+  if (grupoHeader) grupoHeader.style.display = grupoTieneVisible ? "" : "none";
 }
 
 function abrirModal(empleadoId, fecha, nombre) {

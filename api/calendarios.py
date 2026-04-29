@@ -153,6 +153,10 @@ def asignar(data: AsignacionIn):
                 "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= ? AND auto_generado=1",
                 (eid, data.fecha_desde)
             )
+            conn.execute(
+                "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha >= ? AND corregido_manualmente=0",
+                (eid, data.fecha_desde)
+            )
             # Entradas manuales existentes en el rango (no tocar)
             manuales = {r["fecha"] for r in conn.execute(
                 "SELECT fecha FROM planificacion WHERE empleado_id=? AND fecha >= ? AND fecha <= ? AND auto_generado=0",
@@ -201,6 +205,10 @@ def eliminar_asignacion(asignacion_id: int):
         conn.execute("DELETE FROM asignaciones WHERE id=?", (asignacion_id,))
         conn.execute(
             "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= date('now','localtime') AND auto_generado=1",
+            (eid,)
+        )
+        conn.execute(
+            "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha >= date('now','localtime') AND corregido_manualmente=0",
             (eid,)
         )
     return {"ok": True}

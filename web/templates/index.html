@@ -9,8 +9,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
-  header { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
-  header h1 { font-size: 1.2rem; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
   #sync-status { font-size: 0.85rem; opacity: 0.8; }
   main { padding: 24px; max-width: 1200px; margin: 0 auto; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
@@ -42,25 +41,34 @@
   .presencia-hora { font-size: 1rem; font-weight: bold; color: #27ae60; min-width: 42px; }
   .presencia-nombre { font-size: 0.9rem; font-weight: bold; }
   .presencia-empty { color: #aaa; font-size: 0.9rem; }
+  .alerta-franco { background: #fff8e1; border: 2px solid #f39c12; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }
+  .alerta-franco-titulo { font-size: .8rem; font-weight: bold; text-transform: uppercase; color: #e67e22; letter-spacing: .05em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .alerta-franco-titulo .icono { font-size: 1.1rem; }
+  .alerta-franco .presencia-item { background: #fef3cd; border-left-color: #f39c12; }
+  .alerta-franco .presencia-hora { color: #d35400; }
+  .alerta-ciclo { background: #fdf2f2; border: 2px solid #e74c3c; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }
+  .alerta-ciclo-titulo { font-size: .8rem; font-weight: bold; text-transform: uppercase; color: #c0392b; letter-spacing: .05em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .alerta-ciclo .presencia-item { background: #fde8e8; border-left-color: #e74c3c; }
+  .alerta-ciclo .presencia-hora { color: #c0392b; }
+  .ciclo-salida-plan { font-size: .75rem; color: #999; margin-top: 1px; }
 </style>
 </head>
 <body>
 
 <header>
-  <div style="display:flex;align-items:center;gap:10px">
-    <img src="/static/img/logo_icono.svg" alt="" style="height:32px">
-    <h1>Sistema de Fichaje Biométrico</h1>
-  </div>
-  <nav style="display:flex;gap:16px">
-    <a href="/horarios" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Horarios</a>
-    <a href="/planificacion" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Planificación</a>
-    <a href="/calendarios" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Calendarios</a>
-    <a href="/empleados" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Empleados</a>
-    <a href="/asistencia" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Asistencia</a>
-    <a href="/usuarios" style="color:rgba(255,255,255,.8);font-size:.9rem;text-decoration:none">Usuarios</a>
-    <span id="user-info" style="font-size:.78rem;opacity:.7;margin-left:8px"></span>
-    <a href="#" onclick="logout()" style="color:rgba(255,255,255,.6);font-size:.8rem;text-decoration:none">Salir</a>
-    <span id="sync-status" style="font-size:.85rem;opacity:.8">Cargando...</span>
+  <img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf Check" style="height:44px">
+  <nav style="display:flex;gap:16px;align-items:center">
+    <a href="/horarios" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Horarios</a>
+    <a href="/planificacion" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Planificación</a>
+    <a href="/calendarios" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Calendarios</a>
+    <a href="/empleados" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Empleados</a>
+    <a href="/asistencia" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Asistencia</a>
+    <a href="/asistencia-mensual" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Planilla</a>
+    <a href="/usuarios" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Usuarios</a>
+    <a href="/configuracion" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Configuración</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()" style="color:#666;font-size:.8rem;text-decoration:none">Salir</a>
+    <span id="sync-status" style="font-size:.85rem;color:#555">Cargando...</span>
   </nav>
 </header>
 
@@ -71,10 +79,7 @@
       <h3>Fichajes hoy</h3>
       <div class="value" id="cnt-hoy">—</div>
     </div>
-    <div class="card alert">
-      <h3>Inconsistencias pendientes</h3>
-      <div class="value" id="cnt-inconsistencias">—</div>
-    </div>
+
     <div class="card">
       <h3>Empleados activos</h3>
       <div class="value" id="cnt-empleados">—</div>
@@ -87,6 +92,27 @@
 
   <div class="section">
     <h2>Presencia ahora <span id="cnt-presentes" style="font-size:.85rem;color:#888;font-weight:normal;margin-left:8px"></span></h2>
+    <div id="presencia-ciclo-wrap" style="display:none">
+      <div class="alerta-ciclo">
+        <div class="alerta-ciclo-titulo">
+          <span class="icono">⚠</span>
+          Ciclo sin cerrar — posible salida no fichada
+          <span id="cnt-ciclo" style="font-weight:normal"></span>
+        </div>
+        <div id="presencia-ciclo" class="presencia-grid"></div>
+      </div>
+    </div>
+    <div id="presencia-franco-wrap" style="display:none">
+      <div class="alerta-franco">
+        <div class="alerta-franco-titulo">
+          <span class="icono">⚠</span>
+          Franco pero fichó — corregir planificación
+          <span id="cnt-franco-fichaje" style="font-weight:normal"></span>
+          <a href="/planificacion" style="margin-left:auto;font-size:.8rem;color:#e67e22;font-weight:normal;text-decoration:underline">Ir a planificación</a>
+        </div>
+        <div id="presencia-franco" class="presencia-grid"></div>
+      </div>
+    </div>
     <div id="presencia-container"><p class="presencia-empty">Cargando...</p></div>
     <div id="presencia-ausentes-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid #eee">
       <h3 style="font-size:.8rem;font-weight:bold;text-transform:uppercase;color:#e74c3c;letter-spacing:.05em;margin-bottom:10px">
@@ -126,15 +152,6 @@
     </table>
   </div>
 
-  <div class="section">
-    <h2>Inconsistencias pendientes</h2>
-    <table>
-      <thead>
-        <tr><th>Empleado</th><th>Nombre</th><th>Fecha</th><th>Motivo</th></tr>
-      </thead>
-      <tbody id="tabla-inconsistencias"><tr><td colspan="4">Cargando...</td></tr></tbody>
-    </table>
-  </div>
 
 </main>
 
@@ -210,23 +227,6 @@ async function loadFichajes() {
   `).join("");
 }
 
-async function loadInconsistencias() {
-  const data = await api("/api/inconsistencias?resuelta=0");
-  document.getElementById("cnt-inconsistencias").textContent = data.length;
-  const tbody = document.getElementById("tabla-inconsistencias");
-  if (!data.length) {
-    tbody.innerHTML = "<tr><td colspan='4'>Sin inconsistencias pendientes</td></tr>";
-    return;
-  }
-  tbody.innerHTML = data.map(i => `
-    <tr>
-      <td>${i.user_id}</td>
-      <td>${i.nombre || "—"}</td>
-      <td>${i.fecha}</td>
-      <td>${i.motivo}</td>
-    </tr>
-  `).join("");
-}
 
 async function loadSyncLog() {
   const logs = await api("/api/sync/log?limit=1");
@@ -244,7 +244,6 @@ async function syncNow() {
     const r = await api("/api/sync/now");
     toast(`Sync OK: ${r.nuevos} nuevos de ${r.leidos} registros`);
     loadFichajes();
-    loadInconsistencias();
     loadSyncLog();
   } catch (e) {
     toast("Error al sincronizar: " + e.message);
@@ -278,12 +277,51 @@ function renderGrupos(personas, container) {
 }
 
 async function loadPresencia() {
-  const data     = await api("/api/presencia/hoy");
-  const conPlan  = data.con_planificacion || [];
-  const sinPlan  = data.sin_planificacion || [];
-  const ausentes = data.ausentes          || [];
+  const data           = await api("/api/presencia/hoy");
+  const conPlan        = data.con_planificacion  || [];
+  const sinPlan        = data.sin_planificacion  || [];
+  const ausentes       = data.ausentes           || [];
+  const francoCon      = data.franco_con_fichaje || [];
+  const cicloAbierto   = data.ciclo_abierto      || [];
 
   document.getElementById("cnt-presentes").textContent = `(${conPlan.length} personas)`;
+
+  // — Ciclo sin cerrar —
+  const wrapCiclo = document.getElementById("presencia-ciclo-wrap");
+  if (cicloAbierto.length) {
+    wrapCiclo.style.display = "block";
+    document.getElementById("cnt-ciclo").textContent = `(${cicloAbierto.length})`;
+    document.getElementById("presencia-ciclo").innerHTML = cicloAbierto.map(p => `
+      <div class="presencia-item">
+        <span class="presencia-hora">${p.hora_entrada.slice(11,16)}</span>
+        <div>
+          <div class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</div>
+          <div class="ciclo-salida-plan">${p.cargo || ''}${p.hora_salida_plan ? ' · salida plan: ' + p.hora_salida_plan : ' · último: ' + p.ultimo_fichaje.slice(11,16)}</div>
+        </div>
+      </div>
+    `).join("");
+  } else {
+    wrapCiclo.style.display = "none";
+  }
+
+  // — Franco pero fichó —
+  const wrapFranco = document.getElementById("presencia-franco-wrap");
+  if (francoCon.length) {
+    wrapFranco.style.display = "block";
+    document.getElementById("cnt-franco-fichaje").textContent = `(${francoCon.length})`;
+    document.getElementById("presencia-franco").innerHTML = francoCon.map(p => `
+      <div class="presencia-item">
+        <span class="presencia-hora">${p.hora_entrada.slice(11,16)}</span>
+        <div>
+          <div class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</div>
+          <div style="font-size:.78rem;color:#888">${p.cargo || ''}</div>
+        </div>
+      </div>
+    `).join("");
+  } else {
+    wrapFranco.style.display = "none";
+  }
+
   renderGrupos(conPlan, document.getElementById("presencia-container"));
 
   const wrapAus = document.getElementById("presencia-ausentes-wrap");
@@ -326,12 +364,12 @@ async function loadPresencia() {
 
 async function init() {
   await loadEmpleados();
-  await Promise.all([loadPresencia(), loadFichajes(), loadInconsistencias(), loadSyncLog()]);
+  await Promise.all([loadPresencia(), loadFichajes(), loadSyncLog()]);
 }
 
 init();
 // Refresca cada 2 minutos
-setInterval(() => { loadPresencia(); loadFichajes(); loadInconsistencias(); loadSyncLog(); }, 120000);
+setInterval(() => { loadPresencia(); loadFichajes(); loadSyncLog(); }, 120000);
 </script>
 </body>
 </html>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<title>Configuración — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  header { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .9rem; }
+  header a:hover { color: white; }
+  header h1 { font-size: 1.2rem; }
+  main { padding: 24px; max-width: 700px; margin: 0 auto; }
+  .section { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 24px; }
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .section-header h2 { font-size: 1rem; }
+  .section-desc { font-size: .82rem; color: #888; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th { text-align: left; padding: 8px; background: #f8f9fa; border-bottom: 2px solid #dee2e6; }
+  td { padding: 8px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  tr:hover td { background: #fafafa; }
+  .btn { padding: 7px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: .85rem; }
+  .btn-primary { background: #2c3e50; color: white; }
+  .btn-primary:hover { background: #3d5166; }
+  .btn-danger { background: #e74c3c; color: white; }
+  .btn-danger:hover { background: #c0392b; }
+  .btn-sm { padding: 3px 9px; font-size: .78rem; }
+
+  /* Fila de edición inline */
+  .fila-edit td { background: #f0f4f8 !important; }
+  .fila-edit input { padding: 5px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; width: 100%; }
+  .fila-edit input[type=time] { width: 110px; }
+
+  .hora-badge { display: inline-block; background: #e8f4fd; color: #004085; border-radius: 10px; padding: 2px 10px; font-size: .8rem; font-weight: bold; }
+
+  #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 12px 20px; border-radius: 8px; display: none; z-index: 200; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/" title="Inicio" style="display:flex;align-items:center"><img src="/static/img/logo_icono.svg" alt="Inicio" style="height:28px"></a>
+  <h1>Configuración</h1>
+  <nav style="display:flex;gap:14px;margin-left:auto">
+    <a href="/horarios">Horarios</a>
+    <a href="/planificacion">Planificación</a>
+  </nav>
+</header>
+
+<main>
+  <div class="section">
+    <h2 style="margin-bottom:16px">Parámetros del sistema</h2>
+    <div id="params-container"><p style="color:#aaa;font-size:.9rem">Cargando...</p></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Turnos</h2>
+      <button class="btn btn-primary" onclick="agregarFila()">+ Nuevo turno</button>
+    </div>
+    <p class="section-desc">
+      Define los turnos del establecimiento con su hora de inicio. Los horarios se asignan automáticamente al turno cuya hora de inicio sea la más cercana por debajo de la hora de entrada.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Desde</th>
+          <th style="width:140px">Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-turnos">
+        <tr><td colspan="3" style="color:#aaa">Cargando...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+let turnos = [];
+
+function toast(msg, ms = 3000) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", ms);
+}
+
+async function cargar() {
+  const res = await fetch("/api/turnos");
+  turnos = await res.json();
+  renderTabla();
+}
+
+function renderTabla() {
+  const tbody = document.getElementById("tabla-turnos");
+  if (!turnos.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:#aaa">Sin turnos definidos</td></tr>';
+    return;
+  }
+  tbody.innerHTML = turnos.map(t => `
+    <tr id="fila-${t.id}">
+      <td><strong>${t.nombre}</strong></td>
+      <td><span class="hora-badge">${t.hora_desde}</span></td>
+      <td>
+        <button class="btn btn-sm btn-primary" onclick="editarFila(${t.id})">Editar</button>
+        <button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminar(${t.id}, '${t.nombre.replace(/'/g,"\\'")}')">Eliminar</button>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function editarFila(id) {
+  const t = turnos.find(x => x.id === id);
+  if (!t) return;
+  // Quitar cualquier fila de edición previa
+  document.querySelectorAll(".fila-edit").forEach(f => {
+    const orig = turnos.find(x => x.id === parseInt(f.id.replace("edit-","")));
+    if (orig) f.outerHTML = filaHTML(orig);
+  });
+  const fila = document.getElementById(`fila-${id}`);
+  fila.className = "fila-edit";
+  fila.id = `edit-${id}`;
+  fila.innerHTML = `
+    <td><input type="text" id="edit-nombre-${id}" value="${t.nombre}"></td>
+    <td><input type="time" id="edit-hora-${id}" value="${t.hora_desde}"></td>
+    <td>
+      <button class="btn btn-sm btn-primary" onclick="guardar(${id})">Guardar</button>
+      <button class="btn btn-sm" style="margin-left:5px;background:#eee" onclick="cargar()">Cancelar</button>
+    </td>
+  `;
+  document.getElementById(`edit-nombre-${id}`).focus();
+}
+
+function filaHTML(t) {
+  return `<tr id="fila-${t.id}">
+    <td><strong>${t.nombre}</strong></td>
+    <td><span class="hora-badge">${t.hora_desde}</span></td>
+    <td>
+      <button class="btn btn-sm btn-primary" onclick="editarFila(${t.id})">Editar</button>
+      <button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminar(${t.id}, '${t.nombre.replace(/'/g,"\\'")}')">Eliminar</button>
+    </td>
+  </tr>`;
+}
+
+function agregarFila() {
+  // Quitar fila nueva previa si existe
+  const prev = document.getElementById("fila-nueva");
+  if (prev) prev.remove();
+
+  const tbody = document.getElementById("tabla-turnos");
+  const tr = document.createElement("tr");
+  tr.id = "fila-nueva";
+  tr.className = "fila-edit";
+  tr.innerHTML = `
+    <td><input type="text" id="nueva-nombre" placeholder="Ej: Mañana"></td>
+    <td><input type="time" id="nueva-hora" value="06:00"></td>
+    <td>
+      <button class="btn btn-sm btn-primary" onclick="crearTurno()">Guardar</button>
+      <button class="btn btn-sm" style="margin-left:5px;background:#eee" onclick="document.getElementById('fila-nueva').remove()">Cancelar</button>
+    </td>
+  `;
+  tbody.appendChild(tr);
+  document.getElementById("nueva-nombre").focus();
+}
+
+async function crearTurno() {
+  const nombre = document.getElementById("nueva-nombre").value.trim();
+  const hora_desde = document.getElementById("nueva-hora").value;
+  if (!nombre || !hora_desde) { toast("Completá nombre y hora"); return; }
+  const res = await fetch("/api/turnos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre, hora_desde }),
+  });
+  if (res.ok) { toast("Turno creado"); cargar(); }
+  else { const e = await res.json(); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function guardar(id) {
+  const nombre = document.getElementById(`edit-nombre-${id}`).value.trim();
+  const hora_desde = document.getElementById(`edit-hora-${id}`).value;
+  if (!nombre || !hora_desde) { toast("Completá nombre y hora"); return; }
+  const res = await fetch(`/api/turnos/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nombre, hora_desde }),
+  });
+  if (res.ok) { toast("Turno actualizado"); cargar(); }
+  else { const e = await res.json(); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function eliminar(id, nombre) {
+  if (!confirm(`¿Eliminar el turno "${nombre}"?`)) return;
+  const res = await fetch(`/api/turnos/${id}`, { method: "DELETE" });
+  if (res.ok) { toast("Turno eliminado"); cargar(); }
+  else { const e = await res.json(); toast("Error: " + (e.detail || "no se pudo eliminar")); }
+}
+
+// ── Parámetros del sistema ──────────────────────────────────────────
+const PARAMS_META = {
+  sync_interval_minutos: {
+    label: "Intervalo de sync ZKTeco (minutos)",
+    tipo: "number", min: 1, max: 60,
+    descripcion: "Cada cuántos minutos el sistema consulta el dispositivo biométrico para descargar nuevos fichajes. El cambio se aplica en el próximo ciclo sin necesidad de reiniciar."
+  },
+  umbral_ciclo_abierto_horas: {
+    label: "Umbral ciclo abierto (horas)",
+    tipo: "number", min: 1, max: 24,
+    descripcion: "Horas sin salida para mover un empleado sin planificación a la sección 'Ciclo sin cerrar' en el dashboard."
+  }
+};
+
+async function cargarParams() {
+  const res = await fetch("/api/configuracion");
+  const params = await res.json();
+  const cont = document.getElementById("params-container");
+  cont.innerHTML = Object.entries(PARAMS_META).map(([clave, meta]) => {
+    const actual = params.find(p => p.clave === clave);
+    const valor = actual ? actual.valor : "";
+    return `
+      <div style="display:flex;align-items:center;gap:16px;padding:10px 0;border-bottom:1px solid #f0f0f0">
+        <div style="flex:1">
+          <div style="font-weight:bold;font-size:.9rem">${meta.label}</div>
+          <div style="font-size:.78rem;color:#888;margin-top:2px">${meta.descripcion}</div>
+        </div>
+        <input type="${meta.tipo}" id="param-${clave}" value="${valor}"
+          min="${meta.min||''}" max="${meta.max||''}"
+          style="width:80px;padding:5px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.9rem;text-align:center">
+        <button class="btn btn-primary" onclick="guardarParam('${clave}')">Guardar</button>
+      </div>
+    `;
+  }).join("");
+}
+
+async function guardarParam(clave) {
+  const valor = document.getElementById(`param-${clave}`).value.trim();
+  if (!valor) { toast("Ingresá un valor"); return; }
+  const res = await fetch(`/api/configuracion/${clave}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ valor }),
+  });
+  if (res.ok) toast("Parámetro guardado");
+  else toast("Error al guardar");
+}
+
+cargarParams();
+cargar();
+</script>
+</body>
+</html>

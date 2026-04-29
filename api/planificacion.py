@@ -36,16 +36,20 @@ def get_semana(fecha: str):
 
         plan_rows = conn.execute(
             """
-            SELECT p.*, h.nombre as horario_nombre, h.tipo as horario_tipo
+            SELECT p.*, h.nombre as horario_nombre, h.tipo as horario_tipo,
+                   h.turno_id, t.nombre as turno_nombre
             FROM planificacion p
             LEFT JOIN horarios h ON h.id = p.horario_id
+            LEFT JOIN turnos t ON t.id = h.turno_id
             WHERE p.fecha >= ? AND p.fecha <= ?
             """,
             (dias[0], dias[6]),
         ).fetchall()
 
         horarios = conn.execute(
-            "SELECT id, nombre, tipo FROM horarios WHERE activo = 1 ORDER BY nombre"
+            """SELECT h.id, h.nombre, h.tipo, h.turno_id, t.nombre as turno_nombre
+               FROM horarios h LEFT JOIN turnos t ON t.id = h.turno_id
+               WHERE h.activo = 1 ORDER BY h.nombre"""
         ).fetchall()
 
     # Indexar plan por empleado_id + fecha
@@ -79,10 +83,14 @@ def set_dia(data: PlanDiaIn):
     Si horario_id es None y es_franco es False, elimina la asignación.
     """
     if data.horario_id is None and not data.es_franco:
-        # Borrar asignación
+        # Borrar asignación y resultado asociado (si no fue corregido manualmente)
         with db_session() as conn:
             conn.execute(
                 "DELETE FROM planificacion WHERE empleado_id = ? AND fecha = ?",
+                (data.empleado_id, data.fecha),
+            )
+            conn.execute(
+                "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha=? AND corregido_manualmente=0",
                 (data.empleado_id, data.fecha),
             )
         return {"ok": True, "accion": "eliminado"}
@@ -120,6 +128,10 @@ def delete_dia(empleado_id: int, fecha: str):
     with db_session() as conn:
         conn.execute(
             "DELETE FROM planificacion WHERE empleado_id = ? AND fecha = ?",
+            (empleado_id, fecha),
+        )
+        conn.execute(
+            "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha=? AND corregido_manualmente=0",
             (empleado_id, fecha),
         )
     return {"ok": True}

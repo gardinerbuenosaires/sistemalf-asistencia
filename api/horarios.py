@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from db.database import db_session
+from db.database import db_session, _sugerir_turno_id
 
 router = APIRouter(prefix="/api/horarios", tags=["horarios"])
 
@@ -26,7 +26,10 @@ class HorarioIn(BaseModel):
 
 def _get_horario(conn, horario_id: int):
     h = conn.execute(
-        "SELECT * FROM horarios WHERE id = ?", (horario_id,)
+        """SELECT h.*, t.nombre as turno_nombre
+           FROM horarios h LEFT JOIN turnos t ON t.id = h.turno_id
+           WHERE h.id = ?""",
+        (horario_id,),
     ).fetchone()
     if not h:
         raise HTTPException(status_code=404, detail="Horario no encontrado")
@@ -41,7 +44,9 @@ def _get_horario(conn, horario_id: int):
 def list_horarios():
     with db_session() as conn:
         rows = conn.execute(
-            "SELECT * FROM horarios ORDER BY tipo, nombre"
+            """SELECT h.*, t.nombre as turno_nombre
+               FROM horarios h LEFT JOIN turnos t ON t.id = h.turno_id
+               ORDER BY h.tipo, h.nombre"""
         ).fetchall()
         result = []
         for h in rows:
@@ -89,7 +94,24 @@ def create_horario(data: HorarioIn):
                  b.tolerancia_entrada_despues, b.tolerancia_tarde,
                  b.tolerancia_salida_antes, b.tolerancia_salida_despues),
             )
+        # Auto-asignar turno según hora de entrada del primer bloque
+        turno_id = _sugerir_turno_id(conn, data.bloques[0].hora_entrada)
+        if turno_id:
+            conn.execute("UPDATE horarios SET turno_id=? WHERE id=?", (turno_id, horario_id))
         return _get_horario(conn, horario_id)
+
+
+class TurnoAsignacionIn(BaseModel):
+    turno_id: Optional[int] = None
+
+
+@router.patch("/{horario_id}/turno")
+def set_turno(horario_id: int, data: TurnoAsignacionIn):
+    with db_session() as conn:
+        if not conn.execute("SELECT id FROM horarios WHERE id=?", (horario_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Horario no encontrado")
+        conn.execute("UPDATE horarios SET turno_id=? WHERE id=?", (data.turno_id, horario_id))
+    return {"ok": True}
 
 
 @router.put("/{horario_id}")

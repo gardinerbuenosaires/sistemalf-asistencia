@@ -92,12 +92,31 @@ def init_db():
             );
 
             -- ================================================================
+            -- CONFIGURACIÓN — parámetros del sistema editables desde la UI
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS configuracion (
+                clave       TEXT PRIMARY KEY,
+                valor       TEXT NOT NULL,
+                descripcion TEXT
+            );
+
+            -- ================================================================
+            -- TURNOS — configurables (ej: Mañana, Noche, Madrugada)
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS turnos (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre     TEXT NOT NULL UNIQUE,
+                hora_desde TEXT NOT NULL DEFAULT '00:00'
+            );
+
+            -- ================================================================
             -- HORARIOS
             -- ================================================================
             CREATE TABLE IF NOT EXISTS horarios (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre    TEXT NOT NULL,
                 tipo      TEXT NOT NULL CHECK(tipo IN ('simple','cortado')),
+                turno_id  INTEGER REFERENCES turnos(id),
                 activo    INTEGER NOT NULL DEFAULT 1,
                 creado_en TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             );
@@ -331,13 +350,127 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_inconsistencias_empleado
                 ON inconsistencias (empleado_id, fecha);
 
+            -- ================================================================
+            -- NOVEDADES — ILT, licencias, vacaciones, suspensiones, FT, FD
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS novedades (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+                fecha       TEXT NOT NULL,
+                bloque      INTEGER NOT NULL DEFAULT 0,
+                tipo        TEXT NOT NULL,
+                descripcion TEXT,
+                creado_por  TEXT,
+                creado_en   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                UNIQUE(empleado_id, fecha, bloque)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_novedades_empleado
+                ON novedades (empleado_id, fecha);
+
+            -- ================================================================
+            -- SALDO FRANCOS — carry-forward mensual (TRANSPORTE)
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS saldo_francos (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+                mes         TEXT NOT NULL,
+                saldo       REAL NOT NULL DEFAULT 0,
+                UNIQUE(empleado_id, mes)
+            );
+
+            -- ================================================================
+            -- ORDEN DE PLANILLA — posición y separadores por tab
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS planilla_orden (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                grupo       TEXT NOT NULL CHECK(grupo IN ('TM','TN','CO')),
+                posicion    INTEGER NOT NULL,
+                empleado_id INTEGER REFERENCES empleados(id),
+                etiqueta    TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_planilla_orden
+                ON planilla_orden (grupo, posicion);
+
         """)
         _migrate(conn)
     logger.info("Base de datos inicializada: %s", DB_PATH)
 
 
+def get_config(conn, clave: str, default=None):
+    """Lee un valor de la tabla configuracion."""
+    row = conn.execute("SELECT valor FROM configuracion WHERE clave=?", (clave,)).fetchone()
+    return row["valor"] if row else default
+
+
+def _sugerir_turno_id(conn, hora_entrada: str) -> int | None:
+    """Devuelve el turno_id cuyo hora_desde más alto sea <= hora_entrada."""
+    turnos = conn.execute(
+        "SELECT id, hora_desde FROM turnos ORDER BY hora_desde DESC"
+    ).fetchall()
+    for t in turnos:
+        if hora_entrada >= t["hora_desde"]:
+            return t["id"]
+    return None
+
+
 def _migrate(conn):
     """Migraciones incrementales para bases de datos existentes."""
+
+    # Tabla configuracion
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS configuracion (
+            clave       TEXT PRIMARY KEY,
+            valor       TEXT NOT NULL,
+            descripcion TEXT
+        )
+    """)
+    conn.executemany(
+        "INSERT OR IGNORE INTO configuracion (clave, valor, descripcion) VALUES (?,?,?)",
+        [
+            ('umbral_ciclo_abierto_horas', '4',
+             'Horas sin salida para considerar ciclo abierto en empleados sin planificación'),
+            ('sync_interval_minutos', '5',
+             'Intervalo de sincronización con el dispositivo ZKTeco (minutos)'),
+        ]
+    )
+
+    # Tabla turnos (puede no existir en instalaciones anteriores al CREATE TABLE IF NOT EXISTS)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS turnos (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre     TEXT NOT NULL UNIQUE,
+            hora_desde TEXT NOT NULL DEFAULT '00:00'
+        )
+    """)
+
+    # Seed de turnos por defecto si la tabla está vacía
+    if conn.execute("SELECT COUNT(*) FROM turnos").fetchone()[0] == 0:
+        conn.executemany(
+            "INSERT INTO turnos (nombre, hora_desde) VALUES (?, ?)",
+            [("Mañana", "06:00"), ("Noche", "17:00"), ("Madrugada", "23:00")],
+        )
+        logger.info("Turnos por defecto creados: Mañana, Noche, Madrugada")
+
+    # turno_id en horarios
+    cols_h = {r[1] for r in conn.execute("PRAGMA table_info(horarios)").fetchall()}
+    if "turno_id" not in cols_h:
+        conn.execute("ALTER TABLE horarios ADD COLUMN turno_id INTEGER REFERENCES turnos(id)")
+        logger.info("Migración: columna turno_id agregada a horarios")
+        # Auto-asignar turno a horarios existentes según hora_entrada del primer bloque
+        horarios = conn.execute("""
+            SELECT h.id, b.hora_entrada
+            FROM horarios h
+            JOIN horarios_bloques b ON b.horario_id = h.id AND b.bloque = 1
+        """).fetchall()
+        asignados = 0
+        for h in horarios:
+            tid = _sugerir_turno_id(conn, h["hora_entrada"])
+            if tid:
+                conn.execute("UPDATE horarios SET turno_id=? WHERE id=?", (tid, h["id"]))
+                asignados += 1
+        logger.info("Auto-asignación de turnos: %d horarios actualizados", asignados)
+
     cols_cd = {r[1] for r in conn.execute("PRAGMA table_info(calendarios_dias)").fetchall()}
     if "es_franco" not in cols_cd:
         conn.execute("ALTER TABLE calendarios_dias ADD COLUMN es_franco INTEGER NOT NULL DEFAULT 0")
@@ -367,3 +500,74 @@ def _migrate(conn):
         # Todo lo existente vino del generador automático — tratar como auto_generado
         conn.execute("UPDATE planificacion SET auto_generado = 1")
         logger.info("Migración: columna auto_generado agregada a planificacion")
+
+    # Tabla novedades — sin CHECK en tipo para poder incluir '@' (aliviada manual)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS novedades (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+            fecha       TEXT NOT NULL,
+            bloque      INTEGER NOT NULL DEFAULT 0,
+            tipo        TEXT NOT NULL,
+            descripcion TEXT,
+            creado_por  TEXT,
+            creado_en   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(empleado_id, fecha, bloque)
+        )
+    """)
+    # Si la tabla existente tiene el CHECK constraint que bloquea '@', la recreamos
+    try:
+        conn.execute("INSERT INTO novedades (empleado_id, fecha, bloque, tipo) VALUES (0,'1900-01-01',99,'@')")
+        conn.execute("DELETE FROM novedades WHERE bloque=99")
+    except Exception:
+        conn.executescript("""
+            ALTER TABLE novedades RENAME TO novedades_old;
+            CREATE TABLE novedades (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+                fecha       TEXT NOT NULL,
+                bloque      INTEGER NOT NULL DEFAULT 0,
+                tipo        TEXT NOT NULL,
+                descripcion TEXT,
+                creado_por  TEXT,
+                creado_en   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                UNIQUE(empleado_id, fecha, bloque)
+            );
+            INSERT INTO novedades SELECT * FROM novedades_old;
+            DROP TABLE novedades_old;
+        """)
+        logger.info("Migración: tabla novedades recreada sin CHECK constraint en tipo")
+
+    # Tabla saldo_francos
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS saldo_francos (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+            mes         TEXT NOT NULL,
+            saldo       REAL NOT NULL DEFAULT 0,
+            UNIQUE(empleado_id, mes)
+        )
+    """)
+
+    # Tabla planilla_orden
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS planilla_orden (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            grupo       TEXT NOT NULL CHECK(grupo IN ('TM','TN','CO')),
+            posicion    INTEGER NOT NULL,
+            empleado_id INTEGER REFERENCES empleados(id),
+            etiqueta    TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_planilla_orden
+            ON planilla_orden (grupo, posicion)
+    """)
+
+    # Filas generadas antes de que es_franco existiera en calendarios_dias:
+    # horario_id=NULL + es_franco=0 es estado inválido — era franco sin el flag correcto
+    n = conn.execute(
+        "UPDATE planificacion SET es_franco=1 WHERE horario_id IS NULL AND es_franco=0"
+    ).rowcount
+    if n:
+        logger.info("Migración: %d filas de planificacion corregidas a es_franco=1", n)

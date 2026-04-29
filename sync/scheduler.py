@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 _bloques_evaluados_hoy: set[str] = set()
 _fecha_ultimo_reset = None
 _fecha_ultima_generacion: str | None = None
+_mes_ultimo_sync_feriados: str | None = None
 
 
 def _run_sync():
@@ -108,13 +109,50 @@ def _generar_planificacion_auto():
         logger.error("Error en generación automática de planificación: %s", e)
 
 
-def start_scheduler():
-    sync_interval = SYNC_INTERVAL_MINUTES * 60
+def _sync_feriados_auto():
+    """
+    Sincroniza feriados nacionales del año en curso y del siguiente.
+    Corre una vez al mes (día 1, madrugada). Tan liviano como un ping.
+    """
+    global _mes_ultimo_sync_feriados
+    ahora = datetime.now()
+    mes   = ahora.strftime("%Y-%m")
 
+    if _mes_ultimo_sync_feriados == mes:
+        return
+    if ahora.hour not in (1, 2) or ahora.day != 1:
+        return
+
+    try:
+        import httpx
+        from api.feriados import importar_feriados
+        for anio in (ahora.year, ahora.year + 1):
+            r = importar_feriados(anio)
+            logger.info(
+                "Sync feriados %d: %d nuevos, %d eliminados (API: %d)",
+                anio, r["nuevos"], r["eliminados"], r["total_api"]
+            )
+        _mes_ultimo_sync_feriados = mes
+    except Exception as e:
+        logger.error("Error en sync automático de feriados: %s", e)
+
+
+def _get_sync_interval() -> int:
+    """Lee el intervalo de sync de la DB; cae al valor de config.py si falla."""
+    try:
+        from db.database import db_session, get_config
+        with db_session() as conn:
+            val = get_config(conn, "sync_interval_minutos", str(SYNC_INTERVAL_MINUTES))
+            return max(1, int(val)) * 60
+    except Exception:
+        return SYNC_INTERVAL_MINUTES * 60
+
+
+def start_scheduler():
     def sync_loop():
         _run_sync()
         while True:
-            time.sleep(sync_interval)
+            time.sleep(_get_sync_interval())
             _run_sync()
 
     def eval_loop():
@@ -128,7 +166,8 @@ def start_scheduler():
         time.sleep(120)
         while True:
             _generar_planificacion_auto()
-            time.sleep(3600)  # revisar cada hora, ejecuta solo entre 01:00 y 02:59
+            _sync_feriados_auto()
+            time.sleep(3600)  # revisar cada hora; cada función ejecuta solo en su ventana horaria
 
     threading.Thread(target=sync_loop, daemon=True, name="sync-scheduler").start()
     threading.Thread(target=eval_loop, daemon=True, name="eval-scheduler").start()

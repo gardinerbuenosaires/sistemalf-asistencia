@@ -66,6 +66,7 @@ def update_empleado(eid: int, data: EmpleadoIn):
         row = conn.execute("SELECT id FROM empleados WHERE id=?", (eid,)).fetchone()
         if not row:
             raise HTTPException(404, "Empleado no encontrado")
+        anterior = conn.execute("SELECT activo FROM empleados WHERE id=?", (eid,)).fetchone()
         conn.execute(
             """UPDATE empleados SET
                nombre=?, apellido=?, dni=?, cuil=?, fecha_nacimiento=?, fecha_ingreso=?,
@@ -78,4 +79,23 @@ def update_empleado(eid: int, data: EmpleadoIn):
              data.cargo, data.departamento, data.categoria,
              data.telefono, data.email, data.domicilio, data.observaciones, data.activo, eid)
         )
+        if anterior["activo"] == 1 and data.activo == 0:
+            # Usar fecha_egreso como corte; si no viene, tomar hoy
+            corte = data.fecha_egreso or conn.execute(
+                "SELECT date('now','localtime')"
+            ).fetchone()[0]
+            # Asegurar que fecha_egreso quede guardada
+            if not data.fecha_egreso:
+                conn.execute(
+                    "UPDATE empleados SET fecha_egreso=? WHERE id=?", (corte, eid)
+                )
+            # Eliminar planificacion y resultados DESPUÉS del corte
+            conn.execute(
+                "DELETE FROM planificacion WHERE empleado_id=? AND fecha > ? AND auto_generado=1",
+                (eid, corte)
+            )
+            conn.execute(
+                "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha > ? AND corregido_manualmente=0",
+                (eid, corte)
+            )
         return dict(conn.execute("SELECT * FROM empleados WHERE id=?", (eid,)).fetchone())

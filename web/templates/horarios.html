@@ -61,6 +61,7 @@
   <nav style="display:flex;gap:14px;margin-left:auto">
     <a href="/planificacion">Planificación</a>
     <a href="/calendarios">Calendarios</a>
+    <a href="/configuracion">Configuración</a>
   </nav>
 </header>
 
@@ -76,6 +77,7 @@
           <th>Nombre</th>
           <th>Tipo</th>
           <th>Bloques</th>
+          <th>Turno</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -200,6 +202,8 @@
 
 <script>
 let editandoId = null;
+let turnosDisponibles = [];
+let horariosMap = {};
 
 function toast(msg, ms = 3000) {
   const el = document.getElementById("toast");
@@ -328,11 +332,19 @@ function formatBloques(bloques) {
 }
 
 async function cargarHorarios() {
-  const res = await fetch("/api/horarios");
-  const horarios = await res.json();
+  const [resH, resT] = await Promise.all([fetch("/api/horarios"), fetch("/api/turnos")]);
+  const horarios = await resH.json();
+  turnosDisponibles = await resT.json();
+
+  const opcionesTurno = `<option value="">— Sin turno —</option>` +
+    turnosDisponibles.map(t => `<option value="${t.id}">${t.nombre} (${t.hora_desde})</option>`).join("");
+
+  horariosMap = {};
+  horarios.forEach(h => { horariosMap[h.id] = h; });
+
   const tbody = document.getElementById("tabla-horarios");
   if (!horarios.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="color:#aaa">Sin horarios definidos</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#aaa">Sin horarios definidos</td></tr>';
     return;
   }
   tbody.innerHTML = horarios.map(h => `
@@ -341,11 +353,32 @@ async function cargarHorarios() {
       <td><span class="badge ${h.tipo}">${h.tipo}</span></td>
       <td>${formatBloques(h.bloques)}</td>
       <td>
-        <button class="btn btn-sm btn-primary" onclick="abrirFormulario(${JSON.stringify(h).replace(/"/g, '&quot;')})">Editar</button>
-        <button class="btn btn-sm btn-danger" style="margin-left:6px" onclick="eliminarHorario(${h.id}, '${h.nombre}')">Eliminar</button>
+        <select data-hid="${h.id}" onchange="asignarTurno(${h.id}, this.value)"
+          style="padding:3px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.82rem">
+          ${opcionesTurno}
+        </select>
+      </td>
+      <td>
+        <button class="btn btn-sm btn-primary" onclick="abrirFormulario(horariosMap[${h.id}])">Editar</button>
+        <button class="btn btn-sm btn-danger" style="margin-left:6px" onclick="eliminarHorario(${h.id}, '${h.nombre.replace(/'/g, "\\'")}')">Eliminar</button>
       </td>
     </tr>
   `).join("");
+
+  horarios.forEach(h => {
+    const sel = document.querySelector(`select[data-hid="${h.id}"]`);
+    if (sel && h.turno_id) sel.value = h.turno_id;
+  });
+}
+
+async function asignarTurno(horarioId, turnoId) {
+  const res = await fetch(`/api/horarios/${horarioId}/turno`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ turno_id: turnoId ? parseInt(turnoId) : null }),
+  });
+  if (res.ok) toast("Turno actualizado");
+  else toast("Error al actualizar turno");
 }
 
 cargarHorarios();

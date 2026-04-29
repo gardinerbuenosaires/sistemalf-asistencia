@@ -15,6 +15,9 @@ from api.calendarios import router as calendarios_router
 from api.empleados import router as empleados_router
 from api.resultados import router as resultados_router
 from api.auth import router as auth_router
+from api.turnos import router as turnos_router
+from api.asistencia_mensual import router as asistencia_mensual_router
+from api.feriados import router as feriados_router
 from auth.core import decode_token, ensure_admin, check_page_auth
 
 logging.basicConfig(
@@ -49,6 +52,9 @@ app.include_router(calendarios_router)
 app.include_router(empleados_router)
 app.include_router(resultados_router)
 app.include_router(auth_router)
+app.include_router(turnos_router)
+app.include_router(asistencia_mensual_router)
+app.include_router(feriados_router)
 
 
 def _auth(request: Request, modulo: str, accion: str = "ver"):
@@ -89,6 +95,14 @@ def page_usuarios(request: Request):
 @app.get("/roles", include_in_schema=False)
 def page_roles(request: Request):
     return FileResponse("web/templates/roles.html") if _auth(request, "roles") else RedirectResponse("/login")
+
+@app.get("/configuracion", include_in_schema=False)
+def page_configuracion(request: Request):
+    return FileResponse("web/templates/configuracion.html") if _auth(request, "horarios") else RedirectResponse("/login")
+
+@app.get("/asistencia-mensual", include_in_schema=False)
+def page_asistencia_mensual(request: Request):
+    return FileResponse("web/templates/asistencia_mensual.html") if _auth(request, "asistencia") else RedirectResponse("/login")
 
 
 # --- Rutas de la API (se expanden en etapas siguientes) ---
@@ -183,6 +197,29 @@ def sync_empleados_dispositivo():
     return sync_users()
 
 
+@app.get("/api/configuracion", tags=["configuracion"])
+def get_configuracion():
+    from db.database import db_session
+    with db_session() as conn:
+        rows = conn.execute("SELECT clave, valor, descripcion FROM configuracion ORDER BY clave").fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.put("/api/configuracion/{clave}", tags=["configuracion"])
+def set_configuracion(clave: str, body: dict):
+    from db.database import db_session
+    from fastapi import HTTPException
+    valor = body.get("valor", "").strip()
+    if not valor:
+        raise HTTPException(status_code=422, detail="Valor requerido")
+    with db_session() as conn:
+        conn.execute(
+            "INSERT INTO configuracion (clave, valor) VALUES (?,?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+            (clave, valor),
+        )
+    return {"ok": True}
+
+
 @app.get("/api/presencia/hoy", tags=["presencia"])
 def presencia_hoy():
     """
@@ -190,7 +227,7 @@ def presencia_hoy():
     y la ventana del bloque aún no cerró (hora_salida + tolerancia_salida_despues).
     Usa el mismo greedy del evaluador — no depende del campo tipo del ZKTeco.
     """
-    from db.database import db_session
+    from db.database import db_session, get_config
     from datetime import datetime, timedelta
     from collections import defaultdict
     from sync.evaluador import _clasificar_fichajes, _dt
@@ -205,11 +242,25 @@ def presencia_hoy():
                       e.user_id, e.nombre, e.apellido, e.cargo
                FROM planificacion p
                JOIN empleados e ON e.id = p.empleado_id
-               WHERE p.fecha = ? AND p.es_franco = 0 AND p.horario_id IS NOT NULL""",
+               WHERE p.fecha = ? AND p.es_franco = 0 AND p.horario_id IS NOT NULL
+               AND e.activo = 1""",
             (hoy,)
         ).fetchall()
 
         eids_con_plan = {p["empleado_id"] for p in planes}
+
+        # Empleados con franco planificado hoy
+        francos_hoy = conn.execute(
+            """SELECT p.empleado_id,
+                      e.user_id, e.nombre, e.apellido, e.cargo
+               FROM planificacion p
+               JOIN empleados e ON e.id = p.empleado_id
+               WHERE p.fecha = ? AND p.es_franco = 1 AND e.activo = 1""",
+            (hoy,)
+        ).fetchall()
+        eids_con_franco = {f["empleado_id"] for f in francos_hoy}
+
+        umbral_h = int(get_config(conn, "umbral_ciclo_abierto_horas", "4"))
 
         hids = list({p["horario_id"] for p in planes}) if planes else []
         bloques_map: dict = defaultdict(list)
@@ -236,10 +287,12 @@ def presencia_hoy():
     for f in todos_fichajes:
         fich_map[f["empleado_id"]].append(dict(f))
 
-    con_plan   = []
-    sin_plan   = []
-    ausentes   = []
-    fecha      = ahora.date()
+    con_plan           = []
+    sin_plan           = []
+    ausentes           = []
+    franco_con_fichaje = []
+    ciclo_abierto      = []
+    fecha              = ahora.date()
 
     # — Empleados con planificación: greedy completo —
     for plan in planes:
@@ -261,7 +314,6 @@ def presencia_hoy():
             t_salida  = _dt(fecha, b["hora_salida"], dia_sig=cruza)
 
             if not f_entrada:
-                # Ausente: la ventana de entrada ya cerró (pasó la tolerancia)
                 tol_entrada = timedelta(minutes=b.get("tolerancia_entrada_despues", 60))
                 if ahora > t_entrada + tol_entrada and ahora < t_salida + timedelta(hours=2):
                     ausentes.append({
@@ -279,6 +331,17 @@ def presencia_hoy():
 
             margen = timedelta(minutes=b.get("tolerancia_salida_despues", 60))
             if ahora > t_salida + margen:
+                # Tiene entrada pero superó el turno → ciclo sin cerrar
+                ciclo_abierto.append({
+                    "user_id":          plan["user_id"],
+                    "nombre":           plan["nombre"],
+                    "apellido":         plan["apellido"],
+                    "cargo":            plan["cargo"],
+                    "hora_entrada":     f_entrada["timestamp"],
+                    "ultimo_fichaje":   f_entrada["timestamp"],
+                    "hora_salida_plan": b["hora_salida"],
+                    "motivo":           "turno_vencido",
+                })
                 continue
 
             con_plan.append({
@@ -290,31 +353,65 @@ def presencia_hoy():
                 "bloque":       bn,
             })
 
+    # — Empleados con franco planificado pero que ficharon hoy —
+    for fila in francos_hoy:
+        eid = fila["empleado_id"]
+        fichajes_hoy_f = [f for f in fich_map.get(eid, []) if f["timestamp"][:10] == hoy]
+        if not fichajes_hoy_f or len(fichajes_hoy_f) % 2 == 0:
+            continue
+        ultimo_dt = datetime.strptime(fichajes_hoy_f[-1]["timestamp"], "%Y-%m-%d %H:%M:%S")
+        entrada = {
+            "user_id":        fila["user_id"],
+            "nombre":         fila["nombre"],
+            "apellido":       fila["apellido"],
+            "cargo":          fila["cargo"],
+            "hora_entrada":   fichajes_hoy_f[0]["timestamp"],
+            "ultimo_fichaje": fichajes_hoy_f[-1]["timestamp"],
+            "cant_fichajes":  len(fichajes_hoy_f),
+        }
+        if ahora - ultimo_dt > timedelta(hours=umbral_h):
+            ciclo_abierto.append({**entrada, "motivo": "fichaje_antiguo"})
+        else:
+            franco_con_fichaje.append(entrada)
+
     # — Empleados sin planificación: heurística de paridad —
     vistos = {p["user_id"] for p in con_plan}
     for eid, fichajes in fich_map.items():
-        if eid in eids_con_plan:
+        if eid in eids_con_plan or eid in eids_con_franco:
             continue
-        fichajes_hoy = [f for f in fichajes if f["timestamp"][:10] == hoy]
-        if not fichajes_hoy or len(fichajes_hoy) % 2 == 0:
-            continue  # par = probablemente salió
-        ultimo = fichajes_hoy[-1]
+        fichajes_hoy_s = [f for f in fichajes if f["timestamp"][:10] == hoy]
+        if not fichajes_hoy_s or len(fichajes_hoy_s) % 2 == 0:
+            continue
+        ultimo = fichajes_hoy_s[-1]
         if ultimo["user_id"] in vistos:
             continue
-        sin_plan.append({
-            "user_id":       ultimo["user_id"],
-            "nombre":        ultimo["nombre"],
-            "apellido":      ultimo["apellido"],
-            "cargo":         ultimo["cargo"],
-            "hora_entrada":  fichajes_hoy[0]["timestamp"],
+        ultimo_dt = datetime.strptime(ultimo["timestamp"], "%Y-%m-%d %H:%M:%S")
+        entrada = {
+            "user_id":        ultimo["user_id"],
+            "nombre":         ultimo["nombre"],
+            "apellido":       ultimo["apellido"],
+            "cargo":          ultimo["cargo"],
+            "hora_entrada":   fichajes_hoy_s[0]["timestamp"],
             "ultimo_fichaje": ultimo["timestamp"],
-            "cant_fichajes": len(fichajes_hoy),
-        })
+            "cant_fichajes":  len(fichajes_hoy_s),
+        }
+        if ahora - ultimo_dt > timedelta(hours=umbral_h):
+            ciclo_abierto.append({**entrada, "motivo": "fichaje_antiguo"})
+        else:
+            sin_plan.append(entrada)
 
     con_plan.sort(key=lambda p: (p["cargo"] or "", p["hora_entrada"]))
     sin_plan.sort(key=lambda p: (p["cargo"] or "", p["hora_entrada"]))
     ausentes.sort(key=lambda p: (p["cargo"] or "", p["hora_entrada_plan"]))
-    return {"con_planificacion": con_plan, "sin_planificacion": sin_plan, "ausentes": ausentes}
+    franco_con_fichaje.sort(key=lambda p: (p["cargo"] or "", p["hora_entrada"]))
+    ciclo_abierto.sort(key=lambda p: (p["cargo"] or "", p["hora_entrada"]))
+    return {
+        "con_planificacion":  con_plan,
+        "sin_planificacion":  sin_plan,
+        "ausentes":           ausentes,
+        "franco_con_fichaje": franco_con_fichaje,
+        "ciclo_abierto":      ciclo_abierto,
+    }
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from db.database import db_session
+from auth.core import require_permiso, get_current_user
 
 router = APIRouter(prefix="/api/empleados", tags=["empleados"])
 
@@ -25,7 +26,7 @@ class EmpleadoIn(BaseModel):
 
 
 @router.get("")
-def list_empleados(todos: bool = False):
+def list_empleados(todos: bool = False, _user=Depends(require_permiso("empleados", "ver"))):
     with db_session() as conn:
         where = "" if todos else "WHERE activo = 1"
         rows = conn.execute(
@@ -35,7 +36,7 @@ def list_empleados(todos: bool = False):
 
 
 @router.get("/{eid}")
-def get_empleado(eid: int):
+def get_empleado(eid: int, _user=Depends(require_permiso("empleados", "ver"))):
     with db_session() as conn:
         row = conn.execute("SELECT * FROM empleados WHERE id=?", (eid,)).fetchone()
         if not row:
@@ -44,7 +45,7 @@ def get_empleado(eid: int):
 
 
 @router.post("", status_code=201)
-def create_empleado(data: EmpleadoIn):
+def create_empleado(data: EmpleadoIn, _user=Depends(require_permiso("empleados", "editar"))):
     with db_session() as conn:
         cur = conn.execute(
             """INSERT INTO empleados
@@ -61,7 +62,7 @@ def create_empleado(data: EmpleadoIn):
 
 
 @router.put("/{eid}")
-def update_empleado(eid: int, data: EmpleadoIn):
+def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("empleados", "editar"))):
     with db_session() as conn:
         row = conn.execute("SELECT id FROM empleados WHERE id=?", (eid,)).fetchone()
         if not row:

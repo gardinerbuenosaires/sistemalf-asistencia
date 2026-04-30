@@ -1,7 +1,8 @@
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from db.database import db_session
+from auth.core import require_permiso, get_current_user
 
 router = APIRouter(prefix="/api/feriados", tags=["feriados"])
 
@@ -15,7 +16,7 @@ class FeriadoIn(BaseModel):
 
 
 @router.get("")
-def listar_feriados(año: int | None = None):
+def listar_feriados(año: int | None = None, _user=Depends(get_current_user)):
     with db_session() as conn:
         if año:
             rows = conn.execute(
@@ -28,7 +29,7 @@ def listar_feriados(año: int | None = None):
 
 
 @router.post("", status_code=201)
-def crear_feriado(data: FeriadoIn):
+def crear_feriado(data: FeriadoIn, _user=Depends(require_permiso("calendarios", "editar"))):
     with db_session() as conn:
         try:
             conn.execute(
@@ -44,7 +45,7 @@ def crear_feriado(data: FeriadoIn):
 
 
 @router.delete("/{fid}")
-def eliminar_feriado(fid: int):
+def eliminar_feriado(fid: int, _user=Depends(require_permiso("calendarios", "eliminar"))):
     with db_session() as conn:
         if not conn.execute("SELECT id FROM feriados WHERE id=?", (fid,)).fetchone():
             raise HTTPException(404, "Feriado no encontrado")
@@ -53,7 +54,7 @@ def eliminar_feriado(fid: int):
 
 
 @router.post("/importar/{anio}")
-def importar_feriados(anio: int):
+def importar_feriados(anio: int, _user=Depends(require_permiso("calendarios", "editar"))):
     """
     Sincroniza los feriados nacionales del año contra api.argentinadatos.com.
     - Agrega los que no están en la DB.

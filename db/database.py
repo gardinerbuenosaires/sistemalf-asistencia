@@ -571,3 +571,27 @@ def _migrate(conn):
     ).rowcount
     if n:
         logger.info("Migración: %d filas de planificacion corregidas a es_franco=1", n)
+
+    # Hacer nullable la columna `rol` en usuarios (era NOT NULL con CHECK hardcodeado).
+    # rol_id es la fuente autorizada desde la implementación de roles dinámicos.
+    rol_col = next(
+        (c for c in conn.execute("PRAGMA table_info(usuarios)").fetchall() if c[1] == "rol"),
+        None
+    )
+    if rol_col and rol_col[3]:  # notnull=1 → necesita migración
+        conn.executescript("""
+            CREATE TABLE usuarios_new (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre        TEXT NOT NULL,
+                email         TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                rol           TEXT,
+                activo        INTEGER NOT NULL DEFAULT 1,
+                creado_en     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                rol_id        INTEGER REFERENCES roles(id)
+            );
+            INSERT INTO usuarios_new SELECT id, nombre, email, password_hash, rol, activo, creado_en, rol_id FROM usuarios;
+            DROP TABLE usuarios;
+            ALTER TABLE usuarios_new RENAME TO usuarios;
+        """)
+        logger.info("Migración: columna rol en usuarios convertida a nullable")

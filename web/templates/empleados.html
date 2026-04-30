@@ -9,10 +9,21 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
-  header { background: #2c3e50; color: white; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
-  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .9rem; }
-  header a:hover { color: white; }
-  header h1 { font-size: 1.2rem; flex: 1; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+    background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none; }
 
   main { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px; max-width: 1300px; margin: 0 auto; align-items: start; }
 
@@ -77,11 +88,28 @@
 <body>
 
 <header>
-  <a href="/" title="Inicio" style="display:flex;align-items:center"><img src="/static/img/logo_icono.svg" alt="Inicio" style="height:28px"></a>
-  <h1>Empleados</h1>
-  <nav style="display:flex;gap:14px">
-    <a href="/calendarios">Calendarios</a>
-    <a href="/planificacion">Planificación</a>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios">Horarios</a>
+        <a href="/planificacion">Planificación</a>
+        <a href="/calendarios">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia">Asistencia</a>
+        <a href="/fichajes">Fichajes</a>
+        <a href="/asistencia-mensual">Planilla</a>
+      </div>
+    </div>
+    <a href="/empleados" class="activo">Personal</a>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
   </nav>
 </header>
 
@@ -90,7 +118,7 @@
   <div class="panel">
     <div class="panel-header">
       <h2>Empleados (<span id="cnt">0</span>)</h2>
-      <button class="btn btn-primary btn-sm" onclick="nuevoEmpleado()">+ Nuevo</button>
+      <button class="btn btn-primary btn-sm" data-perm="empleados:editar" onclick="nuevoEmpleado()">+ Nuevo</button>
     </div>
     <input class="buscar" id="buscar" type="text" placeholder="Buscar por nombre, apellido, cargo..." oninput="filtrar()">
     <div class="emp-list" id="emp-list"><div class="empty-state">Cargando...</div></div>
@@ -101,9 +129,9 @@
     <div class="panel-header">
       <h2 id="form-titulo">Seleccioná un empleado</h2>
       <div id="form-acciones" style="display:none;gap:8px;display:none">
-        <button class="btn btn-danger btn-sm" id="btn-toggle-activo" onclick="toggleActivo()"></button>
+        <button class="btn btn-danger btn-sm" id="btn-toggle-activo" data-perm="empleados:editar" onclick="toggleActivo()"></button>
         <button class="btn btn-secondary btn-sm" onclick="cancelar()">Cancelar</button>
-        <button class="btn btn-primary btn-sm" onclick="guardar()">Guardar</button>
+        <button class="btn btn-primary btn-sm" data-perm="empleados:editar" onclick="guardar()">Guardar</button>
       </div>
     </div>
 
@@ -123,6 +151,24 @@ let calendarios = [];
 let horarios = [];
 let editandoId = null;
 let editandoActivo = 1;
+
+async function logout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  location.href = '/login';
+}
+
+let _perms = new Set();
+async function _loadPerms() {
+  try {
+    const me = await fetch('/api/auth/me').then(r => r.json());
+    _perms = new Set((me.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    if (me.nombre) document.getElementById('user-info').textContent = me.nombre;
+  } catch(e) {}
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+  });
+}
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
 
 function toast(msg, ms = 2500) {
   const el = document.getElementById("toast");
@@ -179,7 +225,7 @@ function buildCalendarioSection(asignaciones = []) {
   let html = `<div class="form-section">
     <div class="form-section-title" style="display:flex;justify-content:space-between;align-items:center">
       <span>Calendario asignado</span>
-      <button type="button" class="btn btn-secondary btn-sm" onclick="toggleNuevoCalendario()">+ Crear nuevo</button>
+      ${canDo('calendarios','editar') ? `<button type="button" class="btn btn-secondary btn-sm" onclick="toggleNuevoCalendario()">+ Crear nuevo</button>` : ''}
     </div>
 
     <div id="nuevo-cal-panel" style="display:none;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;padding:14px;margin-bottom:14px">
@@ -208,8 +254,8 @@ function buildCalendarioSection(asignaciones = []) {
       <div class="cal-nombre">${vigente.calendario_nombre}</div>
       <div class="cal-desde">desde ${vigente.fecha_desde}${vigente.fecha_hasta ? " hasta " + vigente.fecha_hasta : ""}</div>
       <a href="/calendarios" class="cal-link">Ver calendarios</a>
-      <button type="button" class="btn btn-sm" style="background:#e74c3c;color:white;margin-left:auto"
-        onclick="quitarCalendario(${vigente.id})">Quitar</button>
+      ${canDo('calendarios','editar') ? `<button type="button" class="btn btn-sm" style="background:#e74c3c;color:white;margin-left:auto"
+        onclick="quitarCalendario(${vigente.id})">Quitar</button>` : ''}
     </div>`;
   } else {
     html += `<div class="cal-sin-asignar">Sin calendario asignado</div>`;
@@ -226,15 +272,17 @@ function buildCalendarioSection(asignaciones = []) {
     `<option value="${c.id}"${vigente && vigente.calendario_id === c.id ? " selected" : ""}>${c.nombre}</option>`
   ).join("");
 
-  html += `<div class="cal-asignar" style="margin-top:10px">
-    <select id="asig-cal-id" style="flex:1">
-      <option value="">— Asignar calendario existente —</option>
-      ${calOpts}
-    </select>
-    <label style="font-size:.78rem;color:#666;white-space:nowrap">Desde</label>
-    <input type="date" id="asig-cal-desde" value="${hoy}" style="width:140px">
-    <button class="btn btn-primary btn-sm" onclick="asignarCalendario()">Asignar</button>
-  </div>`;
+  if (canDo('calendarios', 'editar')) {
+    html += `<div class="cal-asignar" style="margin-top:10px">
+      <select id="asig-cal-id" style="flex:1">
+        <option value="">— Asignar calendario existente —</option>
+        ${calOpts}
+      </select>
+      <label style="font-size:.78rem;color:#666;white-space:nowrap">Desde</label>
+      <input type="date" id="asig-cal-desde" value="${hoy}" style="width:140px">
+      <button class="btn btn-primary btn-sm" onclick="asignarCalendario()">Asignar</button>
+    </div>`;
+  }
 
   html += `</div>`;
   return html;
@@ -500,6 +548,7 @@ async function crearYAsignarCalendario() {
 }
 
 async function init() {
+  await _loadPerms();
   const [_, cRes, hRes] = await Promise.all([
     cargar(), fetch("/api/calendarios"), fetch("/api/horarios")
   ]);

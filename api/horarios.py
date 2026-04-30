@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from db.database import db_session, _sugerir_turno_id
+from auth.core import require_permiso
 
 router = APIRouter(prefix="/api/horarios", tags=["horarios"])
 
@@ -41,7 +42,7 @@ def _get_horario(conn, horario_id: int):
 
 
 @router.get("")
-def list_horarios():
+def list_horarios(_user=Depends(require_permiso("horarios", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
             """SELECT h.*, t.nombre as turno_nombre
@@ -59,13 +60,13 @@ def list_horarios():
 
 
 @router.get("/{horario_id}")
-def get_horario(horario_id: int):
+def get_horario(horario_id: int, _user=Depends(require_permiso("horarios", "ver"))):
     with db_session() as conn:
         return _get_horario(conn, horario_id)
 
 
 @router.post("", status_code=201)
-def create_horario(data: HorarioIn):
+def create_horario(data: HorarioIn, _user=Depends(require_permiso("horarios", "editar"))):
     if data.tipo not in ("simple", "cortado"):
         raise HTTPException(status_code=422, detail="tipo debe ser 'simple' o 'cortado'")
     n_bloques = 1 if data.tipo == "simple" else 2
@@ -106,7 +107,7 @@ class TurnoAsignacionIn(BaseModel):
 
 
 @router.patch("/{horario_id}/turno")
-def set_turno(horario_id: int, data: TurnoAsignacionIn):
+def set_turno(horario_id: int, data: TurnoAsignacionIn, _user=Depends(require_permiso("horarios", "editar"))):
     with db_session() as conn:
         if not conn.execute("SELECT id FROM horarios WHERE id=?", (horario_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Horario no encontrado")
@@ -115,7 +116,7 @@ def set_turno(horario_id: int, data: TurnoAsignacionIn):
 
 
 @router.put("/{horario_id}")
-def update_horario(horario_id: int, data: HorarioIn):
+def update_horario(horario_id: int, data: HorarioIn, _user=Depends(require_permiso("horarios", "editar"))):
     if data.tipo not in ("simple", "cortado"):
         raise HTTPException(status_code=422, detail="tipo debe ser 'simple' o 'cortado'")
     n_bloques = 1 if data.tipo == "simple" else 2
@@ -151,7 +152,7 @@ def update_horario(horario_id: int, data: HorarioIn):
 
 
 @router.delete("/{horario_id}")
-def delete_horario(horario_id: int):
+def delete_horario(horario_id: int, _user=Depends(require_permiso("horarios", "eliminar"))):
     with db_session() as conn:
         h = conn.execute("SELECT id FROM horarios WHERE id = ?", (horario_id,)).fetchone()
         if not h:

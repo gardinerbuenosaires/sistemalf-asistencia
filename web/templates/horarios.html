@@ -9,10 +9,21 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
-  header { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
-  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .9rem; }
-  header a:hover { color: white; }
-  header h1 { font-size: 1.2rem; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+    background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none; }
   main { padding: 24px; max-width: 1100px; margin: 0 auto; }
   .section { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 24px; }
   .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
@@ -56,12 +67,28 @@
 <body>
 
 <header>
-  <a href="/" title="Inicio" style="display:flex;align-items:center"><img src="/static/img/logo_icono.svg" alt="Inicio" style="height:28px"></a>
-  <h1>Configuración de Horarios</h1>
-  <nav style="display:flex;gap:14px;margin-left:auto">
-    <a href="/planificacion">Planificación</a>
-    <a href="/calendarios">Calendarios</a>
-    <a href="/configuracion">Configuración</a>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group activo">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios" class="activo">Horarios</a>
+        <a href="/planificacion">Planificación</a>
+        <a href="/calendarios">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia">Asistencia</a>
+        <a href="/fichajes">Fichajes</a>
+        <a href="/asistencia-mensual">Planilla</a>
+      </div>
+    </div>
+    <a href="/empleados">Personal</a>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
   </nav>
 </header>
 
@@ -69,7 +96,7 @@
   <div class="section">
     <div class="section-header">
       <h2>Horarios definidos</h2>
-      <button class="btn btn-primary" onclick="abrirFormulario()">+ Nuevo horario</button>
+      <button class="btn btn-primary" data-perm="horarios:editar" onclick="abrirFormulario()">+ Nuevo horario</button>
     </div>
     <table>
       <thead>
@@ -205,6 +232,24 @@ let editandoId = null;
 let turnosDisponibles = [];
 let horariosMap = {};
 
+async function logout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  location.href = '/login';
+}
+
+let _perms = new Set();
+async function _loadPerms() {
+  try {
+    const me = await fetch('/api/auth/me').then(r => r.json());
+    _perms = new Set((me.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    if (me.nombre) document.getElementById('user-info').textContent = me.nombre;
+  } catch(e) {}
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+  });
+}
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
+
 function toast(msg, ms = 3000) {
   const el = document.getElementById("toast");
   el.textContent = msg;
@@ -332,6 +377,7 @@ function formatBloques(bloques) {
 }
 
 async function cargarHorarios() {
+  await _loadPerms();
   const [resH, resT] = await Promise.all([fetch("/api/horarios"), fetch("/api/turnos")]);
   const horarios = await resH.json();
   turnosDisponibles = await resT.json();
@@ -359,8 +405,8 @@ async function cargarHorarios() {
         </select>
       </td>
       <td>
-        <button class="btn btn-sm btn-primary" onclick="abrirFormulario(horariosMap[${h.id}])">Editar</button>
-        <button class="btn btn-sm btn-danger" style="margin-left:6px" onclick="eliminarHorario(${h.id}, '${h.nombre.replace(/'/g, "\\'")}')">Eliminar</button>
+        ${canDo('horarios','editar') ? `<button class="btn btn-sm btn-primary" onclick="abrirFormulario(horariosMap[${h.id}])">Editar</button>` : ''}
+        ${canDo('horarios','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:6px" onclick="eliminarHorario(${h.id}, '${h.nombre.replace(/'/g, "\\'")}')">Eliminar</button>` : ''}
       </td>
     </tr>
   `).join("");

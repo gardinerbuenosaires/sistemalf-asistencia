@@ -10,7 +10,20 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
   header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
-  #sync-status { font-size: 0.85rem; opacity: 0.8; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+    background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none; }
   main { padding: 24px; max-width: 1200px; margin: 0 auto; }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
   .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
@@ -56,19 +69,28 @@
 <body>
 
 <header>
-  <img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf Check" style="height:44px">
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf Check" style="height:44px"></a>
   <nav style="display:flex;gap:16px;align-items:center">
-    <a href="/horarios" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Horarios</a>
-    <a href="/planificacion" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Planificación</a>
-    <a href="/calendarios" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Calendarios</a>
-    <a href="/empleados" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Empleados</a>
-    <a href="/asistencia" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Asistencia</a>
-    <a href="/asistencia-mensual" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Planilla</a>
-    <a href="/usuarios" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Usuarios</a>
-    <a href="/configuracion" style="color:#2C2C2A;font-size:.9rem;text-decoration:none;opacity:.75">Configuración</a>
+    <div class="nav-group">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios">Horarios</a>
+        <a href="/planificacion">Planificación</a>
+        <a href="/calendarios">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia">Asistencia</a>
+        <a href="/fichajes">Fichajes</a>
+        <a href="/asistencia-mensual">Planilla</a>
+      </div>
+    </div>
+    <a href="/empleados">Personal</a>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
     <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
-    <a href="#" onclick="logout()" style="color:#666;font-size:.8rem;text-decoration:none">Salir</a>
-    <span id="sync-status" style="font-size:.85rem;color:#555">Cargando...</span>
+    <a href="#" onclick="logout()">Salir</a>
   </nav>
 </header>
 
@@ -128,30 +150,6 @@
     </div>
   </div>
 
-  <div class="section">
-    <h2>Fichajes</h2>
-    <div class="filters">
-      <div>
-        <label>Empleado</label>
-        <select id="filter-empleado"><option value="">Todos</option></select>
-      </div>
-      <div>
-        <label>Fecha</label>
-        <input type="date" id="filter-fecha">
-      </div>
-      <div style="align-self:flex-end">
-        <button class="btn btn-primary" onclick="loadFichajes()">Filtrar</button>
-        <button class="btn btn-primary" style="margin-left:8px;background:#27ae60" onclick="syncNow()">Sincronizar ahora</button>
-      </div>
-    </div>
-    <table>
-      <thead>
-        <tr><th>Empleado</th><th>Nombre</th><th>Fecha / Hora</th><th>Tipo</th></tr>
-      </thead>
-      <tbody id="tabla-fichajes"><tr><td colspan="4">Cargando...</td></tr></tbody>
-    </table>
-  </div>
-
 
 </main>
 
@@ -165,19 +163,22 @@ async function logout() {
   window.location.href = "/login";
 }
 
+let _perms = new Set();
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
+
 fetch("/api/auth/me").then(r=>r.ok?r.json():null).then(u=>{
-  if (u) document.getElementById("user-info").textContent = u.nombre;
+  if (u) {
+    document.getElementById("user-info").textContent = u.nombre;
+    _perms = new Set((u.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    document.querySelectorAll('[data-perm]').forEach(el => {
+      if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+    });
+  }
 });
-document.getElementById("filter-fecha").value = today;
 
 async function api(path) {
   const r = await fetch(path);
   return r.json();
-}
-
-function badge(tipo) {
-  if (!tipo) return '<span class="badge sin-tipo">?</span>';
-  return `<span class="badge ${tipo}">${tipo}</span>`;
 }
 
 function toast(msg, ms = 3000) {
@@ -190,41 +191,11 @@ function toast(msg, ms = 3000) {
 async function loadEmpleados() {
   const empleados = await api("/api/empleados");
   document.getElementById("cnt-empleados").textContent = empleados.length;
-  const sel = document.getElementById("filter-empleado");
-  empleados.forEach(e => {
-    const opt = document.createElement("option");
-    opt.value = e.user_id;
-    opt.textContent = `${e.nombre} (${e.user_id})`;
-    sel.appendChild(opt);
-  });
-  return empleados;
 }
 
-async function loadFichajes() {
-  const uid = document.getElementById("filter-empleado").value;
-  const fecha = document.getElementById("filter-fecha").value;
-  let url = `/api/fichajes?limit=200`;
-  if (uid) url += `&user_id=${uid}`;
-  if (fecha) url += `&fecha=${fecha}`;
-
-  const [fichajes, empleados] = await Promise.all([api(url), api("/api/empleados")]);
-  const empMap = Object.fromEntries(empleados.map(e => [e.user_id, e.nombre]));
-
-  if (fecha === today) document.getElementById("cnt-hoy").textContent = fichajes.length;
-
-  const tbody = document.getElementById("tabla-fichajes");
-  if (!fichajes.length) {
-    tbody.innerHTML = "<tr><td colspan='4'>Sin registros</td></tr>";
-    return;
-  }
-  tbody.innerHTML = fichajes.map(f => `
-    <tr>
-      <td>${f.user_id}</td>
-      <td>${empMap[f.user_id] || "—"}</td>
-      <td>${f.timestamp}</td>
-      <td>${badge(f.tipo)}</td>
-    </tr>
-  `).join("");
+async function loadCntHoy() {
+  const fichajes = await api(`/api/fichajes?fecha=${today}&limit=1000`);
+  document.getElementById("cnt-hoy").textContent = fichajes.length;
 }
 
 
@@ -232,21 +203,8 @@ async function loadSyncLog() {
   const logs = await api("/api/sync/log?limit=1");
   if (logs.length) {
     const l = logs[0];
-    document.getElementById("ultima-sync").textContent = l.finalizado_en || l.iniciado_en;
-    document.getElementById("sync-status").textContent =
-      `Última sync: ${l.registros_nuevos} nuevos de ${l.registros_leidos} leídos`;
-  }
-}
-
-async function syncNow() {
-  toast("Sincronizando con el dispositivo...", 60000);
-  try {
-    const r = await api("/api/sync/now");
-    toast(`Sync OK: ${r.nuevos} nuevos de ${r.leidos} registros`);
-    loadFichajes();
-    loadSyncLog();
-  } catch (e) {
-    toast("Error al sincronizar: " + e.message);
+    document.getElementById("ultima-sync").textContent =
+      `${l.finalizado_en || l.iniciado_en} — ${l.registros_nuevos} nuevos de ${l.registros_leidos} leídos`;
   }
 }
 
@@ -363,13 +321,11 @@ async function loadPresencia() {
 }
 
 async function init() {
-  await loadEmpleados();
-  await Promise.all([loadPresencia(), loadFichajes(), loadSyncLog()]);
+  await Promise.all([loadEmpleados(), loadPresencia(), loadCntHoy(), loadSyncLog()]);
 }
 
 init();
-// Refresca cada 2 minutos
-setInterval(() => { loadPresencia(); loadFichajes(); loadSyncLog(); }, 120000);
+setInterval(() => { loadPresencia(); loadCntHoy(); loadSyncLog(); }, 120000);
 </script>
 </body>
 </html>

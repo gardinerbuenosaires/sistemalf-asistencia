@@ -9,9 +9,21 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
-  header { background: #2c3e50; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
-  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .9rem; }
-  header h1 { font-size: 1.2rem; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+    background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none; }
   main { padding: 24px; max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1.6fr; gap: 20px; align-items: start; }
   .section { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
   .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -73,8 +85,29 @@
 <body>
 
 <header>
-  <a href="/" title="Inicio" style="display:flex;align-items:center"><img src="/static/img/logo_icono.svg" alt="Inicio" style="height:28px"></a>
-  <h1>Calendarios</h1>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group activo">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios">Horarios</a>
+        <a href="/planificacion">Planificación</a>
+        <a href="/calendarios" class="activo">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia">Asistencia</a>
+        <a href="/fichajes">Fichajes</a>
+        <a href="/asistencia-mensual">Planilla</a>
+      </div>
+    </div>
+    <a href="/empleados">Personal</a>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
 </header>
 
 <main>
@@ -83,7 +116,7 @@
     <div class="section">
       <div class="section-header">
         <h2>Calendarios</h2>
-        <button class="btn btn-primary btn-sm" onclick="nuevoCalendario()">+ Nuevo</button>
+        <button class="btn btn-primary btn-sm" data-perm="calendarios:editar" onclick="nuevoCalendario()">+ Nuevo</button>
       </div>
       <div id="lista-calendarios">Cargando...</div>
     </div>
@@ -95,7 +128,7 @@
       <div class="section-header">
         <h2 id="editor-titulo">Nuevo calendario</h2>
         <div>
-          <button class="btn btn-primary btn-sm" onclick="guardarCalendario()">Guardar</button>
+          <button class="btn btn-primary btn-sm" data-perm="calendarios:editar" onclick="guardarCalendario()">Guardar</button>
           <button class="btn btn-sm" style="background:#eee;margin-left:6px" onclick="cancelarEditor()">Cancelar</button>
         </div>
       </div>
@@ -116,7 +149,7 @@
         <div class="asig-acciones">
           <label style="font-size:.82rem">Desde:</label>
           <input type="date" id="asig-desde">
-          <button class="btn btn-primary btn-sm" onclick="asignarEmpleados()">Asignar seleccionados</button>
+          <button class="btn btn-primary btn-sm" data-perm="calendarios:editar" onclick="asignarEmpleados()">Asignar seleccionados</button>
           <button class="btn btn-sm" style="background:#eee" onclick="desmarcarTodos()">Desmarcar todos</button>
         </div>
       </div>
@@ -135,6 +168,24 @@ let empleados = [];
 let editandoId = null;
 let todosEmpleados = [];
 let asignadosIds = new Set();
+
+async function logout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  location.href = '/login';
+}
+
+let _perms = new Set();
+async function _loadPerms() {
+  try {
+    const me = await fetch('/api/auth/me').then(r => r.json());
+    _perms = new Set((me.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    if (me.nombre) document.getElementById('user-info').textContent = me.nombre;
+  } catch(e) {}
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+  });
+}
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
 
 function toast(msg, ms=2500) {
   const el = document.getElementById("toast");
@@ -168,9 +219,9 @@ async function cargarLista() {
           <div class="semana-grid">${preview}</div>
           <div class="cal-item-sub" style="margin-top:4px">${c.empleados_asignados} empleados asignados</div>
         </div>
-        <div class="cal-item-actions" onclick="event.stopPropagation()">
+        ${canDo('calendarios','eliminar') ? `<div class="cal-item-actions" onclick="event.stopPropagation()">
           <button class="btn btn-danger" onclick="eliminarCalendario(${c.id},'${c.nombre}')">&#10005;</button>
-        </div>
+        </div>` : ''}
       </div>`;
   }).join("");
 }
@@ -333,6 +384,7 @@ async function asignarEmpleados() {
 }
 
 async function init() {
+  await _loadPerms();
   const [hRes, eRes] = await Promise.all([
     fetch("/api/horarios"),
     fetch("/api/empleados")

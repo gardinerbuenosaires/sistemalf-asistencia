@@ -9,15 +9,27 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem; }
-  header { background: #2c3e50; color: white; padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
-  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .85rem; }
-  header a:hover { color: white; }
-  header h1 { font-size: 1.1rem; flex: 1; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+    background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none; }
 
-  .nav-semana { display: flex; align-items: center; gap: 10px; }
-  .nav-semana button { background: rgba(255,255,255,.15); border: none; color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: .9rem; }
-  .nav-semana button:hover { background: rgba(255,255,255,.25); }
-  .nav-semana span { font-size: .85rem; opacity: .9; min-width: 180px; text-align: center; }
+  .toolbar { background: white; border-bottom: 1px solid #e0e0e0; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .nav-semana { display: flex; align-items: center; gap: 8px; }
+  .nav-semana button { background: #2c3e50; border: none; color: white; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: .9rem; }
+  .nav-semana button:hover { background: #3d5166; }
+  .nav-semana span { font-size: .9rem; font-weight: bold; min-width: 180px; text-align: center; }
 
   main { padding: 16px; overflow-x: auto; }
 
@@ -71,22 +83,46 @@
 <body>
 
 <header>
-  <a href="/" title="Inicio" style="display:flex;align-items:center"><img src="/static/img/logo_icono.svg" alt="Inicio" style="height:28px"></a>
-  <h1>Planificación semanal</h1>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group activo">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios">Horarios</a>
+        <a href="/planificacion" class="activo">Planificación</a>
+        <a href="/calendarios">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia">Asistencia</a>
+        <a href="/fichajes">Fichajes</a>
+        <a href="/asistencia-mensual">Planilla</a>
+      </div>
+    </div>
+    <a href="/empleados">Personal</a>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
+</header>
+
+<div class="toolbar">
   <div class="nav-semana">
     <button onclick="cambiarSemana(-7)">&#8592;</button>
     <span id="label-semana">Cargando...</span>
     <button onclick="cambiarSemana(7)">&#8594;</button>
-    <button onclick="irHoy()" style="font-size:.75rem;padding:5px 8px">Hoy</button>
-    <button onclick="generarSemana()" style="font-size:.75rem;padding:5px 10px;background:#27ae60;border-color:transparent" title="Pre-completar desde calendarios asignados">Generar desde calendarios</button>
+    <button onclick="irHoy()">Hoy</button>
+    <button data-perm="calendarios:editar" onclick="generarSemana()" style="background:#27ae60" title="Pre-completar desde calendarios asignados">Generar desde calendarios</button>
   </div>
   <select id="filtro-turno" onchange="filtrarTabla()"
-    style="padding:5px 10px;border-radius:4px;border:none;font-size:.85rem;outline:none;background:rgba(255,255,255,.15);color:white">
+    style="padding:5px 10px;border-radius:4px;border:1px solid #ced4da;font-size:.85rem;outline:none;">
     <option value="">Todos los turnos</option>
   </select>
   <input id="filtro-nombre" type="search" placeholder="Buscar empleado..." oninput="filtrarTabla()"
-    style="padding:5px 10px;border-radius:4px;border:none;font-size:.85rem;width:190px;outline:none">
-</header>
+    style="padding:5px 10px;border-radius:4px;border:1px solid #ced4da;font-size:.85rem;width:190px;outline:none">
+</div>
 
 <main>
   <div class="grilla-wrap">
@@ -121,6 +157,24 @@ let horarios = [];
 let modalCtx = null;
 let planData = {};        // clave: "empleadoId_fecha"
 let horarioTurnoMap = {}; // horario_id → turno_id
+
+async function logout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  location.href = '/login';
+}
+
+let _perms = new Set();
+async function _loadPerms() {
+  try {
+    const me = await fetch('/api/auth/me').then(r => r.json());
+    _perms = new Set((me.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    if (me.nombre) document.getElementById('user-info').textContent = me.nombre;
+  } catch(e) {}
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+  });
+}
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
 
 function toast(msg, ms=2500) {
   const el = document.getElementById("toast");
@@ -163,9 +217,8 @@ function celda(plan, fecha, empleadoId, empleadoNombre) {
   }
   if (esHoy) cls += " hoy";
   const nombreEsc = empleadoNombre.replace(/'/g, "\\'");
-  return `<span class="celda ${cls}"
-    onclick="abrirModal(${empleadoId}, '${fecha}', '${nombreEsc}')"
-    title="${txt}">${txt}</span>`;
+  const clickAttr = canDo('planificacion','editar') ? `onclick="abrirModal(${empleadoId}, '${fecha}', '${nombreEsc}')"` : '';
+  return `<span class="celda ${cls}" ${clickAttr} title="${txt}">${txt}</span>`;
 }
 
 async function cargar() {
@@ -330,7 +383,7 @@ async function generarSemana() {
   }
 }
 
-cargar();
+_loadPerms().then(() => cargar());
 </script>
 </body>
 </html>

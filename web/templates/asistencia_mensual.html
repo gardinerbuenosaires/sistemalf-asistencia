@@ -193,6 +193,11 @@ tr[draggable="true"]:active { cursor: grabbing; }
 .btn-cancelar{ background: #eee; }
 .btn-cancelar:hover { background: #ddd; }
 #modal-estado-actual { font-size: .78rem; color: #888; margin-bottom: 12px; min-height: 18px; }
+.nov-rango-wrap { margin-bottom: 14px; }
+.nov-rango-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.nov-rango-label { font-size: .72rem; color: #666; font-weight: bold; display: block; margin-bottom: 4px; }
+.nov-rango-hint { font-weight: normal; color: #aaa; }
+#nov-desde, #nov-hasta { width: 100%; padding: 6px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; }
 .modal-tab-bar { display: flex; gap: 6px; margin-bottom: 14px; }
 .modal-tab-btn { padding: 5px 14px; border: 2px solid #dee2e6; border-radius: 5px; cursor: pointer; font-size: .8rem; background: white; color: #555; }
 .modal-tab-btn.activo { border-color: #2c3e50; background: #2c3e50; color: white; }
@@ -207,6 +212,11 @@ tr[draggable="true"]:active { cursor: grabbing; }
                   border-radius: 5px; padding: 8px 10px; margin-bottom: 14px; }
 #ft-horario-sel { width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;
                   font-size: .85rem; margin-bottom: 12px; }
+.mpanel-bloqueado-msg { font-size: .82rem; color: #1a5c2a; background: #eafaf1;
+  border: 1px solid #a9dfbf; border-radius: 6px; padding: 12px 14px; margin-bottom: 16px; line-height: 1.6; }
+.bloqueado-icono { display: inline-block; width: 20px; height: 20px; background: #27ae60;
+  color: white; border-radius: 50%; text-align: center; line-height: 20px;
+  font-size: .75rem; margin-right: 6px; font-weight: bold; }
 
 #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white;
          padding: 10px 18px; border-radius: 8px; display: none; z-index: 200; font-size: .85rem; }
@@ -301,6 +311,18 @@ tr[draggable="true"]:active { cursor: grabbing; }
       <button class="bloque-btn"          data-b="0" onclick="selBloque(0)">Ambos</button>
     </div>
     <div class="tipos-grid" id="tipos-grid"></div>
+    <div class="nov-rango-wrap">
+      <div class="nov-rango-grid">
+        <div>
+          <label class="nov-rango-label">Desde</label>
+          <input type="date" id="nov-desde">
+        </div>
+        <div>
+          <label class="nov-rango-label">Hasta <span class="nov-rango-hint">(opcional)</span></label>
+          <input type="date" id="nov-hasta">
+        </div>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn-guardar"  onclick="guardarNovedad()">Guardar</button>
       <button class="btn-borrar"   id="btn-borrar"  onclick="borrarNovedad()" style="display:none">Quitar</button>
@@ -317,6 +339,18 @@ tr[draggable="true"]:active { cursor: grabbing; }
     <div class="modal-actions">
       <button class="btn-guardar" onclick="guardarHorarioFT()">Asignar y evaluar</button>
       <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Panel bloqueado (presencia correcta) -->
+  <div id="mpanel-bloqueado" style="display:none">
+    <div class="mpanel-bloqueado-msg">
+      <span class="bloqueado-icono">&#10003;</span>
+      Presencia registrada correctamente.<br>
+      Para modificar, eliminá el fichaje desde la vista de <a href="/asistencia" target="_blank">Asistencia</a>.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancelar" onclick="cerrarModal()">Cerrar</button>
     </div>
   </div>
 
@@ -774,12 +808,22 @@ function escHtml(s) {
 
 // ── Modal de edición de novedad ───────────────────────────────────────────────
 function modalTabPlani(tab) {
-  document.getElementById('mpanel-nov').style.display = tab === 'nov' ? 'block' : 'none';
-  document.getElementById('mpanel-fm').style.display  = tab === 'fm'  ? 'block' : 'none';
-  document.getElementById('mpanel-ft').style.display  = tab === 'ft'  ? 'block' : 'none';
+  document.getElementById('mpanel-nov').style.display       = tab === 'nov'       ? 'block' : 'none';
+  document.getElementById('mpanel-fm').style.display        = tab === 'fm'        ? 'block' : 'none';
+  document.getElementById('mpanel-ft').style.display        = tab === 'ft'        ? 'block' : 'none';
+  document.getElementById('mpanel-bloqueado').style.display = tab === 'bloqueado' ? 'block' : 'none';
   document.getElementById('mtab-nov').className = 'modal-tab-btn' + (tab === 'nov' ? ' activo' : '');
   document.getElementById('mtab-fm').className  = 'modal-tab-btn' + (tab === 'fm'  ? ' activo' : '');
   document.getElementById('mtab-ft').className  = 'modal-tab-btn' + (tab === 'ft'  ? ' activo' : '');
+}
+
+function _esBloqueado(celda, esCortado, bloque) {
+  if (!celda) return false;
+  if (esCortado) {
+    const b = bloque === 2 ? celda.b2 : celda.b1;
+    return b?.letra === 'I' && b?.tipo === 'normal';
+  }
+  return celda.letra === 'I' && celda.tipo === 'normal';
 }
 
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }
@@ -795,12 +839,15 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
 
   // Mostrar pestañas según permiso y estado de la celda
   const tabBar = document.getElementById('modal-tab-bar');
-  tabBar.style.display = canDo('asistencia','editar') ? 'flex' : 'none';
+  const bloqueado = _esBloqueado(celda, esCortado, bloqueInicial);
+  tabBar.style.display = (!bloqueado && canDo('asistencia','editar')) ? 'flex' : 'none';
 
-  const esFtPendiente = !esCortado && celda && celda.ft_pendiente && canDo('planificacion','editar');
+  const esFtPendiente = !bloqueado && !esCortado && celda && celda.ft_pendiente && canDo('planificacion','editar');
   document.getElementById('mtab-ft').style.display = esFtPendiente ? 'inline-block' : 'none';
 
-  if (esFtPendiente) {
+  if (bloqueado) {
+    modalTabPlani('bloqueado');
+  } else if (esFtPendiente) {
     _poblarHorariosFT();
     modalTabPlani('ft');
   } else {
@@ -810,6 +857,9 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   document.getElementById('fm-entrada').value = '';
   document.getElementById('fm-salida').value  = '';
   document.getElementById('fm-motivo').value  = '';
+  document.getElementById('nov-desde').value  = fecha;
+  document.getElementById('nov-hasta').value  = '';
+  document.getElementById('nov-hasta').min    = fecha;
 
   document.getElementById('modal-nombre').textContent = modalCtx.nombre;
   document.getElementById('modal-subtitulo').textContent =
@@ -885,14 +935,43 @@ function selTipo(t) {
 async function guardarNovedad() {
   const tipo = document.querySelector('.tipo-btn.selected')?.dataset.tipo;
   if (!tipo) { toast('Seleccioná un tipo'); return; }
-  const { eid, fecha, bloqueActivo } = modalCtx;
-  const res = await fetch('/api/asistencia/novedades', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({empleado_id: eid, fecha, bloque: bloqueActivo, tipo}),
-  });
-  if (res.ok) { toast('Novedad guardada'); cerrarModal(); cargar(); }
-  else { const e = await res.json(); toast('Error: ' + (e.detail || 'desconocido')); }
+  const { eid, fecha, bloqueActivo, esCortado } = modalCtx;
+
+  // Guard: no permitir sobreescribir un bloque con presencia correcta (letra I)
+  const emp = encontrarEmp(eid);
+  if (emp && _esBloqueado(emp.celdas[fecha], esCortado, bloqueActivo)) {
+    toast('Presencia registrada correctamente — no se puede sobreescribir');
+    return;
+  }
+
+  // Construir rango de fechas
+  const desdeVal = document.getElementById('nov-desde').value || fecha;
+  const hastaVal = document.getElementById('nov-hasta').value || desdeVal;
+  if (desdeVal > hastaVal) { toast('La fecha "desde" no puede ser posterior a "hasta"'); return; }
+  const fechas = [];
+  let d = new Date(desdeVal + 'T00:00:00');
+  const dFin = new Date(hastaVal + 'T00:00:00');
+  while (d <= dFin) {
+    fechas.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() + 1);
+  }
+
+  for (const f of fechas) {
+    const res = await fetch('/api/asistencia/novedades', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({empleado_id: eid, fecha: f, bloque: bloqueActivo, tipo}),
+    });
+    if (!res.ok) {
+      const e = await res.json();
+      toast('Error en ' + f + ': ' + (e.detail || 'desconocido'));
+      return;
+    }
+  }
+
+  toast(fechas.length > 1 ? `Novedad guardada (${fechas.length} días)` : 'Novedad guardada');
+  cerrarModal();
+  cargar();
 }
 
 async function guardarFichajeManual() {
@@ -918,9 +997,25 @@ async function guardarFichajeManual() {
 }
 
 async function borrarNovedad() {
-  const novId = document.getElementById('btn-borrar').dataset.novId;
-  if (!novId) return;
-  const res = await fetch(`/api/asistencia/novedades/${novId}`, {method:'DELETE'});
+  const { eid, fecha, bloqueActivo } = modalCtx;
+  const desdeVal = document.getElementById('nov-desde').value || fecha;
+  const hastaVal = document.getElementById('nov-hasta').value;
+
+  let res;
+  if (hastaVal && hastaVal >= desdeVal) {
+    // Borrado por rango
+    res = await fetch('/api/asistencia/novedades/borrar-rango', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({empleado_id: eid, fecha_desde: desdeVal, fecha_hasta: hastaVal, bloque: bloqueActivo}),
+    });
+  } else {
+    // Borrado individual por ID
+    const novId = document.getElementById('btn-borrar').dataset.novId;
+    if (!novId) return;
+    res = await fetch(`/api/asistencia/novedades/${novId}`, {method:'DELETE'});
+  }
+
   if (res.ok) { toast('Novedad eliminada'); cerrarModal(); cargar(); }
   else toast('Error al eliminar');
 }
@@ -928,6 +1023,8 @@ async function borrarNovedad() {
 function cerrarModal() {
   document.getElementById('modal-overlay').style.display = 'none';
   document.getElementById('modal').style.display = 'none';
+  document.getElementById('nov-desde').value = '';
+  document.getElementById('nov-hasta').value = '';
   modalCtx = null;
 }
 

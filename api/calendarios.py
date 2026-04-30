@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta
 from db.database import db_session
+from auth.core import require_permiso, get_current_user
 
 router = APIRouter(prefix="/api/calendarios", tags=["calendarios"])
 
@@ -46,7 +47,7 @@ def _get_calendario(conn, cid):
 
 
 @router.get("")
-def list_calendarios():
+def list_calendarios(_user=Depends(require_permiso("calendarios", "ver"))):
     with db_session() as conn:
         rows = conn.execute("SELECT * FROM calendarios WHERE activo=1 ORDER BY nombre").fetchall()
         result = []
@@ -66,13 +67,13 @@ def list_calendarios():
 
 
 @router.get("/{cid}")
-def get_calendario(cid: int):
+def get_calendario(cid: int, _user=Depends(require_permiso("calendarios", "ver"))):
     with db_session() as conn:
         return _get_calendario(conn, cid)
 
 
 @router.post("", status_code=201)
-def create_calendario(data: CalendarioIn):
+def create_calendario(data: CalendarioIn, _user=Depends(require_permiso("calendarios", "editar"))):
     if len(data.dias) != 7:
         raise HTTPException(422, "Se requieren exactamente 7 días")
     with db_session() as conn:
@@ -87,7 +88,7 @@ def create_calendario(data: CalendarioIn):
 
 
 @router.put("/{cid}")
-def update_calendario(cid: int, data: CalendarioIn):
+def update_calendario(cid: int, data: CalendarioIn, _user=Depends(require_permiso("calendarios", "editar"))):
     if len(data.dias) != 7:
         raise HTTPException(422, "Se requieren exactamente 7 días")
     with db_session() as conn:
@@ -105,7 +106,7 @@ def update_calendario(cid: int, data: CalendarioIn):
 
 
 @router.delete("/{cid}")
-def delete_calendario(cid: int):
+def delete_calendario(cid: int, _user=Depends(require_permiso("calendarios", "eliminar"))):
     with db_session() as conn:
         en_uso = conn.execute(
             "SELECT COUNT(*) FROM asignaciones WHERE calendario_id=?", (cid,)
@@ -120,7 +121,7 @@ def delete_calendario(cid: int):
 # ── Asignaciones ─────────────────────────────────────────────────────────────
 
 @router.post("/asignar")
-def asignar(data: AsignacionIn):
+def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "editar"))):
     """
     Asigna un calendario a uno o varios empleados.
     Borra todo lo auto-generado desde fecha_desde en adelante y
@@ -138,6 +139,16 @@ def asignar(data: AsignacionIn):
         cal_map = {r["dia_semana"]: dict(r) for r in dias_cal}
 
         for eid in data.empleado_ids:
+            # Si el mismo calendario ya está activo desde fecha_desde o antes, no hacer nada
+            ya_activo = conn.execute(
+                "SELECT id FROM asignaciones "
+                "WHERE empleado_id=? AND calendario_id=? AND fecha_desde<=? "
+                "AND (fecha_hasta IS NULL OR fecha_hasta > ?)",
+                (eid, data.calendario_id, data.fecha_desde, data.fecha_desde)
+            ).fetchone()
+            if ya_activo:
+                continue
+
             conn.execute(
                 "UPDATE asignaciones SET fecha_hasta=? "
                 "WHERE empleado_id=? AND (fecha_hasta IS NULL OR fecha_hasta >= ?)",
@@ -169,6 +180,8 @@ def asignar(data: AsignacionIn):
                     dia = cal_map.get(cur.weekday(), {})
                     es_franco = int(dia.get("es_franco", 0))
                     horario_id = None if es_franco else dia.get("horario_id")
+                    if not es_franco and not horario_id:
+                        es_franco = 1
                     conn.execute(
                         "INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, auto_generado) VALUES (?,?,?,?,1)",
                         (eid, str(cur), horario_id, es_franco)
@@ -179,7 +192,7 @@ def asignar(data: AsignacionIn):
 
 
 @router.get("/asignaciones/empleado/{empleado_id}")
-def asignaciones_empleado(empleado_id: int):
+def asignaciones_empleado(empleado_id: int, _user=Depends(require_permiso("calendarios", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
             "SELECT a.*, c.nombre as calendario_nombre FROM asignaciones a "
@@ -191,7 +204,7 @@ def asignaciones_empleado(empleado_id: int):
 
 
 @router.delete("/asignaciones/{asignacion_id}")
-def eliminar_asignacion(asignacion_id: int):
+def eliminar_asignacion(asignacion_id: int, _user=Depends(require_permiso("calendarios", "editar"))):
     """
     Elimina una asignación de calendario y borra la planificación futura
     auto-generada del empleado (desde hoy en adelante).
@@ -215,7 +228,7 @@ def eliminar_asignacion(asignacion_id: int):
 
 
 @router.post("/generar-semana")
-def generar_semana(fecha: str):
+def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "editar"))):
     """
     Pre-rellena la planificación de la semana con los calendarios asignados.
     Solo completa los días que no tienen planificación manual.
@@ -281,6 +294,8 @@ def generar_semana(fecha: str):
                 dia = cal_dias.get(i, {})
                 es_franco = int(dia.get("es_franco", 0))
                 horario_id = None if es_franco else dia.get("horario_id")
+                if not es_franco and not horario_id:
+                    es_franco = 1
                 conn.execute(
                     "INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, auto_generado) VALUES (?,?,?,?,1)",
                     (eid, fecha_dia, horario_id, es_franco)

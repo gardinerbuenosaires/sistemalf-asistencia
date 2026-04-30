@@ -227,8 +227,11 @@ def asistencia_mensual(mes: str = Query(None)):
                         tots[l] += 0.5
                         if l in CONTABLES:
                             tots["dias"] += 0.5
-                        if fecha in feriados and l in ("I", "T", "FT", "@"):
-                            feriados_trab += 0.5
+                if fecha in feriados:
+                    letras_feri = [b["letra"] for b in (b1, b2)
+                                   if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@")]
+                    if any(l != "@" for l in letras_feri):
+                        feriados_trab += len(letras_feri) * 0.5
             else:
                 c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
                 celdas[fecha] = c
@@ -296,6 +299,27 @@ def upsert_novedad(data: NovedadIn):
             (data.empleado_id, data.fecha, data.bloque),
         ).fetchone()
     return dict(row)
+
+
+class NovedadRangoIn(BaseModel):
+    empleado_id: int
+    fecha_desde: str
+    fecha_hasta: str
+    bloque:      int = 0
+
+
+# Ruta estática antes que la parametrizada para evitar que {nov_id} la capture
+@router.post("/novedades/borrar-rango", status_code=200)
+def eliminar_novedades_rango(data: NovedadRangoIn):
+    if data.fecha_hasta < data.fecha_desde:
+        raise HTTPException(400, "fecha_hasta debe ser >= fecha_desde")
+    with db_session() as conn:
+        conn.execute(
+            """DELETE FROM novedades
+               WHERE empleado_id=? AND fecha>=? AND fecha<=? AND bloque=?""",
+            (data.empleado_id, data.fecha_desde, data.fecha_hasta, data.bloque),
+        )
+    return {"ok": True}
 
 
 @router.delete("/novedades/{nov_id}")

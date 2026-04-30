@@ -20,17 +20,19 @@ ESTADO_LABELS: dict[str, str] = {
     "b1_ausente":               "Falta bloque 1",
     "b2_ausente":               "Falta bloque 2",
     "sin_horario":              "Sin horario",
+    "nf":                       "No fichó",
+    "ft":                       "Franco trabajado",
 }
 
 
 @router.get("/estados")
-def estados():
+def estados(_user=Depends(require_permiso("resultados", "ver"))):
     """Mapa de estado → etiqueta legible. Usado por el frontend para renderizar badges."""
     return ESTADO_LABELS
 
 
 @router.get("/bloques-pendientes")
-def bloques_pendientes(fecha: str | None = None):
+def bloques_pendientes(fecha: str | None = None, _user=Depends(require_permiso("resultados", "ver"))):
     """
     Bloques cuya hora de salida aún no llegó hoy.
     El frontend lo usa para advertir al operador antes de procesar manualmente.
@@ -45,6 +47,7 @@ def procesar(
     fecha_desde: str | None = None,
     fecha_hasta: str | None = None,
     respetar_correcciones: bool = True,
+    _user=Depends(require_permiso("resultados", "procesar")),
 ):
     """
     Evalúa fichajes contra planificación y guarda resultados_dia.
@@ -60,7 +63,7 @@ def procesar(
 
 
 @router.get("/dia")
-def resultados_dia(fecha: str):
+def resultados_dia(fecha: str, _user=Depends(require_permiso("resultados", "ver"))):
     """Resultados de todos los empleados en una fecha."""
     with db_session() as conn:
         rows = conn.execute(
@@ -79,7 +82,7 @@ def resultados_dia(fecha: str):
 
 
 @router.get("/fichajes-disponibles")
-def fichajes_disponibles(empleado_id: int, fecha: str):
+def fichajes_disponibles(empleado_id: int, fecha: str, _user=Depends(require_permiso("resultados", "ver"))):
     """
     Fichajes del empleado en esa fecha (y siguiente para horarios que cruzan medianoche).
     Usado por la UI para mostrar opciones al corregir un slot.
@@ -151,7 +154,7 @@ def corregir_fichaje(
 
 
 @router.get("/semana")
-def resultados_semana(fecha: str):
+def resultados_semana(fecha: str, _user=Depends(require_permiso("resultados", "ver"))):
     """Resultados de la semana que contiene la fecha dada."""
     from datetime import date, timedelta
     d = date.fromisoformat(fecha)
@@ -172,7 +175,7 @@ def resultados_semana(fecha: str):
 
 
 @router.get("/empleado/{empleado_id}")
-def resultados_empleado(empleado_id: int, fecha_desde: str, fecha_hasta: str):
+def resultados_empleado(empleado_id: int, fecha_desde: str, fecha_hasta: str, _user=Depends(require_permiso("resultados", "ver"))):
     """Historial de resultados de un empleado en un rango de fechas."""
     with db_session() as conn:
         rows = conn.execute(
@@ -187,7 +190,7 @@ def resultados_empleado(empleado_id: int, fecha_desde: str, fecha_hasta: str):
 
 
 @router.get("/resumen")
-def resumen_periodo(fecha_desde: str, fecha_hasta: str):
+def resumen_periodo(fecha_desde: str, fecha_hasta: str, _user=Depends(require_permiso("resultados", "ver"))):
     """Resumen por empleado para un rango: días trabajados, ausentes, tardes."""
     with db_session() as conn:
         rows = conn.execute(

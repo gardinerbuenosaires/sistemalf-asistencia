@@ -1,6 +1,6 @@
 import logging
 import uvicorn
-from fastapi import FastAPI, Cookie, Request
+from fastapi import Depends, FastAPI, Cookie, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from contextlib import asynccontextmanager
@@ -18,7 +18,8 @@ from api.auth import router as auth_router
 from api.turnos import router as turnos_router
 from api.asistencia_mensual import router as asistencia_mensual_router
 from api.feriados import router as feriados_router
-from auth.core import decode_token, ensure_admin, check_page_auth
+from api.fichajes import router as fichajes_router
+from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,6 +56,7 @@ app.include_router(auth_router)
 app.include_router(turnos_router)
 app.include_router(asistencia_mensual_router)
 app.include_router(feriados_router)
+app.include_router(fichajes_router)
 
 
 def _auth(request: Request, modulo: str, accion: str = "ver"):
@@ -90,7 +92,7 @@ def page_asistencia(request: Request):
 
 @app.get("/usuarios", include_in_schema=False)
 def page_usuarios(request: Request):
-    return FileResponse("web/templates/usuarios.html") if _auth(request, "usuarios") else RedirectResponse("/login")
+    return RedirectResponse("/configuracion")
 
 @app.get("/roles", include_in_schema=False)
 def page_roles(request: Request):
@@ -98,7 +100,11 @@ def page_roles(request: Request):
 
 @app.get("/configuracion", include_in_schema=False)
 def page_configuracion(request: Request):
-    return FileResponse("web/templates/configuracion.html") if _auth(request, "horarios") else RedirectResponse("/login")
+    return FileResponse("web/templates/configuracion.html") if _auth(request, "usuarios") else RedirectResponse("/login")
+
+@app.get("/fichajes", include_in_schema=False)
+def page_fichajes(request: Request):
+    return FileResponse("web/templates/fichajes.html") if _auth(request, "asistencia") else RedirectResponse("/login")
 
 @app.get("/asistencia-mensual", include_in_schema=False)
 def page_asistencia_mensual(request: Request):
@@ -108,7 +114,7 @@ def page_asistencia_mensual(request: Request):
 # --- Rutas de la API (se expanden en etapas siguientes) ---
 
 @app.get("/api/sync/now", tags=["sync"])
-def sync_now():
+def sync_now(_user=Depends(require_permiso("sync", "procesar"))):
     """Fuerza una sincronización inmediata con el dispositivo."""
     from sync.downloader import sync_attendances
     from sync.processor import process_pending
@@ -118,7 +124,7 @@ def sync_now():
 
 
 @app.get("/api/sync/log", tags=["sync"])
-def sync_log(limit: int = 20):
+def sync_log(limit: int = 20, _user=Depends(get_current_user)):
     """Últimas N entradas del log de sincronización."""
     from db.database import db_session
     with db_session() as conn:
@@ -135,7 +141,7 @@ def sync_log(limit: int = 20):
 @app.get("/api/fichajes", tags=["fichajes"])
 def get_fichajes(user_id: str | None = None, fecha: str | None = None,
                  fecha_desde: str | None = None, fecha_hasta: str | None = None,
-                 limit: int = 100):
+                 limit: int = 100, _user=Depends(require_permiso("asistencia", "ver"))):
     """Consulta fichajes con filtros opcionales."""
     from db.database import db_session
     clauses = []
@@ -163,7 +169,7 @@ def get_fichajes(user_id: str | None = None, fecha: str | None = None,
 
 
 @app.get("/api/inconsistencias", tags=["fichajes"])
-def get_inconsistencias(resuelta: int = 0):
+def get_inconsistencias(resuelta: int = 0, _user=Depends(require_permiso("asistencia", "ver"))):
     """Lista de inconsistencias detectadas."""
     from db.database import db_session
     with db_session() as conn:
@@ -180,25 +186,15 @@ def get_inconsistencias(resuelta: int = 0):
     return [dict(r) for r in rows]
 
 
-@app.get("/api/empleados", tags=["empleados"])
-def get_empleados():
-    from db.database import db_session
-    with db_session() as conn:
-        rows = conn.execute(
-            "SELECT * FROM empleados WHERE activo = 1 ORDER BY apellido, nombre"
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
 @app.post("/api/empleados/sync-dispositivo", tags=["empleados"])
-def sync_empleados_dispositivo():
+def sync_empleados_dispositivo(_user=Depends(require_permiso("sync", "procesar"))):
     """Importa desde el ZKTeco los usuarios que aún no existen como empleados."""
     from sync.downloader import sync_users
     return sync_users()
 
 
 @app.get("/api/configuracion", tags=["configuracion"])
-def get_configuracion():
+def get_configuracion(_user=Depends(require_permiso("usuarios", "ver"))):
     from db.database import db_session
     with db_session() as conn:
         rows = conn.execute("SELECT clave, valor, descripcion FROM configuracion ORDER BY clave").fetchall()
@@ -206,7 +202,7 @@ def get_configuracion():
 
 
 @app.put("/api/configuracion/{clave}", tags=["configuracion"])
-def set_configuracion(clave: str, body: dict):
+def set_configuracion(clave: str, body: dict, _user=Depends(require_permiso("usuarios", "editar"))):
     from db.database import db_session
     from fastapi import HTTPException
     valor = body.get("valor", "").strip()
@@ -221,7 +217,7 @@ def set_configuracion(clave: str, body: dict):
 
 
 @app.get("/api/presencia/hoy", tags=["presencia"])
-def presencia_hoy():
+def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
     """
     Empleados actualmente en su turno: tienen b*_entrada asignado pero no b*_salida,
     y la ventana del bloque aún no cerró (hora_salida + tolerancia_salida_despues).

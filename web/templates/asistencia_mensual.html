@@ -11,8 +11,19 @@ body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
 
 header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px;
          display: flex; align-items: center; justify-content: space-between; }
-nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; margin-left: 14px; }
+nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
 nav a:hover { opacity: 1; }
+nav a.activo { opacity: 1; font-weight: bold; }
+.nav-group { position: relative; display: inline-flex; align-items: center; }
+.nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+.nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+.nav-group.activo .nav-trigger { font-weight: bold; }
+.nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+  background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+.nav-group:hover .nav-dropdown { display: block; }
+.nav-dropdown a { display: block; padding: 8px 16px; margin-left: 0; }
+.nav-dropdown a:hover { background: #f4f6f9; }
 
 .toolbar { background: white; border-bottom: 1px solid #e0e0e0; padding: 10px 16px;
            display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -182,6 +193,20 @@ tr[draggable="true"]:active { cursor: grabbing; }
 .btn-cancelar{ background: #eee; }
 .btn-cancelar:hover { background: #ddd; }
 #modal-estado-actual { font-size: .78rem; color: #888; margin-bottom: 12px; min-height: 18px; }
+.modal-tab-bar { display: flex; gap: 6px; margin-bottom: 14px; }
+.modal-tab-btn { padding: 5px 14px; border: 2px solid #dee2e6; border-radius: 5px; cursor: pointer; font-size: .8rem; background: white; color: #555; }
+.modal-tab-btn.activo { border-color: #2c3e50; background: #2c3e50; color: white; }
+.fm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.fm-grid label { font-size: .72rem; color: #666; font-weight: bold; display: block; margin-bottom: 3px; }
+.fm-grid input { width: 100%; padding: 6px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; }
+.fm-motivo { width: 100%; padding: 6px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; margin-bottom: 12px; }
+.ft-pendiente { position: relative; }
+.ft-dot { position: absolute; top: 2px; right: 2px; width: 6px; height: 6px;
+          border-radius: 50%; background: #e67e22; pointer-events: none; }
+.mpanel-ft-info { font-size: .8rem; color: #7d4900; background: #fef9e7; border: 1px solid #f7dc6f;
+                  border-radius: 5px; padding: 8px 10px; margin-bottom: 14px; }
+#ft-horario-sel { width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;
+                  font-size: .85rem; margin-bottom: 12px; }
 
 #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white;
          padding: 10px 18px; border-radius: 8px; display: none; z-index: 200; font-size: .85rem; }
@@ -196,15 +221,27 @@ tr[draggable="true"]:active { cursor: grabbing; }
 <body>
 
 <header>
-  <img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf Check" style="height:44px">
-  <nav>
-    <a href="/">Dashboard</a>
-    <a href="/horarios">Horarios</a>
-    <a href="/planificacion">Planificación</a>
-    <a href="/calendarios">Calendarios</a>
-    <a href="/empleados">Empleados</a>
-    <a href="/asistencia-mensual" style="opacity:1;font-weight:bold">Planilla</a>
-    <a href="/asistencia">Fichajes</a>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf Check" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios">Horarios</a>
+        <a href="/planificacion">Planificación</a>
+        <a href="/calendarios">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group activo">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia">Asistencia</a>
+        <a href="/fichajes">Fichajes</a>
+        <a href="/asistencia-mensual" class="activo">Planilla</a>
+      </div>
+    </div>
+    <a href="/empleados">Personal</a>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
     <a href="#" onclick="logout()">Salir</a>
   </nav>
 </header>
@@ -243,22 +280,57 @@ tr[draggable="true"]:active { cursor: grabbing; }
 <div class="tab-panel"        id="panel-TN"><div class="tabla-outer" id="tabla-TN"></div></div>
 <div class="tab-panel"        id="panel-CO"><div class="tabla-outer" id="tabla-CO"></div></div>
 
-<!-- Modal novedad -->
+<!-- Modal novedad / fichaje manual -->
 <div id="modal-overlay" onclick="cerrarModal()"></div>
 <div id="modal" style="display:none">
   <h3 id="modal-nombre"></h3>
   <div class="subtitulo" id="modal-subtitulo"></div>
-  <div id="modal-estado-actual"></div>
-  <div id="bloque-sel-wrap" class="bloque-sel" style="display:none">
-    <button class="bloque-btn selected" data-b="1" onclick="selBloque(1)">Bloque 1</button>
-    <button class="bloque-btn"          data-b="2" onclick="selBloque(2)">Bloque 2</button>
-    <button class="bloque-btn"          data-b="0" onclick="selBloque(0)">Ambos</button>
+
+  <div class="modal-tab-bar" id="modal-tab-bar">
+    <button class="modal-tab-btn activo" id="mtab-nov" onclick="modalTabPlani('nov')">Novedad</button>
+    <button class="modal-tab-btn"        id="mtab-fm"  onclick="modalTabPlani('fm')">Fichaje manual</button>
+    <button class="modal-tab-btn"        id="mtab-ft"  onclick="modalTabPlani('ft')" style="display:none">Asignar horario</button>
   </div>
-  <div class="tipos-grid" id="tipos-grid"></div>
-  <div class="modal-actions">
-    <button class="btn-guardar"  onclick="guardarNovedad()">Guardar</button>
-    <button class="btn-borrar"   id="btn-borrar"  onclick="borrarNovedad()" style="display:none">Quitar</button>
-    <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+
+  <!-- Panel novedad -->
+  <div id="mpanel-nov">
+    <div id="modal-estado-actual"></div>
+    <div id="bloque-sel-wrap" class="bloque-sel" style="display:none">
+      <button class="bloque-btn selected" data-b="1" onclick="selBloque(1)">Bloque 1</button>
+      <button class="bloque-btn"          data-b="2" onclick="selBloque(2)">Bloque 2</button>
+      <button class="bloque-btn"          data-b="0" onclick="selBloque(0)">Ambos</button>
+    </div>
+    <div class="tipos-grid" id="tipos-grid"></div>
+    <div class="modal-actions">
+      <button class="btn-guardar"  onclick="guardarNovedad()">Guardar</button>
+      <button class="btn-borrar"   id="btn-borrar"  onclick="borrarNovedad()" style="display:none">Quitar</button>
+      <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Panel asignar horario (FT pendiente) -->
+  <div id="mpanel-ft" style="display:none">
+    <div class="mpanel-ft-info">Este empleado fichó en su día franco. Asigná el horario que corresponde para calcular puntualidad.</div>
+    <select id="ft-horario-sel">
+      <option value="">— Seleccioná un horario —</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn-guardar" onclick="guardarHorarioFT()">Asignar y evaluar</button>
+      <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Panel fichaje manual -->
+  <div id="mpanel-fm" style="display:none">
+    <div class="fm-grid">
+      <div><label>Hora entrada</label><input type="time" id="fm-entrada"></div>
+      <div><label>Hora salida</label><input type="time" id="fm-salida"></div>
+    </div>
+    <input type="text" class="fm-motivo" id="fm-motivo" placeholder="Motivo (opcional)">
+    <div class="modal-actions">
+      <button class="btn-guardar" onclick="guardarFichajeManual()">Guardar</button>
+      <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+    </div>
   </div>
 </div>
 
@@ -280,15 +352,17 @@ const C = {
   LSG: {bg:'#B1A0C7', txt:'#000000'},
   S:   {bg:'#DA9694', txt:'#000000'},
   '@': {bg:'#FFC7CE', txt:'#000000'},
+  NF:  {bg:'#F4D03F', txt:'#7D4900'},
   'X': {bg:'#808080', txt:'#ffffff'},
   'O': {bg:'#404040', txt:'#ffffff'},
 };
-const TIPOS_NOVEDAD        = ['ILT','LSG','L','E','V','S','FT','FD'];
-const TIPOS_NOVEDAD_CORTADO = ['ILT','LSG','L','E','V','S','FT','FD','@'];
+const TIPOS_NOVEDAD        = ['ILT','LSG','L','E','V','S','FT','FD','NF'];
+const TIPOS_NOVEDAD_CORTADO = ['ILT','LSG','L','E','V','S','FT','FD','@','NF'];
 const NOMBRES_LETRA = {
   I:'Presente', T:'Tarde', F:'Franco', FT:'Franco Trabaj.', FD:'Franco Devuelto',
   A:'Ausente', E:'Enfermedad', ILT:'ILT / Accidente',
-  V:'Vacaciones', L:'Licencia', LSG:'Lic. sin sueldo', S:'Suspendido', '@':'Aliviada'
+  V:'Vacaciones', L:'Licencia', LSG:'Lic. sin sueldo', S:'Suspendido', '@':'Aliviada',
+  NF:'No fichó'
 };
 const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio',
                   'julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -469,11 +543,11 @@ function renderGrupo(grupo, dias, empleados) {
   }
 
   const resCols = cortado
-    ? ['transporte','saldo_francos','T','ILT','LSG','L','@','E','V','S','A','feriados_trabajados','dias']
-    : ['transporte','saldo_francos','T','ILT','LSG','L','E','V','S','A','feriados_trabajados','dias'];
+    ? ['transporte','saldo_francos','T','ILT','LSG','L','@','E','V','S','NF','FM','A','feriados_trabajados','dias']
+    : ['transporte','saldo_francos','T','ILT','LSG','L','E','V','S','NF','FM','A','feriados_trabajados','dias'];
   const resLabels = {
     transporte:'TRANS', saldo_francos:'SALDO', T:'T', ILT:'ILT', LSG:'LSG',
-    L:'L', '@':'@', E:'E', V:'V', S:'S', A:'A',
+    L:'L', '@':'@', E:'E', V:'V', S:'S', NF:'NF', FM:'FM', A:'A',
     feriados_trabajados:'FERI.', dias:'DÍAS'
   };
   const totalCols = 2 + dias.length + 1 + resCols.length;
@@ -659,9 +733,12 @@ function celdaSimpleHtml(celda, eid, fecha, mark='') {
   const {bg, txt, cls} = estiloBloque(celda);
   const letra = celda.letra || '';
   const novId = celda.nov_id ? `data-nov-id="${celda.nov_id}"` : '';
-  return `<div class="celda-simple ${cls} ${mark}" style="background:${bg};color:${txt}"
+  const ftCls = celda.ft_pendiente ? 'ft-pendiente' : '';
+  const ftTip = celda.ft_pendiente ? ' ⚠ Pendiente: asignar horario' : '';
+  const ftDot = celda.ft_pendiente ? '<span class="ft-dot"></span>' : '';
+  return `<div class="celda-simple ${cls} ${ftCls} ${mark}" style="background:${bg};color:${txt}"
     ${novId} onclick="abrirModal(${eid},'${fecha}',0,false)"
-    title="${letra || '—'}  ${fecha}">${letra}</div>`;
+    title="${letra || '—'}${ftTip}  ${fecha}">${letra}${ftDot}</div>`;
 }
 
 function celdaCortadoHtml(celda, eid, fecha, mark='') {
@@ -696,6 +773,17 @@ function escHtml(s) {
 }
 
 // ── Modal de edición de novedad ───────────────────────────────────────────────
+function modalTabPlani(tab) {
+  document.getElementById('mpanel-nov').style.display = tab === 'nov' ? 'block' : 'none';
+  document.getElementById('mpanel-fm').style.display  = tab === 'fm'  ? 'block' : 'none';
+  document.getElementById('mpanel-ft').style.display  = tab === 'ft'  ? 'block' : 'none';
+  document.getElementById('mtab-nov').className = 'modal-tab-btn' + (tab === 'nov' ? ' activo' : '');
+  document.getElementById('mtab-fm').className  = 'modal-tab-btn' + (tab === 'fm'  ? ' activo' : '');
+  document.getElementById('mtab-ft').className  = 'modal-tab-btn' + (tab === 'ft'  ? ' activo' : '');
+}
+
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
+
 function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   if (modoOrden) return;
   const emp = encontrarEmp(eid);
@@ -704,6 +792,24 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   const celda = emp.celdas[fecha];
   modalCtx = { eid, nombre: `${emp.apellido} ${emp.nombre}`, fecha, esCortado,
                bloqueActivo: bloqueInicial };
+
+  // Mostrar pestañas según permiso y estado de la celda
+  const tabBar = document.getElementById('modal-tab-bar');
+  tabBar.style.display = canDo('asistencia','editar') ? 'flex' : 'none';
+
+  const esFtPendiente = !esCortado && celda && celda.ft_pendiente && canDo('planificacion','editar');
+  document.getElementById('mtab-ft').style.display = esFtPendiente ? 'inline-block' : 'none';
+
+  if (esFtPendiente) {
+    _poblarHorariosFT();
+    modalTabPlani('ft');
+  } else {
+    modalTabPlani('nov');
+  }
+
+  document.getElementById('fm-entrada').value = '';
+  document.getElementById('fm-salida').value  = '';
+  document.getElementById('fm-motivo').value  = '';
 
   document.getElementById('modal-nombre').textContent = modalCtx.nombre;
   document.getElementById('modal-subtitulo').textContent =
@@ -789,6 +895,28 @@ async function guardarNovedad() {
   else { const e = await res.json(); toast('Error: ' + (e.detail || 'desconocido')); }
 }
 
+async function guardarFichajeManual() {
+  const { eid, fecha } = modalCtx;
+  const entrada = document.getElementById('fm-entrada').value;
+  const salida  = document.getElementById('fm-salida').value;
+  const motivo  = document.getElementById('fm-motivo').value.trim() || null;
+  if (!entrada && !salida) { toast('Ingresá al menos una hora'); return; }
+
+  const ops = [];
+  if (entrada) ops.push({empleado_id: eid, timestamp: `${fecha} ${entrada}:00`, motivo_manual: motivo});
+  if (salida)  ops.push({empleado_id: eid, timestamp: `${fecha} ${salida}:00`,  motivo_manual: motivo});
+
+  for (const body of ops) {
+    const res = await fetch('/api/fichajes', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body),
+    });
+    if (!res.ok) { const e = await res.json(); toast('Error: '+(e.detail||res.status)); return; }
+  }
+  toast('Fichaje manual registrado');
+  cerrarModal();
+  cargar();
+}
+
 async function borrarNovedad() {
   const novId = document.getElementById('btn-borrar').dataset.novId;
   if (!novId) return;
@@ -833,6 +961,52 @@ async function logout() {
   location.href = '/login';
 }
 
+let _horarios = [];
+async function _loadHorarios() {
+  try {
+    const data = await fetch('/api/horarios').then(r => r.json());
+    _horarios = (data || []).filter(h => h.activo !== false);
+  } catch(e) {}
+}
+
+function _poblarHorariosFT() {
+  const sel = document.getElementById('ft-horario-sel');
+  sel.innerHTML = '<option value="">— Seleccioná un horario —</option>';
+  _horarios.forEach(h => {
+    const opt = document.createElement('option');
+    opt.value = h.id;
+    opt.textContent = h.nombre;
+    sel.appendChild(opt);
+  });
+}
+
+async function guardarHorarioFT() {
+  const horario_id = parseInt(document.getElementById('ft-horario-sel').value);
+  if (!horario_id) { toast('Seleccioná un horario'); return; }
+  const { eid, fecha } = modalCtx;
+  const res = await fetch('/api/planificacion/ft-horario', {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({empleado_id: eid, fecha, horario_id}),
+  });
+  if (res.ok) { toast('Horario asignado'); cerrarModal(); cargar(); }
+  else { const e = await res.json(); toast('Error: ' + (e.detail || res.status)); }
+}
+
+let _perms = new Set();
+async function _loadPerms() {
+  try {
+    const me = await fetch('/api/auth/me').then(r => r.json());
+    _perms = new Set((me.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    if (me.nombre) document.getElementById('user-info').textContent = me.nombre;
+  } catch(e) {}
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+  });
+}
+
+_loadPerms();
+_loadHorarios();
 init();
 </script>
 </body>

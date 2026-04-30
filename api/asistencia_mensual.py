@@ -11,8 +11,9 @@ router = APIRouter(prefix="/api/asistencia", tags=["asistencia_mensual"])
 _EST_SIMPLE = {
     "ok": "I", "salida_anticipada": "I", "sin_salida": "I", "sin_horario": "I",
     "tarde": "T", "tarde_y_salida_anticipada": "T", "tarde_y_sin_salida": "T",
-    "ausente": "A", "franco": "F",
+    "ausente": "A", "franco": "F", "ft": "FT",
     "b1_ausente": "A", "b2_ausente": "A",
+    "nf": "NF",
 }
 _EST_B1 = {**_EST_SIMPLE, "b1_ausente": "A", "b2_ausente": "I"}
 _EST_B2 = {
@@ -20,12 +21,13 @@ _EST_B2 = {
     "tarde": "I",                        # tarde afecta la entrada del b1
     "tarde_y_salida_anticipada": "I",
     "tarde_y_sin_salida": "I",
-    "ausente": "A", "franco": "F",
+    "ausente": "A", "franco": "F", "ft": "FT",
     "b1_ausente": "I", "b2_ausente": "A",
+    "nf": "NF",
 }
 
-CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "@"}
-LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "@"}
+CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "@", "NF"}
+LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "@", "NF"}
 DIAS_SEMANA   = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]
 
 
@@ -48,12 +50,14 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
         return {"letra": "@", "tipo": "normal"}
 
     # 3. Resultado automático del evaluador
-    estado = res_map.get((eid, fecha))
-    if estado:
-        mapa = _EST_B1 if bloque == 1 else (_EST_B2 if bloque == 2 else _EST_SIMPLE)
-        letra = mapa.get(estado)
+    res = res_map.get((eid, fecha))
+    if res:
+        estado = res["estado"]
+        mapa   = _EST_B1 if bloque == 1 else (_EST_B2 if bloque == 2 else _EST_SIMPLE)
+        letra  = mapa.get(estado)
         if letra:
-            return {"letra": letra, "tipo": "normal"}
+            ft_pendiente = estado == "ft" and not res["horario_id"]
+            return {"letra": letra, "tipo": "normal", **({"ft_pendiente": True} if ft_pendiente else {})}
 
     # 4. Planificacion (futuro o sin procesar)
     plan = plan_map.get((eid, fecha))
@@ -150,7 +154,7 @@ def asistencia_mensual(mes: str = Query(None)):
         ).fetchall()
 
         resultados = conn.execute(
-            f"SELECT empleado_id, fecha, estado "
+            f"SELECT empleado_id, fecha, estado, horario_id "
             f"FROM resultados_dia WHERE empleado_id IN ({ph}) AND fecha>=? AND fecha<=?",
             (*eids, f0, f1)
         ).fetchall()
@@ -173,9 +177,21 @@ def asistencia_mensual(mes: str = Query(None)):
             (*eids, mes_ant)
         ).fetchall()
 
+        fichajes_manuales = conn.execute(
+            f"SELECT empleado_id, date(timestamp) AS fecha "
+            f"FROM fichajes "
+            f"WHERE empleado_id IN ({ph}) AND date(timestamp)>=? AND date(timestamp)<=? AND es_manual=1 "
+            f"GROUP BY empleado_id, date(timestamp)",
+            (*eids, f0, f1)
+        ).fetchall()
+
     # Lookup dicts
     plan_map = {(r["empleado_id"], r["fecha"]): dict(r) for r in planes}
-    res_map  = {(r["empleado_id"], r["fecha"]): r["estado"] for r in resultados}
+    res_map  = {(r["empleado_id"], r["fecha"]): {"estado": r["estado"], "horario_id": r["horario_id"]} for r in resultados}
+
+    fm_count: dict[int, int] = defaultdict(int)
+    for f in fichajes_manuales:
+        fm_count[f["empleado_id"]] += 1
     nov_map  = {}
     for n in novedades:
         nov_map[(n["empleado_id"], n["fecha"], n["bloque"])] = {
@@ -239,6 +255,7 @@ def asistencia_mensual(mes: str = Query(None)):
                 "transporte":         _fmt(transporte),
                 "saldo_francos":      _fmt(saldo_mes),
                 "feriados_trabajados": _fmt(feriados_trab),
+                "FM":                 fm_count.get(eid, 0),
             },
         })
 

@@ -1,0 +1,189 @@
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+from collections import defaultdict
+
+from auth.core import require_permiso
+from db.database import db_session
+
+router = APIRouter(prefix="/api/fichajes", tags=["fichajes"])
+
+
+class FichajeManualIn(BaseModel):
+    empleado_id: int
+    timestamp: str       # "YYYY-MM-DD HH:MM"  o  "YYYY-MM-DD HH:MM:SS"
+    motivo_manual: Optional[str] = None
+
+
+class EmpleadoGrupalItem(BaseModel):
+    empleado_id: int
+    hora_entrada: Optional[str] = None  # "HH:MM"
+    hora_salida:  Optional[str] = None  # "HH:MM"
+
+
+class FichajeGrupalIn(BaseModel):
+    fecha: str                        # "YYYY-MM-DD"
+    empleados: list[EmpleadoGrupalItem]
+    motivo_manual: Optional[str] = None
+
+
+def _normalizar_ts(ts: str) -> str:
+    """Acepta HH:MM o HH:MM:SS, devuelve siempre YYYY-MM-DD HH:MM:SS."""
+    ts = ts.strip()
+    if len(ts) == 16:   # YYYY-MM-DD HH:MM
+        ts = ts + ":00"
+    try:
+        datetime.fromisoformat(ts)
+    except ValueError:
+        raise HTTPException(400, f"timestamp inválido: {ts!r}")
+    return ts
+
+
+@router.get("/horarios-sugeridos")
+def horarios_sugeridos(
+    fecha: str,
+    ids: str,
+    _user=Depends(require_permiso("asistencia", "editar")),
+):
+    """
+    Devuelve los horarios planificados para los empleados indicados en esa fecha.
+    Usado por el modal grupal (fuerza mayor) para pre-llenar entrada/salida.
+    ids = "1,2,3"
+    """
+    try:
+        empleado_ids = [int(x) for x in ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(400, "ids inválidos")
+    if not empleado_ids:
+        return []
+
+    ph = ",".join("?" * len(empleado_ids))
+    with db_session() as conn:
+        rows = conn.execute(
+            f"""SELECT p.empleado_id,
+                       e.nombre, e.apellido, e.cargo,
+                       h.nombre  AS horario_nombre,
+                       hb.bloque, hb.hora_entrada, hb.hora_salida, hb.cruza_medianoche
+                FROM planificacion p
+                JOIN empleados e ON e.id = p.empleado_id
+                JOIN horarios_bloques hb ON hb.horario_id = p.horario_id
+                LEFT JOIN horarios h ON h.id = p.horario_id
+                WHERE p.empleado_id IN ({ph}) AND p.fecha = ? AND p.es_franco = 0
+                ORDER BY p.empleado_id, hb.bloque""",
+            (*empleado_ids, fecha),
+        ).fetchall()
+
+    result: dict[int, dict] = {}
+    for r in rows:
+        eid = r["empleado_id"]
+        if eid not in result:
+            result[eid] = {
+                "empleado_id":   eid,
+                "nombre":        r["nombre"],
+                "apellido":      r["apellido"],
+                "cargo":         r["cargo"],
+                "horario_nombre": r["horario_nombre"],
+                "bloques":       [],
+            }
+        result[eid]["bloques"].append({
+            "bloque":          r["bloque"],
+            "hora_entrada":    r["hora_entrada"],
+            "hora_salida":     r["hora_salida"],
+            "cruza_medianoche": bool(r["cruza_medianoche"]),
+        })
+    return list(result.values())
+
+
+@router.post("", status_code=201)
+def crear_fichaje_manual(
+    data: FichajeManualIn,
+    user=Depends(require_permiso("asistencia", "editar")),
+):
+    """Agrega un fichaje manual para un empleado (entrada o salida individual)."""
+    ts = _normalizar_ts(data.timestamp)
+
+    with db_session() as conn:
+        emp = conn.execute(
+            "SELECT id, user_id FROM empleados WHERE id=?", (data.empleado_id,)
+        ).fetchone()
+        if not emp:
+            raise HTTPException(404, "Empleado no encontrado")
+        try:
+            conn.execute(
+                """INSERT INTO fichajes
+                   (empleado_id, user_id, timestamp, es_manual, motivo_manual, cargado_por)
+                   VALUES (?,?,?,1,?,?)""",
+                (data.empleado_id, emp["user_id"], ts,
+                 data.motivo_manual, int(user["sub"])),
+            )
+        except Exception:
+            raise HTTPException(409, "Ya existe un fichaje en ese timestamp para este empleado")
+        row = conn.execute(
+            "SELECT * FROM fichajes WHERE empleado_id=? AND timestamp=?",
+            (data.empleado_id, ts),
+        ).fetchone()
+    return dict(row)
+
+
+@router.post("/grupal", status_code=201)
+def crear_fichajes_grupal(
+    data: FichajeGrupalIn,
+    user=Depends(require_permiso("asistencia", "editar")),
+):
+    """
+    Fuerza mayor: crea fichajes manuales de entrada y/o salida para
+    múltiples empleados en una fecha.  Las horas se pre-llenan desde
+    el horario planificado pero el cliente puede editarlas antes de enviar.
+    """
+    creados: list[dict] = []
+    errores: list[dict] = []
+
+    with db_session() as conn:
+        for item in data.empleados:
+            emp = conn.execute(
+                "SELECT id, user_id FROM empleados WHERE id=?", (item.empleado_id,)
+            ).fetchone()
+            if not emp:
+                errores.append({"empleado_id": item.empleado_id, "error": "no encontrado"})
+                continue
+
+            pares = [
+                (item.hora_entrada, "entrada"),
+                (item.hora_salida,  "salida"),
+            ]
+            for hora, tipo in pares:
+                if not hora:
+                    continue
+                ts = f"{data.fecha} {hora}:00" if len(hora) == 5 else f"{data.fecha} {hora}"
+                try:
+                    conn.execute(
+                        """INSERT INTO fichajes
+                           (empleado_id, user_id, timestamp, es_manual, motivo_manual, cargado_por)
+                           VALUES (?,?,?,1,?,?)""",
+                        (item.empleado_id, emp["user_id"], ts,
+                         data.motivo_manual, int(user["sub"])),
+                    )
+                    creados.append({"empleado_id": item.empleado_id, "timestamp": ts, "tipo": tipo})
+                except Exception:
+                    errores.append({"empleado_id": item.empleado_id, "timestamp": ts, "error": "duplicado"})
+
+    return {"creados": len(creados), "errores": errores, "detalle": creados}
+
+
+@router.delete("/{fichaje_id}")
+def eliminar_fichaje(
+    fichaje_id: int,
+    _user=Depends(require_permiso("asistencia", "editar")),
+):
+    """Elimina un fichaje manual. No permite borrar fichajes biométricos."""
+    with db_session() as conn:
+        f = conn.execute(
+            "SELECT id, es_manual FROM fichajes WHERE id=?", (fichaje_id,)
+        ).fetchone()
+        if not f:
+            raise HTTPException(404, "Fichaje no encontrado")
+        if not f["es_manual"]:
+            raise HTTPException(400, "Solo se pueden eliminar fichajes manuales")
+        conn.execute("DELETE FROM fichajes WHERE id=?", (fichaje_id,))
+    return {"ok": True}

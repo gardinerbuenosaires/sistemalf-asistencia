@@ -219,6 +219,13 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True) -> dict:
             ).fetchall()
             corregidos = {r["empleado_id"] for r in rows_c}
 
+        nf_set: set[int] = {
+            r["empleado_id"] for r in conn.execute(
+                "SELECT DISTINCT empleado_id FROM novedades WHERE fecha=? AND tipo='NF'",
+                (fecha_str,)
+            ).fetchall()
+        }
+
         hids = list({p["horario_id"] for p in planes if p["horario_id"]})
         bloques_map: dict[int, list] = defaultdict(list)
         if hids:
@@ -252,9 +259,48 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True) -> dict:
                 continue
 
             b1_entrada_id = b1_salida_id = b2_entrada_id = b2_salida_id = None
+            horario_id_result = p.get("horario_id")
 
             if p["es_franco"]:
-                estado, b1r, b2r = "franco", {}, {}
+                fichajes_franco = [f for f in fich_map.get(eid, []) if f["timestamp"][:10] == fecha_str]
+                if fichajes_franco:
+                    hid_ft = p.get("horario_id")  # NULL hasta que el encargado lo asigne
+                    if hid_ft and hid_ft not in bloques_map:
+                        bloques_map[hid_ft] = [dict(b) for b in conn.execute(
+                            "SELECT * FROM horarios_bloques WHERE horario_id=? ORDER BY bloque",
+                            (hid_ft,)
+                        ).fetchall()]
+                    bloques_ft = bloques_map.get(hid_ft, []) if hid_ft else []
+
+                    if bloques_ft:
+                        # Horario asignado: evaluación completa con tardanza
+                        horario_id_result = hid_ft
+                        fichajes_franco.sort(key=lambda f: f["timestamp"])
+                        slots = _clasificar_fichajes(fichajes_franco, bloques_ft, fecha)
+                        b1_entrada_id = (slots.get("b1_entrada") or {}).get("id")
+                        b1_salida_id  = (slots.get("b1_salida")  or {}).get("id")
+                        b1r = _evaluar_bloque(bloques_ft[0], fecha, slots.get("b1_entrada"), slots.get("b1_salida"))
+                        b2r = None
+                        if len(bloques_ft) > 1:
+                            b2_entrada_id = (slots.get("b2_entrada") or {}).get("id")
+                            b2_salida_id  = (slots.get("b2_salida")  or {}).get("id")
+                            b2r = _evaluar_bloque(bloques_ft[1], fecha, slots.get("b2_entrada"), slots.get("b2_salida"))
+                    else:
+                        # Pendiente: encargado aún no asignó horario, registrar tiempos sin tardanza
+                        fichajes_franco.sort(key=lambda f: f["timestamp"])
+                        tiene_salida = len(fichajes_franco) >= 2
+                        b1r = {
+                            "entrada":           fichajes_franco[0]["timestamp"],
+                            "salida":            fichajes_franco[-1]["timestamp"] if tiene_salida else None,
+                            "minutos_tarde":     None,
+                            "salida_anticipada": False,
+                            "ausente":           False,
+                            "sin_salida":        not tiene_salida,
+                        }
+                        b2r = None
+                    estado = "ft"
+                else:
+                    estado, b1r, b2r = "franco", {}, {}
             elif not p["horario_id"]:
                 estado, b1r, b2r = "sin_horario", {}, {}
             else:
@@ -279,6 +325,34 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True) -> dict:
                         )
                     estado = _calcular_estado(b1r, b2r)
 
+            # Si el empleado tiene novedad NF y resultó ausente, usar horario planificado
+            if estado == "ausente" and eid in nf_set:
+                bloques = bloques_map.get(p.get("horario_id"), [])
+                if bloques:
+                    b1 = bloques[0]
+                    cruza1 = bool(b1["cruza_medianoche"])
+                    b1r = {
+                        "entrada":          f"{fecha_str} {b1['hora_entrada']}:00",
+                        "salida":           f"{str(fecha + timedelta(days=1)) if cruza1 else fecha_str} {b1['hora_salida']}:00",
+                        "minutos_tarde":    None,
+                        "salida_anticipada": False,
+                        "ausente":          False,
+                        "sin_salida":       False,
+                    }
+                    b2r = None
+                    if len(bloques) > 1:
+                        b2 = bloques[1]
+                        cruza2 = bool(b2["cruza_medianoche"])
+                        b2r = {
+                            "entrada":          f"{fecha_str} {b2['hora_entrada']}:00",
+                            "salida":           f"{str(fecha + timedelta(days=1)) if cruza2 else fecha_str} {b2['hora_salida']}:00",
+                            "minutos_tarde":    None,
+                            "salida_anticipada": False,
+                            "ausente":          False,
+                            "sin_salida":       False,
+                        }
+                    estado = "nf"
+
             conn.execute(
                 """INSERT INTO resultados_dia
                    (empleado_id, fecha, horario_id, es_franco, estado,
@@ -302,7 +376,7 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True) -> dict:
                    b2_entrada_id=excluded.b2_entrada_id, b2_salida_id=excluded.b2_salida_id,
                    corregido_manualmente=0, corregido_por=NULL, corregido_en=NULL,
                    procesado_en=datetime('now','localtime')""",
-                (eid, fecha_str, p.get("horario_id"), p["es_franco"], estado,
+                (eid, fecha_str, horario_id_result, p["es_franco"], estado,
                  b1r.get("entrada"), b1r.get("salida"), b1r.get("minutos_tarde"),
                  int(b1r.get("salida_anticipada", False)), int(b1r.get("ausente", False)),
                  int(b1r.get("sin_salida", False)),

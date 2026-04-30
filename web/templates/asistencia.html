@@ -9,10 +9,21 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem; }
-  header { background: #2c3e50; color: white; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
-  header a { color: rgba(255,255,255,.7); text-decoration: none; font-size: .88rem; }
-  header a:hover { color: white; }
-  header h1 { font-size: 1.1rem; flex: 1; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+    background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none; }
 
   main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 
@@ -87,16 +98,59 @@
   .tab.activo { background: #2c3e50; color: white; border-color: #2c3e50; }
 
   #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 7px; display: none; z-index: 200; }
+
+  /* Modal corrección */
+  .modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:300; }
+  .modal-backdrop.open { display:block; }
+  .modal-panel { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border-radius:10px; width:560px; max-width:95vw; max-height:90vh; overflow-y:auto; z-index:400; padding:24px; box-shadow:0 8px 32px rgba(0,0,0,.25); }
+  .modal-panel h3 { margin-bottom:16px; font-size:1rem; }
+  .modal-tabs { display:flex; gap:6px; margin-bottom:18px; }
+  .modal-tabs button { padding:6px 16px; border:2px solid #2c3e50; border-radius:5px; cursor:pointer; font-size:.82rem; font-weight:bold; background:white; color:#2c3e50; }
+  .modal-tabs button.activo { background:#2c3e50; color:white; }
+  .tipo-btns { display:flex; gap:8px; margin-bottom:14px; }
+  .tipo-btns button { padding:5px 14px; border:2px solid #ccc; border-radius:5px; cursor:pointer; font-size:.82rem; background:white; color:#555; }
+  .tipo-btns button.activo { border-color:#2c3e50; background:#2c3e50; color:white; }
+  .fg { display:flex; flex-direction:column; gap:3px; }
+  .fg label { font-size:.75rem; color:#666; font-weight:bold; }
+  .fg input, .fg select, .fg textarea { padding:7px 10px; border:1px solid #ced4da; border-radius:4px; font-size:.85rem; }
+  .modal-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+  .modal-footer { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  .btn-cancel { background:#eee; color:#333; padding:7px 16px; border:none; border-radius:5px; cursor:pointer; font-size:.85rem; font-weight:bold; }
+  .btn-cancel:hover { background:#ddd; }
+  .btn-corr { background:none; border:none; cursor:pointer; font-size:.85rem; color:#2c3e50; opacity:.6; padding:2px 6px; border-radius:4px; }
+  .btn-corr:hover { opacity:1; background:#f0f4f8; }
+  .mg-tabla-wrap { max-height:260px; overflow-y:auto; border:1px solid #eee; border-radius:6px; margin-bottom:12px; }
+  .mg-tabla-wrap table { width:100%; border-collapse:collapse; font-size:.82rem; }
+  .mg-tabla-wrap thead th { background:#f8f9fa; padding:6px 10px; text-align:left; position:sticky; top:0; }
+  .mg-tabla-wrap tbody td { padding:5px 10px; border-bottom:1px solid #f0f0f0; }
+  .mg-time { width:84px; padding:4px 6px; border:1px solid #ced4da; border-radius:4px; font-size:.82rem; }
 </style>
 </head>
 <body>
 
 <header>
-  <a href="/" title="Inicio" style="display:flex;align-items:center"><img src="/static/img/logo_icono.svg" alt="Inicio" style="height:28px"></a>
-  <h1>Asistencia</h1>
-  <nav style="display:flex;gap:14px">
-    <a href="/planificacion">Planificación</a>
-    <a href="/empleados">Empleados</a>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios">Horarios</a>
+        <a href="/planificacion">Planificación</a>
+        <a href="/calendarios">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group activo">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia" class="activo">Asistencia</a>
+        <a href="/fichajes">Fichajes</a>
+        <a href="/asistencia-mensual">Planilla</a>
+      </div>
+    </div>
+    <a href="/empleados">Personal</a>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
   </nav>
 </header>
 
@@ -119,7 +173,8 @@
       <input type="date" id="f-hasta">
     </div>
     <button class="btn btn-primary" onclick="cargar()">Filtrar</button>
-    <button class="btn btn-green" onclick="procesar()" title="Re-procesar el período seleccionado contra la planificación">&#8635; Procesar</button>
+    <button class="btn btn-green" data-perm="resultados:procesar" onclick="procesar()" title="Re-procesar el período seleccionado contra la planificación">&#8635; Procesar</button>
+    <button class="btn" data-perm="asistencia:editar" onclick="abrirModal()" style="background:#8e44ad;color:white">+ Corrección</button>
   </div>
 
   <!-- Tabs -->
@@ -150,7 +205,101 @@
 
 <div id="toast"></div>
 
+<!-- ── Modal corrección ─────────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-corr" onclick="cerrarModal()">
+  <div class="modal-panel" onclick="event.stopPropagation()">
+    <h3>Corrección manual</h3>
+
+    <div class="modal-tabs">
+      <button id="mtab-ind" class="activo" onclick="modalTab('individual')">Individual</button>
+      <button id="mtab-grp" onclick="modalTab('grupal')">Grupal (fuerza mayor)</button>
+    </div>
+
+    <!-- Panel individual -->
+    <div id="mpanel-individual">
+      <div class="modal-grid2">
+        <div class="fg">
+          <label>Empleado</label>
+          <select id="m-empleado"><option value="">— seleccionar —</option></select>
+        </div>
+        <div class="fg">
+          <label>Fecha</label>
+          <input type="date" id="m-fecha">
+        </div>
+      </div>
+
+      <div class="tipo-btns">
+        <button id="btn-fm" class="activo" onclick="tipoCorr('fm')">Fichaje manual</button>
+        <button id="btn-nf" onclick="tipoCorr('nf')">NF — no fichó</button>
+      </div>
+
+      <div id="campos-fm">
+        <div class="modal-grid2">
+          <div class="fg"><label>Hora entrada</label><input type="time" id="m-entrada"></div>
+          <div class="fg"><label>Hora salida</label><input type="time" id="m-salida"></div>
+        </div>
+      </div>
+
+      <div class="fg" style="margin-bottom:4px">
+        <label>Motivo <span style="font-weight:normal;color:#aaa">(opcional)</span></label>
+        <input type="text" id="m-motivo" placeholder="Ej: dispositivo fuera de servicio">
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarIndividual()">Guardar</button>
+      </div>
+    </div>
+
+    <!-- Panel grupal -->
+    <div id="mpanel-grupal" style="display:none">
+      <div class="modal-grid2" style="margin-bottom:12px">
+        <div class="fg">
+          <label>Fecha del evento</label>
+          <input type="date" id="mg-fecha">
+        </div>
+        <div class="fg" style="justify-content:flex-end">
+          <label>&nbsp;</label>
+          <button class="btn btn-primary" onclick="cargarEmpleadosGrupal()">Cargar empleados del día</button>
+        </div>
+      </div>
+
+      <div class="mg-tabla-wrap" id="mg-tabla">
+        <div class="empty" style="padding:20px">Cargá una fecha para ver los empleados planificados.</div>
+      </div>
+
+      <div class="fg" style="margin-bottom:4px">
+        <label>Motivo</label>
+        <input type="text" id="mg-motivo" placeholder="Ej: corte de luz, emergencia">
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarGrupal()">Guardar todos</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+async function logout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  location.href = '/login';
+}
+
+let _perms = new Set();
+async function _loadPerms() {
+  try {
+    const me = await fetch('/api/auth/me').then(r => r.json());
+    _perms = new Set((me.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    if (me.nombre) document.getElementById('user-info').textContent = me.nombre;
+  } catch(e) {}
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+  });
+}
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
+
 const hoy = new Date().toISOString().slice(0,10);
 const primerDiaMes = hoy.slice(0,7) + "-01";
 let tabActual = "resultados";
@@ -287,6 +436,7 @@ function renderDetalle(rows) {
   if (!rows.length) { document.getElementById("tabla-body").innerHTML = '<div class="empty">Sin resultados para el período.</div>'; return; }
 
   const tieneNombre = rows[0].apellido !== undefined;
+  const puedoCorregir = canDo('asistencia','editar');
   const html = `<table>
     <thead><tr>
       ${tieneNombre ? "<th>Empleado</th>" : ""}
@@ -294,6 +444,7 @@ function renderDetalle(rows) {
       <th>Entrada B1</th><th>Salida B1</th>
       <th>Entrada B2</th><th>Salida B2</th>
       <th>Tardanza</th>
+      ${puedoCorregir ? "<th></th>" : ""}
     </tr></thead>
     <tbody>${rows.map(r => `
       <tr>
@@ -306,6 +457,7 @@ function renderDetalle(rows) {
         <td>${fmtHora(r.b2_entrada)}</td>
         <td>${fmtHora(r.b2_salida)}</td>
         <td>${fmtTarde(r.b1_minutos_tarde)}${fmtTarde(r.b2_minutos_tarde)}</td>
+        ${puedoCorregir ? `<td><button class="btn-corr" onclick="abrirModal(${r.empleado_id},'${r.fecha}')" title="Corregir este día">✎</button></td>` : ""}
       </tr>`).join("")}
     </tbody>
   </table>`;
@@ -435,8 +587,162 @@ async function procesar() {
   cargar();
 }
 
+// ── Modal corrección ─────────────────────────────────────────────
+let _mTipoCorr = 'fm';
+let _grupalEmps = [];
+
+function abrirModal(empId = null, fecha = null) {
+  const sel = document.getElementById('m-empleado');
+  // poblar select si está vacío
+  if (sel.options.length <= 1) {
+    todosEmpleados.forEach(e => {
+      const o = new Option(
+        `${e.apellido}${e.nombre ? ", "+e.nombre.split(" ")[0] : ""} ${e.cargo ? "("+e.cargo+")" : ""}`,
+        e.id
+      );
+      sel.appendChild(o);
+    });
+  }
+  sel.value = empId || "";
+  document.getElementById('m-fecha').value = fecha || new Date().toISOString().slice(0,10);
+  document.getElementById('m-entrada').value = "";
+  document.getElementById('m-salida').value = "";
+  document.getElementById('m-motivo').value = "";
+  tipoCorr('fm');
+  modalTab('individual');
+  document.getElementById('modal-corr').classList.add('open');
+}
+
+function cerrarModal() {
+  document.getElementById('modal-corr').classList.remove('open');
+  _grupalEmps = [];
+}
+
+function modalTab(tab) {
+  document.getElementById('mpanel-individual').style.display = tab === 'individual' ? 'block' : 'none';
+  document.getElementById('mpanel-grupal').style.display    = tab === 'grupal'     ? 'block' : 'none';
+  document.getElementById('mtab-ind').className = tab === 'individual' ? 'activo' : '';
+  document.getElementById('mtab-grp').className = tab === 'grupal'     ? 'activo' : '';
+}
+
+function tipoCorr(tipo) {
+  _mTipoCorr = tipo;
+  document.getElementById('campos-fm').style.display = tipo === 'fm' ? 'block' : 'none';
+  document.getElementById('btn-fm').className = tipo === 'fm' ? 'activo' : '';
+  document.getElementById('btn-nf').className = tipo === 'nf' ? 'activo' : '';
+}
+
+async function guardarIndividual() {
+  const empId = parseInt(document.getElementById('m-empleado').value);
+  const fecha  = document.getElementById('m-fecha').value;
+  const motivo = document.getElementById('m-motivo').value.trim() || null;
+  if (!empId || !fecha) { toast('Completá empleado y fecha'); return; }
+
+  if (_mTipoCorr === 'nf') {
+    const res = await fetch('/api/asistencia/novedades', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({empleado_id: empId, fecha, bloque: 0, tipo: 'NF', descripcion: motivo}),
+    });
+    if (!res.ok) { const e = await res.json(); toast('Error: '+(e.detail||res.status)); return; }
+    toast('Novedad NF registrada');
+  } else {
+    const entrada = document.getElementById('m-entrada').value;
+    const salida  = document.getElementById('m-salida').value;
+    if (!entrada && !salida) { toast('Ingresá al menos una hora'); return; }
+    const ops = [];
+    if (entrada) ops.push({timestamp:`${fecha} ${entrada}:00`, motivo_manual:motivo, empleado_id:empId});
+    if (salida)  ops.push({timestamp:`${fecha} ${salida}:00`,  motivo_manual:motivo, empleado_id:empId});
+    for (const body of ops) {
+      const res = await fetch('/api/fichajes', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body),
+      });
+      if (!res.ok) { const e = await res.json(); toast('Error: '+(e.detail||res.status)); return; }
+    }
+    toast('Fichaje manual registrado');
+  }
+  cerrarModal();
+  cargar();
+}
+
+async function cargarEmpleadosGrupal() {
+  const fecha = document.getElementById('mg-fecha').value;
+  if (!fecha) { toast('Seleccioná una fecha'); return; }
+
+  const planRes = await fetch(`/api/resultados/dia?fecha=${fecha}`);
+  const planes  = await planRes.json();
+  const activos = planes.filter(p => !p.es_franco && p.horario_id);
+  if (!activos.length) {
+    document.getElementById('mg-tabla').innerHTML = '<div class="empty" style="padding:20px">Sin empleados planificados ese día.</div>';
+    return;
+  }
+
+  const eids = activos.map(p => p.empleado_id).join(',');
+  const sugRes  = await fetch(`/api/fichajes/horarios-sugeridos?fecha=${fecha}&ids=${eids}`);
+  const sugData = await sugRes.json();
+  const sugMap  = Object.fromEntries(sugData.map(s => [s.empleado_id, s.bloques[0] || {}]));
+
+  _grupalEmps = activos.map(p => ({
+    empleado_id:  p.empleado_id,
+    nombre:       `${p.apellido}${p.nombre ? ', '+p.nombre.split(' ')[0] : ''}`,
+    cargo:        p.cargo || '',
+    hora_entrada: sugMap[p.empleado_id]?.hora_entrada || '',
+    hora_salida:  sugMap[p.empleado_id]?.hora_salida  || '',
+  }));
+
+  const filas = _grupalEmps.map((e, i) => `
+    <tr>
+      <td style="text-align:center"><input type="checkbox" id="mg-chk-${i}" checked></td>
+      <td><div class="emp-cell">${e.nombre}</div><div class="emp-cargo">${e.cargo}</div></td>
+      <td><input type="time" class="mg-time" id="mg-ent-${i}" value="${e.hora_entrada}"></td>
+      <td><input type="time" class="mg-time" id="mg-sal-${i}" value="${e.hora_salida}"></td>
+    </tr>`).join('');
+
+  document.getElementById('mg-tabla').innerHTML = `
+    <table>
+      <thead><tr>
+        <th style="width:32px;text-align:center"><input type="checkbox" checked onchange="_selAll(this.checked)"></th>
+        <th>Empleado</th><th>Entrada</th><th>Salida</th>
+      </tr></thead>
+      <tbody>${filas}</tbody>
+    </table>`;
+}
+
+function _selAll(checked) {
+  _grupalEmps.forEach((_, i) => { const c = document.getElementById(`mg-chk-${i}`); if(c) c.checked = checked; });
+}
+
+async function guardarGrupal() {
+  const fecha  = document.getElementById('mg-fecha').value;
+  const motivo = document.getElementById('mg-motivo').value.trim() || null;
+  if (!fecha) { toast('Seleccioná una fecha'); return; }
+
+  const empleados = _grupalEmps
+    .map((e, i) => ({
+      empleado_id:  e.empleado_id,
+      checked:      document.getElementById(`mg-chk-${i}`)?.checked,
+      hora_entrada: document.getElementById(`mg-ent-${i}`)?.value || null,
+      hora_salida:  document.getElementById(`mg-sal-${i}`)?.value || null,
+    }))
+    .filter(e => e.checked && (e.hora_entrada || e.hora_salida))
+    .map(({empleado_id, hora_entrada, hora_salida}) => ({empleado_id, hora_entrada, hora_salida}));
+
+  if (!empleados.length) { toast('Seleccioná al menos un empleado con horario'); return; }
+
+  const res = await fetch('/api/fichajes/grupal', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({fecha, empleados, motivo_manual: motivo}),
+  });
+  const r = await res.json();
+  toast(`${r.creados} fichajes creados${r.errores.length ? ` · ${r.errores.length} con error` : ''}`);
+  cerrarModal();
+  cargar();
+}
+
 // Ajustar el endpoint de fichajes para aceptar rango
 async function init() {
+  await _loadPerms();
   await cargarEmpleados();
 }
 

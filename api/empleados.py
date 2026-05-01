@@ -35,6 +35,22 @@ def list_empleados(todos: bool = False, _user=Depends(require_permiso("empleados
     return [dict(r) for r in rows]
 
 
+@router.post("/conflictos/liberar/{eid}", status_code=200)
+def liberar_id_dispositivo(eid: int, _user=Depends(require_permiso("empleados", "editar"))):
+    with db_session() as conn:
+        emp = conn.execute(
+            "SELECT id, activo, user_id FROM empleados WHERE id=?", (eid,)
+        ).fetchone()
+        if not emp:
+            raise HTTPException(404, "Empleado no encontrado")
+        if emp["activo"]:
+            raise HTTPException(400, "Solo se puede liberar el ID de un empleado inactivo")
+        if not emp["user_id"]:
+            raise HTTPException(400, "Este empleado no tiene ID de dispositivo asignado")
+        conn.execute("UPDATE empleados SET user_id=NULL WHERE id=?", (eid,))
+    return {"ok": True}
+
+
 @router.get("/{eid}")
 def get_empleado(eid: int, _user=Depends(require_permiso("empleados", "ver"))):
     with db_session() as conn:
@@ -42,23 +58,6 @@ def get_empleado(eid: int, _user=Depends(require_permiso("empleados", "ver"))):
         if not row:
             raise HTTPException(404, "Empleado no encontrado")
         return dict(row)
-
-
-@router.post("", status_code=201)
-def create_empleado(data: EmpleadoIn, _user=Depends(require_permiso("empleados", "editar"))):
-    with db_session() as conn:
-        cur = conn.execute(
-            """INSERT INTO empleados
-               (nombre, apellido, dni, cuil, fecha_nacimiento, fecha_ingreso, fecha_egreso,
-                cargo, departamento, categoria, telefono, email, domicilio, observaciones, activo)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (data.nombre.strip(), data.apellido.strip(), data.dni, data.cuil,
-             data.fecha_nacimiento, data.fecha_ingreso, data.fecha_egreso,
-             data.cargo, data.departamento, data.categoria,
-             data.telefono, data.email, data.domicilio, data.observaciones, data.activo)
-        )
-        eid = cur.lastrowid
-        return dict(conn.execute("SELECT * FROM empleados WHERE id=?", (eid,)).fetchone())
 
 
 @router.put("/{eid}")

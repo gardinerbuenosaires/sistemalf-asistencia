@@ -75,17 +75,18 @@ def _save_attendances(attendances) -> int:
     ]
 
     with db_session() as conn:
-        # Cache user_id → empleado_id para evitar consultas repetidas
-        cache: dict[str, int | None] = {}
+        # Cache user_id → {id, activo}
+        cache: dict[str, dict | None] = {}
 
         for user_id, ts, punch, status in rows:
             if user_id not in cache:
                 row = conn.execute(
-                    "SELECT id FROM empleados WHERE user_id = ?", (user_id,)
+                    "SELECT id, activo FROM empleados WHERE user_id = ?", (user_id,)
                 ).fetchone()
-                cache[user_id] = row["id"] if row else None
+                cache[user_id] = dict(row) if row else None
 
-            empleado_id = cache[user_id]
+            emp = cache[user_id]
+            empleado_id = emp["id"] if emp else None
 
             cur = conn.execute(
                 """
@@ -97,6 +98,19 @@ def _save_attendances(attendances) -> int:
             )
             if cur.rowcount:
                 nuevos += 1
+                # Si el empleado está dado de baja, registrar inconsistencia
+                if emp and emp["activo"] == 0:
+                    fecha = ts[:10]
+                    conn.execute(
+                        """INSERT INTO inconsistencias (empleado_id, user_id, fecha, tipo, motivo)
+                           SELECT ?, ?, ?, 'fichaje_baja',
+                               'Fichaje recibido de un empleado dado de baja'
+                           WHERE NOT EXISTS (
+                               SELECT 1 FROM inconsistencias
+                               WHERE empleado_id=? AND fecha=? AND tipo='fichaje_baja' AND resuelta=0
+                           )""",
+                        (empleado_id, user_id, fecha, empleado_id, fecha),
+                    )
 
     return nuevos
 
@@ -132,15 +146,15 @@ def sync_users() -> dict:
 def _save_users(users) -> int:
     """
     Inserta empleados nuevos a partir de los usuarios del dispositivo.
-    Usa user_id como clave — si ya existe, lo omite.
-    El campo name del ZKTeco suele ser 'APELLIDO NOMBRE' o 'NOMBRE APELLIDO';
-    se guarda el nombre completo en apellido y nombre vacío hasta enriquecer con Excel.
+    Usa user_id como clave — si ya existe (activo o inactivo), lo omite.
     """
     nuevos = 0
     with db_session() as conn:
         existentes = {
             row[0]
-            for row in conn.execute("SELECT user_id FROM empleados WHERE user_id IS NOT NULL")
+            for row in conn.execute(
+                "SELECT user_id FROM empleados WHERE user_id IS NOT NULL"
+            )
         }
         for u in users:
             uid = str(u.user_id).strip()
@@ -155,15 +169,10 @@ def _save_users(users) -> int:
                 apellido = nombre_raw
                 nombre = ""
             conn.execute(
-                """
-                INSERT OR IGNORE INTO empleados (user_id, nombre, apellido, activo)
-                VALUES (?, ?, ?, 1)
-                """,
+                "INSERT OR IGNORE INTO empleados (user_id, nombre, apellido, activo) VALUES (?,?,?,1)",
                 (uid, nombre, apellido),
             )
-            if conn.execute(
-                "SELECT changes()"
-            ).fetchone()[0]:
+            if conn.execute("SELECT changes()").fetchone()[0]:
                 nuevos += 1
                 existentes.add(uid)
     return nuevos

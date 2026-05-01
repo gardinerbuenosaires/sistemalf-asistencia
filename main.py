@@ -216,6 +216,16 @@ def set_configuracion(clave: str, body: dict, _user=Depends(require_permiso("usu
     return {"ok": True}
 
 
+@app.post("/api/dispositivo/sincronizar-hora", tags=["dispositivo"])
+def sincronizar_hora_dispositivo(_user=Depends(require_permiso("usuarios", "editar"))):
+    from sync.downloader import sync_time
+    result = sync_time()
+    if not result["ok"]:
+        from fastapi import HTTPException
+        raise HTTPException(500, detail=result["error"] or "Error al sincronizar hora")
+    return {"ok": True}
+
+
 @app.get("/api/presencia/hoy", tags=["presencia"])
 def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
     """

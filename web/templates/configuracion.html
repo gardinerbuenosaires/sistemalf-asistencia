@@ -159,7 +159,12 @@
 
   <!-- ── Parámetros ── -->
   <div class="section">
-    <div class="section-title">Parámetros del sistema</div>
+    <div class="section-header">
+      <div>
+        <div class="section-title">Parámetros del sistema</div>
+      </div>
+      <button class="btn btn-secondary btn-sm" data-perm="usuarios:editar" onclick="sincronizarHora()">Sincronizar hora del dispositivo</button>
+    </div>
     <div id="params-container"><p style="color:#aaa;font-size:.9rem">Cargando...</p></div>
   </div>
 
@@ -284,6 +289,21 @@ const PARAMS_META = {
     descripcion: "Horas sin salida para mover un empleado sin planificación a la sección 'Ciclo sin cerrar' en el dashboard."
   }
 };
+
+async function sincronizarHora() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = "Sincronizando...";
+  const res = await fetch("/api/dispositivo/sincronizar-hora", { method: "POST" });
+  btn.disabled = false;
+  btn.textContent = "Sincronizar hora del dispositivo";
+  if (res.ok) {
+    alert("Hora del dispositivo sincronizada correctamente.");
+  } else {
+    const err = await res.json().catch(() => ({}));
+    alert("Error: " + (err.detail || "No se pudo conectar al dispositivo"));
+  }
+}
 
 async function cargarParams() {
   const res = await fetch("/api/configuracion");

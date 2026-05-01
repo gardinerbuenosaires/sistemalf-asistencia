@@ -19,6 +19,7 @@ _bloques_evaluados_hoy: set[str] = set()
 _fecha_ultimo_reset = None
 _fecha_ultima_generacion: str | None = None
 _mes_ultimo_sync_feriados: str | None = None
+_fecha_ultimo_sync_hora: str | None = None
 
 
 def _run_sync():
@@ -137,6 +138,29 @@ def _sync_feriados_auto():
         logger.error("Error en sync automático de feriados: %s", e)
 
 
+def _sincronizar_hora_auto():
+    """Sincroniza la hora del dispositivo una vez por día a la madrugada."""
+    global _fecha_ultimo_sync_hora
+    ahora = datetime.now()
+    hoy   = str(ahora.date())
+
+    if _fecha_ultimo_sync_hora == hoy:
+        return
+    if ahora.hour not in (1, 2):
+        return
+
+    try:
+        from sync.downloader import sync_time
+        result = sync_time()
+        if result["ok"]:
+            _fecha_ultimo_sync_hora = hoy
+            logger.info("Hora del dispositivo sincronizada automáticamente")
+        else:
+            logger.warning("Fallo en sync automático de hora: %s", result["error"])
+    except Exception as e:
+        logger.error("Error en sync automático de hora: %s", e)
+
+
 def _get_sync_interval() -> int:
     """Lee el intervalo de sync de la DB; cae al valor de config.py si falla."""
     try:
@@ -167,6 +191,7 @@ def start_scheduler():
         while True:
             _generar_planificacion_auto()
             _sync_feriados_auto()
+            _sincronizar_hora_auto()
             time.sleep(3600)  # revisar cada hora; cada función ejecuta solo en su ventana horaria
 
     threading.Thread(target=sync_loop, daemon=True, name="sync-scheduler").start()

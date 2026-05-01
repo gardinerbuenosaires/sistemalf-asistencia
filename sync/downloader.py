@@ -115,6 +115,27 @@ def _save_attendances(attendances) -> int:
     return nuevos
 
 
+def sync_time() -> dict:
+    """Sincroniza la hora del servidor con el dispositivo ZKTeco."""
+    result = {"ok": False, "error": None}
+    conn_zk = None
+    try:
+        conn_zk = _connect()
+        conn_zk.set_time(datetime.now())
+        result["ok"] = True
+        logger.info("Hora del dispositivo sincronizada correctamente")
+    except Exception as exc:
+        result["error"] = str(exc)
+        logger.error("Error sincronizando hora del dispositivo: %s", exc)
+    finally:
+        if conn_zk:
+            try:
+                conn_zk.disconnect()
+            except Exception:
+                pass
+    return result
+
+
 def sync_users() -> dict:
     """
     Conecta al dispositivo, descarga la lista de usuarios y crea los empleados

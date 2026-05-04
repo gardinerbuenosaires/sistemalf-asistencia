@@ -19,13 +19,36 @@ class DiaIn(BaseModel):
 class CalendarioIn(BaseModel):
     nombre: str
     dias: list[DiaIn]  # 7 entradas
+    franco_en_feriado: bool = False
 
 
 class AsignacionIn(BaseModel):
-    empleado_ids: list[int]
-    calendario_id: int
-    fecha_desde: str
-    fecha_hasta: Optional[str] = None
+    empleado_ids:     list[int]
+    calendario_id:    int
+    fecha_desde:      str
+    fecha_hasta:      Optional[str] = None
+    franco_rotativo:  bool = False
+    franco_dia_semana: Optional[int] = None  # 0=lunes … 6=domingo
+
+
+DIAS_SEMANA_NOMBRES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
+
+def _resolver_dia(weekday: int, cal_dia: dict, franco_rotativo: bool,
+                  franco_dia_semana, es_feriado: bool, franco_en_feriado: bool):
+    """
+    Devuelve (es_franco, horario_id) para un día dado.
+    Prioridad: feriado > franco rotativo de asignación > calendario.
+    """
+    if franco_en_feriado and es_feriado:
+        return 1, None
+    if franco_rotativo and franco_dia_semana is not None and weekday == franco_dia_semana:
+        return 1, None
+    es_franco = int(cal_dia.get("es_franco", 0))
+    horario_id = None if es_franco else cal_dia.get("horario_id")
+    if not es_franco and not horario_id:
+        es_franco = 1
+    return es_franco, horario_id
 
 
 def _get_calendario(conn, cid):
@@ -77,7 +100,10 @@ def create_calendario(data: CalendarioIn, _user=Depends(require_permiso("calenda
     if len(data.dias) != 7:
         raise HTTPException(422, "Se requieren exactamente 7 días")
     with db_session() as conn:
-        cur = conn.execute("INSERT INTO calendarios (nombre) VALUES (?)", (data.nombre.strip(),))
+        cur = conn.execute(
+            "INSERT INTO calendarios (nombre, franco_en_feriado) VALUES (?,?)",
+            (data.nombre.strip(), int(data.franco_en_feriado))
+        )
         cid = cur.lastrowid
         for d in data.dias:
             conn.execute(
@@ -95,7 +121,10 @@ def update_calendario(cid: int, data: CalendarioIn, _user=Depends(require_permis
         c = conn.execute("SELECT id FROM calendarios WHERE id=?", (cid,)).fetchone()
         if not c:
             raise HTTPException(404, "Calendario no encontrado")
-        conn.execute("UPDATE calendarios SET nombre=? WHERE id=?", (data.nombre.strip(), cid))
+        conn.execute(
+            "UPDATE calendarios SET nombre=?, franco_en_feriado=? WHERE id=?",
+            (data.nombre.strip(), int(data.franco_en_feriado), cid)
+        )
         conn.execute("DELETE FROM calendarios_dias WHERE calendario_id=?", (cid,))
         for d in data.dias:
             conn.execute(
@@ -138,6 +167,16 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
         ).fetchall()
         cal_map = {r["dia_semana"]: dict(r) for r in dias_cal}
 
+        cal_feriado_flag = conn.execute(
+            "SELECT franco_en_feriado FROM calendarios WHERE id=?", (data.calendario_id,)
+        ).fetchone()
+        franco_en_feriado = cal_feriado_flag["franco_en_feriado"] if cal_feriado_flag else 0
+
+        feriados_rango = {r["fecha"] for r in conn.execute(
+            "SELECT fecha FROM feriados WHERE fecha >= ? AND fecha <= ?",
+            (data.fecha_desde, str(d_hasta))
+        ).fetchall()}
+
         for eid in data.empleado_ids:
             # Si el mismo calendario ya está activo desde fecha_desde o antes, no hacer nada
             ya_activo = conn.execute(
@@ -155,9 +194,11 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
                 (data.fecha_desde, eid, data.fecha_desde)
             )
             conn.execute(
-                "INSERT INTO asignaciones (empleado_id, calendario_id, horario_id, fecha_desde, fecha_hasta) "
-                "VALUES (?, ?, NULL, ?, ?)",
-                (eid, data.calendario_id, data.fecha_desde, data.fecha_hasta)
+                "INSERT INTO asignaciones "
+                "(empleado_id, calendario_id, horario_id, fecha_desde, fecha_hasta, franco_rotativo, franco_dia_semana) "
+                "VALUES (?, ?, NULL, ?, ?, ?, ?)",
+                (eid, data.calendario_id, data.fecha_desde, data.fecha_hasta,
+                 int(data.franco_rotativo), data.franco_dia_semana)
             )
             # Borrar TODO lo auto-generado desde fecha_desde en adelante
             conn.execute(
@@ -176,15 +217,16 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
             # Generar día a día los próximos 30 días
             cur = d_desde
             while cur <= d_hasta:
-                if str(cur) not in manuales:
-                    dia = cal_map.get(cur.weekday(), {})
-                    es_franco = int(dia.get("es_franco", 0))
-                    horario_id = None if es_franco else dia.get("horario_id")
-                    if not es_franco and not horario_id:
-                        es_franco = 1
+                fecha_str = str(cur)
+                if fecha_str not in manuales:
+                    es_franco, horario_id = _resolver_dia(
+                        cur.weekday(), cal_map.get(cur.weekday(), {}),
+                        data.franco_rotativo, data.franco_dia_semana,
+                        fecha_str in feriados_rango, bool(franco_en_feriado)
+                    )
                     conn.execute(
                         "INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, auto_generado) VALUES (?,?,?,?,1)",
-                        (eid, str(cur), horario_id, es_franco)
+                        (eid, fecha_str, horario_id, es_franco)
                     )
                 cur += timedelta(days=1)
 
@@ -246,7 +288,7 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
         # Empleados activos con asignación vigente
         asignaciones = conn.execute(
             """
-            SELECT a.empleado_id, a.calendario_id
+            SELECT a.empleado_id, a.calendario_id, a.franco_rotativo, a.franco_dia_semana
             FROM asignaciones a
             WHERE a.fecha_desde <= ?
               AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
@@ -256,19 +298,34 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
         ).fetchall()
 
         # Quedarnos con la asignación más reciente por empleado
-        asig_map = {}
+        asig_map: dict[int, dict] = {}
         for a in asignaciones:
             if a["empleado_id"] not in asig_map:
-                asig_map[a["empleado_id"]] = a["calendario_id"]
+                asig_map[a["empleado_id"]] = {
+                    "calendario_id":    a["calendario_id"],
+                    "franco_rotativo":  bool(a["franco_rotativo"]),
+                    "franco_dia_semana": a["franco_dia_semana"],
+                }
 
-        # Cargar días de cada calendario (incluye es_franco)
-        cal_cache = {}
-        for eid, cid in asig_map.items():
+        # Cargar días de cada calendario (incluye es_franco) y flag feriado
+        cal_cache: dict[int, dict] = {}
+        cal_feriado: dict[int, int] = {}
+        for eid, asig in asig_map.items():
+            cid = asig["calendario_id"]
             if cid not in cal_cache:
                 dias_cal = conn.execute(
                     "SELECT dia_semana, horario_id, es_franco FROM calendarios_dias WHERE calendario_id=?", (cid,)
                 ).fetchall()
                 cal_cache[cid] = {r["dia_semana"]: dict(r) for r in dias_cal}
+            if cid not in cal_feriado:
+                row_c = conn.execute(
+                    "SELECT franco_en_feriado FROM calendarios WHERE id=?", (cid,)
+                ).fetchone()
+                cal_feriado[cid] = row_c["franco_en_feriado"] if row_c else 0
+
+        feriados_semana = {r["fecha"] for r in conn.execute(
+            "SELECT fecha FROM feriados WHERE fecha >= ? AND fecha <= ?", (dias[0], dias[6])
+        ).fetchall()}
 
         # Borrar entradas auto-generadas de la semana (respeta las manuales auto_generado=0)
         conn.execute(
@@ -284,18 +341,19 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
         ).fetchall():
             manuales.add((r["empleado_id"], r["fecha"]))
 
-        # Insertar desde calendarios, respetando entradas manuales
-        for eid, cid in asig_map.items():
+        # Insertar desde calendarios, respetando entradas manuales y feriados
+        for eid, asig in asig_map.items():
+            cid = asig["calendario_id"]
             cal_dias = cal_cache.get(cid, {})
             for i, fecha_dia in enumerate(dias):
                 if (eid, fecha_dia) in manuales:
                     omitidos += 1
                     continue
-                dia = cal_dias.get(i, {})
-                es_franco = int(dia.get("es_franco", 0))
-                horario_id = None if es_franco else dia.get("horario_id")
-                if not es_franco and not horario_id:
-                    es_franco = 1
+                es_franco, horario_id = _resolver_dia(
+                    i, cal_dias.get(i, {}),
+                    asig["franco_rotativo"], asig["franco_dia_semana"],
+                    fecha_dia in feriados_semana, bool(cal_feriado.get(cid, 0))
+                )
                 conn.execute(
                     "INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, auto_generado) VALUES (?,?,?,?,1)",
                     (eid, fecha_dia, horario_id, es_franco)

@@ -72,6 +72,7 @@
       </div>
     </div>
     <a href="/empleados">Personal</a>
+    <a href="/premios" data-perm="premios:ver">Premios</a>
     <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
     <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
     <a href="#" onclick="logout()">Salir</a>
@@ -99,8 +100,12 @@
         <select id="filter-empleado"><option value="">Todos</option></select>
       </div>
       <div>
-        <label>Fecha</label>
-        <input type="date" id="filter-fecha">
+        <label>Desde</label>
+        <input type="date" id="filter-desde">
+      </div>
+      <div>
+        <label>Hasta</label>
+        <input type="date" id="filter-hasta">
       </div>
       <div style="align-self:flex-end">
         <button class="btn btn-primary" onclick="loadFichajes()">Filtrar</button>
@@ -172,11 +177,13 @@ async function loadEmpleados() {
 }
 
 async function loadFichajes() {
-  const uid = document.getElementById("filter-empleado").value;
-  const fecha = document.getElementById("filter-fecha").value;
+  const uid   = document.getElementById("filter-empleado").value;
+  const desde = document.getElementById("filter-desde").value;
+  const hasta = document.getElementById("filter-hasta").value;
   let url = `/api/fichajes?limit=500`;
-  if (uid) url += `&user_id=${uid}`;
-  if (fecha) url += `&fecha=${fecha}`;
+  if (uid)   url += `&user_id=${uid}`;
+  if (desde) url += `&fecha_desde=${desde}`;
+  if (hasta) url += `&fecha_hasta=${hasta}`;
 
   const [fichajes, empleados] = await Promise.all([api(url), api("/api/empleados")]);
   const empMap = Object.fromEntries(empleados.map(e => [e.user_id, `${e.apellido}${e.nombre ? ', ' + e.nombre : ''}`]));
@@ -218,7 +225,8 @@ async function syncNow() {
   }
 }
 
-document.getElementById("filter-fecha").value = today;
+document.getElementById("filter-desde").value = today;
+document.getElementById("filter-hasta").value = today;
 _loadPerms().then(() => {
   loadEmpleados();
   loadFichajes();

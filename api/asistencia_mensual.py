@@ -135,8 +135,9 @@ def asistencia_mensual(mes: str = Query(None)):
                    u.tipo AS hipo, u.turno_nombre
             FROM empleados e
             JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
-            WHERE e.activo = 1
-               OR (e.fecha_egreso >= ? AND e.fecha_egreso <= ?)
+            WHERE e.tipo != 'acceso'
+              AND (e.activo = 1
+               OR (e.fecha_egreso >= ? AND e.fecha_egreso <= ?))
             ORDER BY e.apellido, e.nombre
         """, (f0, f1, f0, f1)).fetchall()
 

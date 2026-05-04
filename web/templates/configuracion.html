@@ -149,6 +149,7 @@
       </div>
     </div>
     <a href="/empleados">Personal</a>
+    <a href="/premios" data-perm="premios:ver">Premios</a>
     <a href="/configuracion" class="activo">Configuración</a>
     <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
     <a href="#" onclick="logout()">Salir</a>
@@ -222,6 +223,77 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- ── Cargos ── -->
+  <div class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Cargos</div>
+        <div class="section-desc" style="margin-bottom:0">Listado de cargos disponibles para asignar a empleados.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCargo()">+ Nuevo cargo</button>
+    </div>
+    <table style="margin-top:16px">
+      <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th style="width:100px">Acciones</th></tr></thead>
+      <tbody id="tabla-cargos"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- ── Departamentos ── -->
+  <div class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Departamentos</div>
+        <div class="section-desc" style="margin-bottom:0">Listado de departamentos disponibles para asignar a empleados.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarDepto()">+ Nuevo departamento</button>
+    </div>
+    <table style="margin-top:16px">
+      <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+      <tbody id="tabla-deptos"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- ── Categorías ── -->
+  <div class="section">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Categorías</div>
+        <div class="section-desc" style="margin-bottom:0">Listado de categorías disponibles para asignar a empleados.</div>
+      </div>
+      <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCategoria()">+ Nueva categoría</button>
+    </div>
+    <table style="margin-top:16px">
+      <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+      <tbody id="tabla-categorias"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- ── Premios ── -->
+  <div class="section" data-perm="premios:ver">
+    <div class="section-header">
+      <div>
+        <div class="section-title">Premios — Parámetros</div>
+        <div class="section-desc" style="margin-bottom:0">Todos los valores que definen el cálculo del premio mensual.</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px">
+        <button class="btn btn-secondary btn-sm" onclick="recalcularPremioPeriodo()">Recalcular período actual</button>
+        <button class="btn btn-primary btn-sm" data-perm="premios:editar" onclick="guardarParametrosPremios()">Guardar parámetros</button>
+      </div>
+    </div>
+
+    <!-- Fórmula visual -->
+    <div id="formula-premios" style="margin:16px 0;padding:14px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #e0e0e0;font-size:.82rem;line-height:1.8">
+      <strong style="font-size:.85rem">Fórmula de cálculo:</strong>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px" id="formula-pasos"></div>
+    </div>
+
+    <!-- Tabla de parámetros -->
+    <table style="margin-top:4px" id="tabla-params-premios">
+      <thead><tr><th>Parámetro</th><th>Descripción</th><th style="width:130px">Valor</th></tr></thead>
+      <tbody id="tbody-params-premios"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
+    </table>
   </div>
 
   <!-- ── Turnos ── -->
@@ -644,6 +716,223 @@ async function eliminarRol(id) {
   else { const e=await res.json().catch(()=>({})); toast("Error: "+(e.detail||"desconocido")); }
 }
 
+// ── Catálogos (Cargos, Departamentos y Categorías) ────────────────────────────
+let cargos = [], deptos = [], categorias = [];
+
+function _renderCatalogo(lista, tbodyId, eliminarFn) {
+  const tbody = document.getElementById(tbodyId);
+  if (!lista.length) {
+    tbody.innerHTML = `<tr><td colspan="2" style="color:#aaa">Sin registros</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = lista.map(item => `
+    <tr id="${tbodyId}-${item.id}">
+      <td><strong>${item.nombre}</strong></td>
+      <td>
+        ${canDo('empleados','editar') ? `<button class="btn btn-sm btn-danger" onclick="${eliminarFn}(${item.id},'${item.nombre.replace(/'/g,"\\'")}')">Eliminar</button>` : ''}
+      </td>
+    </tr>`).join("");
+}
+
+function _renderCargos() {
+  const tbody = document.getElementById("tabla-cargos");
+  if (!cargos.length) {
+    tbody.innerHTML = `<tr><td colspan="3" style="color:#aaa">Sin registros</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = cargos.map(item => `
+    <tr id="tabla-cargos-${item.id}">
+      <td><strong>${item.nombre}</strong></td>
+      <td style="text-align:center">
+        <input type="checkbox" ${item.aplica_premio ? "checked" : ""}
+          ${canDo('empleados','editar') ? `onchange="toggleApremio(${item.id}, this.checked)"` : "disabled"}
+          style="width:16px;height:16px;cursor:pointer;accent-color:#2c3e50">
+      </td>
+      <td>
+        ${canDo('empleados','editar') ? `<button class="btn btn-sm btn-danger" onclick="eliminarCargo(${item.id},'${item.nombre.replace(/'/g,"\\'")}')">Eliminar</button>` : ''}
+      </td>
+    </tr>`).join("");
+}
+
+async function toggleApremio(id, value) {
+  const res = await fetch(`/api/cargos/${id}`, {
+    method: "PATCH", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ aplica_premio: value })
+  });
+  if (res.ok) {
+    const updated = await res.json();
+    const cargo = cargos.find(c => c.id === id);
+    if (cargo) cargo.aplica_premio = updated.aplica_premio;
+    toast("Cargo actualizado");
+  } else {
+    const e = await res.json().catch(()=>({}));
+    toast("Error: " + (e.detail || "desconocido"));
+    await cargarCatalogos();
+  }
+}
+
+async function cargarCatalogos() {
+  const [cRes, dRes, catRes] = await Promise.all([fetch("/api/cargos"), fetch("/api/departamentos"), fetch("/api/categorias")]);
+  cargos = await cRes.json();
+  deptos = await dRes.json();
+  categorias = await catRes.json();
+  _renderCargos();
+  _renderCatalogo(deptos, "tabla-deptos", "eliminarDepto");
+  _renderCatalogo(categorias, "tabla-categorias", "eliminarCategoria");
+}
+
+function _agregarFilaCatalogo(tbodyId, placeholderText, guardarFn) {
+  const prev = document.getElementById(`${tbodyId}-nueva`);
+  if (prev) prev.remove();
+  const tbody = document.getElementById(tbodyId);
+  const tr = document.createElement("tr");
+  tr.id = `${tbodyId}-nueva`;
+  tr.className = "fila-edit";
+  tr.innerHTML = `
+    <td><input type="text" id="${tbodyId}-nuevo-nombre" placeholder="${placeholderText}"></td>
+    <td>
+      <button class="btn btn-sm btn-primary" onclick="${guardarFn}()">Guardar</button>
+      <button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="document.getElementById('${tbodyId}-nueva').remove()">Cancelar</button>
+    </td>`;
+  tbody.appendChild(tr);
+  document.getElementById(`${tbodyId}-nuevo-nombre`).focus();
+}
+
+function agregarCargo() {
+  const prev = document.getElementById("tabla-cargos-nueva");
+  if (prev) prev.remove();
+  const tbody = document.getElementById("tabla-cargos");
+  const tr = document.createElement("tr");
+  tr.id = "tabla-cargos-nueva";
+  tr.className = "fila-edit";
+  tr.innerHTML = `
+    <td><input type="text" id="tabla-cargos-nuevo-nombre" placeholder="Ej: Mozo de Salón"></td>
+    <td></td>
+    <td>
+      <button class="btn btn-sm btn-primary" onclick="crearCargo()">Guardar</button>
+      <button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="document.getElementById('tabla-cargos-nueva').remove()">Cancelar</button>
+    </td>`;
+  tbody.appendChild(tr);
+  document.getElementById("tabla-cargos-nuevo-nombre").focus();
+}
+function agregarDepto()  { _agregarFilaCatalogo("tabla-deptos", "Ej: Cocina", "crearDepto"); }
+
+async function crearCargo() {
+  const nombre = document.getElementById("tabla-cargos-nuevo-nombre").value.trim();
+  if (!nombre) { toast("Ingresá el nombre"); return; }
+  const res = await fetch("/api/cargos", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({nombre}) });
+  if (res.ok) { toast("Cargo creado"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function crearDepto() {
+  const nombre = document.getElementById("tabla-deptos-nuevo-nombre").value.trim();
+  if (!nombre) { toast("Ingresá el nombre"); return; }
+  const res = await fetch("/api/departamentos", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({nombre}) });
+  if (res.ok) { toast("Departamento creado"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function eliminarCargo(id, nombre) {
+  if (!confirm(`¿Eliminar el cargo "${nombre}"?`)) return;
+  const res = await fetch(`/api/cargos/${id}`, { method: "DELETE" });
+  if (res.ok) { toast("Cargo eliminado"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function eliminarDepto(id, nombre) {
+  if (!confirm(`¿Eliminar el departamento "${nombre}"?`)) return;
+  const res = await fetch(`/api/departamentos/${id}`, { method: "DELETE" });
+  if (res.ok) { toast("Departamento eliminado"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+function agregarCategoria() { _agregarFilaCatalogo("tabla-categorias", "Nueva categoría...", "crearCategoria"); }
+
+async function crearCategoria() {
+  const nombre = document.getElementById("tabla-categorias-nuevo-nombre").value.trim();
+  if (!nombre) { toast("Ingresá el nombre"); return; }
+  const res = await fetch("/api/categorias", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({nombre}) });
+  if (res.ok) { toast("Categoría creada"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function eliminarCategoria(id, nombre) {
+  if (!confirm(`¿Eliminar la categoría "${nombre}"?`)) return;
+  const res = await fetch(`/api/categorias/${id}`, { method: "DELETE" });
+  if (res.ok) { toast("Categoría eliminada"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+// ── Premios ───────────────────────────────────────────────────────────────────
+let _paramsPremios = [];
+
+const _LABELS_PARAM = {
+  monto_base:                  "Monto base",
+  umbral_puntualidad_ok_min:   "Retardo OK hasta (min)",
+  umbral_puntualidad_total_min:"Pierde totalidad desde (min)",
+  pct_descuento_puntualidad:   "Descuento puntualidad parcial (%)",
+  min_por_no_fichada:          "Minutos extra por no fichada",
+  limite_no_fichadas:          "No fichadas → pérdida total (≥)",
+  limite_enfermedad_dias:      "Días enfermedad → pérdida total (>)",
+  pct_descuento_bpm:           "Descuento BPM no conforme (%)",
+  dias_base_vacaciones:        "Base días para prorrateo vacaciones",
+  redondeo:                    "Redondeo final (0 = sin redondeo)",
+};
+
+async function cargarParametrosPremios() {
+  const res = await fetch("/api/premios/parametros");
+  if (!res.ok) return;
+  _paramsPremios = await res.json();
+  const tbody = document.getElementById("tbody-params-premios");
+  tbody.innerHTML = _paramsPremios.map(p => `
+    <tr>
+      <td style="font-family:monospace;font-size:.8rem;color:#555">${p.clave}</td>
+      <td style="font-size:.82rem">${p.descripcion}</td>
+      <td><input type="number" id="pp-${p.clave}" value="${p.valor}" step="${p.tipo==='porcentaje'?'0.01':'1'}" style="width:110px;padding:4px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem"></td>
+    </tr>`).join("");
+  _renderFormula();
+}
+
+function _renderFormula() {
+  const get = (k) => {
+    const p = _paramsPremios.find(x => x.clave === k);
+    return p ? parseFloat(p.valor) : '?';
+  };
+  const pasos = [
+    `<b>Base:</b> $${get('monto_base').toLocaleString()}`,
+    `<b>Descalificadores (→ $0):</b> no fichadas ≥ ${get('limite_no_fichadas')} · ausente ≥ 1 día · suspensión ≥ 1 día · enfermedad > ${get('limite_enfermedad_dias')} días`,
+    `<b>Retardo efectivo:</b> min. sistema + (no fichadas × ${get('min_por_no_fichada')} min)`,
+    `<b>Puntualidad:</b> 0 min → PERFECTA ($0) · < ${get('umbral_puntualidad_ok_min')} min → OK ($0) · ${get('umbral_puntualidad_ok_min')}–${get('umbral_puntualidad_total_min')} min → PARCIAL (−${get('pct_descuento_puntualidad')}%) · ≥ ${get('umbral_puntualidad_total_min')} min → PIERDE ($0)`,
+    `<b>BPM NO CONFORME:</b> −${get('pct_descuento_bpm')}% del monto base`,
+    `<b>Vacaciones:</b> −(base ÷ ${get('dias_base_vacaciones')}) × días de vacación`,
+    `<b>Redondeo:</b> al múltiplo de ${get('redondeo') || '—'}`,
+  ];
+  document.getElementById("formula-pasos").innerHTML = pasos.map(p => `<div style="padding:2px 0;border-bottom:1px solid #eee">${p}</div>`).join("");
+}
+
+async function guardarParametrosPremios() {
+  const updates = _paramsPremios.map(p => ({
+    clave: p.clave,
+    valor: document.getElementById(`pp-${p.clave}`)?.value ?? p.valor
+  }));
+  const res = await fetch("/api/premios/parametros", {
+    method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(updates)
+  });
+  if (res.ok) { toast("Parámetros guardados"); await cargarParametrosPremios(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function recalcularPremioPeriodo() {
+  const hoy = new Date();
+  const periodo = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+  const p = prompt("Período a recalcular (AAAA-MM):", periodo);
+  if (!p) return;
+  const res = await fetch(`/api/premios/${p}/recalcular`, {method:"POST"});
+  if (res.ok) { const d = await res.json(); toast(`Recalculados: ${d.recalculados} empleados`); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
 // ── Turnos ────────────────────────────────────────────────────────────────────
 let turnos = [];
 
@@ -756,6 +1045,8 @@ _loadPerms().then(() => {
   cargarUsuarios();
   cargarRoles();
   cargarTurnos();
+  cargarCatalogos();
+  cargarParametrosPremios();
 });
 </script>
 </body>

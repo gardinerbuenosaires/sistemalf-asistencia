@@ -28,12 +28,13 @@
   main { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px; max-width: 1300px; margin: 0 auto; align-items: start; }
 
   .panel { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
-  .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid #eee; }
+  .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid #eee; }
   .panel-header h2 { font-size: .95rem; }
+  .tabs { display: flex; border-bottom: 1px solid #eee; }
+  .tab-btn { flex: 1; padding: 9px 0; font-size: .83rem; font-weight: bold; background: none; border: none; cursor: pointer; color: #888; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab-btn.activo { color: #2c3e50; border-bottom-color: #2c3e50; }
 
   /* Lista */
-  .buscar { width: 100%; padding: 8px 12px; border: none; border-bottom: 1px solid #eee; font-size: .85rem; outline: none; }
-  .buscar:focus { background: #fafeff; }
   .emp-list { max-height: calc(100vh - 160px); overflow-y: auto; }
   .emp-item { display: flex; align-items: center; padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #f5f5f5; gap: 10px; }
   .emp-item:hover { background: #f8f9fa; }
@@ -69,6 +70,26 @@
   .btn-sm { padding: 5px 12px; font-size: .8rem; font-weight: normal; }
 
   .empty-state { padding: 40px 20px; text-align: center; color: #aaa; font-size: .9rem; }
+
+  /* Zona búsqueda + filtros */
+  .buscar-zona { border-bottom: 1px solid #eee; }
+  .buscar-row { display: flex; align-items: center; }
+  .buscar { flex: 1; padding: 8px 12px; border: none; font-size: .85rem; outline: none; }
+  .buscar:focus { background: #fafeff; }
+  .btn-toggle-filtros { flex-shrink: 0; background: none; border: none; border-left: 1px solid #eee; padding: 0 10px; height: 100%; cursor: pointer; font-size: .75rem; color: #999; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .btn-toggle-filtros:hover { color: #555; background: #f8f9fa; }
+  .btn-toggle-filtros .dot { width: 6px; height: 6px; border-radius: 50%; background: #e67e22; display: none; }
+  .btn-toggle-filtros.con-filtros .dot { display: inline-block; }
+  .filtros-bar { overflow: hidden; max-height: 0; transition: max-height .25s ease, padding .25s ease; padding: 0 12px; display: flex; flex-direction: column; gap: 5px; background: #f8f9fa; border-top: 0px solid #eee; }
+  .filtros-bar.abierto { max-height: 220px; padding: 8px 12px 10px; border-top-width: 1px; }
+  .filtros-bar .fg { display: flex; align-items: center; gap: 8px; }
+  .filtros-bar .fg label { font-size: .72rem; color: #999; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; width: 46px; flex-shrink: 0; text-align: right; }
+  .filtros-bar select { flex: 1; padding: 4px 6px; font-size: .82rem; border: 1px solid #ced4da; border-radius: 4px; }
+  .filtros-bar .filtros-footer { display: flex; justify-content: flex-end; padding-top: 2px; }
+  .filtros-bar .btn-clear { background: none; border: none; padding: 0; cursor: pointer; font-size: .78rem; color: #bbb; text-decoration: underline; }
+  .filtros-bar .btn-clear:hover { color: #555; }
+  .banner-importados { background: #fff3cd; color: #856404; padding: 8px 14px; font-size: .82rem; display: none; align-items: center; gap: 8px; border-bottom: 1px solid #ffc107; }
+  .banner-importados button { margin-left: auto; background: none; border: 1px solid #856404; border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: .78rem; color: #856404; }
 
   .cal-vigente { background: #f0faf4; border: 1px solid #b2dfdb; border-radius: 6px; padding: 10px 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .cal-nombre { font-weight: bold; font-size: .9rem; color: #1a6b4a; flex: 1; }
@@ -118,9 +139,67 @@
   <!-- Lista -->
   <div class="panel">
     <div class="panel-header">
-      <h2>Empleados (<span id="cnt">0</span>)</h2>
+      <h2 id="panel-titulo">Personal (<span id="cnt">0</span>)</h2>
+      <button class="btn btn-secondary btn-sm" data-perm="sync:procesar" onclick="importarDesdeDispositivo()" id="btn-importar">Importar desde dispositivo</button>
     </div>
-    <input class="buscar" id="buscar" type="text" placeholder="Buscar por nombre, apellido, cargo..." oninput="filtrar()">
+    <div class="tabs">
+      <button class="tab-btn activo" id="tab-personal" onclick="cambiarTab('personal')">Personal</button>
+      <button class="tab-btn" id="tab-accesos" onclick="cambiarTab('accesos')">Accesos (<span id="cnt-accesos">0</span>)</button>
+    </div>
+    <div class="buscar-zona">
+      <div class="buscar-row">
+        <input class="buscar" id="buscar" type="text" placeholder="Buscar..." oninput="filtrar()">
+        <button class="btn-toggle-filtros solo-personal" id="btn-toggle-filtros" onclick="toggleFiltrosBar()" title="Mostrar filtros">
+          <span class="dot"></span><span class="lbl-toggle">Filtros ▾</span>
+        </button>
+      </div>
+      <div id="filtros-bar" class="filtros-bar solo-personal">
+        <div class="fg">
+          <label>Estado</label>
+          <select id="f-estado" onchange="filtrar()">
+            <option value="">Todos</option>
+            <option value="activo">Activos</option>
+            <option value="inactivo">Inactivos</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Tipo</label>
+          <select id="f-tipo-filtro" onchange="filtrar()">
+            <option value="">Todos</option>
+            <option value="normal">Normal</option>
+            <option value="jerarquico">Jerárquico</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Cargo</label>
+          <select id="f-cargo-filtro" onchange="filtrar()">
+            <option value="">Todos</option>
+            <option value="__vacio__">— Sin cargo —</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Dpto.</label>
+          <select id="f-depto-filtro" onchange="filtrar()">
+            <option value="">Todos</option>
+            <option value="__vacio__">— Sin dpto. —</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Categ.</label>
+          <select id="f-categoria-filtro" onchange="filtrar()">
+            <option value="">Todas</option>
+            <option value="__vacio__">— Sin categ. —</option>
+          </select>
+        </div>
+        <div class="filtros-footer">
+          <button class="btn-clear" onclick="limpiarFiltros()">Limpiar filtros</button>
+        </div>
+      </div>
+    </div>
+    <div id="banner-importados" class="banner-importados">
+      <span id="banner-texto"></span>
+      <button onclick="limpiarFiltroImportados()">Ver todos</button>
+    </div>
     <div class="emp-list" id="emp-list"><div class="empty-state">Cargando...</div></div>
   </div>
 
@@ -142,15 +221,23 @@
 </main>
 
 <div id="toast"></div>
+<datalist id="dl-cargos"></datalist>
+<datalist id="dl-deptos"></datalist>
+<datalist id="dl-categorias"></datalist>
 
 <script>
-const DIAS_NOMBRES = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+const DIAS_NOMBRES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
 let todos = [];
 let calendarios = [];
 let horarios = [];
+let cargosOpts = [];
+let deptosOpts = [];
+let categoriasOpts = [];
 let editandoId = null;
 let editandoActivo = 1;
+let filtroImportadosIds = null;
+let tabActiva = "personal";
 
 async function logout() {
   await fetch('/api/auth/logout', {method:'POST'});
@@ -181,12 +268,109 @@ function iniciales(apellido, nombre) {
   return ((apellido[0] || "") + (nombre[0] || "")).toUpperCase();
 }
 
+function cambiarTab(tab) {
+  tabActiva = tab;
+  document.getElementById("tab-personal").classList.toggle("activo", tab === "personal");
+  document.getElementById("tab-accesos").classList.toggle("activo", tab === "accesos");
+  document.querySelectorAll(".solo-personal").forEach(el => el.style.display = tab === "personal" ? "" : "none");
+  document.getElementById("buscar").value = "";
+  filtroImportadosIds = null;
+  document.getElementById("banner-importados").style.display = "none";
+  cancelar();
+  filtrar();
+}
+
+function _poblarSelectCatalogo(selectId, items, labelTodo, labelVacio) {
+  const sel = document.getElementById(selectId);
+  const val = sel.value;
+  sel.innerHTML = `<option value="">${labelTodo}</option><option value="__vacio__">${labelVacio}</option>` +
+    items.map(i => `<option value="${i.nombre}">${i.nombre}</option>`).join("");
+  if ([...sel.options].some(o => o.value === val)) sel.value = val;
+}
+
+function toggleFiltrosBar() {
+  const bar = document.getElementById("filtros-bar");
+  const btn = document.getElementById("btn-toggle-filtros");
+  const abierto = bar.classList.toggle("abierto");
+  btn.querySelector(".lbl-toggle").textContent = abierto ? "Filtros ▴" : "Filtros ▾";
+}
+
+function _actualizarIndicadorFiltros() {
+  const btn = document.getElementById("btn-toggle-filtros");
+  if (!btn) return;
+  const activo = document.getElementById("f-estado").value ||
+                 document.getElementById("f-tipo-filtro").value ||
+                 document.getElementById("f-cargo-filtro").value ||
+                 document.getElementById("f-depto-filtro").value ||
+                 document.getElementById("f-categoria-filtro").value ||
+                 filtroImportadosIds;
+  btn.classList.toggle("con-filtros", !!activo);
+}
+
 function filtrar() {
   const q = document.getElementById("buscar").value.toLowerCase();
-  const mostrar = q
-    ? todos.filter(e => `${e.apellido} ${e.nombre} ${e.cargo||""}`.toLowerCase().includes(q))
-    : todos;
-  renderLista(mostrar);
+
+  if (tabActiva === "accesos") {
+    let base = todos.filter(e => e.tipo === "acceso");
+    if (q) base = base.filter(e => `${e.apellido} ${e.nombre} ${e.user_id||""}`.toLowerCase().includes(q));
+    renderListaAccesos(base);
+    return;
+  }
+
+  const estado    = document.getElementById("f-estado").value;
+  const tipo      = document.getElementById("f-tipo-filtro").value;
+  const cargo     = document.getElementById("f-cargo-filtro").value;
+  const depto     = document.getElementById("f-depto-filtro").value;
+  const categoria = document.getElementById("f-categoria-filtro").value;
+
+  let base = todos.filter(e => e.tipo !== "acceso");
+  if (filtroImportadosIds) base = base.filter(e => filtroImportadosIds.has(e.id));
+  if (estado === "activo")        base = base.filter(e => e.activo);
+  if (estado === "inactivo")      base = base.filter(e => !e.activo);
+  if (tipo)                       base = base.filter(e => (e.tipo || "normal") === tipo);
+  if (cargo === "__vacio__")      base = base.filter(e => !e.cargo);
+  else if (cargo)                 base = base.filter(e => e.cargo === cargo);
+  if (depto === "__vacio__")      base = base.filter(e => !e.departamento);
+  else if (depto)                 base = base.filter(e => e.departamento === depto);
+  if (categoria === "__vacio__")  base = base.filter(e => !e.categoria);
+  else if (categoria)             base = base.filter(e => e.categoria === categoria);
+  if (q) base = base.filter(e => `${e.apellido} ${e.nombre} ${e.cargo||""} ${e.departamento||""} ${e.categoria||""}`.toLowerCase().includes(q));
+
+  renderLista(base);
+  _actualizarIndicadorFiltros();
+}
+
+function limpiarFiltros() {
+  document.getElementById("buscar").value = "";
+  document.getElementById("f-estado").value = "";
+  document.getElementById("f-tipo-filtro").value = "";
+  document.getElementById("f-cargo-filtro").value = "";
+  document.getElementById("f-depto-filtro").value = "";
+  document.getElementById("f-categoria-filtro").value = "";
+  _actualizarIndicadorFiltros();
+  limpiarFiltroImportados();
+}
+
+function limpiarFiltroImportados() {
+  filtroImportadosIds = null;
+  document.getElementById("banner-importados").style.display = "none";
+  filtrar();
+}
+
+function renderListaAccesos(lista) {
+  const cont = document.getElementById("emp-list");
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty-state">Sin personal de acceso.</div>';
+    return;
+  }
+  cont.innerHTML = lista.map(e => `
+    <div class="emp-item${e.id === editandoId ? " activo" : ""}" id="emp-item-${e.id}" onclick="editarEmpleado(${e.id})">
+      <div class="emp-avatar" style="background:#7f8c8d">${iniciales(e.apellido, e.nombre)}</div>
+      <div class="emp-info">
+        <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}</div>
+        <div class="emp-sub">Código: ${e.user_id || "—"}</div>
+      </div>
+    </div>`).join("");
 }
 
 function renderLista(lista) {
@@ -200,15 +384,50 @@ function renderLista(lista) {
       <div class="emp-avatar">${iniciales(e.apellido, e.nombre)}</div>
       <div class="emp-info">
         <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}</div>
-        <div class="emp-sub">${[e.cargo, e.departamento].filter(Boolean).join(" · ") || "Sin cargo"}</div>
+        <div class="emp-sub">${[e.cargo, e.departamento].filter(Boolean).join(" · ") || "Sin cargo"}${e.tipo === "jerarquico" ? ' · <span style="color:#8e44ad">Jerárquico</span>' : e.tipo === "acceso" ? ' · <span style="color:#7f8c8d">Solo acceso</span>' : ""}</div>
       </div>
     </div>`).join("");
+}
+
+async function importarDesdeDispositivo() {
+  const btn = document.getElementById("btn-importar");
+  btn.disabled = true;
+  btn.textContent = "Importando...";
+  try {
+    const res = await fetch("/api/empleados/sync-dispositivo", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) {
+      toast("Error: " + (data.detail || "no se pudo conectar al dispositivo"), 5000);
+      return;
+    }
+    if (data.error) {
+      toast("Error: " + data.error, 5000);
+      return;
+    }
+    const partes = [`${data.leidos} usuarios leídos`];
+    if (data.nuevos > 0) partes.push(`${data.nuevos} empleados nuevos`);
+    if (data.fichajes_vinculados > 0) partes.push(`${data.fichajes_vinculados} fichajes vinculados`);
+    if (data.nuevos === 0) partes.push("sin cambios");
+    toast(partes.join(" · "), 4000);
+    if (data.nuevos > 0) {
+      filtroImportadosIds = new Set(data.nuevos_ids);
+      await cargar();
+      const banner = document.getElementById("banner-importados");
+      document.getElementById("banner-texto").textContent =
+        `${data.nuevos} empleado${data.nuevos > 1 ? "s" : ""} nuevo${data.nuevos > 1 ? "s" : ""} importado${data.nuevos > 1 ? "s" : ""} — completá sus datos`;
+      banner.style.display = "flex";
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Importar desde dispositivo";
+  }
 }
 
 async function cargar() {
   const res = await fetch("/api/empleados?todos=true");
   todos = await res.json();
-  document.getElementById("cnt").textContent = todos.filter(e => e.activo).length;
+  document.getElementById("cnt").textContent = todos.filter(e => e.activo && e.tipo !== "acceso").length;
+  document.getElementById("cnt-accesos").textContent = todos.filter(e => e.tipo === "acceso").length;
   filtrar();
 }
 
@@ -263,8 +482,11 @@ function buildCalendarioSection(asignaciones = []) {
     </div>`;
 
   if (vigente) {
+    const francoLabel = vigente.franco_rotativo && vigente.franco_dia_semana !== null
+      ? `<span style="font-size:.75rem;background:#e8f4fd;color:#004085;padding:1px 7px;border-radius:10px;margin-left:4px">Franco: ${DIAS_NOMBRES[vigente.franco_dia_semana]}</span>`
+      : "";
     html += `<div class="cal-vigente">
-      <div class="cal-nombre">${vigente.calendario_nombre}</div>
+      <div class="cal-nombre">${vigente.calendario_nombre}${francoLabel}</div>
       <div class="cal-desde">desde ${vigente.fecha_desde}${vigente.fecha_hasta ? " hasta " + vigente.fecha_hasta : ""}</div>
       <a href="/calendarios" class="cal-link">Ver calendarios</a>
       ${canDo('calendarios','editar') ? `<button type="button" class="btn btn-sm" style="background:#e74c3c;color:white;margin-left:auto"
@@ -286,14 +508,29 @@ function buildCalendarioSection(asignaciones = []) {
   ).join("");
 
   if (canDo('calendarios', 'editar')) {
-    html += `<div class="cal-asignar" style="margin-top:10px">
-      <select id="asig-cal-id" style="flex:1">
+    html += `<div class="cal-asignar" style="margin-top:10px;flex-wrap:wrap;gap:6px">
+      <select id="asig-cal-id" style="flex:1;min-width:160px">
         <option value="">— Asignar calendario existente —</option>
         ${calOpts}
       </select>
       <label style="font-size:.78rem;color:#666;white-space:nowrap">Desde</label>
-      <input type="date" id="asig-cal-desde" value="${hoy}" style="width:140px">
+      <input type="date" id="asig-cal-desde" value="${hoy}" style="width:130px">
       <button class="btn btn-primary btn-sm" onclick="asignarCalendario()">Asignar</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+      <label style="font-size:.78rem;color:#666;display:flex;align-items:center;gap:4px;cursor:pointer">
+        <input type="checkbox" id="asig-franco-rotativo" onchange="toggleFrancoRotativo()">
+        Franco rotativo
+      </label>
+      <select id="asig-franco-dia" style="display:none;font-size:.82rem;padding:4px 8px;border:1px solid #ced4da;border-radius:4px">
+        <option value="0">Lunes</option>
+        <option value="1">Martes</option>
+        <option value="2">Miércoles</option>
+        <option value="3">Jueves</option>
+        <option value="4">Viernes</option>
+        <option value="5">Sábado</option>
+        <option value="6">Domingo</option>
+      </select>
     </div>`;
   }
 
@@ -347,15 +584,15 @@ function buildForm(e = {}, asignaciones = []) {
         <div class="form-grid">
           <div class="form-group">
             <label>Cargo</label>
-            <input type="text" id="f-cargo" value="${e.cargo||""}">
+            <input type="text" id="f-cargo" value="${e.cargo||""}" list="dl-cargos" autocomplete="off">
           </div>
           <div class="form-group">
             <label>Departamento</label>
-            <input type="text" id="f-departamento" value="${e.departamento||""}">
+            <input type="text" id="f-departamento" value="${e.departamento||""}" list="dl-deptos" autocomplete="off">
           </div>
           <div class="form-group">
             <label>Categoría</label>
-            <input type="text" id="f-categoria" value="${e.categoria||""}">
+            <input type="text" id="f-categoria" value="${e.categoria||""}" list="dl-categorias" autocomplete="off">
           </div>
           <div class="form-group">
             <label>Código dispositivo</label>
@@ -368,6 +605,14 @@ function buildForm(e = {}, asignaciones = []) {
           <div class="form-group">
             <label>Fecha de egreso</label>
             <input type="date" id="f-egreso" value="${e.fecha_egreso||""}">
+          </div>
+          <div class="form-group">
+            <label>Tipo de empleado</label>
+            <select id="f-tipo">
+              <option value="normal"     ${(e.tipo||"normal")==="normal"     ? "selected" : ""}>Normal</option>
+              <option value="jerarquico" ${(e.tipo||"normal")==="jerarquico" ? "selected" : ""}>Jerárquico (sin fichaje)</option>
+              <option value="acceso"     ${(e.tipo||"normal")==="acceso"     ? "selected" : ""}>Solo acceso (excluir de planillas)</option>
+            </select>
           </div>
         </div>
       </div>
@@ -434,6 +679,7 @@ function getFormData() {
     email: document.getElementById("f-email").value.trim() || null,
     domicilio: document.getElementById("f-domicilio").value.trim() || null,
     observaciones: document.getElementById("f-obs").value.trim() || null,
+    tipo: document.getElementById("f-tipo").value,
     activo: editandoActivo,
   };
 }
@@ -488,13 +734,19 @@ async function quitarCalendario(asignacionId) {
 async function asignarCalendario() {
   const calId = parseInt(document.getElementById("asig-cal-id").value);
   const desde = document.getElementById("asig-cal-desde").value;
+  const francoRotativo = document.getElementById("asig-franco-rotativo")?.checked || false;
+  const francoDia = francoRotativo ? parseInt(document.getElementById("asig-franco-dia").value) : null;
   if (!calId) { toast("Seleccioná un calendario"); return; }
   if (!desde) { toast("Ingresá la fecha desde"); return; }
+  if (francoRotativo && francoDia === null) { toast("Seleccioná el día de franco"); return; }
 
   const res = await fetch("/api/calendarios/asignar", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ empleado_ids: [editandoId], calendario_id: calId, fecha_desde: desde })
+    body: JSON.stringify({
+      empleado_ids: [editandoId], calendario_id: calId, fecha_desde: desde,
+      franco_rotativo: francoRotativo, franco_dia_semana: francoDia
+    })
   });
   if (res.ok) {
     toast("Calendario asignado");
@@ -502,6 +754,12 @@ async function asignarCalendario() {
   } else {
     toast("Error al asignar");
   }
+}
+
+function toggleFrancoRotativo() {
+  const chk = document.getElementById("asig-franco-rotativo");
+  const sel = document.getElementById("asig-franco-dia");
+  if (chk && sel) sel.style.display = chk.checked ? "inline-block" : "none";
 }
 
 function toggleNuevoCalendario(forzar) {
@@ -557,11 +815,21 @@ async function crearYAsignarCalendario() {
 
 async function init() {
   await _loadPerms();
-  const [_, cRes, hRes] = await Promise.all([
-    cargar(), fetch("/api/calendarios"), fetch("/api/horarios")
+  const [_, cRes, hRes, cgRes, dRes, catRes] = await Promise.all([
+    cargar(), fetch("/api/calendarios"), fetch("/api/horarios"),
+    fetch("/api/cargos"), fetch("/api/departamentos"), fetch("/api/categorias")
   ]);
   calendarios = await cRes.json();
   horarios = await hRes.json();
+  cargosOpts = await cgRes.json();
+  deptosOpts = await dRes.json();
+  categoriasOpts = await catRes.json();
+  document.getElementById("dl-cargos").innerHTML = cargosOpts.map(c => `<option value="${c.nombre}">`).join("");
+  document.getElementById("dl-deptos").innerHTML = deptosOpts.map(d => `<option value="${d.nombre}">`).join("");
+  document.getElementById("dl-categorias").innerHTML = categoriasOpts.map(c => `<option value="${c.nombre}">`).join("");
+  _poblarSelectCatalogo("f-cargo-filtro", cargosOpts, "Todo cargo", "— Sin cargo —");
+  _poblarSelectCatalogo("f-depto-filtro", deptosOpts, "Todo depto.", "— Sin depto. —");
+  _poblarSelectCatalogo("f-categoria-filtro", categoriasOpts, "Todas", "— Sin categ. —");
 }
 
 init();

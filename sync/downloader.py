@@ -139,10 +139,10 @@ def sync_time() -> dict:
 def sync_users() -> dict:
     """
     Conecta al dispositivo, descarga la lista de usuarios y crea los empleados
-    que aún no existen en la BD (por user_id). No modifica registros existentes.
-    Devuelve {leidos, nuevos, errores}.
+    que aún no existen en la BD (por user_id). Solo lectura del dispositivo.
+    Devuelve {leidos, nuevos, fichajes_vinculados, error}.
     """
-    result = {"leidos": 0, "nuevos": 0, "error": None}
+    result = {"leidos": 0, "nuevos": 0, "nuevos_ids": [], "fichajes_vinculados": 0, "error": None}
     conn_zk = None
     try:
         logger.info("Conectando a %s:%s para sync de usuarios...", DEVICE_IP, DEVICE_PORT)
@@ -150,8 +150,12 @@ def sync_users() -> dict:
         users = conn_zk.get_users()
         result["leidos"] = len(users)
         logger.info("Usuarios leídos del dispositivo: %d", result["leidos"])
-        result["nuevos"] = _save_users(users)
-        logger.info("Empleados nuevos creados: %d", result["nuevos"])
+        saved = _save_users(users)
+        result["nuevos"] = saved["nuevos"]
+        result["nuevos_ids"] = saved["nuevos_ids"]
+        result["fichajes_vinculados"] = saved["fichajes_vinculados"]
+        logger.info("Empleados nuevos: %d | Fichajes vinculados: %d",
+                    result["nuevos"], result["fichajes_vinculados"])
     except Exception as exc:
         result["error"] = str(exc)
         logger.error("Error en sync_users: %s", exc)
@@ -164,12 +168,14 @@ def sync_users() -> dict:
     return result
 
 
-def _save_users(users) -> int:
+def _save_users(users) -> dict:
     """
     Inserta empleados nuevos a partir de los usuarios del dispositivo.
     Usa user_id como clave — si ya existe (activo o inactivo), lo omite.
+    Nombre y apellido se inicializan con el user_id para facilitar identificación.
+    Luego revincula fichajes huérfanos (empleado_id IS NULL) con los empleados existentes.
     """
-    nuevos = 0
+    nuevos_ids = []
     with db_session() as conn:
         existentes = {
             row[0]
@@ -181,22 +187,29 @@ def _save_users(users) -> int:
             uid = str(u.user_id).strip()
             if not uid or uid in existentes:
                 continue
-            nombre_raw = (u.name or "").strip()
-            partes = nombre_raw.split()
-            if len(partes) >= 2:
-                apellido = partes[0]
-                nombre = " ".join(partes[1:])
-            else:
-                apellido = nombre_raw
-                nombre = ""
             conn.execute(
                 "INSERT OR IGNORE INTO empleados (user_id, nombre, apellido, activo) VALUES (?,?,?,1)",
-                (uid, nombre, apellido),
+                (uid, uid, uid),
             )
             if conn.execute("SELECT changes()").fetchone()[0]:
-                nuevos += 1
+                eid = conn.execute("SELECT id FROM empleados WHERE user_id=?", (uid,)).fetchone()[0]
+                nuevos_ids.append(eid)
                 existentes.add(uid)
-    return nuevos
+
+        # Revincular fichajes huérfanos con todos los empleados (no solo los recién creados)
+        cur = conn.execute("""
+            UPDATE fichajes
+            SET empleado_id = (
+                SELECT id FROM empleados WHERE empleados.user_id = fichajes.user_id
+            )
+            WHERE empleado_id IS NULL
+              AND EXISTS (
+                SELECT 1 FROM empleados WHERE empleados.user_id = fichajes.user_id
+              )
+        """)
+        vinculados = cur.rowcount
+
+    return {"nuevos": len(nuevos_ids), "nuevos_ids": nuevos_ids, "fichajes_vinculados": vinculados}
 
 
 def _start_log(started_at: str) -> int:

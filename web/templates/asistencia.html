@@ -148,6 +148,7 @@
       </div>
     </div>
     <a href="/empleados">Personal</a>
+    <a href="/premios" data-perm="premios:ver">Premios</a>
     <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
     <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
     <a href="#" onclick="logout()">Salir</a>
@@ -744,6 +745,9 @@ async function guardarGrupal() {
 async function init() {
   await _loadPerms();
   await cargarEmpleados();
+  const hoy = new Date().toISOString().slice(0,10);
+  await fetch(`/api/resultados/procesar?fecha_desde=${hoy}&fecha_hasta=${hoy}`, { method: 'POST' }).catch(() => {});
+  await cargar();
 }
 
 init();

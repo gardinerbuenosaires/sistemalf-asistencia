@@ -23,6 +23,7 @@ class EmpleadoIn(BaseModel):
     domicilio: Optional[str] = None
     observaciones: Optional[str] = None
     activo: int = 1
+    tipo: str = "normal"
 
 
 @router.get("")
@@ -67,17 +68,19 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
         if not row:
             raise HTTPException(404, "Empleado no encontrado")
         anterior = conn.execute("SELECT activo FROM empleados WHERE id=?", (eid,)).fetchone()
+        if data.tipo not in ("normal", "jerarquico", "acceso"):
+            raise HTTPException(400, "tipo inválido")
         conn.execute(
             """UPDATE empleados SET
                nombre=?, apellido=?, dni=?, cuil=?, fecha_nacimiento=?, fecha_ingreso=?,
                fecha_egreso=?, cargo=?, departamento=?, categoria=?, telefono=?, email=?,
-               domicilio=?, observaciones=?, activo=?,
+               domicilio=?, observaciones=?, activo=?, tipo=?,
                modificado_en=datetime('now','localtime')
                WHERE id=?""",
             (data.nombre.strip(), data.apellido.strip(), data.dni, data.cuil,
              data.fecha_nacimiento, data.fecha_ingreso, data.fecha_egreso,
              data.cargo, data.departamento, data.categoria,
-             data.telefono, data.email, data.domicilio, data.observaciones, data.activo, eid)
+             data.telefono, data.email, data.domicilio, data.observaciones, data.activo, data.tipo, eid)
         )
         if anterior["activo"] == 1 and data.activo == 0:
             # Usar fecha_egreso como corte; si no viene, tomar hoy

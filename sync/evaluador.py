@@ -195,18 +195,21 @@ def recalcular_resultado(empleado_id: int, fecha_str: str):
         )
 
 
-def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True) -> dict:
+def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
+                  solo_empleado_id: int | None = None) -> dict:
     """Procesa todos los empleados con planificación en fecha_str."""
     fecha     = date.fromisoformat(fecha_str)
     fecha_sig = str(fecha + timedelta(days=1))
     resumen   = {"evaluados": 0, "ok": 0, "tarde": 0, "ausente": 0, "franco": 0, "otros": 0, "saltados": 0}
 
     with db_session() as conn:
-        planes = conn.execute(
-            "SELECT p.*, h.tipo as h_tipo FROM planificacion p "
-            "LEFT JOIN horarios h ON h.id = p.horario_id WHERE p.fecha = ?",
-            (fecha_str,)
-        ).fetchall()
+        sql    = ("SELECT p.*, h.tipo as h_tipo FROM planificacion p "
+                  "LEFT JOIN horarios h ON h.id = p.horario_id WHERE p.fecha = ?")
+        params: tuple = (fecha_str,)
+        if solo_empleado_id:
+            sql    += " AND p.empleado_id = ?"
+            params += (solo_empleado_id,)
+        planes = conn.execute(sql, params).fetchall()
 
         if not planes:
             return resumen
@@ -225,6 +228,20 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True) -> dict:
                 (fecha_str,)
             ).fetchall()
         }
+
+        # Cargar tipo de empleado para los que tienen planificación
+        eids_plan = [p["empleado_id"] for p in planes]
+        if eids_plan:
+            pe_t = ",".join("?" * len(eids_plan))
+            emp_tipos: dict[int, str] = {
+                r["id"]: r["tipo"] for r in conn.execute(
+                    f"SELECT id, tipo FROM empleados WHERE id IN ({pe_t})", eids_plan
+                ).fetchall()
+            }
+        else:
+            emp_tipos = {}
+        jerarquico_set = {eid for eid, t in emp_tipos.items() if t == "jerarquico"}
+        acceso_set     = {eid for eid, t in emp_tipos.items() if t == "acceso"}
 
         hids = list({p["horario_id"] for p in planes if p["horario_id"]})
         bloques_map: dict[int, list] = defaultdict(list)
@@ -253,6 +270,9 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True) -> dict:
         for plan in planes:
             eid = plan["empleado_id"]
             p   = dict(plan)
+
+            if eid in acceso_set:
+                continue  # solo acceso: ignorar completamente
 
             if eid in corregidos:
                 resumen["saltados"] += 1
@@ -324,6 +344,34 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True) -> dict:
                             slots.get("b2_entrada"), slots.get("b2_salida")
                         )
                     estado = _calcular_estado(b1r, b2r)
+
+            # Jerárquico sin fichaje: marcar como presente según horario planificado
+            if estado == "ausente" and eid in jerarquico_set:
+                bloques = bloques_map.get(p.get("horario_id"), [])
+                if bloques:
+                    b1 = bloques[0]
+                    cruza1 = bool(b1["cruza_medianoche"])
+                    b1r = {
+                        "entrada":           f"{fecha_str} {b1['hora_entrada']}:00",
+                        "salida":            f"{str(fecha + timedelta(days=1)) if cruza1 else fecha_str} {b1['hora_salida']}:00",
+                        "minutos_tarde":     None,
+                        "salida_anticipada": False,
+                        "ausente":           False,
+                        "sin_salida":        False,
+                    }
+                    b2r = None
+                    if len(bloques) > 1:
+                        b2 = bloques[1]
+                        cruza2 = bool(b2["cruza_medianoche"])
+                        b2r = {
+                            "entrada":           f"{fecha_str} {b2['hora_entrada']}:00",
+                            "salida":            f"{str(fecha + timedelta(days=1)) if cruza2 else fecha_str} {b2['hora_salida']}:00",
+                            "minutos_tarde":     None,
+                            "salida_anticipada": False,
+                            "ausente":           False,
+                            "sin_salida":        False,
+                        }
+                    estado = "ok"
 
             # Si el empleado tiene novedad NF y resultó ausente, usar horario planificado
             if estado == "ausente" and eid in nf_set:

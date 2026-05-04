@@ -47,16 +47,19 @@ def procesar(
     fecha_desde: str | None = None,
     fecha_hasta: str | None = None,
     respetar_correcciones: bool = True,
+    empleado_id: int | None = None,
     _user=Depends(require_permiso("resultados", "procesar")),
 ):
     """
     Evalúa fichajes contra planificación y guarda resultados_dia.
     Acepta: ?fecha=2026-04-21  o  ?fecha_desde=...&fecha_hasta=...
+    empleado_id opcional para re-evaluar solo un empleado.
     respetar_correcciones=false para pisar correcciones manuales al re-procesar.
     """
     from sync.evaluador import evaluar_fecha, evaluar_rango
     if fecha:
-        return evaluar_fecha(fecha, respetar_correcciones=respetar_correcciones)
+        return evaluar_fecha(fecha, respetar_correcciones=respetar_correcciones,
+                             solo_empleado_id=empleado_id)
     if fecha_desde and fecha_hasta:
         return evaluar_rango(fecha_desde, fecha_hasta, respetar_correcciones=respetar_correcciones)
     raise HTTPException(400, "Pasar fecha o fecha_desde+fecha_hasta")

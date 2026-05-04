@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<title>Premios — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger { opacity: 1; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0; background: white; border: 1px solid #D3D1C7; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none; }
+
+  main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .toolbar h1 { font-size: 1.1rem; flex: 1; }
+  .toolbar select, .toolbar input { padding: 7px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: .88rem; }
+  .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: .88rem; font-weight: bold; }
+  .btn-primary { background: #2c3e50; color: white; }
+  .btn-primary:hover { background: #3d5166; }
+  .btn-secondary { background: #eee; color: #555; }
+  .btn-secondary:hover { background: #ddd; }
+  .btn-sm { padding: 5px 12px; font-size: .8rem; font-weight: normal; }
+
+  /* Cards resumen */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: white; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .card .lbl { font-size: .72rem; color: #999; text-transform: uppercase; letter-spacing: .04em; }
+  .card .val { font-size: 1.2rem; font-weight: bold; margin-top: 4px; }
+
+  /* Tabla principal */
+  .section { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th { text-align: left; padding: 9px 10px; background: #f8f9fa; border-bottom: 2px solid #dee2e6; font-size: .78rem; white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  tr:hover td { background: #fafafa; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .75rem; font-weight: bold; }
+  .badge-ok      { background: #d4edda; color: #155724; }
+  .badge-parcial { background: #fff3cd; color: #856404; }
+  .badge-pierde  { background: #f8d7da; color: #721c24; }
+  .badge-bpm-nc  { background: #f8d7da; color: #721c24; }
+  .badge-bpm-ok  { background: #d4edda; color: #155724; }
+
+  .valor-final { font-size: 1rem; font-weight: bold; color: #1a6b4a; }
+  .valor-cero  { font-size: 1rem; font-weight: bold; color: #c0392b; }
+
+  /* Desglose expandible */
+  .desglose { font-size: .78rem; color: #666; margin-top: 4px; display: none; }
+  .desglose table { margin: 0; font-size: .78rem; }
+  .desglose td { padding: 2px 8px; border: none; }
+  .desglose .neg { color: #c0392b; }
+  .desglose .pos { color: #27ae60; }
+  tr.expandido .desglose { display: block; }
+
+  /* Inline edits */
+  .field-bpm select { padding: 3px 6px; border: 1px solid #ced4da; border-radius: 4px; font-size: .8rem; }
+  .field-desempenio textarea { width: 100%; min-height: 50px; padding: 4px 6px; border: 1px solid #ced4da; border-radius: 4px; font-size: .8rem; resize: vertical; font-family: inherit; }
+  .field-monto input { width: 90px; padding: 3px 6px; border: 1px solid #ced4da; border-radius: 4px; font-size: .8rem; }
+
+  .btn-save-row { padding: 3px 10px; font-size: .75rem; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 4px; }
+  .btn-save-row:hover { background: #3d5166; }
+  .btn-expand { background: none; border: none; cursor: pointer; color: #888; font-size: .8rem; padding: 0; }
+  .btn-expand:hover { color: #333; }
+
+  .firma-cell { min-width: 140px; }
+  .firma-linea { display: inline-block; width: 130px; border-bottom: 1px solid #ccc; }
+
+  #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 12px 20px; border-radius: 8px; display: none; z-index: 100; }
+  .empty-state { padding: 40px; text-align: center; color: #aaa; }
+
+  @media print {
+    header, .toolbar, .cards, #diag-bar, #toast, .btn-expand, .btn-save-row,
+    [data-perm], button, .grupo-subtotal { display: none !important; }
+    body { background: white; }
+    main { padding: 8px; max-width: none; }
+    .section { box-shadow: none; border: 1px solid #bbb; }
+    table { font-size: .75rem; }
+    th, td { padding: 5px 7px; }
+    .desglose { display: none !important; }
+    .field-bpm select { border: none; background: transparent; -webkit-appearance: none; appearance: none; font-size: .75rem; }
+    .field-desempenio textarea { border: none; background: transparent; resize: none; font-size: .75rem; overflow: hidden; }
+    .firma-linea { border-bottom: 1px solid #333; width: 130px; display: inline-block; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios">Horarios</a>
+        <a href="/planificacion">Planificación</a>
+        <a href="/calendarios">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia">Asistencia</a>
+        <a href="/fichajes">Fichajes</a>
+        <a href="/asistencia-mensual">Planilla</a>
+      </div>
+    </div>
+    <a href="/empleados">Personal</a>
+    <a href="/premios" class="activo">Premios</a>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
+</header>
+
+<main>
+  <div class="toolbar">
+    <h1>Evaluación de Premios</h1>
+    <label style="font-size:.85rem;color:#666">Período</label>
+    <input type="month" id="periodo-sel">
+    <button class="btn btn-secondary" onclick="cargar()">Ver</button>
+    <button class="btn btn-primary" data-perm="premios:editar" onclick="generarPeriodo()">Generar / Actualizar período</button>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="lbl">Empleados</div><div class="val" id="cnt-total">—</div></div>
+    <div class="card"><div class="lbl">Premio completo</div><div class="val" id="cnt-completo" style="color:#27ae60">—</div></div>
+    <div class="card"><div class="lbl">Con descuento</div><div class="val" id="cnt-descuento" style="color:#e67e22">—</div></div>
+    <div class="card"><div class="lbl">Sin premio</div><div class="val" id="cnt-cero" style="color:#c0392b">—</div></div>
+    <div class="card"><div class="lbl">Total a pagar</div><div class="val" id="total-pagar" style="color:#2c3e50">—</div></div>
+  </div>
+
+  <div id="diag-bar" style="background:white; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.08);
+       padding:10px 16px; margin-bottom:16px; font-size:.8rem; gap:20px; align-items:center; flex-wrap:wrap; display:none;"></div>
+
+  <div class="section">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:24px"></th>
+          <th>Empleado</th>
+          <th>Premio</th>
+          <th>Desempeño</th>
+          <th>BPM</th>
+          <th>Puntualidad</th>
+          <th>Retardo</th>
+          <th>NF</th>
+          <th>V</th>
+          <th>E</th>
+          <th>S</th>
+          <th>A</th>
+          <th>Firma</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-premios">
+        <tr><td colspan="13"><div class="empty-state">Seleccioná un período y presioná "Ver".</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+let _perms = new Set();
+let _evaluaciones = [];
+
+async function _loadPerms() {
+  try {
+    const me = await fetch('/api/auth/me').then(r => r.json());
+    _perms = new Set((me.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    if (me.nombre) document.getElementById('user-info').textContent = me.nombre;
+  } catch(e) {}
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+  });
+}
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
+
+async function logout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  location.href = '/login';
+}
+
+function toast(msg, ms = 3000) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(() => el.style.display = "none", ms);
+}
+
+function _periodoActual() {
+  const hoy = new Date();
+  return `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+}
+
+function _fmtMin(min) {
+  if (!min) return "—";
+  const h = Math.floor(min / 60), m = min % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m} min`;
+}
+
+function _fmtPesos(v) {
+  if (v === null || v === undefined) return "—";
+  return "$" + Number(v).toLocaleString("es-AR");
+}
+
+function _badgePuntualidad(status) {
+  if (!status) return "—";
+  const cls = status === "PERFECTA" || status === "OK" ? "badge-ok"
+            : status === "PARCIAL" ? "badge-parcial" : "badge-pierde";
+  return `<span class="badge ${cls}">${status}</span>`;
+}
+
+function _renderDesglose(d) {
+  if (!d) return "";
+  const rows = [];
+  if (d.descalificado) {
+    const motivos = {
+      no_fichadas: "No fichadas ≥ límite",
+      ausente: "Día(s) ausente",
+      suspension: "Día(s) de suspensión",
+      enfermedad: "Enfermedad > límite",
+      puntualidad: "Retardo ≥ umbral total",
+    };
+    rows.push(`<tr><td colspan="2" style="color:#c0392b;font-weight:bold">✗ ${motivos[d.motivo_descalificacion] || d.motivo_descalificacion}</td></tr>`);
+  } else {
+    rows.push(`<tr><td>Base</td><td class="pos">${_fmtPesos(d.monto_base)}</td></tr>`);
+    rows.push(`<tr><td>Retardo sistema</td><td>${_fmtMin(d.minutos_retardo_sistema)}</td></tr>`);
+    if (d.minutos_ajuste_nf) rows.push(`<tr><td>Ajuste NF</td><td>+${_fmtMin(d.minutos_ajuste_nf)}</td></tr>`);
+    rows.push(`<tr><td>Retardo efectivo</td><td><b>${_fmtMin(d.minutos_efectivos)}</b></td></tr>`);
+    if (d.deduccion_puntualidad) rows.push(`<tr><td>Desc. puntualidad (${d.puntualidad_status})</td><td class="neg">−${_fmtPesos(d.deduccion_puntualidad)}</td></tr>`);
+    if (d.deduccion_bpm)         rows.push(`<tr><td>Desc. BPM NO CONFORME</td><td class="neg">−${_fmtPesos(d.deduccion_bpm)}</td></tr>`);
+    if (d.deduccion_vacaciones)  rows.push(`<tr><td>Desc. vacaciones</td><td class="neg">−${_fmtPesos(d.deduccion_vacaciones)}</td></tr>`);
+    rows.push(`<tr><td><b>Subtotal</b></td><td><b>${_fmtPesos(d.valor_bruto)}</b></td></tr>`);
+    if (d.valor_bruto !== d.valor_final) rows.push(`<tr><td>Redondeo</td><td>${_fmtPesos(d.valor_final)}</td></tr>`);
+  }
+  return `<div class="desglose"><table>${rows.join("")}</table></div>`;
+}
+
+const _GRUPO_LABEL = { TM: "Turno Mañana", TN: "Turno Noche", CO: "Turno Cortado" };
+
+function _filaHtml(ev, editar) {
+  const d = ev.desglose || {};
+  const vf = ev.valor_final ?? 0;
+  const clsValor = vf === 0 ? "valor-cero" : "valor-final";
+  const bpmBadge = ev.bpm === "NO CONFORME"
+    ? `<span class="badge badge-bpm-nc">NO CONFORME</span>`
+    : ev.bpm === "OK"
+    ? `<span class="badge badge-bpm-ok">OK</span>`
+    : `<span style="color:#aaa">—</span>`;
+  const bpmSelect = `<select onchange="guardarFila(${ev.id})">
+    <option value=""${!ev.bpm ? " selected" : ""}>— evaluar —</option>
+    <option value="OK"${ev.bpm === "OK" ? " selected" : ""}>OK</option>
+    <option value="NO CONFORME"${ev.bpm === "NO CONFORME" ? " selected" : ""}>NO CONFORME</option>
+  </select>`;
+  return `<tr data-id="${ev.id}">
+    <td><button class="btn-expand" onclick="toggleDesglose(${ev.id})" title="Ver desglose">▶</button></td>
+    <td>
+      <div style="font-weight:bold;font-size:.88rem">${ev.apellido}, ${ev.nombre}</div>
+      <div style="font-size:.72rem;color:#aaa">${ev.cargo||''}</div>
+      ${_renderDesglose(d)}
+    </td>
+    <td class="${clsValor}">${_fmtPesos(vf)}</td>
+    <td class="field-desempenio" style="min-width:160px">
+      ${editar
+        ? `<textarea onchange="guardarFila(${ev.id})">${ev.desempenio||""}</textarea>`
+        : `<span style="font-size:.8rem">${ev.desempenio||""}</span>`}
+    </td>
+    <td class="field-bpm">${editar ? bpmSelect : bpmBadge}</td>
+    <td class="cell-puntualidad">${_badgePuntualidad(d.puntualidad_status)}</td>
+    <td>${_fmtMin(ev.minutos_retardo)}</td>
+    <td>${ev.no_fichadas}</td>
+    <td>${ev.dias_vacacion}</td>
+    <td>${ev.dias_enfermo}</td>
+    <td>${ev.dias_suspension}</td>
+    <td>${ev.dias_ausente}</td>
+    <td class="firma-cell"><span class="firma-linea"></span></td>
+  </tr>`;
+}
+
+function _renderTabla(data) {
+  _evaluaciones = data;
+  const editar = canDo("premios", "editar");
+  const tbody = document.getElementById("tbody-premios");
+
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state">Sin datos para este período. Usá "Generar / Actualizar período".</div></td></tr>`;
+    _recalcularCards();
+    return;
+  }
+
+  // Agrupar respetando el orden que viene del API (ya ordenado TM→TN→CO→sin grupo)
+  const grupos = {};
+  const orden  = [];
+  data.forEach(ev => {
+    const g = ev.grupo || "_sin_turno";
+    if (!grupos[g]) { grupos[g] = []; orden.push(g); }
+    grupos[g].push(ev);
+  });
+
+  let html = "";
+  orden.forEach(g => {
+    const empleados = grupos[g];
+    const label = _GRUPO_LABEL[g] || "Sin turno asignado";
+    let subTotal = 0;
+    empleados.forEach(ev => subTotal += ev.valor_final ?? 0);
+
+    html += `<tr class="grupo-header">
+      <td colspan="13" style="background:#eef2f5;padding:7px 12px;font-weight:bold;
+          font-size:.8rem;color:#2c3e50;letter-spacing:.03em;border-top:2px solid #d0d8e0">
+        ${label}
+      </td>
+    </tr>`;
+    html += empleados.map(ev => _filaHtml(ev, editar)).join("");
+    html += `<tr class="grupo-subtotal">
+      <td colspan="2" style="text-align:right;font-size:.78rem;color:#888;padding:6px 10px;
+          border-top:1px solid #e8e8e8">Subtotal ${label}:</td>
+      <td style="font-weight:bold;color:#2c3e50;padding:6px 10px;border-top:1px solid #e8e8e8">
+        ${_fmtPesos(subTotal)}
+      </td>
+      <td colspan="10" style="border-top:1px solid #e8e8e8"></td>
+    </tr>`;
+  });
+
+  tbody.innerHTML = html;
+  _recalcularCards();
+}
+
+function toggleDesglose(id) {
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  const btn = row.querySelector(".btn-expand");
+  row.classList.toggle("expandido");
+  btn.textContent = row.classList.contains("expandido") ? "▼" : "▶";
+}
+
+async function guardarFila(id) {
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  const bpm      = row.querySelector(".field-bpm select")?.value;
+  const desempen = row.querySelector(".field-desempenio textarea")?.value;
+
+  const body = {};
+  if (bpm      !== undefined) body.bpm = bpm;
+  if (desempen !== undefined) body.desempenio = desempen;
+
+  const res = await fetch(`/api/premios/evaluacion/${id}`, {
+    method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body)
+  });
+  if (res.ok) {
+    const ev = await res.json();
+    // Actualizar celda de valor final
+    const clsValor = ev.valor_final === 0 ? "valor-cero" : "valor-final";
+    const celdaValor = row.querySelector(".valor-final, .valor-cero");
+    if (celdaValor) { celdaValor.className = clsValor; celdaValor.textContent = _fmtPesos(ev.valor_final); }
+    // Actualizar desglose y puntualidad
+    const desgloseEl = row.querySelector(".desglose");
+    if (desgloseEl) desgloseEl.outerHTML = _renderDesglose(ev.desglose);
+    const celdaPunt = row.querySelector(".cell-puntualidad");
+    if (celdaPunt) celdaPunt.innerHTML = _badgePuntualidad((ev.desglose||{}).puntualidad_status);
+    // Actualizar en memoria y recalcular cards
+    const idx = _evaluaciones.findIndex(e => e.id === id);
+    if (idx !== -1) _evaluaciones[idx] = {..._evaluaciones[idx], ...ev};
+    _recalcularCards();
+    // Feedback visual breve en la fila
+    row.style.transition = "background .15s";
+    row.style.background = "#f0fdf4";
+    setTimeout(() => { row.style.background = ""; }, 700);
+  } else {
+    const e = await res.json().catch(()=>({}));
+    toast("Error: " + (e.detail || "desconocido"));
+  }
+}
+
+function _recalcularCards() {
+  let total = 0, completo = 0, descuento = 0, cero = 0;
+  _evaluaciones.forEach(ev => {
+    const vf = ev.valor_final ?? 0;
+    total += vf;
+    if (vf === 0) cero++;
+    else if (vf < ev.monto_base) descuento++;
+    else completo++;
+  });
+  document.getElementById("cnt-total").textContent    = _evaluaciones.length;
+  document.getElementById("cnt-completo").textContent = completo;
+  document.getElementById("cnt-descuento").textContent= descuento;
+  document.getElementById("cnt-cero").textContent     = cero;
+  document.getElementById("total-pagar").textContent  = _fmtPesos(total);
+}
+
+function _renderDiagnostico(d) {
+  const bar = document.getElementById("diag-bar");
+  if (!d || d.total === undefined) { bar.style.display = "none"; return; }
+
+  const sinCargo      = (d.sin_cargo || 0) + (d.cargo_no_catalogado || 0);
+  const sinPremio     = d.cargo_sin_premio || 0;
+  const sinFecha      = d.sin_fecha_ingreso || 0;
+  const sinAntiguedad = d.sin_antiguedad || 0;
+  const excluidos     = sinCargo + sinPremio + sinFecha + sinAntiguedad;
+
+  const partesExcl = [];
+  if (sinCargo      > 0) partesExcl.push(`<b>${sinCargo}</b> sin cargo asignado`);
+  if (sinPremio     > 0) partesExcl.push(`<b>${sinPremio}</b> cargo sin premio`);
+  if (sinFecha      > 0) partesExcl.push(`<b>${sinFecha}</b> sin fecha de ingreso`);
+  if (sinAntiguedad > 0) partesExcl.push(`<b>${sinAntiguedad}</b> sin antigüedad mínima`);
+
+  bar.innerHTML = `
+    <span style="color:#555">Activos: <b>${d.total}</b></span>
+    <span style="color:#27ae60">✓ Incluidos: <b>${d.incluidos || 0}</b></span>
+    ${excluidos > 0
+      ? `<span style="color:#e67e22">⚠ Excluidos: <b>${excluidos}</b> — ${partesExcl.join(' · ')}</span>`
+      : ''}
+    ${sinCargo > 0
+      ? `<a href="/empleados" style="font-size:.75rem;color:#888;margin-left:auto">→ Completar cargos en Empleados</a>`
+      : ''}
+  `;
+  bar.style.display = "flex";
+}
+
+async function cargarDiagnostico() {
+  const periodo = document.getElementById("periodo-sel").value;
+  if (!periodo) return;
+  const res = await fetch(`/api/premios/${periodo}/diagnostico`);
+  if (res.ok) _renderDiagnostico(await res.json());
+}
+
+async function cargar(spinner = true) {
+  const periodo = document.getElementById("periodo-sel").value;
+  if (!periodo) { toast("Seleccioná un período"); return; }
+  if (spinner) document.getElementById("tbody-premios").innerHTML =
+    `<tr><td colspan="13"><div class="empty-state">Cargando...</div></td></tr>`;
+  const [res] = await Promise.all([
+    fetch(`/api/premios/${periodo}`),
+    cargarDiagnostico(),
+  ]);
+  if (!res.ok) { toast("Error al cargar"); return; }
+  const data = await res.json();
+  _renderTabla(data);
+}
+
+async function generarPeriodo() {
+  const periodo = document.getElementById("periodo-sel").value;
+  if (!periodo) { toast("Seleccioná un período"); return; }
+  toast("Generando...", 10000);
+  const res = await fetch(`/api/premios/${periodo}/generar`, {method:"POST"});
+  if (res.ok) {
+    const d = await res.json();
+    if (d.diagnostico) _renderDiagnostico(d.diagnostico);
+    const excl = d.diagnostico
+      ? (d.diagnostico.sin_cargo||0) + (d.diagnostico.cargo_no_catalogado||0) +
+        (d.diagnostico.cargo_sin_premio||0) + (d.diagnostico.sin_fecha_ingreso||0) +
+        (d.diagnostico.sin_antiguedad||0)
+      : 0;
+    toast(`Generados: ${d.generados}${excl ? ` · ${excl} excluidos` : ''}`);
+    await cargar(false);
+  } else {
+    const e = await res.json().catch(()=>({}));
+    toast("Error: " + (e.detail || "desconocido"));
+  }
+}
+
+// Init
+_loadPerms().then(() => {
+  // Período por defecto: mes anterior (para evaluar el período que se paga)
+  const hoy = new Date();
+  const mesAnterior = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const periodo = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth()+1).padStart(2,'0')}`;
+  document.getElementById("periodo-sel").value = periodo;
+  cargar();
+});
+</script>
+</body>
+</html>

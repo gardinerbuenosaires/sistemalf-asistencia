@@ -19,6 +19,8 @@ from api.turnos import router as turnos_router
 from api.asistencia_mensual import router as asistencia_mensual_router
 from api.feriados import router as feriados_router
 from api.fichajes import router as fichajes_router
+from api.catalogos import router as catalogos_router
+from api.premios import router as premios_router
 from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user
 
 logging.basicConfig(
@@ -57,6 +59,8 @@ app.include_router(turnos_router)
 app.include_router(asistencia_mensual_router)
 app.include_router(feriados_router)
 app.include_router(fichajes_router)
+app.include_router(catalogos_router)
+app.include_router(premios_router)
 
 
 def _auth(request: Request, modulo: str, accion: str = "ver"):
@@ -109,6 +113,10 @@ def page_fichajes(request: Request):
 @app.get("/asistencia-mensual", include_in_schema=False)
 def page_asistencia_mensual(request: Request):
     return FileResponse("web/templates/asistencia_mensual.html") if _auth(request, "asistencia") else RedirectResponse("/login")
+
+@app.get("/premios", include_in_schema=False)
+def page_premios(request: Request):
+    return FileResponse("web/templates/premios.html") if _auth(request, "premios") else RedirectResponse("/login")
 
 
 # --- Rutas de la API (se expanden en etapas siguientes) ---

@@ -24,7 +24,7 @@ TOKEN_TTL  = 8  # horas
 # Módulos y acciones disponibles en el sistema
 MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
-    "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync"
+    "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios"
 ]
 ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir"]
 

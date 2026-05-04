@@ -86,6 +86,8 @@ def init_db():
                 email            TEXT,
                 domicilio        TEXT,
                 activo           INTEGER NOT NULL DEFAULT 1,
+                tipo             TEXT NOT NULL DEFAULT 'normal'
+                                      CHECK(tipo IN ('normal','jerarquico','acceso')),
                 observaciones    TEXT,
                 creado_en        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 modificado_en    TEXT
@@ -152,6 +154,7 @@ def init_db():
                 trabaja_viernes   INTEGER NOT NULL DEFAULT 1,
                 trabaja_sabado    INTEGER NOT NULL DEFAULT 1,
                 trabaja_domingo   INTEGER NOT NULL DEFAULT 1,
+                franco_en_feriado INTEGER NOT NULL DEFAULT 0,
                 activo            INTEGER NOT NULL DEFAULT 1,
                 creado_en         TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             );
@@ -174,12 +177,14 @@ def init_db():
             -- ASIGNACIONES — empleado → calendario base
             -- ================================================================
             CREATE TABLE IF NOT EXISTS asignaciones (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                empleado_id   INTEGER NOT NULL,
-                horario_id    INTEGER,
-                calendario_id INTEGER NOT NULL,
-                fecha_desde   TEXT NOT NULL,
-                fecha_hasta   TEXT,
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id       INTEGER NOT NULL,
+                horario_id        INTEGER,
+                calendario_id     INTEGER NOT NULL,
+                fecha_desde       TEXT NOT NULL,
+                fecha_hasta       TEXT,
+                franco_rotativo   INTEGER NOT NULL DEFAULT 0,
+                franco_dia_semana INTEGER,
                 FOREIGN KEY (empleado_id)   REFERENCES empleados(id),
                 FOREIGN KEY (horario_id)    REFERENCES horarios(id),
                 FOREIGN KEY (calendario_id) REFERENCES calendarios(id)
@@ -392,6 +397,56 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_planilla_orden
                 ON planilla_orden (grupo, posicion);
 
+            -- ================================================================
+            -- CATÁLOGOS — cargos, departamentos y categorías
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS cargos (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre        TEXT NOT NULL UNIQUE,
+                aplica_premio INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS departamentos (
+                id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL UNIQUE
+            );
+
+            CREATE TABLE IF NOT EXISTS categorias (
+                id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL UNIQUE
+            );
+
+            -- ================================================================
+            -- PREMIOS — parámetros y evaluaciones mensuales
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS premios_parametros (
+                clave       TEXT PRIMARY KEY,
+                valor       TEXT NOT NULL,
+                tipo        TEXT NOT NULL DEFAULT 'numero',
+                descripcion TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS premios_evaluacion (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id      INTEGER NOT NULL REFERENCES empleados(id),
+                periodo          TEXT NOT NULL,
+                minutos_retardo  INTEGER NOT NULL DEFAULT 0,
+                no_fichadas      INTEGER NOT NULL DEFAULT 0,
+                dias_vacacion    INTEGER NOT NULL DEFAULT 0,
+                dias_enfermo     INTEGER NOT NULL DEFAULT 0,
+                dias_suspension  INTEGER NOT NULL DEFAULT 0,
+                dias_ausente     INTEGER NOT NULL DEFAULT 0,
+                bpm              TEXT NOT NULL DEFAULT 'OK',
+                desempenio       TEXT,
+                monto_base       INTEGER NOT NULL DEFAULT 0,
+                desglose_json    TEXT,
+                valor_calculado  INTEGER,
+                valor_final      INTEGER,
+                generado_en      TEXT DEFAULT (datetime('now','localtime')),
+                modificado_en    TEXT,
+                UNIQUE(empleado_id, periodo)
+            );
+
         """)
         _migrate(conn)
     logger.info("Base de datos inicializada: %s", DB_PATH)
@@ -595,3 +650,84 @@ def _migrate(conn):
             ALTER TABLE usuarios_new RENAME TO usuarios;
         """)
         logger.info("Migración: columna rol en usuarios convertida a nullable")
+
+    cols_emp = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
+    if "tipo" not in cols_emp:
+        conn.execute("ALTER TABLE empleados ADD COLUMN tipo TEXT NOT NULL DEFAULT 'normal'")
+        logger.info("Migración: columna tipo agregada a empleados")
+
+    cols_cal = {r[1] for r in conn.execute("PRAGMA table_info(calendarios)").fetchall()}
+    if "franco_en_feriado" not in cols_cal:
+        conn.execute("ALTER TABLE calendarios ADD COLUMN franco_en_feriado INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna franco_en_feriado agregada a calendarios")
+
+    # Franco rotativo en asignaciones
+    cols_asig = {r[1] for r in conn.execute("PRAGMA table_info(asignaciones)").fetchall()}
+    if "franco_rotativo" not in cols_asig:
+        conn.execute("ALTER TABLE asignaciones ADD COLUMN franco_rotativo INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna franco_rotativo agregada a asignaciones")
+    if "franco_dia_semana" not in cols_asig:
+        conn.execute("ALTER TABLE asignaciones ADD COLUMN franco_dia_semana INTEGER")
+        logger.info("Migración: columna franco_dia_semana agregada a asignaciones")
+
+    # Catálogos de cargos, departamentos y categorías
+    conn.execute("CREATE TABLE IF NOT EXISTS cargos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE, aplica_premio INTEGER NOT NULL DEFAULT 0)")
+    cols_cargos = {r[1] for r in conn.execute("PRAGMA table_info(cargos)").fetchall()}
+    if "aplica_premio" not in cols_cargos:
+        conn.execute("ALTER TABLE cargos ADD COLUMN aplica_premio INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna aplica_premio agregada a cargos")
+    conn.execute("CREATE TABLE IF NOT EXISTS departamentos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)")
+    conn.execute("CREATE TABLE IF NOT EXISTS categorias (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)")
+    if conn.execute("SELECT COUNT(*) FROM cargos").fetchone()[0] == 0:
+        rows = conn.execute(
+            "SELECT DISTINCT cargo FROM empleados WHERE cargo IS NOT NULL AND cargo != '' ORDER BY cargo"
+        ).fetchall()
+        if rows:
+            conn.executemany("INSERT OR IGNORE INTO cargos (nombre) VALUES (?)", [(r[0],) for r in rows])
+            logger.info("Migración: %d cargos importados desde empleados", len(rows))
+    if conn.execute("SELECT COUNT(*) FROM categorias").fetchone()[0] == 0:
+        rows = conn.execute(
+            "SELECT DISTINCT categoria FROM empleados WHERE categoria IS NOT NULL AND categoria != '' ORDER BY categoria"
+        ).fetchall()
+        if rows:
+            conn.executemany("INSERT OR IGNORE INTO categorias (nombre) VALUES (?)", [(r[0],) for r in rows])
+            logger.info("Migración: %d categorías importadas desde empleados", len(rows))
+
+    # Premios
+    conn.execute("""CREATE TABLE IF NOT EXISTS premios_parametros (
+        clave TEXT PRIMARY KEY, valor TEXT NOT NULL,
+        tipo TEXT NOT NULL DEFAULT 'numero', descripcion TEXT NOT NULL)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS premios_evaluacion (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, empleado_id INTEGER NOT NULL,
+        periodo TEXT NOT NULL, minutos_retardo INTEGER NOT NULL DEFAULT 0,
+        no_fichadas INTEGER NOT NULL DEFAULT 0, dias_vacacion INTEGER NOT NULL DEFAULT 0,
+        dias_enfermo INTEGER NOT NULL DEFAULT 0, dias_suspension INTEGER NOT NULL DEFAULT 0,
+        dias_ausente INTEGER NOT NULL DEFAULT 0, bpm TEXT NOT NULL DEFAULT 'OK',
+        desempenio TEXT, monto_base INTEGER NOT NULL DEFAULT 0,
+        desglose_json TEXT, valor_calculado INTEGER, valor_final INTEGER,
+        generado_en TEXT DEFAULT (datetime('now','localtime')), modificado_en TEXT,
+        UNIQUE(empleado_id, periodo))""")
+    if conn.execute("SELECT COUNT(*) FROM premios_parametros").fetchone()[0] == 0:
+        defaults = [
+            ("monto_base",                   "88000", "entero",     "Monto base del premio ($)"),
+            ("umbral_puntualidad_ok_min",     "60",    "entero",     "Retardo máximo considerado OK (minutos)"),
+            ("umbral_puntualidad_total_min",  "120",   "entero",     "Retardo a partir del cual pierde la totalidad (minutos)"),
+            ("pct_descuento_puntualidad",     "33.33", "porcentaje", "% del monto base a descontar por puntualidad parcial"),
+            ("min_por_no_fichada",            "15",    "entero",     "Minutos a sumar al retardo por cada no fichada"),
+            ("limite_no_fichadas",            "3",     "entero",     "No fichadas a partir de las cuales pierde la totalidad"),
+            ("limite_enfermedad_dias",        "5",     "entero",     "Días de enfermedad a partir de los cuales pierde la totalidad"),
+            ("pct_descuento_bpm",             "33.33", "porcentaje", "% del monto base a descontar por BPM no conforme"),
+            ("dias_base_vacaciones",          "30",    "entero",     "Base de días para prorrateo de vacaciones"),
+            ("redondeo",                      "1000",  "entero",     "Redondear el resultado final al múltiplo de este valor (0 = sin redondeo)"),
+            ("dias_minimos_antiguedad",        "90",    "entero",     "Días de antigüedad mínima al 1° del mes para aplicar al premio"),
+        ]
+        conn.executemany(
+            "INSERT OR IGNORE INTO premios_parametros (clave, valor, tipo, descripcion) VALUES (?,?,?,?)",
+            defaults
+        )
+        logger.info("Migración: parámetros de premios inicializados con valores por defecto")
+    conn.execute(
+        "INSERT OR IGNORE INTO premios_parametros (clave, valor, tipo, descripcion) VALUES (?,?,?,?)",
+        ("dias_minimos_antiguedad", "90", "entero",
+         "Días de antigüedad mínima al 1° del mes para aplicar al premio")
+    )

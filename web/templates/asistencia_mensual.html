@@ -250,6 +250,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
       </div>
     </div>
     <a href="/empleados">Personal</a>
+    <a href="/premios" data-perm="premios:ver">Premios</a>
     <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
     <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
     <a href="#" onclick="logout()">Salir</a>
@@ -299,7 +300,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <div class="modal-tab-bar" id="modal-tab-bar">
     <button class="modal-tab-btn activo" id="mtab-nov" onclick="modalTabPlani('nov')">Novedad</button>
     <button class="modal-tab-btn"        id="mtab-fm"  onclick="modalTabPlani('fm')">Fichaje manual</button>
-    <button class="modal-tab-btn"        id="mtab-ft"  onclick="modalTabPlani('ft')" style="display:none">Asignar horario</button>
+    <button class="modal-tab-btn"        id="mtab-ft"  onclick="_poblarHorariosFT();modalTabPlani('ft')" style="display:none">Asignar horario</button>
   </div>
 
   <!-- Panel novedad -->
@@ -842,12 +843,18 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   const bloqueado = _esBloqueado(celda, esCortado, bloqueInicial);
   tabBar.style.display = (!bloqueado && canDo('asistencia','editar')) ? 'flex' : 'none';
 
-  const esFtPendiente = !bloqueado && !esCortado && celda && celda.ft_pendiente && canDo('planificacion','editar');
-  document.getElementById('mtab-ft').style.display = esFtPendiente ? 'inline-block' : 'none';
+  const letraActual = esCortado
+    ? (bloqueInicial === 2 ? celda?.b2?.letra : celda?.b1?.letra)
+    : celda?.letra;
+  const ftPendienteActual = esCortado
+    ? (bloqueInicial === 2 ? celda?.b2?.ft_pendiente : celda?.b1?.ft_pendiente)
+    : celda?.ft_pendiente;
+  const esFT = !bloqueado && letraActual === 'FT' && canDo('planificacion','editar');
+  document.getElementById('mtab-ft').style.display = esFT ? 'inline-block' : 'none';
 
   if (bloqueado) {
     modalTabPlani('bloqueado');
-  } else if (esFtPendiente) {
+  } else if (esFT && ftPendienteActual) {
     _poblarHorariosFT();
     modalTabPlani('ft');
   } else {
@@ -991,6 +998,7 @@ async function guardarFichajeManual() {
     });
     if (!res.ok) { const e = await res.json(); toast('Error: '+(e.detail||res.status)); return; }
   }
+  await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, { method: 'POST' }).catch(() => {});
   toast('Fichaje manual registrado');
   cerrarModal();
   cargar();

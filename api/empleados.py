@@ -24,12 +24,34 @@ class EmpleadoIn(BaseModel):
     observaciones: Optional[str] = None
     activo: int = 1
     tipo: str = "normal"
+    nacionalidad: Optional[str] = None
+    estado_civil: Optional[str] = None
+    turno: Optional[str] = None
+    sector: Optional[str] = None
+    contacto_emergencia_nombre: Optional[str] = None
+    contacto_emergencia_telefono: Optional[str] = None
+    contacto_emergencia_parentesco: Optional[str] = None
+    nivel_estudio: Optional[str] = None
+    dom_calle: Optional[str] = None
+    dom_numero: Optional[str] = None
+    dom_piso: Optional[str] = None
+    dom_entre_calles: Optional[str] = None
+    dom_barrio: Optional[str] = None
+    dom_localidad: Optional[str] = None
+    dom_provincia: Optional[str] = None
+    dom_cp: Optional[str] = None
 
 
 @router.get("")
-def list_empleados(todos: bool = False, _user=Depends(require_permiso("empleados", "ver"))):
+def list_empleados(todos: bool = False, sin_acceso: bool = False,
+                   _user=Depends(require_permiso("empleados", "ver"))):
     with db_session() as conn:
-        where = "" if todos else "WHERE activo = 1"
+        conds = []
+        if not todos:
+            conds.append("activo = 1")
+        if sin_acceso:
+            conds.append("tipo != 'acceso'")
+        where = ("WHERE " + " AND ".join(conds)) if conds else ""
         rows = conn.execute(
             f"SELECT * FROM empleados {where} ORDER BY apellido, nombre"
         ).fetchall()
@@ -75,12 +97,23 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
                nombre=?, apellido=?, dni=?, cuil=?, fecha_nacimiento=?, fecha_ingreso=?,
                fecha_egreso=?, cargo=?, departamento=?, categoria=?, telefono=?, email=?,
                domicilio=?, observaciones=?, activo=?, tipo=?,
+               nacionalidad=?, estado_civil=?, turno=?, sector=?,
+               contacto_emergencia_nombre=?, contacto_emergencia_telefono=?,
+               contacto_emergencia_parentesco=?, nivel_estudio=?,
+               dom_calle=?, dom_numero=?, dom_piso=?, dom_entre_calles=?,
+               dom_barrio=?, dom_localidad=?, dom_provincia=?, dom_cp=?,
                modificado_en=datetime('now','localtime')
                WHERE id=?""",
             (data.nombre.strip(), data.apellido.strip(), data.dni, data.cuil,
              data.fecha_nacimiento, data.fecha_ingreso, data.fecha_egreso,
              data.cargo, data.departamento, data.categoria,
-             data.telefono, data.email, data.domicilio, data.observaciones, data.activo, data.tipo, eid)
+             data.telefono, data.email, data.domicilio, data.observaciones, data.activo, data.tipo,
+             data.nacionalidad, data.estado_civil, data.turno, data.sector,
+             data.contacto_emergencia_nombre, data.contacto_emergencia_telefono,
+             data.contacto_emergencia_parentesco, data.nivel_estudio,
+             data.dom_calle, data.dom_numero, data.dom_piso, data.dom_entre_calles,
+             data.dom_barrio, data.dom_localidad, data.dom_provincia, data.dom_cp,
+             eid)
         )
         if anterior["activo"] == 1 and data.activo == 0:
             # Usar fecha_egreso como corte; si no viene, tomar hoy

@@ -225,40 +225,45 @@ def _diagnostico(conn, fecha_desde: str, dias_min: int) -> dict:
 @router.get("/{periodo}")
 def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver"))):
     with db_session() as conn:
+        import calendar as _cal
+        anio, mes = periodo.split("-")
+        anio_i, mes_i = int(anio), int(mes)
+        f0 = f"{anio_i:04d}-{mes_i:02d}-01"
+        f1 = f"{anio_i:04d}-{mes_i:02d}-{_cal.monthrange(anio_i, mes_i)[1]:02d}"
+
         rows = conn.execute("""
+            WITH ult AS (
+                SELECT p.empleado_id, h.tipo, t.nombre AS turno_nombre,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY p.empleado_id ORDER BY p.fecha DESC
+                       ) AS rn
+                FROM planificacion p
+                JOIN horarios h ON h.id = p.horario_id
+                LEFT JOIN turnos t ON t.id = h.turno_id
+                WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
+            )
             SELECT pe.*, e.apellido, e.nombre, e.cargo, e.departamento, e.categoria,
                    CASE
-                       WHEN h.tipo IS NULL THEN NULL
-                       WHEN h.tipo = 'cortado' THEN 'CO'
-                       WHEN lower(t.nombre) LIKE '%noche%'
-                         OR lower(t.nombre) LIKE '%madrugada%' THEN 'TN'
-                       ELSE 'TM'
+                       WHEN u.tipo = 'cortado' THEN 'CO'
+                       WHEN lower(u.turno_nombre) LIKE '%noche%'
+                         OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 'TN'
+                       WHEN u.tipo IS NOT NULL THEN 'TM'
+                       ELSE NULL
                    END AS grupo
             FROM premios_evaluacion pe
             JOIN empleados e ON e.id = pe.empleado_id
-            LEFT JOIN (
-                SELECT a.empleado_id, a.horario_id
-                FROM asignaciones a
-                WHERE a.horario_id IS NOT NULL
-                  AND a.fecha_desde = (
-                      SELECT MAX(a2.fecha_desde) FROM asignaciones a2
-                      WHERE a2.empleado_id = a.empleado_id
-                        AND a2.horario_id IS NOT NULL
-                  )
-            ) ca ON ca.empleado_id = e.id
-            LEFT JOIN horarios h ON h.id = ca.horario_id
-            LEFT JOIN turnos t ON t.id = h.turno_id
+            LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
             WHERE pe.periodo=?
             ORDER BY
                 CASE
-                    WHEN h.tipo = 'cortado' THEN 3
-                    WHEN lower(t.nombre) LIKE '%noche%'
-                      OR lower(t.nombre) LIKE '%madrugada%' THEN 2
-                    WHEN h.tipo IS NOT NULL THEN 1
+                    WHEN u.tipo = 'cortado' THEN 3
+                    WHEN lower(u.turno_nombre) LIKE '%noche%'
+                      OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 2
+                    WHEN u.tipo IS NOT NULL THEN 1
                     ELSE 4
                 END,
                 e.apellido, e.nombre
-        """, (periodo,)).fetchall()
+        """, (f0, f1, periodo)).fetchall()
     result = []
     for r in rows:
         d = dict(r)

@@ -128,7 +128,14 @@
         <a href="/asistencia-mensual">Planilla</a>
       </div>
     </div>
-    <a href="/empleados" class="activo">Personal</a>
+    <div class="nav-group activo">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados" class="activo">Listado</a>
+        <a href="/premios" data-perm="premios:ver">Premios</a>
+        <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
+      </div>
+    </div>
     <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
     <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
     <a href="#" onclick="logout()">Salir</a>
@@ -141,6 +148,7 @@
     <div class="panel-header">
       <h2 id="panel-titulo">Personal (<span id="cnt">0</span>)</h2>
       <button class="btn btn-secondary btn-sm" data-perm="sync:procesar" onclick="importarDesdeDispositivo()" id="btn-importar">Importar desde dispositivo</button>
+      <a href="/empleados/listado" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">Listado imprimible</a>
     </div>
     <div class="tabs">
       <button class="tab-btn activo" id="tab-personal" onclick="cambiarTab('personal')">Personal</button>
@@ -234,10 +242,14 @@ let horarios = [];
 let cargosOpts = [];
 let deptosOpts = [];
 let categoriasOpts = [];
+let turnosLegajoOpts = [];
+let sectoresLegajoOpts = [];
+let nivelesEstudioOpts = [];
 let editandoId = null;
 let editandoActivo = 1;
 let filtroImportadosIds = null;
 let tabActiva = "personal";
+let _diasMinAntiguedad = 90;
 
 async function logout() {
   await fetch('/api/auth/logout', {method:'POST'});
@@ -519,23 +531,49 @@ function buildCalendarioSection(asignaciones = []) {
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
       <label style="font-size:.78rem;color:#666;display:flex;align-items:center;gap:4px;cursor:pointer">
-        <input type="checkbox" id="asig-franco-rotativo" onchange="toggleFrancoRotativo()">
+        <input type="checkbox" id="asig-franco-rotativo" ${vigente && vigente.franco_rotativo ? "checked" : ""} onchange="toggleFrancoRotativo()">
         Franco rotativo
       </label>
-      <select id="asig-franco-dia" style="display:none;font-size:.82rem;padding:4px 8px;border:1px solid #ced4da;border-radius:4px">
-        <option value="0">Lunes</option>
-        <option value="1">Martes</option>
-        <option value="2">Miércoles</option>
-        <option value="3">Jueves</option>
-        <option value="4">Viernes</option>
-        <option value="5">Sábado</option>
-        <option value="6">Domingo</option>
+      <select id="asig-franco-dia" style="display:${vigente && vigente.franco_rotativo ? 'inline-block' : 'none'};font-size:.82rem;padding:4px 8px;border:1px solid #ced4da;border-radius:4px">
+        ${DIAS_NOMBRES.map((d, i) => `<option value="${i}"${vigente && vigente.franco_dia_semana === i ? " selected" : ""}>${d}</option>`).join("")}
       </select>
     </div>`;
   }
 
   html += `</div>`;
   return html;
+}
+
+function _buildPremioAviso(e) {
+  const cargo = cargosOpts.find(c => c.nombre === e.cargo);
+  if (!cargo || !cargo.aplica_premio) return "";
+
+  if (!e.fecha_ingreso) {
+    return `<div class="form-group span-2">
+      <div style="padding:8px 12px;border-radius:6px;font-size:.82rem;background:#fff3cd;color:#856404;border:1px solid #ffeaa7">
+        ⚠ Este cargo aplica al premio, pero no hay fecha de ingreso registrada.
+      </div>
+    </div>`;
+  }
+
+  const primerDiaMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const ingreso = new Date(e.fecha_ingreso + "T00:00:00");
+  const diasDesdeIngreso = Math.floor((primerDiaMes - ingreso) / 86400000);
+
+  if (diasDesdeIngreso >= _diasMinAntiguedad) {
+    return `<div class="form-group span-2">
+      <div style="padding:8px 12px;border-radius:6px;font-size:.82rem;background:#d4edda;color:#155724;border:1px solid #c3e6cb">
+        ✓ Apto para el premio — antigüedad: ${diasDesdeIngreso} días (mínimo ${_diasMinAntiguedad})
+      </div>
+    </div>`;
+  } else {
+    const faltan = _diasMinAntiguedad - diasDesdeIngreso;
+    return `<div class="form-group span-2">
+      <div style="padding:8px 12px;border-radius:6px;font-size:.82rem;background:#fff3cd;color:#856404;border:1px solid #ffeaa7">
+        ⏳ Faltan ${faltan} día${faltan !== 1 ? "s" : ""} para cumplir la antigüedad mínima del premio (requiere ${_diasMinAntiguedad} días desde el 1° del mes)
+      </div>
+    </div>`;
+  }
 }
 
 function buildForm(e = {}, asignaciones = []) {
@@ -565,8 +603,28 @@ function buildForm(e = {}, asignaciones = []) {
             <input type="date" id="f-nacimiento" value="${e.fecha_nacimiento||""}">
           </div>
           <div class="form-group">
-            <label>Teléfono</label>
+            <label>Teléfono / Celular</label>
             <input type="tel" id="f-telefono" value="${e.telefono||""}">
+          </div>
+          <div class="form-group">
+            <label>Nacionalidad</label>
+            <input type="text" id="f-nacionalidad" value="${e.nacionalidad||""}">
+          </div>
+          <div class="form-group">
+            <label>Estado civil</label>
+            <select id="f-estado-civil">
+              <option value="">—</option>
+              ${["Soltero/a","Casado/a","Divorciado/a","Viudo/a","Unión convivencial"].map(o =>
+                `<option${e.estado_civil===o?" selected":""}>${o}</option>`).join("")}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Nivel de estudio</label>
+            <select id="f-nivel-estudio">
+              <option value="">—</option>
+              ${nivelesEstudioOpts.map(o =>
+                `<option${e.nivel_estudio===o.nombre?" selected":""}>${o.nombre}</option>`).join("")}
+            </select>
           </div>
           <div class="form-group span-2">
             <label>Email</label>
@@ -606,6 +664,7 @@ function buildForm(e = {}, asignaciones = []) {
             <label>Fecha de egreso</label>
             <input type="date" id="f-egreso" value="${e.fecha_egreso||""}">
           </div>
+          ${editandoId ? _buildPremioAviso(e) : ""}
           <div class="form-group">
             <label>Tipo de empleado</label>
             <select id="f-tipo">
@@ -613,6 +672,76 @@ function buildForm(e = {}, asignaciones = []) {
               <option value="jerarquico" ${(e.tipo||"normal")==="jerarquico" ? "selected" : ""}>Jerárquico (sin fichaje)</option>
               <option value="acceso"     ${(e.tipo||"normal")==="acceso"     ? "selected" : ""}>Solo acceso (excluir de planillas)</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label>Turno</label>
+            <select id="f-turno">
+              <option value="">—</option>
+              ${turnosLegajoOpts.map(t => `<option${e.turno===t.nombre?" selected":""}>${t.nombre}</option>`).join("")}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Sector</label>
+            <select id="f-sector">
+              <option value="">—</option>
+              ${sectoresLegajoOpts.map(s => `<option${e.sector===s.nombre?" selected":""}>${s.nombre}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Domicilio</div>
+        <div class="form-grid">
+          <div class="form-group span-2">
+            <label>Calle</label>
+            <input type="text" id="f-dom-calle" value="${e.dom_calle||""}">
+          </div>
+          <div class="form-group">
+            <label>Número</label>
+            <input type="text" id="f-dom-numero" value="${e.dom_numero||""}">
+          </div>
+          <div class="form-group">
+            <label>Piso / Depto.</label>
+            <input type="text" id="f-dom-piso" value="${e.dom_piso||""}">
+          </div>
+          <div class="form-group span-2">
+            <label>Entre calles</label>
+            <input type="text" id="f-dom-entre-calles" value="${e.dom_entre_calles||""}">
+          </div>
+          <div class="form-group">
+            <label>Barrio</label>
+            <input type="text" id="f-dom-barrio" value="${e.dom_barrio||""}">
+          </div>
+          <div class="form-group">
+            <label>Localidad</label>
+            <input type="text" id="f-dom-localidad" value="${e.dom_localidad||""}">
+          </div>
+          <div class="form-group">
+            <label>Provincia</label>
+            <input type="text" id="f-dom-provincia" value="${e.dom_provincia||""}">
+          </div>
+          <div class="form-group">
+            <label>Código postal</label>
+            <input type="text" id="f-dom-cp" value="${e.dom_cp||""}">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Contacto de emergencia</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Nombre</label>
+            <input type="text" id="f-emerg-nombre" value="${e.contacto_emergencia_nombre||""}">
+          </div>
+          <div class="form-group">
+            <label>Teléfono</label>
+            <input type="tel" id="f-emerg-tel" value="${e.contacto_emergencia_telefono||""}">
+          </div>
+          <div class="form-group span-2">
+            <label>Parentesco</label>
+            <input type="text" id="f-emerg-parentesco" value="${e.contacto_emergencia_parentesco||""}">
           </div>
         </div>
       </div>
@@ -663,24 +792,42 @@ function cancelar() {
   document.querySelectorAll(".emp-item").forEach(el => el.classList.remove("activo"));
 }
 
+function _val(id) { const el = document.getElementById(id); return el ? el.value.trim() || null : null; }
+
 function getFormData() {
   return {
-    apellido: document.getElementById("f-apellido").value.trim(),
-    nombre: document.getElementById("f-nombre").value.trim(),
-    dni: document.getElementById("f-dni").value.trim() || null,
-    cuil: document.getElementById("f-cuil").value.trim() || null,
-    fecha_nacimiento: document.getElementById("f-nacimiento").value || null,
-    fecha_ingreso: document.getElementById("f-ingreso").value || null,
-    fecha_egreso: document.getElementById("f-egreso").value || null,
-    cargo: document.getElementById("f-cargo").value.trim() || null,
-    departamento: document.getElementById("f-departamento").value.trim() || null,
-    categoria: document.getElementById("f-categoria").value.trim() || null,
-    telefono: document.getElementById("f-telefono").value.trim() || null,
-    email: document.getElementById("f-email").value.trim() || null,
-    domicilio: document.getElementById("f-domicilio").value.trim() || null,
-    observaciones: document.getElementById("f-obs").value.trim() || null,
-    tipo: document.getElementById("f-tipo").value,
-    activo: editandoActivo,
+    apellido:    _val("f-apellido"),
+    nombre:      _val("f-nombre"),
+    dni:         _val("f-dni"),
+    cuil:        _val("f-cuil"),
+    fecha_nacimiento: _val("f-nacimiento"),
+    fecha_ingreso:    _val("f-ingreso"),
+    fecha_egreso:     _val("f-egreso"),
+    cargo:        _val("f-cargo"),
+    departamento: _val("f-departamento"),
+    categoria:    _val("f-categoria"),
+    telefono:     _val("f-telefono"),
+    email:        _val("f-email"),
+    domicilio:    _val("f-domicilio"),
+    observaciones: _val("f-obs"),
+    tipo:    document.getElementById("f-tipo").value,
+    activo:  editandoActivo,
+    nacionalidad:  _val("f-nacionalidad"),
+    estado_civil:  _val("f-estado-civil"),
+    nivel_estudio: _val("f-nivel-estudio"),
+    turno:  _val("f-turno"),
+    sector: _val("f-sector"),
+    contacto_emergencia_nombre:      _val("f-emerg-nombre"),
+    contacto_emergencia_telefono:    _val("f-emerg-tel"),
+    contacto_emergencia_parentesco:  _val("f-emerg-parentesco"),
+    dom_calle:        _val("f-dom-calle"),
+    dom_numero:       _val("f-dom-numero"),
+    dom_piso:         _val("f-dom-piso"),
+    dom_entre_calles: _val("f-dom-entre-calles"),
+    dom_barrio:       _val("f-dom-barrio"),
+    dom_localidad:    _val("f-dom-localidad"),
+    dom_provincia:    _val("f-dom-provincia"),
+    dom_cp:           _val("f-dom-cp"),
   };
 }
 
@@ -815,15 +962,25 @@ async function crearYAsignarCalendario() {
 
 async function init() {
   await _loadPerms();
-  const [_, cRes, hRes, cgRes, dRes, catRes] = await Promise.all([
+  const [_, cRes, hRes, cgRes, dRes, catRes, pRes, tlRes, slRes, nlRes] = await Promise.all([
     cargar(), fetch("/api/calendarios"), fetch("/api/horarios"),
-    fetch("/api/cargos"), fetch("/api/departamentos"), fetch("/api/categorias")
+    fetch("/api/cargos"), fetch("/api/departamentos"), fetch("/api/categorias"),
+    fetch("/api/premios/parametros"),
+    fetch("/api/turnos-legajo"), fetch("/api/sectores-legajo"), fetch("/api/niveles-estudio")
   ]);
   calendarios = await cRes.json();
   horarios = await hRes.json();
   cargosOpts = await cgRes.json();
   deptosOpts = await dRes.json();
   categoriasOpts = await catRes.json();
+  turnosLegajoOpts = await tlRes.json();
+  sectoresLegajoOpts = await slRes.json();
+  nivelesEstudioOpts = await nlRes.json();
+  if (pRes.ok) {
+    const params = await pRes.json();
+    const p = params.find(x => x.clave === "dias_minimos_antiguedad");
+    if (p) _diasMinAntiguedad = parseInt(p.valor) || 90;
+  }
   document.getElementById("dl-cargos").innerHTML = cargosOpts.map(c => `<option value="${c.nombre}">`).join("");
   document.getElementById("dl-deptos").innerHTML = deptosOpts.map(d => `<option value="${d.nombre}">`).join("");
   document.getElementById("dl-categorias").innerHTML = categoriasOpts.map(c => `<option value="${c.nombre}">`).join("");

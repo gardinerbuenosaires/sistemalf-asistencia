@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<title>Vacaciones — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger { opacity: 1; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0; background: white; border: 1px solid #D3D1C7; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none; }
+
+  main { padding: 20px; max-width: 100%; margin: 0 auto; }
+
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar h1 { font-size: 1.1rem; flex: 1; min-width: 120px; }
+  .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: .88rem; font-weight: bold; }
+  .btn-secondary { background: #eee; color: #555; }
+  .btn-secondary:hover { background: #ddd; }
+  .btn-sm { padding: 5px 12px; font-size: .8rem; font-weight: normal; }
+
+  /* Tabla principal */
+  .table-wrap { overflow-x: auto; background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th { background: #f8f9fa; border-bottom: 2px solid #dee2e6; padding: 8px 10px; white-space: nowrap; font-size: .76rem; text-align: center; }
+  th.col-emp { text-align: left; position: sticky; left: 0; z-index: 2; background: #f8f9fa; }
+  td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; text-align: center; white-space: nowrap; }
+  td.col-emp { text-align: left; position: sticky; left: 0; background: white; z-index: 1; min-width: 180px; }
+  tr:hover td { background: #fafafa; }
+  tr:hover td.col-emp { background: #fafafa; }
+  .col-num { font-variant-numeric: tabular-nums; }
+  .restan-ok  { background: #d4edda !important; color: #155724; font-weight: bold; }
+  .restan-neg { background: #f8d7da !important; color: #721c24; font-weight: bold; }
+  .restan-cero { background: #fff3cd !important; color: #856404; font-weight: bold; }
+
+  /* Carga inicial (modal) */
+  #modal-ci input[type=number] { width: 72px; padding: 3px 6px; border: 1px solid #ced4da; border-radius: 4px; text-align: center; font-size: .82rem; }
+  #modal-ci input[type=number]:focus { outline: 2px solid #2c3e50; border-color: transparent; }
+  #modal-ci td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; }
+  #modal-ci tr.row-ok td { background: #f0fff4; }
+
+  /* Modal info */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal-box { background: white; border-radius: 10px; padding: 24px; max-width: 600px; width: 95%; box-shadow: 0 8px 32px rgba(0,0,0,.2); max-height: 90vh; overflow-y: auto; }
+  .modal-box h3 { margin-bottom: 14px; font-size: 1.05rem; }
+  .modal-box table th { font-size: .8rem; }
+  .modal-box table td { font-size: .84rem; border-bottom: 1px solid #f0f0f0; }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 6px; font-size: .85rem; display: none; z-index: 9999; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios">Horarios</a>
+        <a href="/planificacion">Planificación</a>
+        <a href="/calendarios">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia">Asistencia</a>
+        <a href="/fichajes">Fichajes</a>
+        <a href="/asistencia-mensual">Planilla</a>
+      </div>
+    </div>
+    <div class="nav-group activo">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados">Listado</a>
+        <a href="/premios" data-perm="premios:ver">Premios</a>
+        <a href="/vacaciones" class="activo">Vacaciones</a>
+      </div>
+    </div>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
+</header>
+
+<main>
+  <div class="toolbar">
+    <h1>Vacaciones</h1>
+    <label style="font-size:.85rem;color:#555">Año
+      <input type="number" id="sel-anio" value="" min="2020" max="2035"
+             style="width:80px;margin-left:6px;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.88rem">
+    </label>
+    <button class="btn btn-secondary" onclick="cargar()">Ver</button>
+    <input type="text" id="buscar" placeholder="Buscar por nombre o cargo…" oninput="filtrar()"
+           style="padding:7px 10px;border:1px solid #ced4da;border-radius:4px;font-size:.88rem;width:220px">
+    <button class="btn btn-secondary btn-sm" onclick="abrirInfo()" title="Explicación del cálculo">ⓘ Cálculo</button>
+    <button class="btn btn-sm" data-perm="vacaciones:editar"
+            style="background:#856404;color:white" onclick="toggleCarga()">Carga inicial</button>
+  </div>
+
+  <div id="cards-arrastre" style="display:none;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-emp">Apellido y Nombre</th>
+          <th>Cargo</th>
+          <th>Ingreso</th>
+          <th>Antigüedad</th>
+          <th title="Días del año según antigüedad (fórmula)">Fórmula</th>
+          <th title="Sobrante arrastrado del año anterior">Arrastre</th>
+          <th style="background:#dbeafe" title="Fórmula + Arrastre">Disponible</th>
+          <th style="background:#dbeafe">Tomadas</th>
+          <th style="background:#dbeafe">Restan</th>
+          <th>ENE</th><th>FEB</th><th>MAR</th><th>ABR</th>
+          <th>MAY</th><th>JUN</th><th>JUL</th><th>AGO</th>
+          <th>SEP</th><th>OCT</th><th>NOV</th><th>DIC</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-vac"></tbody>
+    </table>
+  </div>
+
+</main>
+
+<!-- Modal: carga inicial -->
+<div class="modal-bg" id="modal-ci" onclick="if(event.target===this)cerrarCI()">
+  <div class="modal-box" style="max-width:860px;width:97%;max-height:88vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-shrink:0">
+      <h3 style="margin:0">Carga inicial — <span id="ci-anio-lbl"></span></h3>
+      <span style="font-size:.8rem;color:#666;flex:1">
+        Ingresá los días que le correspondían y los tomados antes de usar el sistema.
+        Filas en verde ya tienen datos guardados.
+      </span>
+      <button class="btn btn-secondary btn-sm" onclick="cargarCI()">↻</button>
+      <button class="btn btn-secondary btn-sm" onclick="cerrarCI()">✕</button>
+    </div>
+    <div style="overflow:auto;flex:1">
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;white-space:nowrap;position:sticky;top:0;z-index:1">Empleado</th>
+            <th style="padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;white-space:nowrap;position:sticky;top:0;z-index:1">Cargo</th>
+            <th style="padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;white-space:nowrap;position:sticky;top:0;z-index:1">Ingreso</th>
+            <th style="padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;white-space:nowrap;position:sticky;top:0;z-index:1" title="Calculado por la fórmula">Fórmula</th>
+            <th style="padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;white-space:nowrap;position:sticky;top:0;z-index:1">Correspondían</th>
+            <th style="padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;white-space:nowrap;position:sticky;top:0;z-index:1">Tomados</th>
+            <th style="padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;position:sticky;top:0;z-index:1"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody-ci"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: explicación del cálculo -->
+<div class="modal-bg" id="modal-info" onclick="if(event.target===this)cerrarInfo()">
+  <div class="modal-box">
+    <h3>Cálculo de vacaciones</h3>
+    <p style="font-size:.85rem;color:#666;margin-bottom:14px">
+      Fecha de referencia: <strong>31 de diciembre del año anterior</strong> al período vacacional.
+    </p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:8px 10px;border-bottom:2px solid #dee2e6">Antigüedad al 31/12</th>
+          <th style="text-align:center;padding:8px 10px;border-bottom:2px solid #dee2e6">Días</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding:7px 10px">Menos de 1 año con ≥ 180 días empleado</td><td style="text-align:center;padding:7px 10px">14</td></tr>
+        <tr><td style="padding:7px 10px">Menos de 1 año con &lt; 180 días empleado</td><td style="text-align:center;padding:7px 10px">1 día por cada 20 días *</td></tr>
+        <tr><td style="padding:7px 10px">1 a 4 años</td><td style="text-align:center;padding:7px 10px">14</td></tr>
+        <tr><td style="padding:7px 10px">5 a 9 años</td><td style="text-align:center;padding:7px 10px">21</td></tr>
+        <tr><td style="padding:7px 10px">10 a 19 años</td><td style="text-align:center;padding:7px 10px">28</td></tr>
+        <tr><td style="padding:7px 10px">20 años o más</td><td style="text-align:center;padding:7px 10px">35</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:.78rem;color:#888;margin-bottom:18px">
+      * Redondeado al entero más cercano.<br>
+      Los <strong>días tomados</strong> son la suma de novedades "V" registradas en la planilla durante el año
+      (0,5 día por bloque en empleados cortados) más el saldo inicial cargado manualmente.
+    </p>
+    <button class="btn btn-secondary btn-sm" onclick="cerrarInfo()">Cerrar</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let _data = [];
+let _ciData = [];
+let _perms = new Set();
+
+const MESES = ['01','02','03','04','05','06','07','08','09','10','11','12'];
+
+// ── Permisos ──────────────────────────────────────────────────────────────────
+async function _loadPerms() {
+  try {
+    const me = await fetch('/api/auth/me').then(r => r.json());
+    _perms = new Set((me.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    if (me.nombre) document.getElementById('user-info').textContent = me.nombre;
+  } catch(e) {}
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+  });
+}
+function logout() { document.cookie = 'session=;Max-Age=0;path=/'; location.href = '/login'; }
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg, ms = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', ms);
+}
+
+// ── Tabla principal ───────────────────────────────────────────────────────────
+function fmt(n) {
+  if (n === null || n === undefined || n === '') return '';
+  return Number.isInteger(n) ? String(n) : parseFloat(n.toFixed(1)).toString();
+}
+
+async function cargar() {
+  const anio = document.getElementById('sel-anio').value;
+  const r = await fetch(`/api/vacaciones?anio=${anio}`);
+  if (!r.ok) { toast('Error al cargar datos'); return; }
+  _data = await r.json();
+  filtrar();
+}
+
+function renderCards(rows) {
+  const conArrastre  = rows.filter(e => e.arrastre > 0);
+  const conDeuda     = rows.filter(e => e.arrastre < 0);
+  const totalDias    = conArrastre.reduce((s, e) => s + e.arrastre, 0);
+  const div = document.getElementById('cards-arrastre');
+  if (!conArrastre.length && !conDeuda.length) { div.style.display = 'none'; return; }
+  div.style.display = 'flex';
+  div.innerHTML = `
+    ${conArrastre.length ? `
+    <div style="background:white;border-radius:8px;padding:14px 18px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #27ae60;min-width:200px">
+      <div style="font-size:.72rem;color:#999;text-transform:uppercase;letter-spacing:.04em">Arrastre del año anterior</div>
+      <div style="font-size:1.15rem;font-weight:bold;color:#155724;margin-top:4px">↩ ${totalDias % 1 === 0 ? totalDias : totalDias.toFixed(1)} días</div>
+      <div style="font-size:.78rem;color:#666;margin-top:2px">${conArrastre.length} empleado${conArrastre.length !== 1 ? 's' : ''} con días pendientes</div>
+    </div>` : ''}
+    ${conDeuda.length ? `
+    <div style="background:white;border-radius:8px;padding:14px 18px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #e74c3c;min-width:200px">
+      <div style="font-size:.72rem;color:#999;text-transform:uppercase;letter-spacing:.04em">Con días en deuda</div>
+      <div style="font-size:1.15rem;font-weight:bold;color:#721c24;margin-top:4px">${conDeuda.length} empleado${conDeuda.length !== 1 ? 's' : ''}</div>
+      <div style="font-size:.78rem;color:#666;margin-top:2px">Tomaron más días de los correspondientes</div>
+    </div>` : ''}
+  `;
+}
+
+function filtrar() {
+  const q = document.getElementById('buscar').value.toLowerCase().trim();
+  const rows = q
+    ? _data.filter(e => `${e.apellido} ${e.nombre}`.toLowerCase().includes(q)
+                     || (e.cargo || '').toLowerCase().includes(q))
+    : _data;
+  renderTabla(rows);
+}
+
+function renderTabla(rows) {
+  renderCards(_data);  // siempre sobre el dataset completo, no el filtrado
+  const tb = document.getElementById('tbody-vac');
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="21" style="text-align:center;padding:20px;color:#999">Sin resultados</td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.map(e => {
+    const r = e.dias_restan;
+    const clsR = r < 0 ? 'restan-neg' : r === 0 ? 'restan-cero' : 'restan-ok';
+    const aniosStr = e.anios_antiguedad >= 1 ? `${e.anios_antiguedad} a`
+                   : e.fecha_ingreso         ? '< 1 a'
+                   : '—';
+    const mTds = MESES.map(m => {
+      const d = e.meses?.[m];
+      return `<td class="col-num">${d ? fmt(d) : ''}</td>`;
+    }).join('');
+    return `<tr>
+      <td class="col-emp">${e.apellido}, ${e.nombre}</td>
+      <td>${e.cargo || '—'}</td>
+      <td>${e.fecha_ingreso || '—'}</td>
+      <td>${aniosStr}</td>
+      <td class="col-num">${fmt(e.dias_formula)}</td>
+      <td class="col-num" style="${e.arrastre > 0 ? 'background:#d4edda;color:#155724;font-weight:bold' : e.arrastre < 0 ? 'background:#f8d7da;color:#721c24;font-weight:bold' : 'color:#ccc'}">
+        ${e.arrastre > 0 ? '↩ +' + fmt(e.arrastre) : e.arrastre < 0 ? '↩ ' + fmt(e.arrastre) : '—'}
+      </td>
+      <td class="col-num">${fmt(e.dias_correspondian)}</td>
+      <td class="col-num">${fmt(e.dias_tomados)}</td>
+      <td class="col-num ${clsR}">${fmt(r)}</td>
+      ${mTds}
+    </tr>`;
+  }).join('');
+}
+
+// ── Info modal ────────────────────────────────────────────────────────────────
+function abrirInfo() { document.getElementById('modal-info').classList.add('open'); }
+function cerrarInfo() { document.getElementById('modal-info').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { cerrarInfo(); cerrarCI(); } });
+
+// ── Carga inicial ─────────────────────────────────────────────────────────────
+function toggleCarga() {
+  document.getElementById('modal-ci').classList.add('open');
+  cargarCI();
+}
+function cerrarCI() {
+  document.getElementById('modal-ci').classList.remove('open');
+}
+
+async function cargarCI() {
+  const anio = document.getElementById('sel-anio').value;
+  document.getElementById('ci-anio-lbl').textContent = anio;
+  const r = await fetch(`/api/vacaciones/saldo-inicial?anio=${anio}`);
+  if (!r.ok) { toast('Error al cargar saldo inicial'); return; }
+  _ciData = await r.json();
+  renderCI();
+}
+
+function renderCI() {
+  const tb = document.getElementById('tbody-ci');
+  tb.innerHTML = _ciData.map((e, i) => `
+    <tr class="${e.tiene_saldo ? 'row-ok' : ''}">
+      <td class="col-emp" style="background:inherit">${e.apellido}, ${e.nombre}</td>
+      <td>${e.cargo || '—'}</td>
+      <td>${e.fecha_ingreso || '—'}</td>
+      <td class="col-num">${fmt(e.dias_formula)}</td>
+      <td>
+        <input type="number" min="0" max="35" step="0.5"
+               value="${e.dias_correspondian}" id="ci-corr-${i}">
+      </td>
+      <td>
+        <input type="number" min="0" max="200" step="0.5"
+               value="${e.dias_tomados}" id="ci-tom-${i}">
+      </td>
+      <td>
+        <button class="btn btn-secondary btn-sm" onclick="guardarCI(${i})">Guardar</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function guardarCI(i) {
+  const anio = parseInt(document.getElementById('sel-anio').value);
+  const corr = parseFloat(document.getElementById(`ci-corr-${i}`).value);
+  const tom  = parseFloat(document.getElementById(`ci-tom-${i}`).value);
+  if (isNaN(corr) || isNaN(tom) || corr < 0 || tom < 0) { toast('Valores inválidos'); return; }
+  const e = _ciData[i];
+  const r = await fetch('/api/vacaciones/saldo-inicial', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ empleado_id: e.empleado_id, anio, dias_correspondian: corr, dias_tomados: tom })
+  });
+  if (r.ok) {
+    _ciData[i] = { ...e, dias_correspondian: corr, dias_tomados: tom, tiene_saldo: true };
+    renderCI();
+    toast('Guardado');
+    await cargar();
+  } else {
+    toast('Error al guardar');
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  document.getElementById('sel-anio').value = new Date().getFullYear();
+  await _loadPerms();
+  await cargar();
+}
+
+init();
+</script>
+</body>
+</html>

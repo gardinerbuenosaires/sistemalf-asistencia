@@ -71,8 +71,14 @@
         <a href="/asistencia-mensual">Planilla</a>
       </div>
     </div>
-    <a href="/empleados">Personal</a>
-    <a href="/premios" data-perm="premios:ver">Premios</a>
+    <div class="nav-group">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados">Listado</a>
+        <a href="/premios" data-perm="premios:ver">Premios</a>
+        <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
+      </div>
+    </div>
     <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
     <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
     <a href="#" onclick="logout()">Salir</a>

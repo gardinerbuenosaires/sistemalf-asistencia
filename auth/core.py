@@ -24,7 +24,7 @@ TOKEN_TTL  = 8  # horas
 # Módulos y acciones disponibles en el sistema
 MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
-    "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios"
+    "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones"
 ]
 ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir"]
 
@@ -145,6 +145,8 @@ PERMISOS_DEFAULT = {
         "asistencia":    ["ver"],
         "resultados":    ["ver","procesar","corregir"],
         "sync":          ["procesar"],
+        "premios":       ["ver"],
+        "vacaciones":    ["ver"],
     },
     "administracion": {
         "dashboard":     ["ver"],

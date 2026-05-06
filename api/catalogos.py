@@ -119,3 +119,102 @@ def delete_categoria(cid: int, _user=Depends(require_permiso("empleados", "edita
             raise HTTPException(404, "Categoría no encontrada")
         conn.execute("DELETE FROM categorias WHERE id=?", (cid,))
     return {"ok": True}
+
+
+# ── Turnos del legajo ──────────────────────────────────────────────────────────
+
+@router.get("/api/turnos-legajo")
+def list_turnos_legajo():
+    with db_session() as conn:
+        rows = conn.execute("SELECT id, nombre, orden FROM turnos_legajo ORDER BY orden, nombre").fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/turnos-legajo", status_code=201)
+def create_turno_legajo(data: ItemIn, _user=Depends(require_permiso("empleados", "editar"))):
+    nombre = data.nombre.strip()
+    if not nombre:
+        raise HTTPException(400, "Nombre requerido")
+    with db_session() as conn:
+        try:
+            orden = (conn.execute("SELECT COALESCE(MAX(orden),0)+1 FROM turnos_legajo").fetchone()[0])
+            conn.execute("INSERT INTO turnos_legajo (nombre, orden) VALUES (?, ?)", (nombre, orden))
+            row = conn.execute("SELECT id, nombre, orden FROM turnos_legajo WHERE nombre=?", (nombre,)).fetchone()
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Ya existe ese turno")
+    return dict(row)
+
+
+@router.delete("/api/turnos-legajo/{tid}", status_code=200)
+def delete_turno_legajo(tid: int, _user=Depends(require_permiso("empleados", "editar"))):
+    with db_session() as conn:
+        if not conn.execute("SELECT id FROM turnos_legajo WHERE id=?", (tid,)).fetchone():
+            raise HTTPException(404, "Turno no encontrado")
+        conn.execute("DELETE FROM turnos_legajo WHERE id=?", (tid,))
+    return {"ok": True}
+
+
+# ── Sectores del legajo ────────────────────────────────────────────────────────
+
+@router.get("/api/sectores-legajo")
+def list_sectores_legajo():
+    with db_session() as conn:
+        rows = conn.execute("SELECT id, nombre, orden FROM sectores_legajo ORDER BY orden, nombre").fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/sectores-legajo", status_code=201)
+def create_sector_legajo(data: ItemIn, _user=Depends(require_permiso("empleados", "editar"))):
+    nombre = data.nombre.strip()
+    if not nombre:
+        raise HTTPException(400, "Nombre requerido")
+    with db_session() as conn:
+        try:
+            orden = (conn.execute("SELECT COALESCE(MAX(orden),0)+1 FROM sectores_legajo").fetchone()[0])
+            conn.execute("INSERT INTO sectores_legajo (nombre, orden) VALUES (?, ?)", (nombre, orden))
+            row = conn.execute("SELECT id, nombre, orden FROM sectores_legajo WHERE nombre=?", (nombre,)).fetchone()
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Ya existe ese sector")
+    return dict(row)
+
+
+@router.delete("/api/sectores-legajo/{sid}", status_code=200)
+def delete_sector_legajo(sid: int, _user=Depends(require_permiso("empleados", "editar"))):
+    with db_session() as conn:
+        if not conn.execute("SELECT id FROM sectores_legajo WHERE id=?", (sid,)).fetchone():
+            raise HTTPException(404, "Sector no encontrado")
+        conn.execute("DELETE FROM sectores_legajo WHERE id=?", (sid,))
+    return {"ok": True}
+
+
+# ── Niveles de estudio ─────────────────────────────────────────────────────────
+
+@router.get("/api/niveles-estudio")
+def list_niveles_estudio():
+    with db_session() as conn:
+        rows = conn.execute("SELECT id, nombre, orden FROM niveles_estudio ORDER BY orden, nombre").fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/niveles-estudio", status_code=201)
+def create_nivel_estudio(data: ItemIn, _user=Depends(require_permiso("empleados", "editar"))):
+    nombre = data.nombre.strip()
+    if not nombre:
+        raise HTTPException(400, "Nombre requerido")
+    with db_session() as conn:
+        try:
+            orden = (conn.execute("SELECT COALESCE(MAX(orden),0)+1 FROM niveles_estudio").fetchone()[0])
+            conn.execute("INSERT INTO niveles_estudio (nombre, orden) VALUES (?, ?)", (nombre, orden))
+            row = conn.execute("SELECT id, nombre, orden FROM niveles_estudio WHERE nombre=?", (nombre,)).fetchone()
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Ya existe ese nivel")
+    return dict(row)
+
+
+@router.delete("/api/niveles-estudio/{nid}", status_code=200)
+def delete_nivel_estudio(nid: int, _user=Depends(require_permiso("empleados", "editar"))):
+    with db_session() as conn:
+        if not conn.execute("SELECT id FROM niveles_estudio WHERE id=?", (nid,)).fetchone():
+            raise HTTPException(404, "Nivel no encontrado")
+        conn.execute("DELETE FROM niveles_estudio WHERE id=?", (nid,))
+    return {"ok": True}

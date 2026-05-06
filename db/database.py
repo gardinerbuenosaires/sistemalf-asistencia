@@ -731,3 +731,69 @@ def _migrate(conn):
         ("dias_minimos_antiguedad", "90", "entero",
          "Días de antigüedad mínima al 1° del mes para aplicar al premio")
     )
+
+    # Saldo inicial de vacaciones (carga única al arrancar el sistema)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS vacaciones_saldo_inicial (
+            empleado_id        INTEGER NOT NULL REFERENCES empleados(id),
+            anio               INTEGER NOT NULL,
+            dias_correspondian REAL    NOT NULL DEFAULT 0,
+            dias_tomados       REAL    NOT NULL DEFAULT 0,
+            PRIMARY KEY (empleado_id, anio)
+        )
+    """)
+
+    # Campos adicionales del legajo de personal
+    cols_emp = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
+    nuevas_emp = {
+        "nacionalidad":                   "TEXT",
+        "estado_civil":                   "TEXT",
+        "turno":                          "TEXT",
+        "sector":                         "TEXT",
+        "contacto_emergencia_nombre":     "TEXT",
+        "contacto_emergencia_telefono":   "TEXT",
+        "contacto_emergencia_parentesco": "TEXT",
+        "nivel_estudio":                  "TEXT",
+        "dom_calle":                      "TEXT",
+        "dom_numero":                     "TEXT",
+        "dom_piso":                       "TEXT",
+        "dom_entre_calles":               "TEXT",
+        "dom_barrio":                     "TEXT",
+        "dom_localidad":                  "TEXT",
+        "dom_provincia":                  "TEXT",
+        "dom_cp":                         "TEXT",
+    }
+    for col, tipo in nuevas_emp.items():
+        if col not in cols_emp:
+            conn.execute(f"ALTER TABLE empleados ADD COLUMN {col} {tipo}")
+            logger.info("Migración: columna %s agregada a empleados", col)
+
+    # Catálogos configurables del legajo (turno y sector)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS turnos_legajo (
+            id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT UNIQUE NOT NULL,
+            orden  INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sectores_legajo (
+            id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT UNIQUE NOT NULL,
+            orden  INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    for t in [("TM", 1), ("TN", 2), ("CORTADO", 3)]:
+        conn.execute("INSERT OR IGNORE INTO turnos_legajo (nombre, orden) VALUES (?, ?)", t)
+    for s in [("SALÓN", 1), ("COCINA", 2)]:
+        conn.execute("INSERT OR IGNORE INTO sectores_legajo (nombre, orden) VALUES (?, ?)", s)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS niveles_estudio (
+            id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT UNIQUE NOT NULL,
+            orden  INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    for n in [("Primario", 1), ("Secundario", 2), ("Terciario", 3), ("Universitario", 4)]:
+        conn.execute("INSERT OR IGNORE INTO niveles_estudio (nombre, orden) VALUES (?, ?)", n)

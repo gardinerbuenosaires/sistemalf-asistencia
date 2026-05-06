@@ -15,7 +15,8 @@
   nav a.activo { opacity: 1; font-weight: bold; }
   .nav-group { position: relative; display: inline-flex; align-items: center; }
   .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
-  .nav-group:hover .nav-trigger { opacity: 1; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
   .nav-dropdown { display: none; position: absolute; top: 100%; left: 0; background: white; border: 1px solid #D3D1C7; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
   .nav-group:hover .nav-dropdown { display: block; }
   .nav-dropdown a { display: block; padding: 8px 16px; }
@@ -35,13 +36,25 @@
   .btn-sm { padding: 5px 12px; font-size: .8rem; font-weight: normal; }
 
   /* Cards resumen */
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .card { background: white; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
   .card .lbl { font-size: .72rem; color: #999; text-transform: uppercase; letter-spacing: .04em; }
   .card .val { font-size: 1.2rem; font-weight: bold; margin-top: 4px; }
 
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 0; }
+  .tab-btn { padding: 8px 20px; border: none; border-radius: 8px 8px 0 0; cursor: pointer;
+             font-size: .88rem; font-weight: bold; background: #dde3ea; color: #666;
+             border-bottom: 2px solid transparent; transition: background .15s; }
+  .tab-btn:hover { background: #cdd4dc; }
+  .tab-btn.activo { background: white; color: #2c3e50; border-bottom: 2px solid white;
+                    box-shadow: 0 -2px 6px rgba(0,0,0,.06); }
+  .tab-btn .cnt { font-size: .72rem; background: #e0e0e0; border-radius: 8px;
+                  padding: 1px 6px; margin-left: 5px; }
+  .tab-btn.activo .cnt { background: #eef2f5; }
+
   /* Tabla principal */
-  .section { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
+  .section { background: white; border-radius: 0 8px 8px 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
   table { width: 100%; border-collapse: collapse; font-size: .85rem; }
   th { text-align: left; padding: 9px 10px; background: #f8f9fa; border-bottom: 2px solid #dee2e6; font-size: .78rem; white-space: nowrap; }
   td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
@@ -75,24 +88,28 @@
   .btn-expand { background: none; border: none; cursor: pointer; color: #888; font-size: .8rem; padding: 0; }
   .btn-expand:hover { color: #333; }
 
-  .firma-cell { min-width: 140px; }
+  /* Firma: oculta en pantalla, visible solo al imprimir */
+  .firma-cell, .th-firma { display: none; }
   .firma-linea { display: inline-block; width: 130px; border-bottom: 1px solid #ccc; }
 
   #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 12px 20px; border-radius: 8px; display: none; z-index: 100; }
   .empty-state { padding: 40px; text-align: center; color: #aaa; }
 
   @media print {
+    @page { size: legal landscape; margin: 10mm 12mm; }
     header, .toolbar, .cards, #diag-bar, #toast, .btn-expand, .btn-save-row,
-    [data-perm], button, .grupo-subtotal { display: none !important; }
+    [data-perm], button, .grupo-subtotal, #tabs-turnos { display: none !important; }
     body { background: white; }
-    main { padding: 8px; max-width: none; }
+    main { padding: 4px; max-width: none; }
     .section { box-shadow: none; border: 1px solid #bbb; }
-    table { font-size: .75rem; }
-    th, td { padding: 5px 7px; }
+    table { font-size: .7rem; }
+    th, td { padding: 4px 6px; }
     .desglose { display: none !important; }
-    .field-bpm select { border: none; background: transparent; -webkit-appearance: none; appearance: none; font-size: .75rem; }
-    .field-desempenio textarea { border: none; background: transparent; resize: none; font-size: .75rem; overflow: hidden; }
-    .firma-linea { border-bottom: 1px solid #333; width: 130px; display: inline-block; }
+    .field-bpm select { border: none; background: transparent; -webkit-appearance: none; appearance: none; font-size: .7rem; }
+    .field-desempenio textarea { border: none; background: transparent; resize: none; font-size: .7rem; overflow: hidden; min-height: 0; }
+    .firma-cell, .th-firma { display: table-cell !important; min-width: 120px; }
+    .firma-linea { border-bottom: 1px solid #333; width: 110px; display: inline-block; }
+    .grupo-header td { padding: 5px 8px !important; }
   }
 </style>
 </head>
@@ -117,8 +134,14 @@
         <a href="/asistencia-mensual">Planilla</a>
       </div>
     </div>
-    <a href="/empleados">Personal</a>
-    <a href="/premios" class="activo">Premios</a>
+    <div class="nav-group activo">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados">Listado</a>
+        <a href="/premios" class="activo">Premios</a>
+        <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
+      </div>
+    </div>
     <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
     <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
     <a href="#" onclick="logout()">Salir</a>
@@ -132,6 +155,7 @@
     <input type="month" id="periodo-sel">
     <button class="btn btn-secondary" onclick="cargar()">Ver</button>
     <button class="btn btn-primary" data-perm="premios:editar" onclick="generarPeriodo()">Generar / Actualizar período</button>
+    <button class="btn btn-secondary" onclick="window.print()" title="Imprime el turno activo en oficio horizontal">Imprimir / PDF</button>
   </div>
 
   <div class="cards">
@@ -144,6 +168,13 @@
 
   <div id="diag-bar" style="background:white; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.08);
        padding:10px 16px; margin-bottom:16px; font-size:.8rem; gap:20px; align-items:center; flex-wrap:wrap; display:none;"></div>
+
+  <div class="tabs" id="tabs-turnos" style="display:none">
+    <button class="tab-btn activo" onclick="switchTab('TM')" id="tab-TM">Turno Mañana<span class="cnt" id="cnt-tab-TM">0</span></button>
+    <button class="tab-btn" onclick="switchTab('TN')" id="tab-TN">Turno Noche<span class="cnt" id="cnt-tab-TN">0</span></button>
+    <button class="tab-btn" onclick="switchTab('CO')" id="tab-CO" style="display:none">Turno Cortado<span class="cnt" id="cnt-tab-CO">0</span></button>
+    <button class="tab-btn" onclick="switchTab('_sin_turno')" id="tab-_sin_turno" style="display:none">Sin turno<span class="cnt" id="cnt-tab-_sin_turno">0</span></button>
+  </div>
 
   <div class="section">
     <table>
@@ -161,7 +192,7 @@
           <th>E</th>
           <th>S</th>
           <th>A</th>
-          <th>Firma</th>
+          <th class="th-firma">Firma</th>
         </tr>
       </thead>
       <tbody id="tbody-premios">
@@ -250,7 +281,29 @@ function _renderDesglose(d) {
   return `<div class="desglose"><table>${rows.join("")}</table></div>`;
 }
 
-const _GRUPO_LABEL = { TM: "Turno Mañana", TN: "Turno Noche", CO: "Turno Cortado" };
+const _GRUPO_LABEL = { TM: "Turno Mañana", TN: "Turno Noche", CO: "Turno Cortado", _sin_turno: "Sin turno" };
+let _grupos = {};
+let _tabActiva = "TM";
+
+function switchTab(grupo) {
+  _tabActiva = grupo;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("activo"));
+  document.getElementById(`tab-${grupo}`)?.classList.add("activo");
+  _mostrarTab();
+}
+
+function _mostrarTab() {
+  const editar = canDo("premios", "editar");
+  const tbody = document.getElementById("tbody-premios");
+  const data = _grupos[_tabActiva] || [];
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state">Sin empleados en este turno para el período.</div></td></tr>`;
+    _recalcularCards();
+    return;
+  }
+  tbody.innerHTML = data.map(ev => _filaHtml(ev, editar)).join("");
+  _recalcularCards();
+}
 
 function _filaHtml(ev, editar) {
   const d = ev.desglose || {};
@@ -293,50 +346,43 @@ function _filaHtml(ev, editar) {
 
 function _renderTabla(data) {
   _evaluaciones = data;
-  const editar = canDo("premios", "editar");
-  const tbody = document.getElementById("tbody-premios");
 
   if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state">Sin datos para este período. Usá "Generar / Actualizar período".</div></td></tr>`;
+    _grupos = {};
+    document.getElementById("tabs-turnos").style.display = "none";
+    document.getElementById("tbody-premios").innerHTML =
+      `<tr><td colspan="13"><div class="empty-state">Sin datos para este período. Usá "Generar / Actualizar período".</div></td></tr>`;
     _recalcularCards();
     return;
   }
 
-  // Agrupar respetando el orden que viene del API (ya ordenado TM→TN→CO→sin grupo)
-  const grupos = {};
-  const orden  = [];
+  // Agrupar por turno
+  _grupos = {};
   data.forEach(ev => {
     const g = ev.grupo || "_sin_turno";
-    if (!grupos[g]) { grupos[g] = []; orden.push(g); }
-    grupos[g].push(ev);
+    if (!_grupos[g]) _grupos[g] = [];
+    _grupos[g].push(ev);
   });
 
-  let html = "";
-  orden.forEach(g => {
-    const empleados = grupos[g];
-    const label = _GRUPO_LABEL[g] || "Sin turno asignado";
-    let subTotal = 0;
-    empleados.forEach(ev => subTotal += ev.valor_final ?? 0);
-
-    html += `<tr class="grupo-header">
-      <td colspan="13" style="background:#eef2f5;padding:7px 12px;font-weight:bold;
-          font-size:.8rem;color:#2c3e50;letter-spacing:.03em;border-top:2px solid #d0d8e0">
-        ${label}
-      </td>
-    </tr>`;
-    html += empleados.map(ev => _filaHtml(ev, editar)).join("");
-    html += `<tr class="grupo-subtotal">
-      <td colspan="2" style="text-align:right;font-size:.78rem;color:#888;padding:6px 10px;
-          border-top:1px solid #e8e8e8">Subtotal ${label}:</td>
-      <td style="font-weight:bold;color:#2c3e50;padding:6px 10px;border-top:1px solid #e8e8e8">
-        ${_fmtPesos(subTotal)}
-      </td>
-      <td colspan="10" style="border-top:1px solid #e8e8e8"></td>
-    </tr>`;
+  // Mostrar/ocultar tabs según grupos disponibles y actualizar contadores
+  const tabsEl = document.getElementById("tabs-turnos");
+  tabsEl.style.display = "flex";
+  ["TM","TN","CO","_sin_turno"].forEach(g => {
+    const btn = document.getElementById(`tab-${g}`);
+    if (!btn) return;
+    const n = (_grupos[g] || []).length;
+    btn.style.display = n > 0 ? "" : "none";
+    btn.querySelector(".cnt").textContent = n;
   });
 
-  tbody.innerHTML = html;
-  _recalcularCards();
+  // Si el tab activo ya no tiene datos, ir al primero disponible
+  if (!_grupos[_tabActiva]?.length) {
+    _tabActiva = Object.keys(_grupos)[0] || "TM";
+  }
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("activo"));
+  document.getElementById(`tab-${_tabActiva}`)?.classList.add("activo");
+
+  _mostrarTab();
 }
 
 function toggleDesglose(id) {
@@ -384,19 +430,20 @@ async function guardarFila(id) {
 }
 
 function _recalcularCards() {
+  const data = _grupos[_tabActiva] || [];
   let total = 0, completo = 0, descuento = 0, cero = 0;
-  _evaluaciones.forEach(ev => {
+  data.forEach(ev => {
     const vf = ev.valor_final ?? 0;
     total += vf;
     if (vf === 0) cero++;
     else if (vf < ev.monto_base) descuento++;
     else completo++;
   });
-  document.getElementById("cnt-total").textContent    = _evaluaciones.length;
-  document.getElementById("cnt-completo").textContent = completo;
-  document.getElementById("cnt-descuento").textContent= descuento;
-  document.getElementById("cnt-cero").textContent     = cero;
-  document.getElementById("total-pagar").textContent  = _fmtPesos(total);
+  document.getElementById("cnt-total").textContent     = data.length;
+  document.getElementById("cnt-completo").textContent  = completo;
+  document.getElementById("cnt-descuento").textContent = descuento;
+  document.getElementById("cnt-cero").textContent      = cero;
+  document.getElementById("total-pagar").textContent   = _fmtPesos(total);
 }
 
 function _renderDiagnostico(d) {

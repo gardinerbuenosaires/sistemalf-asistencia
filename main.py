@@ -1,6 +1,8 @@
 import logging
 import uvicorn
-from fastapi import Depends, FastAPI, Cookie, Request
+import shutil
+from pathlib import Path
+from fastapi import Depends, FastAPI, Cookie, Request, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from contextlib import asynccontextmanager
@@ -21,6 +23,7 @@ from api.feriados import router as feriados_router
 from api.fichajes import router as fichajes_router
 from api.catalogos import router as catalogos_router
 from api.premios import router as premios_router
+from api.vacaciones import router as vacaciones_router
 from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user
 
 logging.basicConfig(
@@ -61,6 +64,7 @@ app.include_router(feriados_router)
 app.include_router(fichajes_router)
 app.include_router(catalogos_router)
 app.include_router(premios_router)
+app.include_router(vacaciones_router)
 
 
 def _auth(request: Request, modulo: str, accion: str = "ver"):
@@ -117,6 +121,14 @@ def page_asistencia_mensual(request: Request):
 @app.get("/premios", include_in_schema=False)
 def page_premios(request: Request):
     return FileResponse("web/templates/premios.html") if _auth(request, "premios") else RedirectResponse("/login")
+
+@app.get("/vacaciones", include_in_schema=False)
+def page_vacaciones(request: Request):
+    return FileResponse("web/templates/vacaciones.html") if _auth(request, "vacaciones") else RedirectResponse("/login")
+
+@app.get("/empleados/listado", include_in_schema=False)
+def page_empleados_listado(request: Request):
+    return FileResponse("web/templates/empleados_listado.html") if _auth(request, "empleados") else RedirectResponse("/login")
 
 
 # --- Rutas de la API (se expanden en etapas siguientes) ---
@@ -222,6 +234,36 @@ def set_configuracion(clave: str, body: dict, _user=Depends(require_permiso("usu
             (clave, valor),
         )
     return {"ok": True}
+
+
+@app.post("/api/config/logo", tags=["configuracion"])
+def upload_logo(file: UploadFile = File(...), _user=Depends(require_permiso("usuarios", "editar"))):
+    from fastapi import HTTPException
+    ext = Path(file.filename).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".svg", ".webp"):
+        raise HTTPException(400, "Formato no soportado. Usar PNG, JPG o SVG.")
+    dest = Path("web/static/uploads") / f"logo_empresa{ext}"
+    for old in Path("web/static/uploads").glob("logo_empresa.*"):
+        old.unlink(missing_ok=True)
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+    url = f"/static/uploads/logo_empresa{ext}"
+    from db.database import db_session
+    with db_session() as conn:
+        conn.execute(
+            "INSERT INTO configuracion (clave, valor, descripcion) VALUES (?,?,?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+            ("logo_empresa", url, "URL del logo de la empresa para el legajo")
+        )
+    return {"ok": True, "url": url}
+
+
+@app.get("/api/config/logo", tags=["configuracion"])
+def get_logo():
+    from db.database import db_session
+    with db_session() as conn:
+        row = conn.execute("SELECT valor FROM configuracion WHERE clave='logo_empresa'").fetchone()
+    return {"url": row["valor"] if row else None}
 
 
 @app.post("/api/dispositivo/sincronizar-hora", tags=["dispositivo"])

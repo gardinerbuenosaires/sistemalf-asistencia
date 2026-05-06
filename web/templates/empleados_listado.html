@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Listado de Empleados</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: 13px; }
+
+  /* Barra de pantalla (no se imprime) */
+  .toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 20px;
+             background: #F1EFE8; border-bottom: 1px solid #D3D1C7; flex-wrap: wrap; }
+  .toolbar h1 { font-size: 1rem; flex: 1; }
+  .btn { padding: 7px 16px; border: none; border-radius: 6px; cursor: pointer;
+         font-size: .85rem; font-weight: bold; }
+  .btn-primary { background: #2c3e50; color: white; }
+  .btn-secondary { background: #eee; color: #555; }
+  label { font-size: .85rem; display: flex; align-items: center; gap: 6px; }
+
+  /* Tabla */
+  .wrap { padding: 16px 20px; }
+  .fecha-gen { font-size: .78rem; color: #888; margin-bottom: 10px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th { background: #2c3e50; color: white; padding: 7px 8px;
+             text-align: left; white-space: nowrap; font-size: 11px; }
+  tbody tr:nth-child(even) { background: #f8f9fa; }
+  tbody td { padding: 5px 8px; border-bottom: 1px solid #e9ecef;
+             vertical-align: top; word-break: break-word; }
+  .col-n    { width: 28px;  text-align: center; }
+  .col-ape  { width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .col-nom  { width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .col-ing  { width: 80px;  white-space: nowrap; }
+  .col-dni  { width: 80px;  white-space: nowrap; }
+  .col-cuil { width: 100px; white-space: nowrap; }
+  .col-car  { width: 100px; }
+  .col-tel  { width: 100px; white-space: nowrap; }
+  .col-dir  { }  /* toma el resto */
+
+  #cnt { font-size: .8rem; color: #666; }
+
+  /* ── ESTILOS DE IMPRESIÓN ─────────────────────────────────────────────── */
+  @media print {
+    @page { size: legal landscape; margin: 10mm 8mm; }
+
+    body { background: white; font-size: 8pt; }
+    .toolbar { display: none; }
+    .wrap { padding: 0; }
+
+    table { font-size: 7.5pt; }
+    thead th { background: #2c3e50 !important; color: white !important;
+               -webkit-print-color-adjust: exact; print-color-adjust: exact;
+               padding: 4px 5px; font-size: 7pt; }
+    tbody tr:nth-child(even) { background: #f5f5f5 !important;
+               -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tbody td { padding: 3px 5px; border-bottom: 1px solid #ddd; }
+
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; }
+
+    .fecha-gen { font-size: 7pt; margin-bottom: 6px; }
+    #cnt { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h1>Listado de Empleados</h1>
+  <label>
+    <input type="checkbox" id="chk-baja" onchange="cargar()"> Incluir bajas
+  </label>
+  <span id="cnt"></span>
+  <button class="btn btn-secondary" onclick="location.href='/empleados'">← Volver</button>
+  <button class="btn btn-primary" onclick="window.print()">Imprimir / PDF</button>
+</div>
+
+<div class="wrap">
+  <div class="fecha-gen" id="fecha-gen"></div>
+  <table>
+    <thead>
+      <tr>
+        <th class="col-n">N°</th>
+        <th class="col-ape">Apellido</th>
+        <th class="col-nom">Nombre</th>
+        <th class="col-ing">F. Ingreso</th>
+        <th class="col-dni">DNI</th>
+        <th class="col-cuil">CUIL</th>
+        <th class="col-car">Cargo</th>
+        <th class="col-tel">Teléfono</th>
+        <th class="col-dir">Dirección</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+async function cargar() {
+  const todos = document.getElementById('chk-baja').checked;
+  const r = await fetch(`/api/empleados?todos=${todos}&sin_acceso=true`);
+  if (!r.ok) { alert('Error al cargar empleados'); return; }
+  const data = await r.json();
+  render(data);
+}
+
+function render(data) {
+  const tb = document.getElementById('tbody');
+  document.getElementById('cnt').textContent = `${data.length} empleados`;
+  document.getElementById('fecha-gen').textContent =
+    `Generado el ${new Date().toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'})} — ${document.getElementById('chk-baja').checked ? 'activos e inactivos' : 'solo activos'}`;
+
+  tb.innerHTML = data.map((e, i) => `
+    <tr>
+      <td class="col-n">${i + 1}</td>
+      <td class="col-ape">${e.apellido || ''}</td>
+      <td class="col-nom">${e.nombre || ''}</td>
+      <td class="col-ing">${fmt_fecha(e.fecha_ingreso)}</td>
+      <td class="col-dni">${e.dni || ''}</td>
+      <td class="col-cuil">${e.cuil || ''}</td>
+      <td class="col-car">${e.cargo || ''}</td>
+      <td class="col-tel">${e.telefono || ''}</td>
+      <td class="col-dir">${e.domicilio || ''}</td>
+    </tr>
+  `).join('');
+}
+
+function fmt_fecha(f) {
+  if (!f) return '';
+  const [y, m, d] = f.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+cargar();
+</script>
+</body>
+</html>

@@ -125,6 +125,16 @@
   .nivel-bar { height: 3px; border-radius: 2px; background: #2c3e50; margin-top: 4px; }
   .rol-desc-small { font-size: .72rem; color: #888; margin-top: 1px; }
   .rol-nivel-tag { font-size: .7rem; color: #aaa; flex-shrink: 0; }
+
+  /* Tabs de configuración */
+  .cfg-tabs { display: flex; gap: 2px; margin-bottom: 20px; border-bottom: 2px solid #dee2e6; }
+  .cfg-tab { padding: 8px 20px; border: none; background: none; cursor: pointer;
+             font-size: .88rem; color: #666; border-bottom: 2px solid transparent;
+             margin-bottom: -2px; border-radius: 4px 4px 0 0; transition: color .15s; }
+  .cfg-tab:hover { color: #2c3e50; background: #f8f9fa; }
+  .cfg-tab.activa { color: #2c3e50; font-weight: bold; border-bottom-color: #2c3e50; background: #f8f9fa; }
+  .cfg-panel { display: none; }
+  .cfg-panel.activo { display: block; }
 </style>
 </head>
 <body>
@@ -148,8 +158,14 @@
         <a href="/asistencia-mensual">Planilla</a>
       </div>
     </div>
-    <a href="/empleados">Personal</a>
-    <a href="/premios" data-perm="premios:ver">Premios</a>
+    <div class="nav-group">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados">Listado</a>
+        <a href="/premios" data-perm="premios:ver">Premios</a>
+        <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
+      </div>
+    </div>
     <a href="/configuracion" class="activo">Configuración</a>
     <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
     <a href="#" onclick="logout()">Salir</a>
@@ -158,164 +174,221 @@
 
 <main>
 
-  <!-- ── Parámetros ── -->
-  <div class="section">
-    <div class="section-header">
-      <div>
-        <div class="section-title">Parámetros del sistema</div>
-      </div>
-      <button class="btn btn-secondary btn-sm" data-perm="usuarios:editar" onclick="sincronizarHora()">Sincronizar hora del dispositivo</button>
-    </div>
-    <div id="params-container"><p style="color:#aaa;font-size:.9rem">Cargando...</p></div>
+  <div class="cfg-tabs">
+    <button class="cfg-tab" id="tab-sistema"   onclick="switchCfgTab('sistema')">Sistema</button>
+    <button class="cfg-tab" id="tab-catalogos" onclick="switchCfgTab('catalogos')">Cargos</button>
+    <button class="cfg-tab" id="tab-usuarios"  onclick="switchCfgTab('usuarios')">Usuarios</button>
+    <button class="cfg-tab" data-perm="premios:ver" id="tab-premios" onclick="switchCfgTab('premios')">Premios</button>
   </div>
 
-  <!-- ── Usuarios ── -->
-  <div class="section">
-    <div class="section-header">
-      <div>
-        <div class="section-title">Usuarios</div>
-        <div class="section-desc" style="margin-bottom:0">Cuentas con acceso al sistema y su rol asignado.</div>
+  <!-- ── Panel: Sistema ── -->
+  <div class="cfg-panel" id="panel-sistema">
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Parámetros del sistema</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" data-perm="usuarios:editar" onclick="sincronizarHora()">Sincronizar hora del dispositivo</button>
       </div>
+      <div id="params-container"><p style="color:#aaa;font-size:.9rem">Cargando...</p></div>
     </div>
-    <div class="usr-layout" style="margin-top:16px">
-      <!-- Lista -->
-      <div class="usr-panel">
-        <div class="usr-panel-header">
-          <h3>Usuarios (<span id="usr-cnt">0</span>)</h3>
-          <button class="btn btn-primary btn-sm" data-perm="usuarios:editar" onclick="nuevoUsuario()">+ Nuevo</button>
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Turnos</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Define los turnos con su hora de inicio. Los horarios se asignan automáticamente al turno
+            cuya hora de inicio sea la más cercana por debajo de la hora de entrada.
+          </div>
         </div>
-        <div id="usr-list"><div class="empty-form">Cargando...</div></div>
+        <button class="btn btn-primary btn-sm" data-perm="horarios:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarFila()">+ Nuevo turno</button>
       </div>
-      <!-- Formulario -->
-      <div class="usr-panel">
-        <div class="usr-panel-header">
-          <h3 id="form-titulo">Seleccioná un usuario</h3>
-        </div>
-        <div id="form-contenido" class="usr-form">
-          <div class="empty-form">Seleccioná un usuario o creá uno nuevo.</div>
-        </div>
-      </div>
+      <table style="margin-top:16px">
+        <thead><tr>
+          <th>Nombre</th><th>Desde</th><th style="width:140px">Acciones</th>
+        </tr></thead>
+        <tbody id="tabla-turnos">
+          <tr><td colspan="3" style="color:#aaa">Cargando...</td></tr>
+        </tbody>
+      </table>
     </div>
+
   </div>
 
-  <!-- ── Roles ── -->
-  <div class="section">
-    <div class="section-header">
-      <div>
-        <div class="section-title">Roles y permisos</div>
-        <div class="section-desc" style="margin-bottom:0">Define los roles del sistema y qué módulos puede acceder cada uno.</div>
-      </div>
-    </div>
-    <div class="usr-layout" style="margin-top:16px">
-      <div class="usr-panel">
-        <div class="usr-panel-header">
-          <h3>Roles</h3>
-          <button class="btn btn-primary btn-sm" data-perm="roles:editar" onclick="nuevoRol()">+ Nuevo</button>
+  <!-- ── Panel: Catálogos ── -->
+  <div class="cfg-panel" id="panel-catalogos">
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Cargos</div>
+          <div class="section-desc" style="margin-bottom:0">Listado de cargos disponibles para asignar a empleados.</div>
         </div>
-        <div id="roles-lista"><div class="empty-form">Cargando...</div></div>
+        <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCargo()">+ Nuevo cargo</button>
       </div>
-      <div class="usr-panel">
-        <div class="usr-panel-header">
-          <h3 id="rol-editor-titulo">Seleccioná un rol</h3>
+      <table style="margin-top:16px">
+        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th style="width:100px">Acciones</th></tr></thead>
+        <tbody id="tabla-cargos"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Departamentos</div>
+          <div class="section-desc" style="margin-bottom:0">Listado de departamentos disponibles para asignar a empleados.</div>
         </div>
-        <div id="rol-editor-contenido" class="usr-form">
-          <div class="empty-form">Seleccioná un rol o creá uno nuevo.</div>
+        <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarDepto()">+ Nuevo departamento</button>
+      </div>
+      <table style="margin-top:16px">
+        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <tbody id="tabla-deptos"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Categorías</div>
+          <div class="section-desc" style="margin-bottom:0">Listado de categorías disponibles para asignar a empleados.</div>
         </div>
+        <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCategoria()">+ Nueva categoría</button>
       </div>
+      <table style="margin-top:16px">
+        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <tbody id="tabla-categorias"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
+      </table>
     </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Turnos del legajo</div>
+          <div class="section-desc" style="margin-bottom:0">Opciones de turno disponibles en el legajo de personal (ej: TM, TN, CORTADO).</div>
+        </div>
+        <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarItemCatalogo('turno')">+ Nuevo turno</button>
+      </div>
+      <table style="margin-top:16px">
+        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <tbody id="tabla-turnos-legajo"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Sectores del legajo</div>
+          <div class="section-desc" style="margin-bottom:0">Opciones de sector disponibles en el legajo de personal (ej: SALÓN, COCINA).</div>
+        </div>
+        <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarItemCatalogo('sector')">+ Nuevo sector</button>
+      </div>
+      <table style="margin-top:16px">
+        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <tbody id="tabla-sectores-legajo"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Niveles de estudio</div>
+          <div class="section-desc" style="margin-bottom:0">Opciones de nivel de estudio disponibles en el legajo de personal.</div>
+        </div>
+        <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarItemCatalogo('nivel')">+ Nuevo nivel</button>
+      </div>
+      <table style="margin-top:16px">
+        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <tbody id="tabla-niveles-estudio"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+
   </div>
 
-  <!-- ── Cargos ── -->
-  <div class="section">
-    <div class="section-header">
-      <div>
-        <div class="section-title">Cargos</div>
-        <div class="section-desc" style="margin-bottom:0">Listado de cargos disponibles para asignar a empleados.</div>
-      </div>
-      <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCargo()">+ Nuevo cargo</button>
-    </div>
-    <table style="margin-top:16px">
-      <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th style="width:100px">Acciones</th></tr></thead>
-      <tbody id="tabla-cargos"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
-    </table>
-  </div>
+  <!-- ── Panel: Usuarios ── -->
+  <div class="cfg-panel" id="panel-usuarios">
 
-  <!-- ── Departamentos ── -->
-  <div class="section">
-    <div class="section-header">
-      <div>
-        <div class="section-title">Departamentos</div>
-        <div class="section-desc" style="margin-bottom:0">Listado de departamentos disponibles para asignar a empleados.</div>
-      </div>
-      <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarDepto()">+ Nuevo departamento</button>
-    </div>
-    <table style="margin-top:16px">
-      <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
-      <tbody id="tabla-deptos"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
-    </table>
-  </div>
-
-  <!-- ── Categorías ── -->
-  <div class="section">
-    <div class="section-header">
-      <div>
-        <div class="section-title">Categorías</div>
-        <div class="section-desc" style="margin-bottom:0">Listado de categorías disponibles para asignar a empleados.</div>
-      </div>
-      <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCategoria()">+ Nueva categoría</button>
-    </div>
-    <table style="margin-top:16px">
-      <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
-      <tbody id="tabla-categorias"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
-    </table>
-  </div>
-
-  <!-- ── Premios ── -->
-  <div class="section" data-perm="premios:ver">
-    <div class="section-header">
-      <div>
-        <div class="section-title">Premios — Parámetros</div>
-        <div class="section-desc" style="margin-bottom:0">Todos los valores que definen el cálculo del premio mensual.</div>
-      </div>
-      <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px">
-        <button class="btn btn-secondary btn-sm" onclick="recalcularPremioPeriodo()">Recalcular período actual</button>
-        <button class="btn btn-primary btn-sm" data-perm="premios:editar" onclick="guardarParametrosPremios()">Guardar parámetros</button>
-      </div>
-    </div>
-
-    <!-- Fórmula visual -->
-    <div id="formula-premios" style="margin:16px 0;padding:14px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #e0e0e0;font-size:.82rem;line-height:1.8">
-      <strong style="font-size:.85rem">Fórmula de cálculo:</strong>
-      <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px" id="formula-pasos"></div>
-    </div>
-
-    <!-- Tabla de parámetros -->
-    <table style="margin-top:4px" id="tabla-params-premios">
-      <thead><tr><th>Parámetro</th><th>Descripción</th><th style="width:130px">Valor</th></tr></thead>
-      <tbody id="tbody-params-premios"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
-    </table>
-  </div>
-
-  <!-- ── Turnos ── -->
-  <div class="section">
-    <div class="section-header">
-      <div>
-        <div class="section-title">Turnos</div>
-        <div class="section-desc" style="margin-bottom:0">
-          Define los turnos con su hora de inicio. Los horarios se asignan automáticamente al turno
-          cuya hora de inicio sea la más cercana por debajo de la hora de entrada.
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Usuarios</div>
+          <div class="section-desc" style="margin-bottom:0">Cuentas con acceso al sistema y su rol asignado.</div>
         </div>
       </div>
-      <button class="btn btn-primary btn-sm" data-perm="horarios:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarFila()">+ Nuevo turno</button>
+      <div class="usr-layout" style="margin-top:16px">
+        <div class="usr-panel">
+          <div class="usr-panel-header">
+            <h3>Usuarios (<span id="usr-cnt">0</span>)</h3>
+            <button class="btn btn-primary btn-sm" data-perm="usuarios:editar" onclick="nuevoUsuario()">+ Nuevo</button>
+          </div>
+          <div id="usr-list"><div class="empty-form">Cargando...</div></div>
+        </div>
+        <div class="usr-panel">
+          <div class="usr-panel-header">
+            <h3 id="form-titulo">Seleccioná un usuario</h3>
+          </div>
+          <div id="form-contenido" class="usr-form">
+            <div class="empty-form">Seleccioná un usuario o creá uno nuevo.</div>
+          </div>
+        </div>
+      </div>
     </div>
-    <table style="margin-top:16px">
-      <thead><tr>
-        <th>Nombre</th><th>Desde</th><th style="width:140px">Acciones</th>
-      </tr></thead>
-      <tbody id="tabla-turnos">
-        <tr><td colspan="3" style="color:#aaa">Cargando...</td></tr>
-      </tbody>
-    </table>
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Roles y permisos</div>
+          <div class="section-desc" style="margin-bottom:0">Define los roles del sistema y qué módulos puede acceder cada uno.</div>
+        </div>
+      </div>
+      <div class="usr-layout" style="margin-top:16px">
+        <div class="usr-panel">
+          <div class="usr-panel-header">
+            <h3>Roles</h3>
+            <button class="btn btn-primary btn-sm" data-perm="roles:editar" onclick="nuevoRol()">+ Nuevo</button>
+          </div>
+          <div id="roles-lista"><div class="empty-form">Cargando...</div></div>
+        </div>
+        <div class="usr-panel">
+          <div class="usr-panel-header">
+            <h3 id="rol-editor-titulo">Seleccioná un rol</h3>
+          </div>
+          <div id="rol-editor-contenido" class="usr-form">
+            <div class="empty-form">Seleccioná un rol o creá uno nuevo.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Panel: Premios ── -->
+  <div class="cfg-panel" data-perm="premios:ver" id="panel-premios">
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Premios — Parámetros</div>
+          <div class="section-desc" style="margin-bottom:0">Todos los valores que definen el cálculo del premio mensual.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px">
+          <button class="btn btn-secondary btn-sm" onclick="recalcularPremioPeriodo()">Recalcular período actual</button>
+          <button class="btn btn-primary btn-sm" data-perm="premios:editar" onclick="guardarParametrosPremios()">Guardar parámetros</button>
+        </div>
+      </div>
+
+      <div id="formula-premios" style="margin:16px 0;padding:14px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #e0e0e0;font-size:.82rem;line-height:1.8">
+        <strong style="font-size:.85rem">Fórmula de cálculo:</strong>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px" id="formula-pasos"></div>
+      </div>
+
+      <table style="margin-top:4px" id="tabla-params-premios">
+        <thead><tr><th>Parámetro</th><th>Descripción</th><th style="width:130px">Valor</th></tr></thead>
+        <tbody id="tbody-params-premios"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+
   </div>
 
 </main>
@@ -772,13 +845,19 @@ async function toggleApremio(id, value) {
 }
 
 async function cargarCatalogos() {
-  const [cRes, dRes, catRes] = await Promise.all([fetch("/api/cargos"), fetch("/api/departamentos"), fetch("/api/categorias")]);
+  const [cRes, dRes, catRes, tlRes, slRes, nlRes] = await Promise.all([
+    fetch("/api/cargos"), fetch("/api/departamentos"), fetch("/api/categorias"),
+    fetch("/api/turnos-legajo"), fetch("/api/sectores-legajo"), fetch("/api/niveles-estudio")
+  ]);
   cargos = await cRes.json();
   deptos = await dRes.json();
   categorias = await catRes.json();
   _renderCargos();
   _renderCatalogo(deptos, "tabla-deptos", "eliminarDepto");
   _renderCatalogo(categorias, "tabla-categorias", "eliminarCategoria");
+  _renderCatalogo(await tlRes.json(), "tabla-turnos-legajo",   "eliminarTurnoLegajo");
+  _renderCatalogo(await slRes.json(), "tabla-sectores-legajo", "eliminarSectorLegajo");
+  _renderCatalogo(await nlRes.json(), "tabla-niveles-estudio", "eliminarNivelEstudio");
 }
 
 function _agregarFilaCatalogo(tbodyId, placeholderText, guardarFn) {
@@ -864,6 +943,52 @@ async function eliminarCategoria(id, nombre) {
   else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
 }
 
+const _CATALOGO_CFG = {
+  turno:  { tbodyId: "tabla-turnos-legajo",   placeholder: "Ej: TM",        api: "/api/turnos-legajo",   crearFn: "crearTurnoLegajo" },
+  sector: { tbodyId: "tabla-sectores-legajo", placeholder: "Ej: SALÓN",     api: "/api/sectores-legajo", crearFn: "crearSectorLegajo" },
+  nivel:  { tbodyId: "tabla-niveles-estudio", placeholder: "Ej: Secundario", api: "/api/niveles-estudio", crearFn: "crearNivelEstudio" },
+};
+
+function agregarItemCatalogo(tipo) {
+  const cfg = _CATALOGO_CFG[tipo];
+  if (!cfg) return;
+  _agregarFilaCatalogo(cfg.tbodyId, cfg.placeholder, cfg.crearFn);
+}
+
+async function _crearItemCatalogo(tipo) {
+  const cfg = _CATALOGO_CFG[tipo];
+  const nombre = document.getElementById(`${cfg.tbodyId}-nuevo-nombre`)?.value.trim();
+  if (!nombre) { toast("Ingresá el nombre"); return; }
+  const res = await fetch(cfg.api, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({nombre}) });
+  if (res.ok) { toast("Creado"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function crearTurnoLegajo()  { await _crearItemCatalogo("turno"); }
+async function crearSectorLegajo() { await _crearItemCatalogo("sector"); }
+async function crearNivelEstudio() { await _crearItemCatalogo("nivel"); }
+
+async function eliminarTurnoLegajo(id, nombre) {
+  if (!confirm(`¿Eliminar el turno "${nombre}"?`)) return;
+  const res = await fetch(`/api/turnos-legajo/${id}`, { method: "DELETE" });
+  if (res.ok) { toast("Turno eliminado"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function eliminarSectorLegajo(id, nombre) {
+  if (!confirm(`¿Eliminar el sector "${nombre}"?`)) return;
+  const res = await fetch(`/api/sectores-legajo/${id}`, { method: "DELETE" });
+  if (res.ok) { toast("Sector eliminado"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
+async function eliminarNivelEstudio(id, nombre) {
+  if (!confirm(`¿Eliminar el nivel "${nombre}"?`)) return;
+  const res = await fetch(`/api/niveles-estudio/${id}`, { method: "DELETE" });
+  if (res.ok) { toast("Nivel eliminado"); await cargarCatalogos(); }
+  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
+}
+
 // ── Premios ───────────────────────────────────────────────────────────────────
 let _paramsPremios = [];
 
@@ -880,12 +1005,30 @@ const _LABELS_PARAM = {
   redondeo:                    "Redondeo final (0 = sin redondeo)",
 };
 
+const _ORDEN_PARAMS = [
+  "monto_base",
+  "dias_minimos_antiguedad",
+  "umbral_puntualidad_ok_min",
+  "umbral_puntualidad_total_min",
+  "limite_no_fichadas",
+  "min_por_no_fichada",
+  "limite_enfermedad_dias",
+  "pct_descuento_puntualidad",
+  "pct_descuento_bpm",
+  "dias_base_vacaciones",
+  "redondeo",
+];
+
 async function cargarParametrosPremios() {
   const res = await fetch("/api/premios/parametros");
   if (!res.ok) return;
   _paramsPremios = await res.json();
+  const ordenado = [
+    ..._ORDEN_PARAMS.map(k => _paramsPremios.find(p => p.clave === k)).filter(Boolean),
+    ..._paramsPremios.filter(p => !_ORDEN_PARAMS.includes(p.clave)),
+  ];
   const tbody = document.getElementById("tbody-params-premios");
-  tbody.innerHTML = _paramsPremios.map(p => `
+  tbody.innerHTML = ordenado.map(p => `
     <tr>
       <td style="font-family:monospace;font-size:.8rem;color:#555">${p.clave}</td>
       <td style="font-size:.82rem">${p.descripcion}</td>
@@ -1039,8 +1182,17 @@ async function eliminarTurno(id, nombre) {
   else { const e = await res.json(); toast("Error: " + (e.detail||"no se pudo eliminar")); }
 }
 
+// ── Tabs de configuración ─────────────────────────────────────────────────────
+function switchCfgTab(tab) {
+  document.querySelectorAll('.cfg-panel').forEach(p => p.classList.remove('activo'));
+  document.querySelectorAll('.cfg-tab').forEach(t => t.classList.remove('activa'));
+  document.getElementById(`panel-${tab}`)?.classList.add('activo');
+  document.getElementById(`tab-${tab}`)?.classList.add('activa');
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 _loadPerms().then(() => {
+  switchCfgTab('sistema');
   cargarParams();
   cargarUsuarios();
   cargarRoles();

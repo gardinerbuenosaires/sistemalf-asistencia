@@ -604,6 +604,18 @@ def _migrate(conn):
         )
     """)
 
+    # Tabla periodos_cerrados
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS periodos_cerrados (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            anio        INTEGER NOT NULL,
+            mes         INTEGER NOT NULL,
+            cerrado_en  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            cerrado_por INTEGER REFERENCES usuarios(id),
+            UNIQUE (anio, mes)
+        )
+    """)
+
     # Tabla planilla_orden
     conn.execute("""
         CREATE TABLE IF NOT EXISTS planilla_orden (

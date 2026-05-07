@@ -24,6 +24,7 @@ from api.fichajes import router as fichajes_router
 from api.catalogos import router as catalogos_router
 from api.premios import router as premios_router
 from api.vacaciones import router as vacaciones_router
+from api.periodos_cerrados import router as periodos_cerrados_router
 from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user
 
 logging.basicConfig(
@@ -65,6 +66,7 @@ app.include_router(fichajes_router)
 app.include_router(catalogos_router)
 app.include_router(premios_router)
 app.include_router(vacaciones_router)
+app.include_router(periodos_cerrados_router)
 
 
 def _auth(request: Request, modulo: str, accion: str = "ver"):
@@ -373,6 +375,7 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
                 tol_entrada = timedelta(minutes=b.get("tolerancia_entrada_despues", 60))
                 if ahora > t_entrada + tol_entrada and ahora < t_salida + timedelta(hours=2):
                     ausentes.append({
+                        "empleado_id":       plan["empleado_id"],
                         "user_id":           plan["user_id"],
                         "nombre":            plan["nombre"],
                         "apellido":          plan["apellido"],
@@ -389,6 +392,7 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
             if ahora > t_salida + margen:
                 # Tiene entrada pero superó el turno → ciclo sin cerrar
                 ciclo_abierto.append({
+                    "empleado_id":      plan["empleado_id"],
                     "user_id":          plan["user_id"],
                     "nombre":           plan["nombre"],
                     "apellido":         plan["apellido"],
@@ -401,6 +405,7 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
                 continue
 
             con_plan.append({
+                "empleado_id":  plan["empleado_id"],
                 "user_id":      plan["user_id"],
                 "nombre":       plan["nombre"],
                 "apellido":     plan["apellido"],
@@ -417,6 +422,7 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
             continue
         ultimo_dt = datetime.strptime(fichajes_hoy_f[-1]["timestamp"], "%Y-%m-%d %H:%M:%S")
         entrada = {
+            "empleado_id":    fila["empleado_id"],
             "user_id":        fila["user_id"],
             "nombre":         fila["nombre"],
             "apellido":       fila["apellido"],
@@ -443,6 +449,7 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
             continue
         ultimo_dt = datetime.strptime(ultimo["timestamp"], "%Y-%m-%d %H:%M:%S")
         entrada = {
+            "empleado_id":    eid,
             "user_id":        ultimo["user_id"],
             "nombre":         ultimo["nombre"],
             "apellido":       ultimo["apellido"],

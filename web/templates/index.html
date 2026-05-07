@@ -53,6 +53,8 @@
   .presencia-item { display: flex; align-items: center; gap: 10px; background: #f0faf4; border-left: 3px solid #27ae60; border-radius: 4px; padding: 8px 12px; }
   .presencia-hora { font-size: 1rem; font-weight: bold; color: #27ae60; min-width: 42px; }
   .presencia-nombre { font-size: 0.9rem; font-weight: bold; }
+  a.presencia-nombre { color: inherit; text-decoration: none; }
+  a.presencia-nombre:hover { text-decoration: underline; cursor: pointer; }
   .presencia-empty { color: #aaa; font-size: 0.9rem; }
   .alerta-franco { background: #fff8e1; border: 2px solid #f39c12; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }
   .alerta-franco-titulo { font-size: .8rem; font-weight: bold; text-transform: uppercase; color: #e67e22; letter-spacing: .05em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
@@ -64,6 +66,10 @@
   .alerta-ciclo .presencia-item { background: #fde8e8; border-left-color: #e74c3c; }
   .alerta-ciclo .presencia-hora { color: #c0392b; }
   .ciclo-salida-plan { font-size: .75rem; color: #999; margin-top: 1px; }
+  .alerta-sin-plan { background: #fff3e0; border: 2px solid #e67e22; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; }
+  .alerta-sin-plan-titulo { font-size: .8rem; font-weight: bold; text-transform: uppercase; color: #d35400; letter-spacing: .05em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .alerta-sin-plan .presencia-item { background: #fff3e0; border-left-color: #e67e22; }
+  .alerta-sin-plan .presencia-hora { color: #d35400; }
 </style>
 </head>
 <body>
@@ -121,6 +127,16 @@
 
   <div class="section">
     <h2>Presencia ahora <span id="cnt-presentes" style="font-size:.85rem;color:#888;font-weight:normal;margin-left:8px"></span></h2>
+    <div id="presencia-sin-plan-wrap" style="display:none">
+      <div class="alerta-sin-plan">
+        <div class="alerta-sin-plan-titulo">
+          <span class="icono">⚠</span>
+          Sin planificación asignada
+          <span id="cnt-sin-plan" style="font-weight:normal"></span>
+        </div>
+        <div id="presencia-sin-plan" class="presencia-grid"></div>
+      </div>
+    </div>
     <div id="presencia-ciclo-wrap" style="display:none">
       <div class="alerta-ciclo">
         <div class="alerta-ciclo-titulo">
@@ -148,12 +164,6 @@
         No ficharon <span id="cnt-ausentes" style="font-weight:normal"></span>
       </h3>
       <div id="presencia-ausentes" class="presencia-grid"></div>
-    </div>
-    <div id="presencia-sin-plan-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid #eee">
-      <h3 style="font-size:.8rem;font-weight:bold;text-transform:uppercase;color:#e67e22;letter-spacing:.05em;margin-bottom:10px">
-        Sin planificación asignada <span id="cnt-sin-plan" style="font-weight:normal"></span>
-      </h3>
-      <div id="presencia-sin-plan" class="presencia-grid"></div>
     </div>
   </div>
 
@@ -222,7 +232,7 @@ function renderGrupos(personas, container) {
   }
   const grupos = {};
   personas.forEach(p => {
-    const cargo = p.cargo || "Sin cargo";
+    const cargo = p.cargo || "Sin cargo asignado";
     if (!grupos[cargo]) grupos[cargo] = [];
     grupos[cargo].push(p);
   });
@@ -233,7 +243,7 @@ function renderGrupos(personas, container) {
         ${lista.map(p => `
           <div class="presencia-item">
             <span class="presencia-hora">${p.hora_entrada.slice(11,16)}</span>
-            <span class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</span>
+            <a href="/empleados?id=${p.empleado_id}" class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</a>
           </div>
         `).join("")}
       </div>
@@ -260,7 +270,7 @@ async function loadPresencia() {
       <div class="presencia-item">
         <span class="presencia-hora">${p.hora_entrada.slice(11,16)}</span>
         <div>
-          <div class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</div>
+          <a href="/empleados?id=${p.empleado_id}" class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</a>
           <div class="ciclo-salida-plan">${p.cargo || ''}${p.hora_salida_plan ? ' · salida plan: ' + p.hora_salida_plan : ' · último: ' + p.ultimo_fichaje.slice(11,16)}</div>
         </div>
       </div>
@@ -278,7 +288,7 @@ async function loadPresencia() {
       <div class="presencia-item">
         <span class="presencia-hora">${p.hora_entrada.slice(11,16)}</span>
         <div>
-          <div class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</div>
+          <a href="/empleados?id=${p.empleado_id}" class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</a>
           <div style="font-size:.78rem;color:#888">${p.cargo || ''}</div>
         </div>
       </div>
@@ -295,7 +305,7 @@ async function loadPresencia() {
     document.getElementById("cnt-ausentes").textContent = `(${ausentes.length})`;
     const grupos = {};
     ausentes.forEach(p => {
-      const cargo = p.cargo || "Sin cargo";
+      const cargo = p.cargo || "Sin cargo asignado";
       if (!grupos[cargo]) grupos[cargo] = [];
       grupos[cargo].push(p);
     });
@@ -307,7 +317,7 @@ async function loadPresencia() {
             ${lista.map(p => `
               <div class="presencia-item" style="background:#fdf0f0;border-left-color:#e74c3c">
                 <span class="presencia-hora" style="color:#e74c3c">${p.hora_entrada_plan}</span>
-                <span class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</span>
+                <a href="/empleados?id=${p.empleado_id}" class="presencia-nombre">${p.apellido}${p.nombre ? ', ' + p.nombre : ''}</a>
               </div>
             `).join("")}
           </div>

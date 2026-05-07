@@ -282,7 +282,25 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
             horario_id_result = p.get("horario_id")
 
             if p["es_franco"]:
-                fichajes_franco = [f for f in fich_map.get(eid, []) if f["timestamp"][:10] == fecha_str]
+                # Excluir fichajes madrugada que pertenecen al turno anterior (cruza_medianoche)
+                excluir_antes: datetime | None = None
+                plan_ant = conn.execute(
+                    "SELECT horario_id FROM planificacion WHERE empleado_id=? AND fecha=? AND es_franco=0",
+                    (eid, str(fecha - timedelta(days=1)))
+                ).fetchone()
+                if plan_ant and plan_ant["horario_id"]:
+                    bloques_noche = conn.execute(
+                        "SELECT hora_salida FROM horarios_bloques "
+                        "WHERE horario_id=? AND cruza_medianoche=1 ORDER BY bloque DESC LIMIT 1",
+                        (plan_ant["horario_id"],)
+                    ).fetchone()
+                    if bloques_noche:
+                        excluir_antes = _dt(fecha - timedelta(days=1), bloques_noche["hora_salida"], dia_sig=True) + timedelta(minutes=30)
+                fichajes_franco = [
+                    f for f in fich_map.get(eid, [])
+                    if f["timestamp"][:10] == fecha_str
+                    and (excluir_antes is None or datetime.fromisoformat(f["timestamp"]) > excluir_antes)
+                ]
                 if fichajes_franco:
                     hid_ft = p.get("horario_id")  # NULL hasta que el encargado lo asigne
                     if hid_ft and hid_ft not in bloques_map:

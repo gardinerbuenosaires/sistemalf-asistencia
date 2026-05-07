@@ -280,7 +280,7 @@ async function cargar() {
   let cargoActual = null;
 
   for (const emp of data.empleados) {
-    const cargo = emp.empleado.cargo || "Sin cargo";
+    const cargo = emp.empleado.cargo || "Sin cargo asignado";
     if (cargo !== cargoActual) {
       html += `<tr class="grupo-header"><td colspan="8">${cargo}</td></tr>`;
       cargoActual = cargo;

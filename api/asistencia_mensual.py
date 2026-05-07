@@ -287,7 +287,9 @@ def upsert_novedad(data: NovedadIn):
         raise HTTPException(400, f"Tipo inválido. Válidos: {sorted(LETRAS_VALIDAS)}")
     if data.tipo == "@" and data.bloque not in (1, 2):
         raise HTTPException(400, "La aliviada (@) requiere bloque 1 o 2")
+    from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
+        check_periodo_abierto(conn, data.fecha)
         conn.execute(
             """INSERT INTO novedades (empleado_id, fecha, bloque, tipo, descripcion)
                VALUES (?,?,?,?,?)
@@ -314,7 +316,9 @@ class NovedadRangoIn(BaseModel):
 def eliminar_novedades_rango(data: NovedadRangoIn):
     if data.fecha_hasta < data.fecha_desde:
         raise HTTPException(400, "fecha_hasta debe ser >= fecha_desde")
+    from api.periodos_cerrados import check_rango_abierto
     with db_session() as conn:
+        check_rango_abierto(conn, data.fecha_desde, data.fecha_hasta)
         conn.execute(
             """DELETE FROM novedades
                WHERE empleado_id=? AND fecha>=? AND fecha<=? AND bloque=?""",
@@ -325,9 +329,12 @@ def eliminar_novedades_rango(data: NovedadRangoIn):
 
 @router.delete("/novedades/{nov_id}")
 def eliminar_novedad(nov_id: int):
+    from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
-        if not conn.execute("SELECT id FROM novedades WHERE id=?", (nov_id,)).fetchone():
+        row = conn.execute("SELECT id, fecha FROM novedades WHERE id=?", (nov_id,)).fetchone()
+        if not row:
             raise HTTPException(404, "Novedad no encontrada")
+        check_periodo_abierto(conn, row["fecha"])
         conn.execute("DELETE FROM novedades WHERE id=?", (nov_id,))
     return {"ok": True}
 
@@ -336,7 +343,9 @@ def eliminar_novedad(nov_id: int):
 @router.put("/saldo_francos/{empleado_id}/{mes}")
 def set_saldo_francos(empleado_id: int, mes: str, body: dict):
     saldo = float(body.get("saldo", 0))
+    from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
+        check_periodo_abierto(conn, f"{mes}-01")
         conn.execute(
             """INSERT INTO saldo_francos (empleado_id, mes, saldo) VALUES (?,?,?)
                ON CONFLICT(empleado_id, mes) DO UPDATE SET saldo=excluded.saldo""",

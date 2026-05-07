@@ -136,12 +136,18 @@ def update_calendario(cid: int, data: CalendarioIn, _user=Depends(require_permis
 
 @router.delete("/{cid}")
 def delete_calendario(cid: int, _user=Depends(require_permiso("calendarios", "eliminar"))):
+    from datetime import date
+    hoy = str(date.today())
     with db_session() as conn:
-        en_uso = conn.execute(
-            "SELECT COUNT(*) FROM asignaciones WHERE calendario_id=?", (cid,)
+        activas = conn.execute(
+            "SELECT COUNT(*) FROM asignaciones WHERE calendario_id=? "
+            "AND (fecha_hasta IS NULL OR fecha_hasta > ?)",
+            (cid, hoy)
         ).fetchone()[0]
-        if en_uso:
-            raise HTTPException(409, "El calendario está asignado a empleados")
+        if activas:
+            raise HTTPException(409, "El calendario está asignado a empleados activos")
+        # Elimina asignaciones históricas (ya cerradas); planificación y asistencia no se tocan
+        conn.execute("DELETE FROM asignaciones WHERE calendario_id=?", (cid,))
         conn.execute("DELETE FROM calendarios_dias WHERE calendario_id=?", (cid,))
         conn.execute("DELETE FROM calendarios WHERE id=?", (cid,))
     return {"ok": True}
@@ -157,8 +163,9 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
     regenera los próximos 30 días. Las entradas manuales no se tocan.
     """
     from datetime import date as dt
+    hoy = dt.today()
     d_desde = dt.fromisoformat(data.fecha_desde)
-    d_hasta = d_desde + timedelta(days=30)
+    d_hasta = max(d_desde + timedelta(days=30), hoy + timedelta(days=30))
 
     with db_session() as conn:
         dias_cal = conn.execute(
@@ -178,10 +185,16 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
         ).fetchall()}
 
         for eid in data.empleado_ids:
-            # Si el mismo calendario ya está activo desde fecha_desde o antes, no hacer nada
+            # Limpiar historial cerrado siempre (independientemente de si hay cambio)
+            conn.execute(
+                "DELETE FROM asignaciones WHERE empleado_id=? AND fecha_hasta IS NOT NULL",
+                (eid,)
+            )
+
+            # Saltear solo si ya existe exactamente la misma asignación (mismo calendario, misma fecha_desde)
             ya_activo = conn.execute(
                 "SELECT id FROM asignaciones "
-                "WHERE empleado_id=? AND calendario_id=? AND fecha_desde<=? "
+                "WHERE empleado_id=? AND calendario_id=? AND fecha_desde=? "
                 "AND (fecha_hasta IS NULL OR fecha_hasta > ?)",
                 (eid, data.calendario_id, data.fecha_desde, data.fecha_desde)
             ).fetchone()
@@ -190,8 +203,8 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
 
             conn.execute(
                 "UPDATE asignaciones SET fecha_hasta=? "
-                "WHERE empleado_id=? AND (fecha_hasta IS NULL OR fecha_hasta >= ?)",
-                (data.fecha_desde, eid, data.fecha_desde)
+                "WHERE empleado_id=? AND fecha_desde <= ? AND (fecha_hasta IS NULL OR fecha_hasta >= ?)",
+                (data.fecha_desde, eid, data.fecha_desde, data.fecha_desde)
             )
             conn.execute(
                 "INSERT INTO asignaciones "
@@ -229,6 +242,14 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
                         (eid, fecha_str, horario_id, es_franco)
                     )
                 cur += timedelta(days=1)
+
+    # Recalcular resultados para fechas pasadas con fichajes
+    from sync.evaluador import evaluar_fecha
+    for eid in data.empleado_ids:
+        cur = d_desde
+        while cur <= hoy:
+            evaluar_fecha(str(cur), respetar_correcciones=False, solo_empleado_id=eid)
+            cur += timedelta(days=1)
 
     return {"ok": True, "asignados": len(data.empleado_ids)}
 
@@ -291,8 +312,8 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
             SELECT a.empleado_id, a.calendario_id, a.franco_rotativo, a.franco_dia_semana
             FROM asignaciones a
             WHERE a.fecha_desde <= ?
-              AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
-            ORDER BY a.empleado_id, a.fecha_desde DESC
+              AND (a.fecha_hasta IS NULL OR a.fecha_hasta > ?)
+            ORDER BY a.empleado_id, a.fecha_desde DESC, a.id DESC
             """,
             (dias[6], dias[0])
         ).fetchall()

@@ -57,10 +57,15 @@ def procesar(
     respetar_correcciones=false para pisar correcciones manuales al re-procesar.
     """
     from sync.evaluador import evaluar_fecha, evaluar_rango
+    from api.periodos_cerrados import check_periodo_abierto, check_rango_abierto
     if fecha:
+        with db_session() as conn:
+            check_periodo_abierto(conn, fecha)
         return evaluar_fecha(fecha, respetar_correcciones=respetar_correcciones,
                              solo_empleado_id=empleado_id)
     if fecha_desde and fecha_hasta:
+        with db_session() as conn:
+            check_rango_abierto(conn, fecha_desde, fecha_hasta)
         return evaluar_rango(fecha_desde, fecha_hasta, respetar_correcciones=respetar_correcciones)
     raise HTTPException(400, "Pasar fecha o fecha_desde+fecha_hasta")
 
@@ -120,8 +125,10 @@ def corregir_fichaje(
         raise HTTPException(400, "slot inválido")
 
     from sync.evaluador import recalcular_resultado
+    from api.periodos_cerrados import check_periodo_abierto
 
     with db_session() as conn:
+        check_periodo_abierto(conn, fecha)
         r = conn.execute(
             "SELECT id FROM resultados_dia WHERE empleado_id=? AND fecha=?",
             (empleado_id, fecha)

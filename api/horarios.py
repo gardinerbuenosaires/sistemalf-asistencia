@@ -157,13 +157,29 @@ def delete_horario(horario_id: int, _user=Depends(require_permiso("horarios", "e
         h = conn.execute("SELECT id FROM horarios WHERE id = ?", (horario_id,)).fetchone()
         if not h:
             raise HTTPException(status_code=404, detail="Horario no encontrado")
-        en_uso = conn.execute(
-            "SELECT COUNT(*) FROM asignaciones WHERE horario_id = ?", (horario_id,)
+        en_calendario = conn.execute(
+            "SELECT COUNT(*) FROM calendarios_dias WHERE horario_id = ?", (horario_id,)
         ).fetchone()[0]
-        if en_uso:
+        if en_calendario:
             raise HTTPException(
                 status_code=409,
-                detail="No se puede eliminar: el horario está asignado a empleados"
+                detail="No se puede eliminar: el horario está usado en uno o más calendarios"
+            )
+        en_planificacion = conn.execute(
+            "SELECT COUNT(*) FROM planificacion WHERE horario_id = ?", (horario_id,)
+        ).fetchone()[0]
+        if en_planificacion:
+            raise HTTPException(
+                status_code=409,
+                detail="No se puede eliminar: el horario tiene días planificados"
+            )
+        en_resultados = conn.execute(
+            "SELECT COUNT(*) FROM resultados_dia WHERE horario_id = ?", (horario_id,)
+        ).fetchone()[0]
+        if en_resultados:
+            raise HTTPException(
+                status_code=409,
+                detail="No se puede eliminar: el horario tiene resultados procesados"
             )
         conn.execute("DELETE FROM horarios_bloques WHERE horario_id = ?", (horario_id,))
         conn.execute("DELETE FROM horarios WHERE id = ?", (horario_id,))

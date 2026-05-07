@@ -32,7 +32,7 @@ def get_semana(fecha: str, _user=Depends(require_permiso("planificacion", "ver")
 
     with db_session() as conn:
         empleados = conn.execute(
-            "SELECT id, nombre, apellido, cargo FROM empleados WHERE activo = 1 ORDER BY cargo, apellido, nombre"
+            "SELECT id, nombre, apellido, cargo, tipo FROM empleados WHERE activo = 1 AND tipo != 'acceso' ORDER BY cargo, apellido, nombre"
         ).fetchall()
 
         plan_rows = conn.execute(
@@ -83,9 +83,11 @@ def set_dia(data: PlanDiaIn, _user=Depends(require_permiso("planificacion", "edi
     Crea o actualiza la planificación de un empleado en una fecha.
     Si horario_id es None y es_franco es False, elimina la asignación.
     """
+    from api.periodos_cerrados import check_periodo_abierto
     if data.horario_id is None and not data.es_franco:
         # Borrar asignación y resultado asociado (si no fue corregido manualmente)
         with db_session() as conn:
+            check_periodo_abierto(conn, data.fecha)
             conn.execute(
                 "DELETE FROM planificacion WHERE empleado_id = ? AND fecha = ?",
                 (data.empleado_id, data.fecha),
@@ -97,6 +99,7 @@ def set_dia(data: PlanDiaIn, _user=Depends(require_permiso("planificacion", "edi
         return {"ok": True, "accion": "eliminado"}
 
     with db_session() as conn:
+        check_periodo_abierto(conn, data.fecha)
         conn.execute(
             """
             INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, observacion, auto_generado)
@@ -140,6 +143,7 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
     from fastapi import HTTPException
     from sync.evaluador import _clasificar_fichajes, _evaluar_bloque
     from datetime import date, timedelta
+    from api.periodos_cerrados import check_periodo_abierto
 
     empleado_id = body.get("empleado_id")
     fecha_str   = body.get("fecha")
@@ -151,6 +155,7 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
     fecha_sig = str(fecha + timedelta(days=1))
 
     with db_session() as conn:
+        check_periodo_abierto(conn, fecha_str)
         plan = conn.execute(
             "SELECT id FROM planificacion WHERE empleado_id=? AND fecha=? AND es_franco=1",
             (empleado_id, fecha_str)
@@ -219,7 +224,9 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
 
 @router.delete("/{empleado_id}/{fecha}")
 def delete_dia(empleado_id: int, fecha: str, _user=Depends(require_permiso("planificacion", "editar"))):
+    from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
+        check_periodo_abierto(conn, fecha)
         conn.execute(
             "DELETE FROM planificacion WHERE empleado_id = ? AND fecha = ?",
             (empleado_id, fecha),

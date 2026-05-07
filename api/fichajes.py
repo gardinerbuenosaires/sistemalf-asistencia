@@ -177,13 +177,30 @@ def eliminar_fichaje(
     _user=Depends(require_permiso("asistencia", "editar")),
 ):
     """Elimina un fichaje manual. No permite borrar fichajes biométricos."""
+    from sync.evaluador import recalcular_resultado
     with db_session() as conn:
         f = conn.execute(
-            "SELECT id, es_manual FROM fichajes WHERE id=?", (fichaje_id,)
+            "SELECT id, es_manual, empleado_id, date(timestamp) as fecha FROM fichajes WHERE id=?",
+            (fichaje_id,)
         ).fetchone()
         if not f:
             raise HTTPException(404, "Fichaje no encontrado")
         if not f["es_manual"]:
             raise HTTPException(400, "Solo se pueden eliminar fichajes manuales")
+        # Limpiar referencias en resultados_dia antes de borrar
+        conn.execute(
+            """UPDATE resultados_dia SET
+               b1_entrada    = CASE WHEN b1_entrada_id=? THEN NULL ELSE b1_entrada END,
+               b1_entrada_id = CASE WHEN b1_entrada_id=? THEN NULL ELSE b1_entrada_id END,
+               b1_salida     = CASE WHEN b1_salida_id=?  THEN NULL ELSE b1_salida END,
+               b1_salida_id  = CASE WHEN b1_salida_id=?  THEN NULL ELSE b1_salida_id END,
+               b2_entrada    = CASE WHEN b2_entrada_id=? THEN NULL ELSE b2_entrada END,
+               b2_entrada_id = CASE WHEN b2_entrada_id=? THEN NULL ELSE b2_entrada_id END,
+               b2_salida     = CASE WHEN b2_salida_id=?  THEN NULL ELSE b2_salida END,
+               b2_salida_id  = CASE WHEN b2_salida_id=?  THEN NULL ELSE b2_salida_id END
+               WHERE empleado_id=? AND fecha=?""",
+            (fichaje_id,)*8 + (f["empleado_id"], f["fecha"])
+        )
         conn.execute("DELETE FROM fichajes WHERE id=?", (fichaje_id,))
+    recalcular_resultado(f["empleado_id"], f["fecha"])
     return {"ok": True}

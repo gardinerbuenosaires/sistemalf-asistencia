@@ -7,7 +7,7 @@
 <title>Planilla Mensual — SistemAlf</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; overflow-x: hidden; }
 
 header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px;
          display: flex; align-items: center; justify-content: space-between; }
@@ -57,7 +57,7 @@ nav a.activo { opacity: 1; font-weight: bold; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
-.tabla-outer { overflow-x: auto; margin: 0; padding-bottom: 16px; }
+.tabla-outer { overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 160px); margin: 0; }
 
 table.planilla {
   border-collapse: collapse;
@@ -114,8 +114,11 @@ table.planilla tbody td.col-nombre {
 }
 table.planilla tbody td.col-sep { background: #f4f6f9; border: none; }
 table.planilla tbody td.col-res { font-size: .72rem; color: #444; }
+table.planilla tbody td.col-res.res-nz { font-weight: bold; }
+table.planilla tbody td.col-res.res-cero { color: #ccc; font-weight: normal; }
 table.planilla tbody td.col-dias { font-weight: bold; font-size: .78rem;
                                     background: #eef0f2; border-left: 2px solid #dee2e6; }
+table.planilla tbody td.col-dias.res-cero { color: #bbb; font-weight: normal; }
 table.planilla tbody td.saldo-neg { color: #c0392b; font-weight: bold; }
 table.planilla tbody td.saldo-pos { color: #27ae60; font-weight: bold; }
 
@@ -221,6 +224,14 @@ tr[draggable="true"]:active { cursor: grabbing; }
 #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white;
          padding: 10px 18px; border-radius: 8px; display: none; z-index: 200; font-size: .85rem; }
 
+#banner-cerrado { display: none; background: #2c3e50; color: #f1c40f;
+  text-align: center; padding: 8px 16px; font-size: .88rem;
+  font-weight: bold; letter-spacing: .04em; }
+.btn-cerrar { background: #922b21; color: white; border-color: #922b21; }
+.btn-cerrar:hover { background: #7b241c; }
+.btn-reabrir { background: #1e8449; color: white; border-color: #1e8449; }
+.btn-reabrir:hover { background: #196f3d; }
+
 .leyenda { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px;
            background: white; border-bottom: 1px solid #eee; }
 .ley-item { display: flex; align-items: center; gap: 4px; font-size: .72rem; color: #555; }
@@ -281,8 +292,13 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <button class="btn-orden" onclick="importarFeriados()" title="Importar feriados desde argentinadatos.com">
     Importar feriados
   </button>
+  <button class="btn-orden btn-cerrar" id="btn-cerrar-periodo" style="display:none" onclick="toggleCerrarPeriodo()">
+    Cerrar período
+  </button>
   <span id="loading-msg" style="font-size:.85rem;color:#888"></span>
 </div>
+
+<div id="banner-cerrado"></div>
 
 <div class="leyenda" id="leyenda"></div>
 
@@ -354,7 +370,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
     <div class="mpanel-bloqueado-msg">
       <span class="bloqueado-icono">&#10003;</span>
       Presencia registrada correctamente.<br>
-      Para modificar, eliminá el fichaje desde la vista de <a href="/asistencia" target="_blank">Asistencia</a>.
+      Para eliminarlo, usá la vista de <a id="link-fichajes-crudos" href="/asistencia#fichajes" target="_blank">Fichajes crudos</a>.
     </div>
     <div class="modal-actions">
       <button class="btn-cancelar" onclick="cerrarModal()">Cerrar</button>
@@ -413,6 +429,7 @@ let mesActual = '';
 let datosActuales = null;
 let tabActiva = 'TM';
 let modalCtx = null;
+let periodoCerrado = false;
 
 // Orden: { TM: [{empleado_id, etiqueta}|null], TN: [...], CO: [...] }
 // null en el array = orden API vacío (usar orden por defecto de la API)
@@ -451,12 +468,64 @@ async function cargar() {
   document.getElementById('mes-label').textContent = `${MESES_ES[m-1]} ${y}`;
   document.getElementById('loading-msg').textContent = 'Cargando...';
   try {
-    const r = await fetch(`/api/asistencia/mensual?mes=${mesActual}`);
-    datosActuales = await r.json();
+    const [rData, rPeriodo] = await Promise.all([
+      fetch(`/api/asistencia/mensual?mes=${mesActual}`),
+      fetch(`/api/periodos-cerrados/${y}/${m}`),
+    ]);
+    datosActuales = await rData.json();
+    const periodo = await rPeriodo.json();
+    periodoCerrado = periodo.cerrado === true;
+    actualizarBannerCerrado(y, m);
     renderTodo();
     document.getElementById('loading-msg').textContent = '';
   } catch(e) {
     document.getElementById('loading-msg').textContent = 'Error al cargar';
+  }
+}
+
+function actualizarBannerCerrado(y, m) {
+  if (y === undefined) {
+    const parts = mesActual.split('-').map(Number);
+    y = parts[0]; m = parts[1];
+  }
+  const banner = document.getElementById('banner-cerrado');
+  const btn = document.getElementById('btn-cerrar-periodo');
+  const nombreMes = MESES_ES[m - 1];
+  if (periodoCerrado) {
+    banner.style.display = 'block';
+    banner.textContent = `⚠️ Período ${nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1)} ${y} — CERRADO — Solo lectura`;
+    if (btn) {
+      btn.style.display = canDo('periodos','reabrir') ? '' : 'none';
+      btn.textContent = 'Reabrir período';
+      btn.className = 'btn-orden btn-reabrir';
+    }
+  } else {
+    banner.style.display = 'none';
+    if (btn) {
+      btn.style.display = canDo('periodos','cerrar') ? '' : 'none';
+      btn.textContent = 'Cerrar período';
+      btn.className = 'btn-orden btn-cerrar';
+    }
+  }
+}
+
+async function toggleCerrarPeriodo() {
+  const [y, m] = mesActual.split('-').map(Number);
+  const nombreMes = MESES_ES[m - 1];
+  if (periodoCerrado) {
+    if (!confirm(`¿Reabrir el período ${nombreMes} ${y}? Se podrán volver a editar novedades y planificación.`)) return;
+    const r = await fetch(`/api/periodos-cerrados/${y}/${m}`, {method: 'DELETE'});
+    if (r.ok) { toast('Período reabierto'); cargar(); }
+    else { const e = await r.json(); toast('Error: ' + (e.detail || r.status)); }
+  } else {
+    if (!confirm(`¿Cerrar el período ${nombreMes} ${y}?\n\nNo se podrán hacer modificaciones hasta reabrirlo.`)) return;
+    const r = await fetch('/api/periodos-cerrados', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({anio: y, mes: m}),
+    });
+    if (r.ok) { toast('Período cerrado'); cargar(); }
+    else { const e = await r.json(); toast('Error: ' + (e.detail || r.status)); }
   }
 }
 
@@ -501,15 +570,19 @@ function cancelarOrden() {
 }
 
 function construirOrdenEdicion(grupo) {
-  // Si ya hay un orden guardado, partimos de él
+  const emps = datosActuales ? datosActuales[grupo] : [];
   if (ordenActual[grupo]) {
-    return ordenActual[grupo].map(r => ({
+    const base = ordenActual[grupo].map(r => ({
       empleado_id: r.empleado_id ?? null,
       etiqueta:    r.etiqueta ?? null,
     }));
+    // Agregar empleados nuevos que no estaban en el orden guardado
+    const idsGuardados = new Set(base.map(r => r.empleado_id).filter(id => id !== null));
+    const faltantes = emps
+      .filter(e => !idsGuardados.has(e.id))
+      .map(e => ({ empleado_id: e.id, etiqueta: null }));
+    return [...base, ...faltantes];
   }
-  // Si no, construimos desde los empleados que devolvió la API
-  const emps = datosActuales ? datosActuales[grupo] : [];
   return emps.map(e => ({ empleado_id: e.id, etiqueta: null }));
 }
 
@@ -633,7 +706,10 @@ function filaHtmlSimple(emp, dias, resCols) {
   h += '<td class="col-sep"></td>';
   resCols.forEach(col => {
     const v = emp.totales[col] ?? 0;
-    const cls = col === 'saldo_francos' ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : '') : '';
+    const esCero = v === 0 || v === '0';
+    const cls = col === 'saldo_francos'
+      ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : 'res-cero')
+      : (esCero ? 'res-cero' : 'res-nz');
     h += `<td class="col-res${col==='dias'?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
   });
   return h + '</tr>';
@@ -651,7 +727,10 @@ function filaHtmlCortado(emp, dias, resCols) {
   h += '<td class="col-sep"></td>';
   resCols.forEach(col => {
     const v = emp.totales[col] ?? 0;
-    const cls = col === 'saldo_francos' ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : '') : '';
+    const esCero = v === 0 || v === '0';
+    const cls = col === 'saldo_francos'
+      ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : 'res-cero')
+      : (esCero ? 'res-cero' : 'res-nz');
     h += `<td class="col-res${col==='dias'?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
   });
   return h + '</tr>';
@@ -837,6 +916,7 @@ function canDo(m, a) { return _perms.has(`${m}:${a}`); }
 
 function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   if (modoOrden) return;
+  if (periodoCerrado) { toast('El período está cerrado — solo lectura'); return; }
   const emp = encontrarEmp(eid);
   if (!emp) return;
 
@@ -860,6 +940,8 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
 
   if (bloqueado) {
     modalTabPlani('bloqueado');
+    const lnk = document.getElementById('link-fichajes-crudos');
+    if (lnk) lnk.href = `/asistencia?tab=fichajes&empleado=${eid}&fecha=${fecha}`;
   } else if (esFT && ftPendienteActual) {
     _poblarHorariosFT();
     modalTabPlani('ft');
@@ -1114,6 +1196,7 @@ async function _loadPerms() {
   document.querySelectorAll('[data-perm]').forEach(el => {
     if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
   });
+  actualizarBannerCerrado();
 }
 
 _loadPerms();

@@ -89,6 +89,10 @@
   .row-impar:hover td { background: #fff3e6 !important; }
   .fich-hora { font-family: monospace; font-size: .85rem; }
   .fich-vacio { color: #e0e0e0; font-family: monospace; }
+  .fich-manual { background: #fffbe6; }
+  .fich-del-btn { margin-left: 4px; border: none; background: none; color: #c0392b;
+    cursor: pointer; font-size: .7rem; opacity: .5; padding: 0 2px; vertical-align: middle; }
+  .fich-del-btn:hover { opacity: 1; }
   .cnt-impar { color: #c0392b; font-weight: bold; }
   .cnt-par   { color: #888; }
 
@@ -503,12 +507,12 @@ async function cargarFichajes() {
         ts: []
       };
     }
-    grupos[key].ts.push(f.timestamp);
+    grupos[key].ts.push({id: f.id, ts: f.timestamp, manual: !!f.es_manual});
   }
 
   // Ordenar por fecha asc, luego nombre
   const lista = Object.values(grupos)
-    .map(g => { g.ts.sort(); return g; })
+    .map(g => { g.ts.sort((a,b) => a.ts.localeCompare(b.ts)); return g; })
     .sort((a, b) => a.fecha !== b.fecha ? a.fecha.localeCompare(b.fecha) : a.nombre.localeCompare(b.nombre));
 
   const maxCols = Math.min(Math.max(4, ...lista.map(g => g.ts.length)), 8);
@@ -529,11 +533,15 @@ async function cargarFichajes() {
   const bodyRows = lista.map(g => {
     const n      = g.ts.length;
     const impar  = n % 2 !== 0;
-    const celdas = Array.from({length: maxCols}, (_, i) =>
-      i < n
-        ? `<td style="text-align:center" class="fich-hora">${g.ts[i].slice(11,16)}</td>`
-        : `<td style="text-align:center" class="fich-vacio">—</td>`
-    ).join("");
+    const celdas = Array.from({length: maxCols}, (_, i) => {
+      if (i >= n) return `<td style="text-align:center" class="fich-vacio">—</td>`;
+      const f = g.ts[i];
+      const hora = f.ts.slice(11,16);
+      const btnDel = f.manual && canDo('asistencia','editar')
+        ? `<button class="fich-del-btn" onclick="eliminarFichaje(${f.id})" title="Eliminar fichaje manual">✕</button>`
+        : '';
+      return `<td style="text-align:center" class="fich-hora${f.manual?' fich-manual':''}">${hora}${btnDel}</td>`;
+    }).join("");
     return `<tr class="${impar ? "row-impar" : ""}">
       <td><div class="emp-cell">${g.nombre}</div><div class="emp-cargo">${g.cargo}</div></td>
       <td>${fmtFecha(g.fecha)}</td>
@@ -548,6 +556,23 @@ async function cargarFichajes() {
     </tr></thead>
     <tbody>${bodyRows}</tbody>
   </table>`;
+}
+
+async function eliminarFichaje(id) {
+  if (!confirm('¿Eliminar este fichaje manual?')) return;
+  try {
+    const res = await fetch(`/api/fichajes/${id}`, {method: 'DELETE'});
+    if (res.ok) {
+      toast('Fichaje eliminado');
+      cargarFichajes();
+    } else {
+      let msg = `HTTP ${res.status}`;
+      try { const e = await res.json(); msg = e.detail || msg; } catch {}
+      toast('Error: ' + msg);
+    }
+  } catch(e) {
+    toast('Error de red: ' + e.message);
+  }
 }
 
 function fmtFecha(iso) {
@@ -753,7 +778,23 @@ async function init() {
   await cargarEmpleados();
   const hoy = new Date().toISOString().slice(0,10);
   await fetch(`/api/resultados/procesar?fecha_desde=${hoy}&fecha_hasta=${hoy}`, { method: 'POST' }).catch(() => {});
-  await cargar();
+
+  const params = new URLSearchParams(location.search);
+  const tabParam = params.get('tab');
+  const empParam = params.get('empleado');
+  const fechaParam = params.get('fecha');
+
+  if (tabParam === 'fichajes' || location.hash === '#fichajes') {
+    switchTab('fichajes');
+    if (empParam) document.getElementById('f-empleado').value = empParam;
+    if (fechaParam) {
+      document.getElementById('f-desde').value = fechaParam;
+      document.getElementById('f-hasta').value = fechaParam;
+    }
+    await cargarFichajes();
+  } else {
+    await cargar();
+  }
 }
 
 init();

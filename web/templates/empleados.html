@@ -8,7 +8,8 @@
 <title>Empleados — Sistema de Fichaje</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  html, body { height: 100%; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; display: flex; flex-direction: column; overflow: hidden; }
   header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
   nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
   nav a:hover { opacity: 1; }
@@ -25,9 +26,9 @@
   .nav-dropdown a:hover { background: #f4f6f9; }
   [data-perm] { display: none; }
 
-  main { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px; max-width: 1300px; margin: 0 auto; align-items: start; }
+  main { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px; max-width: 1300px; margin: 0 auto; align-items: stretch; flex: 1; min-height: 0; width: 100%; }
 
-  .panel { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+  .panel { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid #eee; }
   .panel-header h2 { font-size: .95rem; }
   .tabs { display: flex; border-bottom: 1px solid #eee; }
@@ -35,7 +36,7 @@
   .tab-btn.activo { color: #2c3e50; border-bottom-color: #2c3e50; }
 
   /* Lista */
-  .emp-list { max-height: calc(100vh - 160px); overflow-y: auto; }
+  .emp-list { flex: 1; min-height: 0; overflow-y: auto; }
   .emp-item { display: flex; align-items: center; padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #f5f5f5; gap: 10px; }
   .emp-item:hover { background: #f8f9fa; }
   .emp-item.activo { background: #eef2f5; border-left: 3px solid #2c3e50; }
@@ -46,7 +47,7 @@
   .badge-inactivo { font-size: .7rem; background: #f8d7da; color: #721c24; padding: 1px 6px; border-radius: 10px; }
 
   /* Formulario */
-  .form-scroll { padding: 20px; max-height: calc(100vh - 120px); overflow-y: auto; }
+  .form-scroll { padding: 20px; flex: 1; min-height: 0; overflow-y: auto; }
   .form-section { margin-bottom: 20px; }
   .form-section-title { font-size: .75rem; font-weight: bold; text-transform: uppercase; letter-spacing: .06em; color: #888; margin-bottom: 10px; padding-bottom: 4px; border-bottom: 1px solid #eee; }
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
@@ -148,7 +149,7 @@
     <div class="panel-header">
       <h2 id="panel-titulo">Personal (<span id="cnt">0</span>)</h2>
       <button class="btn btn-secondary btn-sm" data-perm="sync:procesar" onclick="importarDesdeDispositivo()" id="btn-importar">Importar desde dispositivo</button>
-      <a href="/empleados/listado" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">Listado imprimible</a>
+      <a href="/empleados/listado" class="btn btn-secondary btn-sm" style="text-decoration:none">Listado imprimible</a>
     </div>
     <div class="tabs">
       <button class="tab-btn activo" id="tab-personal" onclick="cambiarTab('personal')">Personal</button>
@@ -396,7 +397,7 @@ function renderLista(lista) {
       <div class="emp-avatar">${iniciales(e.apellido, e.nombre)}</div>
       <div class="emp-info">
         <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}</div>
-        <div class="emp-sub">${[e.cargo, e.departamento].filter(Boolean).join(" · ") || "Sin cargo"}${e.tipo === "jerarquico" ? ' · <span style="color:#8e44ad">Jerárquico</span>' : e.tipo === "acceso" ? ' · <span style="color:#7f8c8d">Solo acceso</span>' : ""}</div>
+        <div class="emp-sub">${[e.cargo, e.departamento].filter(Boolean).join(" · ") || "Sin cargo asignado"}${e.tipo === "jerarquico" ? ' · <span style="color:#8e44ad">Jerárquico</span>' : e.tipo === "acceso" ? ' · <span style="color:#7f8c8d">Solo acceso</span>' : ""}</div>
       </div>
     </div>`).join("");
 }
@@ -459,7 +460,7 @@ async function liberarId(eid, userId) {
 function buildCalendarioSection(asignaciones = []) {
   const hoy = new Date().toISOString().slice(0, 10);
   const vigente = asignaciones.find(a =>
-    a.fecha_desde <= hoy && (a.fecha_hasta === null || a.fecha_hasta >= hoy)
+    a.fecha_desde <= hoy && (a.fecha_hasta === null || a.fecha_hasta > hoy)
   );
   const historial = asignaciones.filter(a => a !== vigente).slice(0, 3);
 
@@ -526,9 +527,12 @@ function buildCalendarioSection(asignaciones = []) {
         ${calOpts}
       </select>
       <label style="font-size:.78rem;color:#666;white-space:nowrap">Desde</label>
-      <input type="date" id="asig-cal-desde" value="${hoy}" style="width:130px">
-      <button class="btn btn-primary btn-sm" onclick="asignarCalendario()">Asignar</button>
+      <input type="date" id="asig-cal-desde" value="${hoy}" style="width:130px" onchange="validarFechasAsig()">
+      <label style="font-size:.78rem;color:#666;white-space:nowrap">Hasta (opcional)</label>
+      <input type="date" id="asig-cal-hasta" style="width:130px" onchange="validarFechasAsig()">
+      <button id="btn-asignar-cal" class="btn btn-primary btn-sm" onclick="asignarCalendario()">Asignar</button>
     </div>
+    <div id="asig-cal-error" style="display:none;color:#dc3545;font-size:.8rem;margin-top:4px"></div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
       <label style="font-size:.78rem;color:#666;display:flex;align-items:center;gap:4px;cursor:pointer">
         <input type="checkbox" id="asig-franco-rotativo" ${vigente && vigente.franco_rotativo ? "checked" : ""} onchange="toggleFrancoRotativo()">
@@ -746,7 +750,7 @@ function buildForm(e = {}, asignaciones = []) {
         </div>
       </div>
 
-      ${editandoId ? buildCalendarioSection(asignaciones) : ""}
+      <div id="calendario-section">${editandoId ? buildCalendarioSection(asignaciones) : ""}</div>
 
       <div class="form-section">
         <div class="form-section-title">Observaciones</div>
@@ -867,24 +871,52 @@ async function toggleActivo() {
   }
 }
 
+async function refrescarCalendarioSection() {
+  const r = await fetch(`/api/calendarios/asignaciones/empleado/${editandoId}`);
+  const asignaciones = await r.json();
+  document.getElementById("calendario-section").innerHTML = buildCalendarioSection(asignaciones);
+}
+
 async function quitarCalendario(asignacionId) {
   if (!confirm("¿Quitar el calendario asignado?\nSe eliminará también la planificación futura auto-generada del empleado.")) return;
   const res = await fetch(`/api/calendarios/asignaciones/${asignacionId}`, { method: "DELETE" });
   if (res.ok) {
     toast("Calendario quitado");
-    await editarEmpleado(editandoId);
+    await refrescarCalendarioSection();
   } else {
     toast("Error al quitar el calendario");
   }
 }
 
+function validarFechasAsig() {
+  const desde = document.getElementById("asig-cal-desde")?.value;
+  const hasta = document.getElementById("asig-cal-hasta")?.value;
+  const errEl = document.getElementById("asig-cal-error");
+  const btn = document.getElementById("btn-asignar-cal");
+  let error = null;
+  if (hasta && !desde) {
+    error = "Debés ingresar la fecha Desde si querés limitar la fecha Hasta.";
+  } else if (hasta && desde && hasta < desde) {
+    error = "La fecha Hasta no puede ser menor que la fecha Desde.";
+  }
+  if (errEl) { errEl.textContent = error || ""; errEl.style.display = error ? "block" : "none"; }
+  if (btn) {
+    btn.disabled = !!error;
+    if (error) { btn.setAttribute("disabled", ""); btn.classList.add("disabled"); }
+    else { btn.removeAttribute("disabled"); btn.classList.remove("disabled"); }
+  }
+  return !error;
+}
+
 async function asignarCalendario() {
   const calId = parseInt(document.getElementById("asig-cal-id").value);
   const desde = document.getElementById("asig-cal-desde").value;
+  const hasta = document.getElementById("asig-cal-hasta")?.value || null;
   const francoRotativo = document.getElementById("asig-franco-rotativo")?.checked || false;
   const francoDia = francoRotativo ? parseInt(document.getElementById("asig-franco-dia").value) : null;
   if (!calId) { toast("Seleccioná un calendario"); return; }
   if (!desde) { toast("Ingresá la fecha desde"); return; }
+  if (!validarFechasAsig()) return;
   if (francoRotativo && francoDia === null) { toast("Seleccioná el día de franco"); return; }
 
   const res = await fetch("/api/calendarios/asignar", {
@@ -892,14 +924,16 @@ async function asignarCalendario() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       empleado_ids: [editandoId], calendario_id: calId, fecha_desde: desde,
+      fecha_hasta: hasta,
       franco_rotativo: francoRotativo, franco_dia_semana: francoDia
     })
   });
   if (res.ok) {
     toast("Calendario asignado");
-    await editarEmpleado(editandoId);
+    await refrescarCalendarioSection();
   } else {
-    toast("Error al asignar");
+    const err = await res.json().catch(() => ({}));
+    toast(err.detail || "Error al asignar");
   }
 }
 
@@ -954,7 +988,7 @@ async function crearYAsignarCalendario() {
     // Actualizar lista de calendarios para que aparezca en el selector
     const cRes = await fetch("/api/calendarios");
     calendarios = await cRes.json();
-    await editarEmpleado(editandoId);
+    await refrescarCalendarioSection();
   } else {
     toast("Calendario creado, error al asignar");
   }
@@ -989,7 +1023,13 @@ async function init() {
   _poblarSelectCatalogo("f-categoria-filtro", categoriasOpts, "Todas", "— Sin categ. —");
 }
 
-init();
+init().then(async () => {
+  const id = new URLSearchParams(location.search).get('id');
+  if (id) {
+    await editarEmpleado(parseInt(id));
+    document.getElementById(`emp-item-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+});
 </script>
 </body>
 </html>

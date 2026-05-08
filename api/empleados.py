@@ -35,11 +35,15 @@ class EmpleadoIn(BaseModel):
     dom_calle: Optional[str] = None
     dom_numero: Optional[str] = None
     dom_piso: Optional[str] = None
-    dom_entre_calles: Optional[str] = None
+    dom_entre_calle1: Optional[str] = None
+    dom_entre_calle2: Optional[str] = None
     dom_barrio: Optional[str] = None
     dom_localidad: Optional[str] = None
     dom_provincia: Optional[str] = None
     dom_cp: Optional[str] = None
+    dom_lat: Optional[float] = None
+    dom_lng: Optional[float] = None
+    dom_mapa: Optional[str] = None
 
 
 @router.get("")
@@ -100,8 +104,9 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
                nacionalidad=?, estado_civil=?, turno=?, sector=?,
                contacto_emergencia_nombre=?, contacto_emergencia_telefono=?,
                contacto_emergencia_parentesco=?, nivel_estudio=?,
-               dom_calle=?, dom_numero=?, dom_piso=?, dom_entre_calles=?,
+               dom_calle=?, dom_numero=?, dom_piso=?, dom_entre_calle1=?, dom_entre_calle2=?,
                dom_barrio=?, dom_localidad=?, dom_provincia=?, dom_cp=?,
+               dom_lat=?, dom_lng=?, dom_mapa=?,
                modificado_en=datetime('now','localtime')
                WHERE id=?""",
             (data.nombre.strip(), data.apellido.strip(), data.dni, data.cuil,
@@ -111,8 +116,9 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
              data.nacionalidad, data.estado_civil, data.turno, data.sector,
              data.contacto_emergencia_nombre, data.contacto_emergencia_telefono,
              data.contacto_emergencia_parentesco, data.nivel_estudio,
-             data.dom_calle, data.dom_numero, data.dom_piso, data.dom_entre_calles,
+             data.dom_calle, data.dom_numero, data.dom_piso, data.dom_entre_calle1, data.dom_entre_calle2,
              data.dom_barrio, data.dom_localidad, data.dom_provincia, data.dom_cp,
+             data.dom_lat, data.dom_lng, data.dom_mapa,
              eid)
         )
         if anterior["activo"] == 1 and data.activo == 0:

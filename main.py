@@ -132,6 +132,10 @@ def page_vacaciones(request: Request):
 def page_empleados_listado(request: Request):
     return FileResponse("web/templates/empleados_listado.html") if _auth(request, "empleados") else RedirectResponse("/login")
 
+@app.get("/empleados/{eid}/legajo", include_in_schema=False)
+def page_legajo_imprimible(eid: int, request: Request):
+    return FileResponse("web/templates/legajo_imprimible.html") if _auth(request, "empleados") else RedirectResponse("/login")
+
 
 # --- Rutas de la API (se expanden en etapas siguientes) ---
 

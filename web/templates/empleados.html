@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <title>Empleados — Sistema de Fichaje</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -105,6 +107,19 @@
   .cal-asignar { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
   #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 7px; display: none; z-index: 200; font-size: .88rem; }
+
+  /* Diagrama de manzana */
+  .manzana-wrap { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .manzana-top-row, .manzana-bottom-row { display: flex; justify-content: center; }
+  .manzana-mid-row { display: flex; align-items: stretch; }
+  .manzana-block { width: 150px; height: 150px; border: 2px solid #555; position: relative; cursor: crosshair; background: #fafafa; flex-shrink: 0; }
+  .manzana-block:hover { background: #f0f4ff; }
+  .manzana-house { position: absolute; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: .95rem; transform: translate(-50%, -50%); pointer-events: none; background: white; border-radius: 50%; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+  .manzana-input { border: 1px solid #bbb; border-radius: 0; font-size: .72rem; padding: 3px 5px; background: white; color: #333; text-align: center; font-family: inherit; }
+  .manzana-input:focus { outline: none; border-color: #2c3e50; background: #f0f4ff; }
+  .manzana-h { width: 150px; height: 26px; }
+  .manzana-v { width: 26px; height: 150px; writing-mode: vertical-rl; }
+  .manzana-v-left { transform: rotate(180deg); }
 
 </style>
 </head>
@@ -251,6 +266,8 @@ let editandoActivo = 1;
 let filtroImportadosIds = null;
 let tabActiva = "personal";
 let _diasMinAntiguedad = 90;
+let _leafletMap = null;
+let _leafletMarker = null;
 
 async function logout() {
   await fetch('/api/auth/logout', {method:'POST'});
@@ -634,10 +651,6 @@ function buildForm(e = {}, asignaciones = []) {
             <label>Email</label>
             <input type="email" id="f-email" value="${e.email||""}">
           </div>
-          <div class="form-group span-2">
-            <label>Domicilio</label>
-            <input type="text" id="f-domicilio" value="${e.domicilio||""}">
-          </div>
         </div>
       </div>
 
@@ -709,9 +722,13 @@ function buildForm(e = {}, asignaciones = []) {
             <label>Piso / Depto.</label>
             <input type="text" id="f-dom-piso" value="${e.dom_piso||""}">
           </div>
-          <div class="form-group span-2">
-            <label>Entre calles</label>
-            <input type="text" id="f-dom-entre-calles" value="${e.dom_entre_calles||""}">
+          <div class="form-group">
+            <label>Entre calle 1</label>
+            <input type="text" id="f-dom-entre-calle1" value="${e.dom_entre_calle1||""}">
+          </div>
+          <div class="form-group">
+            <label>Entre calle 2</label>
+            <input type="text" id="f-dom-entre-calle2" value="${e.dom_entre_calle2||""}">
           </div>
           <div class="form-group">
             <label>Barrio</label>
@@ -730,6 +747,46 @@ function buildForm(e = {}, asignaciones = []) {
             <input type="text" id="f-dom-cp" value="${e.dom_cp||""}">
           </div>
         </div>
+
+        ${(() => {
+          let md = {};
+          try { if (e.dom_mapa) md = JSON.parse(e.dom_mapa); } catch {}
+          const hasPos = md.x != null && md.y != null;
+          return `
+        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #eee">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="font-size:.72rem;font-weight:bold;text-transform:uppercase;letter-spacing:.05em;color:#aaa">Ubicación</span>
+            <button type="button" id="btn-buscar-mapa" class="btn btn-secondary btn-sm" onclick="buscarEnMapa()">Buscar en mapa</button>
+          </div>
+          <div id="mapa-leaflet" style="height:220px;border-radius:6px;border:1px solid #ced4da;margin-bottom:14px;position:relative;z-index:0"></div>
+          <input type="hidden" id="f-dom-lat" value="${e.dom_lat||''}">
+          <input type="hidden" id="f-dom-lng" value="${e.dom_lng||''}">
+          <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
+            <div>
+              <div style="font-size:.72rem;color:#aaa;margin-bottom:4px;text-align:center">Diagrama de manzana</div>
+              <div class="manzana-wrap">
+                <div class="manzana-mid-row">
+                  <div class="manzana-input manzana-v manzana-v-left" id="manzana-label-izq" style="display:flex;align-items:center;justify-content:center;overflow:hidden;font-style:italic;color:#555"></div>
+                  <div class="manzana-block" id="manzana-sq" onclick="ponerCasa(event)" title="Clic para marcar la vivienda">
+                    <div class="manzana-house" id="manzana-house"
+                      style="left:${hasPos ? (md.x*100)+'%' : '50%'};top:${hasPos ? (md.y*100)+'%' : '50%'};display:${hasPos ? 'flex' : 'none'}">🏠</div>
+                  </div>
+                  <div class="manzana-input manzana-v manzana-v-right" id="manzana-label-der" style="display:flex;align-items:center;justify-content:center;overflow:hidden;font-style:italic;color:#555"></div>
+                </div>
+                <div class="manzana-bottom-row">
+                  <div class="manzana-input manzana-h" id="manzana-label-calle" style="display:flex;align-items:center;justify-content:center;font-style:italic;color:#555"></div>
+                </div>
+              </div>
+              <input type="hidden" id="f-mapa-x" value="${hasPos ? md.x : ''}">
+              <input type="hidden" id="f-mapa-y" value="${hasPos ? md.y : ''}">
+            </div>
+            <div style="font-size:.75rem;color:#bbb;padding-top:12px;line-height:1.8">
+              Los rótulos se toman<br>de Calle y Entre calles.<br>
+              Clic en el cuadrado<br>para posicionar la vivienda.
+            </div>
+          </div>
+        </div>`;
+        })()}
       </div>
 
       <div class="form-section">
@@ -767,6 +824,7 @@ function buildForm(e = {}, asignaciones = []) {
         </button>
         ${!e.activo && e.user_id && canDo('empleados','editar') ? `
         <button class="btn btn-sm" style="background:#856404;color:white" onclick="liberarId(${e.id}, '${e.user_id}')">Liberar ID dispositivo</button>` : ''}
+        ${editandoId ? `<a href="/empleados/${e.id}/legajo" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">Legajo</a>` : ''}
         <button class="btn btn-secondary" onclick="cancelar()">Cancelar</button>
         <button class="btn btn-primary" onclick="guardar()">Guardar</button>
       </div>
@@ -784,12 +842,18 @@ async function editarEmpleado(id) {
   editandoId = id;
   editandoActivo = e.activo;
   document.getElementById("form-titulo").textContent = `${e.apellido}, ${e.nombre}`;
+  if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
   document.getElementById("form-contenido").innerHTML = buildForm(e, asignaciones);
   document.querySelectorAll(".emp-item").forEach(el => el.classList.remove("activo"));
   document.getElementById(`emp-item-${id}`)?.classList.add("activo");
+  initMap(e);
+  actualizarManzanaLabels();
+  ["f-dom-calle","f-dom-numero","f-dom-entre-calle1","f-dom-entre-calle2"]
+    .forEach(id => document.getElementById(id)?.addEventListener("input", actualizarManzanaLabels));
 }
 
 function cancelar() {
+  if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
   editandoId = null;
   document.getElementById("form-titulo").textContent = "Seleccioná un empleado";
   document.getElementById("form-contenido").innerHTML = '<div class="empty-state">Seleccioná un empleado de la lista.</div>';
@@ -812,7 +876,6 @@ function getFormData() {
     categoria:    _val("f-categoria"),
     telefono:     _val("f-telefono"),
     email:        _val("f-email"),
-    domicilio:    _val("f-domicilio"),
     observaciones: _val("f-obs"),
     tipo:    document.getElementById("f-tipo").value,
     activo:  editandoActivo,
@@ -824,14 +887,24 @@ function getFormData() {
     contacto_emergencia_nombre:      _val("f-emerg-nombre"),
     contacto_emergencia_telefono:    _val("f-emerg-tel"),
     contacto_emergencia_parentesco:  _val("f-emerg-parentesco"),
-    dom_calle:        _val("f-dom-calle"),
-    dom_numero:       _val("f-dom-numero"),
-    dom_piso:         _val("f-dom-piso"),
-    dom_entre_calles: _val("f-dom-entre-calles"),
-    dom_barrio:       _val("f-dom-barrio"),
+    dom_calle:         _val("f-dom-calle"),
+    dom_numero:        _val("f-dom-numero"),
+    dom_piso:          _val("f-dom-piso"),
+    dom_entre_calle1:  _val("f-dom-entre-calle1"),
+    dom_entre_calle2:  _val("f-dom-entre-calle2"),
+    dom_barrio:        _val("f-dom-barrio"),
     dom_localidad:    _val("f-dom-localidad"),
     dom_provincia:    _val("f-dom-provincia"),
     dom_cp:           _val("f-dom-cp"),
+    dom_lat: (() => { const v = document.getElementById("f-dom-lat")?.value; return v ? parseFloat(v) : null; })(),
+    dom_lng: (() => { const v = document.getElementById("f-dom-lng")?.value; return v ? parseFloat(v) : null; })(),
+    dom_mapa: (() => {
+      const xStr = document.getElementById("f-mapa-x")?.value;
+      const yStr = document.getElementById("f-mapa-y")?.value;
+      const x = xStr !== "" && xStr != null ? parseFloat(xStr) : null;
+      const y = yStr !== "" && yStr != null ? parseFloat(yStr) : null;
+      return x !== null ? JSON.stringify({x, y}) : null;
+    })(),
   };
 }
 
@@ -992,6 +1065,91 @@ async function crearYAsignarCalendario() {
   } else {
     toast("Calendario creado, error al asignar");
   }
+}
+
+function initMap(e) {
+  if (typeof L === "undefined") return;
+  const container = document.getElementById("mapa-leaflet");
+  if (!container) return;
+  if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
+  const bsas = [-34.6037, -58.3816];
+  const lat = e.dom_lat ? parseFloat(e.dom_lat) : bsas[0];
+  const lng = e.dom_lng ? parseFloat(e.dom_lng) : bsas[1];
+  _leafletMap = L.map("mapa-leaflet").setView([lat, lng], e.dom_lat ? 16 : 12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(_leafletMap);
+  if (e.dom_lat && e.dom_lng) {
+    _leafletMarker = L.marker([lat, lng], {draggable: true}).addTo(_leafletMap);
+    _leafletMarker.on("dragend", ev => _setPin(ev.target.getLatLng().lat, ev.target.getLatLng().lng));
+  }
+  _leafletMap.on("click", ev => _setPin(ev.latlng.lat, ev.latlng.lng));
+}
+
+function _setPin(lat, lng) {
+  if (_leafletMarker) {
+    _leafletMarker.setLatLng([lat, lng]);
+  } else {
+    _leafletMarker = L.marker([lat, lng], {draggable: true}).addTo(_leafletMap);
+    _leafletMarker.on("dragend", ev => _setPin(ev.target.getLatLng().lat, ev.target.getLatLng().lng));
+  }
+  const latEl = document.getElementById("f-dom-lat");
+  const lngEl = document.getElementById("f-dom-lng");
+  if (latEl) latEl.value = lat.toFixed(6);
+  if (lngEl) lngEl.value = lng.toFixed(6);
+}
+
+async function buscarEnMapa() {
+  const calle     = document.getElementById("f-dom-calle")?.value.trim() || "";
+  const numero    = document.getElementById("f-dom-numero")?.value.trim() || "";
+  const localidad = document.getElementById("f-dom-localidad")?.value.trim() || "";
+  const provincia = document.getElementById("f-dom-provincia")?.value.trim() || "";
+  const partes = [calle, numero, localidad, provincia, "Argentina"].filter(Boolean);
+  if (partes.length < 2) { toast("Completá al menos la calle y la localidad"); return; }
+  const btn = document.getElementById("btn-buscar-mapa");
+  if (btn) { btn.disabled = true; btn.textContent = "Buscando..."; }
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(partes.join(", "))}&addressdetails=1&limit=1&countrycodes=ar`;
+    const data = await fetch(url).then(r => r.json());
+    if (!data.length) { toast("No se encontró la dirección"); return; }
+    const r = data[0];
+    const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
+    _setPin(lat, lng);
+    _leafletMap.setView([lat, lng], 17);
+    const cp = r.address?.postcode;
+    const cpEl = document.getElementById("f-dom-cp");
+    if (cp && cpEl) cpEl.value = cp;
+    toast(cp ? `Dirección encontrada · CP: ${cp}` : "Dirección encontrada");
+  } catch { toast("Error al buscar. Verificá la conexión a internet."); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = "Buscar en mapa"; } }
+}
+
+function actualizarManzanaLabels() {
+  const calle  = document.getElementById("f-dom-calle")?.value.trim() || "";
+  const numero = document.getElementById("f-dom-numero")?.value.trim() || "";
+  const ec1    = document.getElementById("f-dom-entre-calle1")?.value.trim() || "";
+  const ec2    = document.getElementById("f-dom-entre-calle2")?.value.trim() || "";
+  const pie    = [calle, numero].filter(Boolean).join(" ");
+  const elIzq   = document.getElementById("manzana-label-izq");
+  const elDer   = document.getElementById("manzana-label-der");
+  const elCalle = document.getElementById("manzana-label-calle");
+  if (elIzq)   elIzq.textContent   = ec1;
+  if (elDer)   elDer.textContent   = ec2;
+  if (elCalle) elCalle.textContent = pie;
+}
+
+function ponerCasa(event) {
+  const sq = document.getElementById("manzana-sq");
+  if (!sq) return;
+  const rect = sq.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+  const house = document.getElementById("manzana-house");
+  if (house) { house.style.display = "flex"; house.style.left = (x*100)+"%"; house.style.top = (y*100)+"%"; }
+  const xEl = document.getElementById("f-mapa-x");
+  const yEl = document.getElementById("f-mapa-y");
+  if (xEl) xEl.value = x.toFixed(3);
+  if (yEl) yEl.value = y.toFixed(3);
 }
 
 async function init() {

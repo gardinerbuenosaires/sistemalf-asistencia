@@ -28,7 +28,7 @@
   tbody tr:nth-child(even) { background: #f8f9fa; }
   tbody td { padding: 5px 8px; border-bottom: 1px solid #e9ecef;
              vertical-align: top; word-break: break-word; }
-  .col-n    { width: 28px;  text-align: center; }
+  .col-n    { width: 52px;  text-align: center; }
   .col-ape  { width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .col-nom  { width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .col-ing  { width: 80px;  white-space: nowrap; }
@@ -81,7 +81,7 @@
   <table>
     <thead>
       <tr>
-        <th class="col-n">N°</th>
+        <th class="col-n">Disp.</th>
         <th class="col-ape">Apellido</th>
         <th class="col-nom">Nombre</th>
         <th class="col-ing">F. Ingreso</th>
@@ -113,7 +113,7 @@ function render(data) {
 
   tb.innerHTML = data.map((e, i) => `
     <tr>
-      <td class="col-n">${i + 1}</td>
+      <td class="col-n">${e.user_id || ''}</td>
       <td class="col-ape">${e.apellido || ''}</td>
       <td class="col-nom">${e.nombre || ''}</td>
       <td class="col-ing">${fmt_fecha(e.fecha_ingreso)}</td>

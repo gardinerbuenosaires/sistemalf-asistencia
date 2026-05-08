@@ -774,7 +774,37 @@ def _migrate(conn):
         "dom_localidad":                  "TEXT",
         "dom_provincia":                  "TEXT",
         "dom_cp":                         "TEXT",
+        "dom_entre_calle1":               "TEXT",
+        "dom_entre_calle2":               "TEXT",
+        "dom_lat":                        "REAL",
+        "dom_lng":                        "REAL",
+        "dom_mapa":                       "TEXT",
     }
+    # Migrar dom_entre_calles existente a los nuevos campos separados
+    cols_after = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
+    if "dom_entre_calle1" in cols_after and "dom_entre_calles" in cols_after:
+        filas = conn.execute(
+            "SELECT id, dom_entre_calles FROM empleados WHERE dom_entre_calles IS NOT NULL AND dom_entre_calle1 IS NULL"
+        ).fetchall()
+        for fila in filas:
+            raw = fila["dom_entre_calles"].strip()
+            partes = None
+            for sep in [" y ", " Y ", " / ", "/"]:
+                if sep in raw:
+                    partes = [p.strip() for p in raw.split(sep, 1)]
+                    break
+            if partes and len(partes) == 2:
+                conn.execute(
+                    "UPDATE empleados SET dom_entre_calle1=?, dom_entre_calle2=? WHERE id=?",
+                    (partes[0], partes[1], fila["id"])
+                )
+            else:
+                conn.execute(
+                    "UPDATE empleados SET dom_entre_calle1=? WHERE id=?",
+                    (raw, fila["id"])
+                )
+        if filas:
+            logger.info("Migración: %d filas migradas de dom_entre_calles a dom_entre_calle1/2", len(filas))
     for col, tipo in nuevas_emp.items():
         if col not in cols_emp:
             conn.execute(f"ALTER TABLE empleados ADD COLUMN {col} {tipo}")

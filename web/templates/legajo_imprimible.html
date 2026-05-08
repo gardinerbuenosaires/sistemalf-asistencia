@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legajo de Personal</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; font-size: 10pt; background: #aaa; color: #111; }
+
+.print-bar {
+  background: #2c3e50; color: white; padding: 10px 24px;
+  display: flex; align-items: center; gap: 14px;
+  position: sticky; top: 0; z-index: 100;
+}
+.print-bar a { color: #ccc; font-size: .85rem; text-decoration: none; }
+.print-bar a:hover { color: white; }
+.btn-print { background: white; color: #2c3e50; border: none; padding: 7px 18px; border-radius: 5px; cursor: pointer; font-size: .88rem; font-weight: bold; }
+.btn-print:hover { background: #ecf0f1; }
+
+.page {
+  background: white;
+  width: 210mm; min-height: 297mm;
+  margin: 20px auto; padding: 12mm 14mm;
+  box-shadow: 0 4px 20px rgba(0,0,0,.35);
+}
+
+/* ---- ENCABEZADO ---- */
+.leg-header {
+  display: grid; grid-template-columns: 1fr 1fr;
+  border: 2px solid #222; margin-bottom: 6px;
+}
+.leg-title {
+  padding: 6px 10px; font-size: 13pt; font-weight: bold;
+  border-right: 2px solid #222; letter-spacing: .02em;
+}
+.leg-fecha { padding: 6px 10px; font-size: 13pt; font-weight: bold; }
+
+/* ---- CUERPO 2 COLUMNAS ---- */
+.leg-body {
+  display: grid; grid-template-columns: 78mm 1fr;
+  border: 1.5px solid #222; min-height: 240mm;
+}
+.col-left  { border-right: 1.5px solid #222; padding: 8px 8px; display: flex; flex-direction: column; gap: 0; }
+.col-right { padding: 6px 10px; display: flex; flex-direction: column; gap: 0; }
+
+/* ---- CHECKS ---- */
+.check-item { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; font-size: 8pt; }
+.check-box  { width: 11px; height: 11px; border: 1.5px solid #333; flex-shrink: 0; }
+
+/* ---- TURNO / SECTOR ---- */
+.ts-line { font-size: 9pt; margin: 5px 0 2px; }
+.ts-line strong { font-size: 10.5pt; }
+.opcion { display: inline; }
+.opcion.marcado { font-weight: bold; text-decoration: underline; }
+
+/* ---- MANZANA ---- */
+.manzana-wrap { display: flex; flex-direction: column; align-items: center; margin: 8px 0 4px; }
+.manzana-h-label { font-size: 7pt; text-align: center; width: 82px; min-height: 13px; }
+.manzana-mid { display: flex; align-items: stretch; }
+.manzana-v-label {
+  font-size: 7pt; writing-mode: vertical-rl;
+  min-width: 13px; text-align: center; padding: 2px 0;
+}
+.manzana-v-label.izq { transform: rotate(180deg); }
+.manzana-sq {
+  width: 82px; height: 82px;
+  border: 2px solid #444; position: relative; flex-shrink: 0;
+}
+.manzana-house {
+  position: absolute; font-size: .85rem;
+  transform: translate(-50%, -50%);
+}
+
+/* ---- STEPS ---- */
+.steps { margin-top: 6px; }
+.steps ol { padding-left: 13px; text-align: left; }
+.steps li { font-size: 7.5pt; margin-bottom: 3px; line-height: 1.35; }
+
+/* ---- CAMPOS ---- */
+.field { margin-bottom: 6px; }
+.f-label { font-size: 7pt; color: #444; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 1px; }
+.f-value { border-bottom: 1px solid #333; min-height: 17px; padding: 1px 2px; font-size: 10pt; word-break: break-word; }
+.f-row { display: grid; gap: 8px; margin-bottom: 6px; }
+.f-row.c2 { grid-template-columns: 1fr 1fr; }
+.f-row.c3 { grid-template-columns: 1fr 1fr 1fr; }
+
+/* ---- EMERGENCIA ---- */
+.emerg-box { border: 1px solid #aaa; padding: 4px 6px; margin-bottom: 6px; }
+.emerg-box .f-label { margin-bottom: 3px; }
+.emerg-val { font-size: 9.5pt; min-height: 16px; }
+
+/* ---- NIVEL DE ESTUDIO ---- */
+.nivel-wrap { display: flex; gap: 10px; margin: 3px 0 7px; }
+.nivel-item { display: flex; align-items: center; gap: 3px; font-size: 9pt; }
+.nivel-box { width: 11px; height: 11px; border: 1.5px solid #333; flex-shrink: 0; }
+.nivel-box.marcado { background: #222; }
+
+/* ---- FIRMA ---- */
+.firma-area { margin-top: auto; padding-top: 10px; }
+.firma-line { border-bottom: 1px solid #333; height: 28px; margin-bottom: 2px; }
+.firma-label { font-size: 7.5pt; color: #555; }
+
+/* ---- PRINT ---- */
+@media print {
+  body { background: white; }
+  .print-bar { display: none !important; }
+  .page { margin: 0; padding: 10mm 12mm; box-shadow: none; width: 100%; min-height: unset; }
+  @page { size: A4 portrait; margin: 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="print-bar no-print">
+  <button class="btn-print" onclick="window.print()">Imprimir</button>
+  <a href="javascript:window.close()">← Cerrar</a>
+</div>
+
+<div class="page">
+  <div id="contenido" style="color:#999;padding:40px;text-align:center">Cargando...</div>
+</div>
+
+<script>
+function v(val) { return val || ""; }
+
+function field(label, value) {
+  return `<div class="field">
+    <div class="f-label">${label}</div>
+    <div class="f-value">${v(value)}</div>
+  </div>`;
+}
+
+function nivelCheck(label, actual) {
+  const marcado = actual === label;
+  return `<div class="nivel-item">
+    <div class="nivel-box${marcado ? ' marcado' : ''}"></div>${label}
+  </div>`;
+}
+
+function opcion(label, valor) {
+  const marcado = valor === label;
+  return `<span class="opcion${marcado ? ' marcado' : ''}">${label}</span>`;
+}
+
+function renderManzana(mapa, e) {
+  const hasPos = mapa.x != null && mapa.y != null;
+  const pie = [e.dom_calle, e.dom_numero].filter(Boolean).join(" ");
+  return `
+    <div class="manzana-wrap">
+      <div class="manzana-mid">
+        <div class="manzana-v-label izq">${e.dom_entre_calle1 || ''}</div>
+        <div class="manzana-sq">
+          ${hasPos ? `<div class="manzana-house" style="left:${mapa.x*100}%;top:${mapa.y*100}%">🏠</div>` : ''}
+        </div>
+        <div class="manzana-v-label">${e.dom_entre_calle2 || ''}</div>
+      </div>
+      <div class="manzana-h-label">${pie}</div>
+    </div>`;
+}
+
+async function cargar() {
+  const id = location.pathname.split("/")[2];
+  let e, logoUrl = "";
+  try {
+    const [eRes, logoRes] = await Promise.all([
+      fetch(`/api/empleados/${id}`),
+      fetch("/api/config/logo")
+    ]);
+    if (!eRes.ok) { document.getElementById("contenido").textContent = "Empleado no encontrado."; return; }
+    e = await eRes.json();
+    if (logoRes.ok) { const ld = await logoRes.json(); logoUrl = ld.url || ""; }
+  } catch {
+    document.getElementById("contenido").textContent = "Error al cargar los datos.";
+    return;
+  }
+
+  let mapa = {};
+  try { if (e.dom_mapa) mapa = JSON.parse(e.dom_mapa); } catch {}
+
+  const hoy = new Date();
+  const fecha = `${String(hoy.getDate()).padStart(2,'0')} / ${String(hoy.getMonth()+1).padStart(2,'0')} / ${hoy.getFullYear()}`;
+
+  document.getElementById("contenido").innerHTML = `
+    <div class="leg-header">
+      <div class="leg-title">LEGAJO DE PERSONAL</div>
+      <div class="leg-fecha">FECHA: &nbsp;&nbsp; ${fecha}</div>
+    </div>
+
+    <div class="leg-body">
+
+      <!-- ===== COLUMNA IZQUIERDA ===== -->
+      <div class="col-left">
+
+        <div style="text-align:center;margin-bottom:8px">
+          ${logoUrl
+            ? `<img src="${logoUrl}" style="max-height:52px;max-width:130px">`
+            : `<img src="/static/img/logo_horizontal_plano.svg" style="max-height:42px;max-width:130px" onerror="this.style.display='none'">`
+          }
+        </div>
+
+        <div style="margin-bottom:6px">
+          ${["CERT. MANIPULACIÓN ALIM","ALTA AFIP","COPIA DNI","MANUALES",
+             "COPIA SERVICIO PÚBLICO","CERTIF. REINCIDENCIA"]
+            .map(item => `<div class="check-item"><div class="check-box"></div>${item}</div>`)
+            .join("")}
+        </div>
+
+        <div class="ts-line">
+          <strong>TURNO:</strong>&nbsp;
+          <span style="border-bottom:1px solid #333;min-width:60px;display:inline-block;padding:0 3px">${v(e.turno)}</span>
+        </div>
+        <div class="ts-line">
+          <strong>SECTOR:</strong>&nbsp;
+          <span style="border-bottom:1px solid #333;min-width:60px;display:inline-block;padding:0 3px">${v(e.sector)}</span>
+        </div>
+
+
+        ${renderManzana(mapa, e)}
+
+        <div class="steps">
+          <ol>
+            <li>Alta temprana</li>
+            <li>Agregar a asistencia</li>
+            <li>Registrar huella y asignar perfil para puertas si corresponde</li>
+            <li>Entregar manuales y/o check list por celular para verificar el número</li>
+            <li>Charla inicial de bienvenida y recorrido por toda la instalación</li>
+            <li>Asignar a un tutor para entrenamiento</li>
+          </ol>
+        </div>
+
+      </div>
+
+      <!-- ===== COLUMNA DERECHA ===== -->
+      <div class="col-right">
+
+        ${field("Apellido", e.apellido)}
+        ${field("Nombres", e.nombre)}
+        ${field("Fecha de nacimiento", e.fecha_nacimiento)}
+
+        <div class="f-row c2">
+          ${field("Nacionalidad", e.nacionalidad)}
+          ${field("Estado civil", e.estado_civil)}
+        </div>
+
+        ${field("DNI", e.dni)}
+
+        <div class="f-row c2">
+          ${field("Categoría", e.categoria)}
+          ${field("Fecha de ingreso", e.fecha_ingreso)}
+        </div>
+
+        <div class="emerg-box">
+          <div class="f-label" style="margin-bottom:5px">En caso de emergencia llamar a</div>
+          <div class="f-row c3">
+            ${field("Nombre", e.contacto_emergencia_nombre)}
+            ${field("Teléfono", e.contacto_emergencia_telefono)}
+            ${field("Parentesco", e.contacto_emergencia_parentesco)}
+          </div>
+        </div>
+
+        ${field("Nivel de estudio", e.nivel_estudio)}
+
+        ${field("Calle", e.dom_calle)}
+
+        <div class="f-row c2">
+          ${field("N°", e.dom_numero)}
+          ${field("Piso / Depto.", e.dom_piso)}
+        </div>
+
+        <div class="f-row c2">
+          ${field("Entre calle 1", e.dom_entre_calle1)}
+          ${field("Entre calle 2", e.dom_entre_calle2)}
+        </div>
+
+        <div class="f-row c2">
+          ${field("Barrio", e.dom_barrio)}
+          ${field("Localidad", e.dom_localidad)}
+        </div>
+
+        <div class="f-row c2">
+          ${field("Provincia", e.dom_provincia)}
+          ${field("Código postal", e.dom_cp)}
+        </div>
+
+        ${field("Celular", e.telefono)}
+        ${field("E-mail", e.email)}
+
+        <div class="firma-area">
+          <div class="firma-line"></div>
+          <div class="firma-label">FIRMA</div>
+        </div>
+
+      </div>
+    </div>`;
+
+  document.title = `Legajo — ${e.apellido}, ${e.nombre}`;
+}
+
+cargar();
+</script>
+</body>
+</html>

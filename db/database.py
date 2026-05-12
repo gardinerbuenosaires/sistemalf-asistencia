@@ -543,11 +543,18 @@ def _migrate(conn):
         "corregido_manualmente": "INTEGER NOT NULL DEFAULT 0",
         "corregido_por":         "INTEGER REFERENCES usuarios(id)",
         "corregido_en":          "TEXT",
+        "b1_mt":                 "INTEGER NOT NULL DEFAULT 0",
+        "b2_mt":                 "INTEGER NOT NULL DEFAULT 0",
     }
     for col, tipo in nuevas_rd.items():
         if col not in cols_rd:
             conn.execute(f"ALTER TABLE resultados_dia ADD COLUMN {col} {tipo}")
             logger.info("Migración: columna %s agregada a resultados_dia", col)
+
+    cols_hb = {r[1] for r in conn.execute("PRAGMA table_info(horarios_bloques)").fetchall()}
+    if "aplica" not in cols_hb:
+        conn.execute("ALTER TABLE horarios_bloques ADD COLUMN aplica INTEGER NOT NULL DEFAULT 1")
+        logger.info("Migración: columna aplica agregada a horarios_bloques")
 
     cols_p = {r[1] for r in conn.execute("PRAGMA table_info(planificacion)").fetchall()}
     if "auto_generado" not in cols_p:

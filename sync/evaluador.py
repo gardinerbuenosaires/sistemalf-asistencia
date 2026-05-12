@@ -176,7 +176,15 @@ def recalcular_resultado(empleado_id: int, fecha_str: str):
         b2r = None
         if len(bloques) > 1:
             b2r = _evaluar_bloque(bloques[1], fecha, _faux(r["b2_entrada"]), _faux(r["b2_salida"]))
-        estado = _calcular_estado(b1r, b2r)
+
+        b1_mt = bool(r.get("b1_mt"))
+        b2_mt = bool(r.get("b2_mt"))
+        if b1_mt and b2r is not None:
+            estado = _calcular_estado(b2r, None)
+        elif b2_mt and b2r is not None:
+            estado = _calcular_estado(b1r, None)
+        else:
+            estado = _calcular_estado(b1r, b2r)
 
         conn.execute(
             """UPDATE resultados_dia SET
@@ -277,6 +285,7 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                 continue
 
             b1_entrada_id = b1_salida_id = b2_entrada_id = b2_salida_id = None
+            b1_mt_val = b2_mt_val = 0
             horario_id_result = p.get("horario_id")
 
             if p["es_franco"]:
@@ -360,13 +369,29 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                             bloques[1], fecha,
                             slots.get("b2_entrada"), slots.get("b2_salida")
                         )
-                    estado = _calcular_estado(b1r, b2r)
+
+                    b1_aplica = bool(bloques[0].get("aplica", 1))
+                    b2_aplica = len(bloques) > 1 and bool(bloques[1].get("aplica", 1))
+                    b1_mt_val = not b1_aplica
+                    b2_mt_val = len(bloques) > 1 and not b2_aplica
+
+                    if b1_mt_val and b2r is not None:
+                        # b1 no aplica: evaluar solo b2 como si fuera bloque único
+                        estado = _calcular_estado(b2r, None)
+                    elif b2_mt_val and b2r is not None:
+                        # b2 no aplica: evaluar solo b1 como bloque único
+                        estado = _calcular_estado(b1r, None)
+                    else:
+                        estado = _calcular_estado(b1r, b2r)
+
                     if estado == "ausente":
+                        # Para "duda": solo revisar bloques que aplican
+                        bloques_aplica = [b for b in bloques if b.get("aplica", 1)]
                         exit_slots = [
                             _dt(fecha, b["hora_salida"], dia_sig=bool(b["cruza_medianoche"]))
-                            for b in bloques
+                            for b in bloques_aplica
                         ]
-                        duda = any(
+                        duda = exit_slots and any(
                             min(
                                 abs((datetime.fromisoformat(f["timestamp"]) - slot).total_seconds()) / 60
                                 for slot in exit_slots
@@ -377,9 +402,9 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                         if duda:
                             estado = "duda"
                     elif estado != "duda":
-                        # Solo salida sin entrada en algún bloque → presencia no confirmada
-                        solo_salida = (b1r.get("salida") and not b1r.get("entrada")) or \
-                                      (b2r and b2r.get("salida") and not b2r.get("entrada"))
+                        # Solo salida sin entrada en algún bloque que aplica → presencia no confirmada
+                        solo_salida = (b1r.get("salida") and not b1r.get("entrada") and b1_aplica) or \
+                                      (b2r and b2r.get("salida") and not b2r.get("entrada") and b2_aplica)
                         if solo_salida:
                             estado = "duda"
 
@@ -445,9 +470,10 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                     b1_entrada, b1_salida, b1_minutos_tarde, b1_salida_anticipada, b1_ausente, b1_sin_salida,
                     b2_entrada, b2_salida, b2_minutos_tarde, b2_salida_anticipada, b2_ausente, b2_sin_salida,
                     b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id,
+                    b1_mt, b2_mt,
                     corregido_manualmente, corregido_por, corregido_en,
                     procesado_en)
-                   VALUES (?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, 0,NULL,NULL, datetime('now','localtime'))
+                   VALUES (?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, ?,?, 0,NULL,NULL, datetime('now','localtime'))
                    ON CONFLICT(empleado_id, fecha) DO UPDATE SET
                    horario_id=excluded.horario_id, es_franco=excluded.es_franco, estado=excluded.estado,
                    b1_entrada=excluded.b1_entrada, b1_salida=excluded.b1_salida,
@@ -460,6 +486,7 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                    b2_sin_salida=excluded.b2_sin_salida,
                    b1_entrada_id=excluded.b1_entrada_id, b1_salida_id=excluded.b1_salida_id,
                    b2_entrada_id=excluded.b2_entrada_id, b2_salida_id=excluded.b2_salida_id,
+                   b1_mt=excluded.b1_mt, b2_mt=excluded.b2_mt,
                    corregido_manualmente=0, corregido_por=NULL, corregido_en=NULL,
                    procesado_en=datetime('now','localtime')""",
                 (eid, fecha_str, horario_id_result, p["es_franco"], estado,
@@ -469,7 +496,8 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                  (b2r or {}).get("entrada"), (b2r or {}).get("salida"), (b2r or {}).get("minutos_tarde"),
                  int((b2r or {}).get("salida_anticipada", False)), int((b2r or {}).get("ausente", False)),
                  int((b2r or {}).get("sin_salida", False)),
-                 b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id)
+                 b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id,
+                 b1_mt_val, b2_mt_val)
             )
 
             resumen["evaluados"] += 1

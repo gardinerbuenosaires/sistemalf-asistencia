@@ -12,6 +12,7 @@ class BloqueIn(BaseModel):
     hora_entrada: str
     hora_salida: str
     cruza_medianoche: bool = False
+    aplica: bool = True
     tolerancia_entrada_antes: int = 15
     tolerancia_entrada_despues: int = 60
     tolerancia_tarde: int = 10
@@ -85,13 +86,13 @@ def create_horario(data: HorarioIn, _user=Depends(require_permiso("horarios", "e
             conn.execute(
                 """
                 INSERT INTO horarios_bloques
-                    (horario_id, bloque, hora_entrada, hora_salida, cruza_medianoche,
+                    (horario_id, bloque, hora_entrada, hora_salida, cruza_medianoche, aplica,
                      tolerancia_entrada_antes, tolerancia_entrada_despues, tolerancia_tarde,
                      tolerancia_salida_antes, tolerancia_salida_despues)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (horario_id, b.bloque, b.hora_entrada, b.hora_salida,
-                 int(b.cruza_medianoche), b.tolerancia_entrada_antes,
+                 int(b.cruza_medianoche), int(b.aplica), b.tolerancia_entrada_antes,
                  b.tolerancia_entrada_despues, b.tolerancia_tarde,
                  b.tolerancia_salida_antes, b.tolerancia_salida_despues),
             )
@@ -138,13 +139,13 @@ def update_horario(horario_id: int, data: HorarioIn, _user=Depends(require_permi
             conn.execute(
                 """
                 INSERT INTO horarios_bloques
-                    (horario_id, bloque, hora_entrada, hora_salida, cruza_medianoche,
+                    (horario_id, bloque, hora_entrada, hora_salida, cruza_medianoche, aplica,
                      tolerancia_entrada_antes, tolerancia_entrada_despues, tolerancia_tarde,
                      tolerancia_salida_antes, tolerancia_salida_despues)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (horario_id, b.bloque, b.hora_entrada, b.hora_salida,
-                 int(b.cruza_medianoche), b.tolerancia_entrada_antes,
+                 int(b.cruza_medianoche), int(b.aplica), b.tolerancia_entrada_antes,
                  b.tolerancia_entrada_despues, b.tolerancia_tarde,
                  b.tolerancia_salida_antes, b.tolerancia_salida_despues),
             )

@@ -160,6 +160,11 @@
           <input type="checkbox" id="b1-cruza"> Cruza medianoche
         </label>
       </div>
+      <div class="form-group" id="b1-aplica-row" style="margin-bottom:8px;display:none">
+        <label>
+          <input type="checkbox" id="b1-aplica" checked> Este bloque aplica (desmarcar = MT)
+        </label>
+      </div>
       <div class="tolerancias">
         <div class="form-group">
           <label>Tolerancia entrada antes (min)</label>
@@ -199,6 +204,11 @@
       <div class="form-group" style="margin-bottom:8px">
         <label>
           <input type="checkbox" id="b2-cruza"> Cruza medianoche
+        </label>
+      </div>
+      <div class="form-group" style="margin-bottom:8px">
+        <label>
+          <input type="checkbox" id="b2-aplica" checked> Este bloque aplica (desmarcar = MT)
         </label>
       </div>
       <div class="tolerancias">
@@ -266,8 +276,11 @@ function toast(msg, ms = 3000) {
 
 function onTipoChange() {
   const tipo = document.getElementById("f-tipo").value;
-  document.getElementById("bloque-2").style.display = tipo === "cortado" ? "block" : "none";
-  document.getElementById("bloque-1-titulo").textContent = tipo === "cortado" ? "1° Bloque" : "Horario";
+  const cortado = tipo === "cortado";
+  document.getElementById("bloque-2").style.display = cortado ? "block" : "none";
+  document.getElementById("bloque-1-titulo").textContent = cortado ? "1° Bloque" : "Horario";
+  document.getElementById("b1-aplica-row").style.display = cortado ? "block" : "none";
+  if (!cortado) document.getElementById("b1-aplica").checked = true;
 }
 
 function abrirFormulario(horario = null) {
@@ -281,6 +294,7 @@ function abrirFormulario(horario = null) {
     document.getElementById("b1-entrada").value = b1.hora_entrada;
     document.getElementById("b1-salida").value = b1.hora_salida;
     document.getElementById("b1-cruza").checked = !!b1.cruza_medianoche;
+    document.getElementById("b1-aplica").checked = b1.aplica !== 0;
     document.getElementById("b1-te-antes").value = b1.tolerancia_entrada_antes;
     document.getElementById("b1-te-despues").value = b1.tolerancia_entrada_despues;
     document.getElementById("b1-tarde").value = b1.tolerancia_tarde;
@@ -291,6 +305,7 @@ function abrirFormulario(horario = null) {
       document.getElementById("b2-entrada").value = b2.hora_entrada;
       document.getElementById("b2-salida").value = b2.hora_salida;
       document.getElementById("b2-cruza").checked = !!b2.cruza_medianoche;
+      document.getElementById("b2-aplica").checked = b2.aplica !== 0;
       document.getElementById("b2-te-antes").value = b2.tolerancia_entrada_antes;
       document.getElementById("b2-te-despues").value = b2.tolerancia_entrada_despues;
       document.getElementById("b2-tarde").value = b2.tolerancia_tarde;
@@ -302,6 +317,7 @@ function abrirFormulario(horario = null) {
     document.getElementById("f-tipo").value = "simple";
     ["b1-entrada","b1-salida","b2-entrada","b2-salida"].forEach(id => document.getElementById(id).value = "");
     ["b1-cruza","b2-cruza"].forEach(id => document.getElementById(id).checked = false);
+    ["b1-aplica","b2-aplica"].forEach(id => document.getElementById(id).checked = true);
     ["b1-te-antes","b2-te-antes"].forEach(id => document.getElementById(id).value = 15);
     ["b1-te-despues","b2-te-despues"].forEach(id => document.getElementById(id).value = 60);
     ["b1-tarde","b2-tarde"].forEach(id => document.getElementById(id).value = 10);
@@ -323,6 +339,7 @@ function getBloque(n) {
     hora_entrada: document.getElementById(`b${n}-entrada`).value,
     hora_salida: document.getElementById(`b${n}-salida`).value,
     cruza_medianoche: document.getElementById(`b${n}-cruza`).checked,
+    aplica: document.getElementById(`b${n}-aplica`).checked,
     tolerancia_entrada_antes: parseInt(document.getElementById(`b${n}-te-antes`).value),
     tolerancia_entrada_despues: parseInt(document.getElementById(`b${n}-te-despues`).value),
     tolerancia_tarde: parseInt(document.getElementById(`b${n}-tarde`).value),

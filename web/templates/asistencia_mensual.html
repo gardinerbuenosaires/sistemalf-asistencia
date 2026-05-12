@@ -479,6 +479,7 @@ const C = {
   S:   {bg:'#DA9694', txt:'#000000'},
   '@': {bg:'#FFC7CE', txt:'#000000'},
   NF:  {bg:'#F4D03F', txt:'#7D4900'},
+  MT:  {bg:'#e67e22', txt:'#ffffff'},
   'X': {bg:'#808080', txt:'#ffffff'},
   'O': {bg:'#404040', txt:'#ffffff'},
   '!': {bg:'#8e44ad', txt:'#ffffff'},
@@ -489,7 +490,7 @@ const NOMBRES_LETRA = {
   I:'Presente', T:'Tarde', F:'Franco', FT:'Franco Trabaj.', FD:'Franco Devuelto',
   A:'Ausente', E:'Enfermedad', ILT:'ILT / Accidente',
   V:'Vacaciones', L:'Licencia', LSG:'Lic. sin sueldo', S:'Suspendido', '@':'Aliviada',
-  NF:'No fichó', '!':'Presencia dudosa'
+  NF:'No fichó', MT:'MT Trabajado', '!':'Presencia dudosa'
 };
 const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio',
                   'julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -983,11 +984,13 @@ function celdaCortadoHtml(celda, eid, fecha, mark='') {
 }
 
 function estiloBloque(celda) {
-  if (celda.tipo === 'antes_ingreso') return {bg:'#000000', txt:'#ffffff', cls:'tipo-antes-ingreso'};
-  if (celda.tipo === 'fuera')         return {bg:'#d5d8dc', txt:'#d5d8dc', cls:'tipo-fuera'};
-  if (celda.tipo === 'liquidacion')   return {bg:'#5d6d7e', txt:'#ffffff', cls:''};
-  if (celda.tipo === 'pendiente')     return {bg:'#f0f3f5', txt:'#c0c8d0', cls:'tipo-pendiente'};
-  if (!celda.letra)                 return {bg:'#ffffff', txt:'transparent', cls:'tipo-sin_plan'};
+  if (celda.tipo === 'antes_ingreso')  return {bg:'#000000', txt:'#ffffff', cls:'tipo-antes-ingreso'};
+  if (celda.tipo === 'fuera')          return {bg:'#d5d8dc', txt:'#d5d8dc', cls:'tipo-fuera'};
+  if (celda.tipo === 'liquidacion')    return {bg:'#5d6d7e', txt:'#ffffff', cls:''};
+  if (celda.tipo === 'pendiente')      return {bg:'#f0f3f5', txt:'#c0c8d0', cls:'tipo-pendiente'};
+  if (celda.tipo === 'mt')             return {bg:'#ecf0f1', txt:'#95a5a6', cls:'tipo-mt'};
+  if (celda.tipo === 'mt_trabajado')   return {bg: C.MT.bg, txt: C.MT.txt, cls:'tipo-mt-trabajado'};
+  if (!celda.letra)                    return {bg:'#ffffff', txt:'transparent', cls:'tipo-sin_plan'};
   const col = C[celda.letra] || {bg:'#eee', txt:'#333'};
   return {bg: col.bg, txt: col.txt, cls: ''};
 }

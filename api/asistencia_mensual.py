@@ -52,8 +52,22 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
     # 3. Resultado automático del evaluador
     res = res_map.get((eid, fecha))
     if res:
+        # Bloque MT (no aplica): mostrar dash o highlight si vino inesperadamente
+        if bloque == 1 and res.get("b1_mt"):
+            if res.get("b1_entrada"):
+                return {"letra": "MT", "tipo": "mt_trabajado"}
+            return {"letra": None, "tipo": "mt"}
+        if bloque == 2 and res.get("b2_mt"):
+            if res.get("b2_entrada"):
+                return {"letra": "MT", "tipo": "mt_trabajado"}
+            return {"letra": None, "tipo": "mt"}
+
         estado = res["estado"]
-        mapa   = _EST_B1 if bloque == 1 else (_EST_B2 if bloque == 2 else _EST_SIMPLE)
+        # Si b1 es MT, el estado representa solo b2 evaluado como bloque simple → usar _EST_B1 para bloque 2
+        if bloque == 2 and res.get("b1_mt"):
+            mapa = _EST_B1
+        else:
+            mapa = _EST_B1 if bloque == 1 else (_EST_B2 if bloque == 2 else _EST_SIMPLE)
         letra  = mapa.get(estado)
         if letra:
             ft_pendiente = estado == "ft" and not res["horario_id"]
@@ -201,7 +215,7 @@ def asistencia_mensual(mes: str = Query(None)):
         ).fetchall()
 
         resultados = conn.execute(
-            f"SELECT empleado_id, fecha, estado, horario_id "
+            f"SELECT empleado_id, fecha, estado, horario_id, b1_mt, b2_mt, b1_entrada, b2_entrada "
             f"FROM resultados_dia WHERE empleado_id IN ({ph}) AND fecha>=? AND fecha<=?",
             (*eids, f0, f1)
         ).fetchall()
@@ -234,7 +248,14 @@ def asistencia_mensual(mes: str = Query(None)):
 
     # Lookup dicts
     plan_map = {(r["empleado_id"], r["fecha"]): dict(r) for r in planes}
-    res_map  = {(r["empleado_id"], r["fecha"]): {"estado": r["estado"], "horario_id": r["horario_id"]} for r in resultados}
+    res_map  = {
+        (r["empleado_id"], r["fecha"]): {
+            "estado": r["estado"], "horario_id": r["horario_id"],
+            "b1_mt": r["b1_mt"], "b2_mt": r["b2_mt"],
+            "b1_entrada": r["b1_entrada"], "b2_entrada": r["b2_entrada"],
+        }
+        for r in resultados
+    }
 
     fm_count: dict[int, int] = defaultdict(int)
     for f in fichajes_manuales:

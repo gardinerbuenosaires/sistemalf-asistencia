@@ -176,7 +176,7 @@ def asistencia_mensual(mes: str = Query(None)):
                 WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
             )
             SELECT e.id, e.user_id, e.nombre, e.apellido, c.nombre AS cargo,
-                   e.fecha_ingreso, e.fecha_egreso,
+                   e.fecha_ingreso, e.fecha_egreso, e.en_dispositivo,
                    u.tipo AS hipo, u.turno_nombre
             FROM empleados e
             LEFT JOIN cargos c ON c.id = e.cargo_id

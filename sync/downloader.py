@@ -142,7 +142,7 @@ def sync_users() -> dict:
     que aún no existen en la BD (por user_id). Solo lectura del dispositivo.
     Devuelve {leidos, nuevos, fichajes_vinculados, error}.
     """
-    result = {"leidos": 0, "nuevos": 0, "nuevos_ids": [], "fichajes_vinculados": 0, "error": None}
+    result = {"leidos": 0, "nuevos": 0, "nuevos_ids": [], "fichajes_vinculados": 0, "fuera_de_dispositivo": [], "error": None}
     conn_zk = None
     try:
         logger.info("Conectando a %s:%s para sync de usuarios...", DEVICE_IP, DEVICE_PORT)
@@ -154,8 +154,9 @@ def sync_users() -> dict:
         result["nuevos"] = saved["nuevos"]
         result["nuevos_ids"] = saved["nuevos_ids"]
         result["fichajes_vinculados"] = saved["fichajes_vinculados"]
-        logger.info("Empleados nuevos: %d | Fichajes vinculados: %d",
-                    result["nuevos"], result["fichajes_vinculados"])
+        result["fuera_de_dispositivo"] = saved["fuera_de_dispositivo"]
+        logger.info("Empleados nuevos: %d | Fichajes vinculados: %d | Fuera de dispositivo: %d",
+                    result["nuevos"], result["fichajes_vinculados"], len(result["fuera_de_dispositivo"]))
     except Exception as exc:
         result["error"] = str(exc)
         logger.error("Error en sync_users: %s", exc)
@@ -173,9 +174,13 @@ def _save_users(users) -> dict:
     Inserta empleados nuevos a partir de los usuarios del dispositivo.
     Usa user_id como clave — si ya existe (activo o inactivo), lo omite.
     Nombre y apellido se inicializan con el user_id para facilitar identificación.
+    Marca en_dispositivo=0 para empleados activos que ya no aparecen en el dispositivo.
     Luego revincula fichajes huérfanos (empleado_id IS NULL) con los empleados existentes.
     """
+    device_ids = {str(u.user_id).strip() for u in users if str(u.user_id).strip()}
     nuevos_ids = []
+    fuera_ids  = []
+
     with db_session() as conn:
         existentes = {
             row[0]
@@ -183,8 +188,7 @@ def _save_users(users) -> dict:
                 "SELECT user_id FROM empleados WHERE user_id IS NOT NULL"
             )
         }
-        for u in users:
-            uid = str(u.user_id).strip()
+        for uid in device_ids:
             if not uid or uid in existentes:
                 continue
             conn.execute(
@@ -195,6 +199,18 @@ def _save_users(users) -> dict:
                 eid = conn.execute("SELECT id FROM empleados WHERE user_id=?", (uid,)).fetchone()[0]
                 nuevos_ids.append(eid)
                 existentes.add(uid)
+
+        # Marcar en_dispositivo según presencia en la lista del ZKTeco
+        activos = conn.execute(
+            "SELECT id, user_id FROM empleados WHERE activo=1 AND user_id IS NOT NULL AND tipo != 'acceso'"
+        ).fetchall()
+        for emp in activos:
+            en_disp = 1 if emp["user_id"] in device_ids else 0
+            conn.execute("UPDATE empleados SET en_dispositivo=? WHERE id=?", (en_disp, emp["id"]))
+            if not en_disp:
+                fuera_ids.append(emp["id"])
+        if fuera_ids:
+            logger.warning("Empleados activos no encontrados en dispositivo: %s", fuera_ids)
 
         # Revincular fichajes huérfanos con todos los empleados (no solo los recién creados)
         cur = conn.execute("""
@@ -209,7 +225,8 @@ def _save_users(users) -> dict:
         """)
         vinculados = cur.rowcount
 
-    return {"nuevos": len(nuevos_ids), "nuevos_ids": nuevos_ids, "fichajes_vinculados": vinculados}
+    return {"nuevos": len(nuevos_ids), "nuevos_ids": nuevos_ids,
+            "fichajes_vinculados": vinculados, "fuera_de_dispositivo": fuera_ids}
 
 
 def _start_log(started_at: str) -> int:

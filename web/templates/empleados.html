@@ -46,8 +46,10 @@
   .emp-info { flex: 1; min-width: 0; }
   .emp-nombre { font-weight: bold; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .emp-sub { font-size: .75rem; color: #888; margin-top: 1px; }
-  .badge-inactivo { font-size: .7rem; background: #f8d7da; color: #721c24; padding: 1px 6px; border-radius: 10px; }
-  .badge-sindatos { font-size: .7rem; background: #fff3cd; color: #856404; padding: 1px 6px; border-radius: 10px; }
+  .badge-inactivo  { font-size: .7rem; background: #f8d7da; color: #721c24; padding: 1px 6px; border-radius: 10px; }
+  .badge-sindatos  { font-size: .7rem; background: #fff3cd; color: #856404; padding: 1px 6px; border-radius: 10px; }
+  .badge-sindisp   { font-size: .7rem; background: #e74c3c; color: white; padding: 1px 6px; border-radius: 10px; font-weight: bold; }
+  .emp-item.sin-dispositivo { border-left: 4px solid #e74c3c; }
 
   /* Formulario */
   .form-scroll { padding: 20px; flex: 1; min-height: 0; overflow-y: auto; }
@@ -425,12 +427,14 @@ function renderLista(lista) {
   cont.innerHTML = lista.map(e => {
     const sinDatos = _sinDatos(e);
     const badges = [];
-    if (!e.activo) badges.push('<span class="badge-inactivo">Inactivo</span>');
-    if (sinDatos)  badges.push('<span class="badge-sindatos">Sin datos</span>');
+    if (!e.activo)             badges.push('<span class="badge-inactivo">Inactivo</span>');
+    if (sinDatos)              badges.push('<span class="badge-sindatos">Sin datos</span>');
+    if (e.en_dispositivo === 0) badges.push('<span class="badge-sindisp">SIN DISPOSITIVO</span>');
     const badgesHtml = badges.length ? " " + badges.join(" ") : "";
-    const avatarStyle = sinDatos ? 'style="background:#856404"' : "";
+    const avatarStyle = sinDatos ? 'style="background:#856404"' : e.en_dispositivo === 0 ? 'style="background:#e74c3c"' : "";
+    const extraCls = e.en_dispositivo === 0 ? " sin-dispositivo" : "";
     return `
-    <div class="emp-item${e.id === editandoId ? " activo" : ""}" id="emp-item-${e.id}" onclick="editarEmpleado(${e.id})">
+    <div class="emp-item${e.id === editandoId ? " activo" : ""}${extraCls}" id="emp-item-${e.id}" onclick="editarEmpleado(${e.id})">
       <div class="emp-avatar" ${avatarStyle}>${sinDatos ? "?" : iniciales(e.apellido, e.nombre)}</div>
       <div class="emp-info">
         <div class="emp-nombre">${sinDatos ? "ID: " + e.user_id : e.apellido + ", " + e.nombre}${badgesHtml}</div>

@@ -676,6 +676,9 @@ def _migrate(conn):
     if "tipo" not in cols_emp:
         conn.execute("ALTER TABLE empleados ADD COLUMN tipo TEXT NOT NULL DEFAULT 'normal'")
         logger.info("Migración: columna tipo agregada a empleados")
+    if "en_dispositivo" not in cols_emp:
+        conn.execute("ALTER TABLE empleados ADD COLUMN en_dispositivo INTEGER NOT NULL DEFAULT 1")
+        logger.info("Migración: columna en_dispositivo agregada a empleados")
 
     cols_cal = {r[1] for r in conn.execute("PRAGMA table_info(calendarios)").fetchall()}
     if "franco_en_feriado" not in cols_cal:

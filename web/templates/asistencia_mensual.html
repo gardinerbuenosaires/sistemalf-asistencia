@@ -134,6 +134,11 @@ table.planilla tbody td.col-nombre {
   font-size: .78rem; border-right: 2px solid #dee2e6;
   max-width: 180px; overflow: hidden; text-overflow: ellipsis;
 }
+table.planilla tbody tr.fuera-dispositivo td { background: #fff3cd !important; }
+table.planilla tbody tr.fuera-dispositivo td.col-nombre { background: #fff3cd !important; }
+.badge-fuera { display:inline-block; background:#e74c3c; color:white;
+  font-size:.6rem; font-weight:bold; padding:1px 4px; border-radius:3px;
+  margin-left:4px; vertical-align:middle; letter-spacing:.03em; }
 table.planilla tbody td.col-sep { background: #f4f6f9; border: none; }
 table.planilla tbody td.col-res { font-size: .72rem; color: #444; }
 table.planilla tbody td.col-res.res-nz { font-weight: bold; }
@@ -785,11 +790,18 @@ function controlHtml(ctrl) {
   }
 }
 
+function _badgeFuera(emp) {
+  return emp.en_dispositivo === 0
+    ? ' <span class="badge-fuera" title="No encontrado en el dispositivo ZKTeco">SIN DISP.</span>'
+    : '';
+}
+
 function filaHtmlSimple(emp, dias, resCols) {
   const nombreCompleto = `${emp.apellido}, ${emp.nombre}`;
-  let h = `<tr>
+  const clsFuera = emp.en_dispositivo === 0 ? ' fuera-dispositivo' : '';
+  let h = `<tr class="${clsFuera}">
     <td class="col-cod">${emp.cod || ''}</td>
-    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}</td>`;
+    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}${_badgeFuera(emp)}</td>`;
   dias.forEach(dia => {
     const c = emp.celdas[dia.fecha] || {letra:null, tipo:'sin_plan'};
     const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
@@ -810,9 +822,10 @@ function filaHtmlSimple(emp, dias, resCols) {
 
 function filaHtmlCortado(emp, dias, resCols) {
   const nombreCompleto = `${emp.apellido}, ${emp.nombre}`;
-  let h = `<tr>
+  const clsFuera = emp.en_dispositivo === 0 ? ' fuera-dispositivo' : '';
+  let h = `<tr class="${clsFuera}">
     <td class="col-cod">${emp.cod || ''}</td>
-    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}</td>`;
+    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}${_badgeFuera(emp)}</td>`;
   dias.forEach(dia => {
     const c = emp.celdas[dia.fecha] || {b1:{letra:null,tipo:'sin_plan'}, b2:{letra:null,tipo:'sin_plan'}};
     const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';

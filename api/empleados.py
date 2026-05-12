@@ -15,9 +15,9 @@ class EmpleadoIn(BaseModel):
     fecha_nacimiento: Optional[str] = None
     fecha_ingreso: Optional[str] = None
     fecha_egreso: Optional[str] = None
-    cargo: Optional[str] = None
-    departamento: Optional[str] = None
-    categoria: Optional[str] = None
+    cargo_id: Optional[int] = None
+    departamento_id: Optional[int] = None
+    categoria_id: Optional[int] = None
     telefono: Optional[str] = None
     email: Optional[str] = None
     domicilio: Optional[str] = None
@@ -26,12 +26,12 @@ class EmpleadoIn(BaseModel):
     tipo: str = "normal"
     nacionalidad: Optional[str] = None
     estado_civil: Optional[str] = None
-    turno: Optional[str] = None
-    sector: Optional[str] = None
+    turno_id: Optional[int] = None
+    sector_id: Optional[int] = None
     contacto_emergencia_nombre: Optional[str] = None
     contacto_emergencia_telefono: Optional[str] = None
     contacto_emergencia_parentesco: Optional[str] = None
-    nivel_estudio: Optional[str] = None
+    nivel_estudio_id: Optional[int] = None
     dom_calle: Optional[str] = None
     dom_numero: Optional[str] = None
     dom_piso: Optional[str] = None
@@ -56,9 +56,23 @@ def list_empleados(todos: bool = False, sin_acceso: bool = False,
         if sin_acceso:
             conds.append("tipo != 'acceso'")
         where = ("WHERE " + " AND ".join(conds)) if conds else ""
-        rows = conn.execute(
-            f"SELECT * FROM empleados {where} ORDER BY apellido, nombre"
-        ).fetchall()
+        rows = conn.execute(f"""
+            SELECT e.*,
+                   c.nombre   AS cargo,
+                   d.nombre   AS departamento,
+                   cat.nombre AS categoria,
+                   tl.nombre  AS turno,
+                   sl.nombre  AS sector,
+                   ne.nombre  AS nivel_estudio
+            FROM empleados e
+            LEFT JOIN cargos c           ON c.id  = e.cargo_id
+            LEFT JOIN departamentos d    ON d.id  = e.departamento_id
+            LEFT JOIN categorias cat     ON cat.id = e.categoria_id
+            LEFT JOIN turnos_legajo tl   ON tl.id = e.turno_id
+            LEFT JOIN sectores_legajo sl ON sl.id = e.sector_id
+            LEFT JOIN niveles_estudio ne ON ne.id = e.nivel_estudio_id
+            {where} ORDER BY e.apellido, e.nombre
+        """).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -81,7 +95,23 @@ def liberar_id_dispositivo(eid: int, _user=Depends(require_permiso("empleados", 
 @router.get("/{eid}")
 def get_empleado(eid: int, _user=Depends(require_permiso("empleados", "ver"))):
     with db_session() as conn:
-        row = conn.execute("SELECT * FROM empleados WHERE id=?", (eid,)).fetchone()
+        row = conn.execute("""
+            SELECT e.*,
+                   c.nombre   AS cargo,
+                   d.nombre   AS departamento,
+                   cat.nombre AS categoria,
+                   tl.nombre  AS turno,
+                   sl.nombre  AS sector,
+                   ne.nombre  AS nivel_estudio
+            FROM empleados e
+            LEFT JOIN cargos c           ON c.id  = e.cargo_id
+            LEFT JOIN departamentos d    ON d.id  = e.departamento_id
+            LEFT JOIN categorias cat     ON cat.id = e.categoria_id
+            LEFT JOIN turnos_legajo tl   ON tl.id = e.turno_id
+            LEFT JOIN sectores_legajo sl ON sl.id = e.sector_id
+            LEFT JOIN niveles_estudio ne ON ne.id = e.nivel_estudio_id
+            WHERE e.id=?
+        """, (eid,)).fetchone()
         if not row:
             raise HTTPException(404, "Empleado no encontrado")
         return dict(row)
@@ -99,11 +129,11 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
         conn.execute(
             """UPDATE empleados SET
                nombre=?, apellido=?, dni=?, cuil=?, fecha_nacimiento=?, fecha_ingreso=?,
-               fecha_egreso=?, cargo=?, departamento=?, categoria=?, telefono=?, email=?,
+               fecha_egreso=?, cargo_id=?, departamento_id=?, categoria_id=?, telefono=?, email=?,
                domicilio=?, observaciones=?, activo=?, tipo=?,
-               nacionalidad=?, estado_civil=?, turno=?, sector=?,
+               nacionalidad=?, estado_civil=?, turno_id=?, sector_id=?,
                contacto_emergencia_nombre=?, contacto_emergencia_telefono=?,
-               contacto_emergencia_parentesco=?, nivel_estudio=?,
+               contacto_emergencia_parentesco=?, nivel_estudio_id=?,
                dom_calle=?, dom_numero=?, dom_piso=?, dom_entre_calle1=?, dom_entre_calle2=?,
                dom_barrio=?, dom_localidad=?, dom_provincia=?, dom_cp=?,
                dom_lat=?, dom_lng=?, dom_mapa=?,
@@ -111,33 +141,46 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
                WHERE id=?""",
             (data.nombre.strip(), data.apellido.strip(), data.dni, data.cuil,
              data.fecha_nacimiento, data.fecha_ingreso, data.fecha_egreso,
-             data.cargo, data.departamento, data.categoria,
+             data.cargo_id, data.departamento_id, data.categoria_id,
              data.telefono, data.email, data.domicilio, data.observaciones, data.activo, data.tipo,
-             data.nacionalidad, data.estado_civil, data.turno, data.sector,
+             data.nacionalidad, data.estado_civil, data.turno_id, data.sector_id,
              data.contacto_emergencia_nombre, data.contacto_emergencia_telefono,
-             data.contacto_emergencia_parentesco, data.nivel_estudio,
+             data.contacto_emergencia_parentesco, data.nivel_estudio_id,
              data.dom_calle, data.dom_numero, data.dom_piso, data.dom_entre_calle1, data.dom_entre_calle2,
              data.dom_barrio, data.dom_localidad, data.dom_provincia, data.dom_cp,
              data.dom_lat, data.dom_lng, data.dom_mapa,
              eid)
         )
-        if anterior["activo"] == 1 and data.activo == 0:
-            # Usar fecha_egreso como corte; si no viene, tomar hoy
+        baja = anterior["activo"] == 1 and (data.activo == 0 or bool(data.fecha_egreso))
+        if baja:
             corte = data.fecha_egreso or conn.execute(
                 "SELECT date('now','localtime')"
             ).fetchone()[0]
-            # Asegurar que fecha_egreso quede guardada
-            if not data.fecha_egreso:
-                conn.execute(
-                    "UPDATE empleados SET fecha_egreso=? WHERE id=?", (corte, eid)
-                )
-            # Eliminar planificacion y resultados DESPUÉS del corte
             conn.execute(
-                "DELETE FROM planificacion WHERE empleado_id=? AND fecha > ? AND auto_generado=1",
+                "UPDATE empleados SET activo=0, fecha_egreso=? WHERE id=?", (corte, eid)
+            )
+            conn.execute(
+                "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= ? AND auto_generado=1",
                 (eid, corte)
             )
             conn.execute(
-                "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha > ? AND corregido_manualmente=0",
+                "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha >= ? AND corregido_manualmente=0",
                 (eid, corte)
             )
-        return dict(conn.execute("SELECT * FROM empleados WHERE id=?", (eid,)).fetchone())
+        return dict(conn.execute("""
+            SELECT e.*,
+                   c.nombre   AS cargo,
+                   d.nombre   AS departamento,
+                   cat.nombre AS categoria,
+                   tl.nombre  AS turno,
+                   sl.nombre  AS sector,
+                   ne.nombre  AS nivel_estudio
+            FROM empleados e
+            LEFT JOIN cargos c           ON c.id  = e.cargo_id
+            LEFT JOIN departamentos d    ON d.id  = e.departamento_id
+            LEFT JOIN categorias cat     ON cat.id = e.categoria_id
+            LEFT JOIN turnos_legajo tl   ON tl.id = e.turno_id
+            LEFT JOIN sectores_legajo sl ON sl.id = e.sector_id
+            LEFT JOIN niveles_estudio ne ON ne.id = e.nivel_estudio_id
+            WHERE e.id=?
+        """, (eid,)).fetchone())

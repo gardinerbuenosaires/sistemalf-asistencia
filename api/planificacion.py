@@ -32,7 +32,11 @@ def get_semana(fecha: str, _user=Depends(require_permiso("planificacion", "ver")
 
     with db_session() as conn:
         empleados = conn.execute(
-            "SELECT id, nombre, apellido, cargo, tipo FROM empleados WHERE activo = 1 AND tipo != 'acceso' ORDER BY cargo, apellido, nombre"
+            """SELECT e.id, e.nombre, e.apellido, c.nombre AS cargo, e.tipo
+               FROM empleados e
+               LEFT JOIN cargos c ON c.id = e.cargo_id
+               WHERE e.activo = 1 AND e.tipo != 'acceso'
+               ORDER BY c.nombre, e.apellido, e.nombre"""
         ).fetchall()
 
         plan_rows = conn.execute(
@@ -141,7 +145,7 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
     Actualiza planificacion y re-evalúa ese empleado/fecha para calcular tardanza.
     """
     from fastapi import HTTPException
-    from sync.evaluador import _clasificar_fichajes, _evaluar_bloque
+    from sync.evaluador import _clasificar_fichajes, _evaluar_bloque, _calcular_estado
     from datetime import date, timedelta
     from api.periodos_cerrados import check_periodo_abierto
 
@@ -171,7 +175,7 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
             raise HTTPException(400, "El horario no tiene bloques definidos")
 
         conn.execute(
-            "UPDATE planificacion SET horario_id=?, modificado_en=datetime('now','localtime') WHERE empleado_id=? AND fecha=?",
+            "UPDATE planificacion SET horario_id=?, auto_generado=0, modificado_en=datetime('now','localtime') WHERE empleado_id=? AND fecha=?",
             (horario_id, empleado_id, fecha_str)
         )
 
@@ -191,6 +195,8 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
             b2_salida_id  = (slots.get("b2_salida")  or {}).get("id")
             b2r = _evaluar_bloque(bloques[1], fecha, slots.get("b2_entrada"), slots.get("b2_salida"))
 
+        estado = _calcular_estado(b1r, b2r)
+
         conn.execute(
             """INSERT INTO resultados_dia
                (empleado_id, fecha, horario_id, es_franco, estado,
@@ -198,9 +204,9 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
                 b2_entrada, b2_salida, b2_minutos_tarde, b2_salida_anticipada, b2_ausente, b2_sin_salida,
                 b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id,
                 corregido_manualmente, corregido_por, corregido_en, procesado_en)
-               VALUES (?,?,?,1,'ft', ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, 0,NULL,NULL, datetime('now','localtime'))
+               VALUES (?,?,?,1,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, 0,NULL,NULL, datetime('now','localtime'))
                ON CONFLICT(empleado_id, fecha) DO UPDATE SET
-               horario_id=excluded.horario_id, estado='ft',
+               horario_id=excluded.horario_id, estado=excluded.estado,
                b1_entrada=excluded.b1_entrada, b1_salida=excluded.b1_salida,
                b1_minutos_tarde=excluded.b1_minutos_tarde,
                b1_salida_anticipada=excluded.b1_salida_anticipada, b1_ausente=excluded.b1_ausente,
@@ -212,7 +218,7 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
                b1_entrada_id=excluded.b1_entrada_id, b1_salida_id=excluded.b1_salida_id,
                b2_entrada_id=excluded.b2_entrada_id, b2_salida_id=excluded.b2_salida_id,
                procesado_en=datetime('now','localtime')""",
-            (empleado_id, fecha_str, horario_id,
+            (empleado_id, fecha_str, horario_id, estado,
              b1r.get("entrada"), b1r.get("salida"), b1r.get("minutos_tarde"),
              int(b1r.get("salida_anticipada", False)), int(b1r.get("ausente", False)), int(b1r.get("sin_salida", False)),
              (b2r or {}).get("entrada"), (b2r or {}).get("salida"), (b2r or {}).get("minutos_tarde"),

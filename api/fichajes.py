@@ -62,11 +62,12 @@ def horarios_sugeridos(
     with db_session() as conn:
         rows = conn.execute(
             f"""SELECT p.empleado_id,
-                       e.nombre, e.apellido, e.cargo,
+                       e.nombre, e.apellido, c.nombre AS cargo,
                        h.nombre  AS horario_nombre,
                        hb.bloque, hb.hora_entrada, hb.hora_salida, hb.cruza_medianoche
                 FROM planificacion p
                 JOIN empleados e ON e.id = p.empleado_id
+                LEFT JOIN cargos c ON c.id = e.cargo_id
                 JOIN horarios_bloques hb ON hb.horario_id = p.horario_id
                 LEFT JOIN horarios h ON h.id = p.horario_id
                 WHERE p.empleado_id IN ({ph}) AND p.fecha = ? AND p.es_franco = 0
@@ -123,6 +124,13 @@ def crear_fichaje_manual(
             "SELECT * FROM fichajes WHERE empleado_id=? AND timestamp=?",
             (data.empleado_id, ts),
         ).fetchone()
+
+    try:
+        from sync.evaluador import evaluar_fecha
+        evaluar_fecha(ts[:10], respetar_correcciones=True, solo_empleado_id=data.empleado_id)
+    except Exception:
+        pass
+
     return dict(row)
 
 
@@ -168,7 +176,31 @@ def crear_fichajes_grupal(
                 except Exception:
                     errores.append({"empleado_id": item.empleado_id, "timestamp": ts, "error": "duplicado"})
 
+    try:
+        from sync.evaluador import evaluar_fecha
+        eids_creados = {item.empleado_id for item in data.empleados}
+        for eid in eids_creados:
+            evaluar_fecha(data.fecha, respetar_correcciones=True, solo_empleado_id=eid)
+    except Exception:
+        pass
+
     return {"creados": len(creados), "errores": errores, "detalle": creados}
+
+
+@router.get("/dia")
+def fichajes_dia(
+    empleado_id: int,
+    fecha: str,
+    _user=Depends(require_permiso("asistencia", "ver")),
+):
+    """Fichajes de un empleado en una fecha (para tooltip en planilla)."""
+    with db_session() as conn:
+        rows = conn.execute(
+            "SELECT id, timestamp, es_manual FROM fichajes "
+            "WHERE empleado_id=? AND date(timestamp)=? ORDER BY timestamp",
+            (empleado_id, fecha),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 @router.delete("/{fichaje_id}")
@@ -202,5 +234,11 @@ def eliminar_fichaje(
             (fichaje_id,)*8 + (f["empleado_id"], f["fecha"])
         )
         conn.execute("DELETE FROM fichajes WHERE id=?", (fichaje_id,))
-    recalcular_resultado(f["empleado_id"], f["fecha"])
+
+    from sync.evaluador import evaluar_fecha
+    try:
+        evaluar_fecha(f["fecha"], respetar_correcciones=True, solo_empleado_id=f["empleado_id"])
+    except Exception:
+        recalcular_resultado(f["empleado_id"], f["fecha"])
+
     return {"ok": True}

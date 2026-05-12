@@ -47,6 +47,7 @@
   .emp-nombre { font-weight: bold; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .emp-sub { font-size: .75rem; color: #888; margin-top: 1px; }
   .badge-inactivo { font-size: .7rem; background: #f8d7da; color: #721c24; padding: 1px 6px; border-radius: 10px; }
+  .badge-sindatos { font-size: .7rem; background: #fff3cd; color: #856404; padding: 1px 6px; border-radius: 10px; }
 
   /* Formulario */
   .form-scroll { padding: 20px; flex: 1; min-height: 0; overflow-y: auto; }
@@ -215,6 +216,13 @@
             <option value="__vacio__">— Sin categ. —</option>
           </select>
         </div>
+        <div class="fg">
+          <label>Datos</label>
+          <select id="f-datos-filtro" onchange="filtrar()">
+            <option value="">Todos</option>
+            <option value="pendiente">Sin completar</option>
+          </select>
+        </div>
         <div class="filtros-footer">
           <button class="btn-clear" onclick="limpiarFiltros()">Limpiar filtros</button>
         </div>
@@ -245,9 +253,6 @@
 </main>
 
 <div id="toast"></div>
-<datalist id="dl-cargos"></datalist>
-<datalist id="dl-deptos"></datalist>
-<datalist id="dl-categorias"></datalist>
 
 <script>
 const DIAS_NOMBRES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -314,7 +319,7 @@ function _poblarSelectCatalogo(selectId, items, labelTodo, labelVacio) {
   const sel = document.getElementById(selectId);
   const val = sel.value;
   sel.innerHTML = `<option value="">${labelTodo}</option><option value="__vacio__">${labelVacio}</option>` +
-    items.map(i => `<option value="${i.nombre}">${i.nombre}</option>`).join("");
+    items.map(i => `<option value="${i.id}">${i.nombre}</option>`).join("");
   if ([...sel.options].some(o => o.value === val)) sel.value = val;
 }
 
@@ -333,6 +338,7 @@ function _actualizarIndicadorFiltros() {
                  document.getElementById("f-cargo-filtro").value ||
                  document.getElementById("f-depto-filtro").value ||
                  document.getElementById("f-categoria-filtro").value ||
+                 document.getElementById("f-datos-filtro").value ||
                  filtroImportadosIds;
   btn.classList.toggle("con-filtros", !!activo);
 }
@@ -352,18 +358,20 @@ function filtrar() {
   const cargo     = document.getElementById("f-cargo-filtro").value;
   const depto     = document.getElementById("f-depto-filtro").value;
   const categoria = document.getElementById("f-categoria-filtro").value;
+  const datos     = document.getElementById("f-datos-filtro").value;
 
   let base = todos.filter(e => e.tipo !== "acceso");
   if (filtroImportadosIds) base = base.filter(e => filtroImportadosIds.has(e.id));
   if (estado === "activo")        base = base.filter(e => e.activo);
   if (estado === "inactivo")      base = base.filter(e => !e.activo);
+  if (datos === "pendiente")      base = base.filter(e => e.user_id && !e.fecha_ingreso);
   if (tipo)                       base = base.filter(e => (e.tipo || "normal") === tipo);
-  if (cargo === "__vacio__")      base = base.filter(e => !e.cargo);
-  else if (cargo)                 base = base.filter(e => e.cargo === cargo);
-  if (depto === "__vacio__")      base = base.filter(e => !e.departamento);
-  else if (depto)                 base = base.filter(e => e.departamento === depto);
-  if (categoria === "__vacio__")  base = base.filter(e => !e.categoria);
-  else if (categoria)             base = base.filter(e => e.categoria === categoria);
+  if (cargo === "__vacio__")      base = base.filter(e => !e.cargo_id);
+  else if (cargo)                 base = base.filter(e => e.cargo_id === parseInt(cargo));
+  if (depto === "__vacio__")      base = base.filter(e => !e.departamento_id);
+  else if (depto)                 base = base.filter(e => e.departamento_id === parseInt(depto));
+  if (categoria === "__vacio__")  base = base.filter(e => !e.categoria_id);
+  else if (categoria)             base = base.filter(e => e.categoria_id === parseInt(categoria));
   if (q) base = base.filter(e => `${e.apellido} ${e.nombre} ${e.cargo||""} ${e.departamento||""} ${e.categoria||""}`.toLowerCase().includes(q));
 
   renderLista(base);
@@ -377,6 +385,7 @@ function limpiarFiltros() {
   document.getElementById("f-cargo-filtro").value = "";
   document.getElementById("f-depto-filtro").value = "";
   document.getElementById("f-categoria-filtro").value = "";
+  document.getElementById("f-datos-filtro").value = "";
   _actualizarIndicadorFiltros();
   limpiarFiltroImportados();
 }
@@ -403,20 +412,32 @@ function renderListaAccesos(lista) {
     </div>`).join("");
 }
 
+function _sinDatos(e) {
+  return !!(e.user_id && !e.fecha_ingreso);
+}
+
 function renderLista(lista) {
   const cont = document.getElementById("emp-list");
   if (!lista.length) {
     cont.innerHTML = '<div class="empty-state">Sin resultados.</div>';
     return;
   }
-  cont.innerHTML = lista.map(e => `
+  cont.innerHTML = lista.map(e => {
+    const sinDatos = _sinDatos(e);
+    const badges = [];
+    if (!e.activo) badges.push('<span class="badge-inactivo">Inactivo</span>');
+    if (sinDatos)  badges.push('<span class="badge-sindatos">Sin datos</span>');
+    const badgesHtml = badges.length ? " " + badges.join(" ") : "";
+    const avatarStyle = sinDatos ? 'style="background:#856404"' : "";
+    return `
     <div class="emp-item${e.id === editandoId ? " activo" : ""}" id="emp-item-${e.id}" onclick="editarEmpleado(${e.id})">
-      <div class="emp-avatar">${iniciales(e.apellido, e.nombre)}</div>
+      <div class="emp-avatar" ${avatarStyle}>${sinDatos ? "?" : iniciales(e.apellido, e.nombre)}</div>
       <div class="emp-info">
-        <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}</div>
+        <div class="emp-nombre">${sinDatos ? "ID: " + e.user_id : e.apellido + ", " + e.nombre}${badgesHtml}</div>
         <div class="emp-sub">${[e.cargo, e.departamento].filter(Boolean).join(" · ") || "Sin cargo asignado"}${e.tipo === "jerarquico" ? ' · <span style="color:#8e44ad">Jerárquico</span>' : e.tipo === "acceso" ? ' · <span style="color:#7f8c8d">Solo acceso</span>' : ""}</div>
       </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 async function importarDesdeDispositivo() {
@@ -566,7 +587,7 @@ function buildCalendarioSection(asignaciones = []) {
 }
 
 function _buildPremioAviso(e) {
-  const cargo = cargosOpts.find(c => c.nombre === e.cargo);
+  const cargo = cargosOpts.find(c => c.id === e.cargo_id);
   if (!cargo || !cargo.aplica_premio) return "";
 
   if (!e.fecha_ingreso) {
@@ -644,7 +665,7 @@ function buildForm(e = {}, asignaciones = []) {
             <select id="f-nivel-estudio">
               <option value="">—</option>
               ${nivelesEstudioOpts.map(o =>
-                `<option${e.nivel_estudio===o.nombre?" selected":""}>${o.nombre}</option>`).join("")}
+                `<option value="${o.id}"${e.nivel_estudio_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
             </select>
           </div>
           <div class="form-group span-2">
@@ -659,15 +680,24 @@ function buildForm(e = {}, asignaciones = []) {
         <div class="form-grid">
           <div class="form-group">
             <label>Cargo</label>
-            <input type="text" id="f-cargo" value="${e.cargo||""}" list="dl-cargos" autocomplete="off">
+            <select id="f-cargo">
+              <option value="">—</option>
+              ${cargosOpts.map(o => `<option value="${o.id}"${e.cargo_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
+            </select>
           </div>
           <div class="form-group">
             <label>Departamento</label>
-            <input type="text" id="f-departamento" value="${e.departamento||""}" list="dl-deptos" autocomplete="off">
+            <select id="f-departamento">
+              <option value="">—</option>
+              ${deptosOpts.map(o => `<option value="${o.id}"${e.departamento_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
+            </select>
           </div>
           <div class="form-group">
             <label>Categoría</label>
-            <input type="text" id="f-categoria" value="${e.categoria||""}" list="dl-categorias" autocomplete="off">
+            <select id="f-categoria">
+              <option value="">—</option>
+              ${categoriasOpts.map(o => `<option value="${o.id}"${e.categoria_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
+            </select>
           </div>
           <div class="form-group">
             <label>Código dispositivo</label>
@@ -679,7 +709,7 @@ function buildForm(e = {}, asignaciones = []) {
           </div>
           <div class="form-group">
             <label>Fecha de egreso</label>
-            <input type="date" id="f-egreso" value="${e.fecha_egreso||""}">
+            <input type="date" id="f-egreso" value="${e.fecha_egreso||""}" oninput="actualizarBtnGuardar()">
           </div>
           ${editandoId ? _buildPremioAviso(e) : ""}
           <div class="form-group">
@@ -694,14 +724,14 @@ function buildForm(e = {}, asignaciones = []) {
             <label>Turno</label>
             <select id="f-turno">
               <option value="">—</option>
-              ${turnosLegajoOpts.map(t => `<option${e.turno===t.nombre?" selected":""}>${t.nombre}</option>`).join("")}
+              ${turnosLegajoOpts.map(t => `<option value="${t.id}"${e.turno_id===t.id?" selected":""}>${t.nombre}</option>`).join("")}
             </select>
           </div>
           <div class="form-group">
             <label>Sector</label>
             <select id="f-sector">
               <option value="">—</option>
-              ${sectoresLegajoOpts.map(s => `<option${e.sector===s.nombre?" selected":""}>${s.nombre}</option>`).join("")}
+              ${sectoresLegajoOpts.map(s => `<option value="${s.id}"${e.sector_id===s.id?" selected":""}>${s.nombre}</option>`).join("")}
             </select>
           </div>
         </div>
@@ -819,14 +849,15 @@ function buildForm(e = {}, asignaciones = []) {
       </div>
 
       <div class="form-footer">
-        <button class="btn btn-danger btn-sm" id="btn-toggle-activo" onclick="toggleActivo()" style="${!editandoId ? 'display:none' : ''}">
-          ${e.activo ? "Dar de baja" : "Reactivar"}
-        </button>
+        ${!e.activo && editandoId && canDo('empleados','editar') ? `
+        <button class="btn btn-success btn-sm" onclick="toggleActivo()">Reactivar</button>` : ''}
         ${!e.activo && e.user_id && canDo('empleados','editar') ? `
         <button class="btn btn-sm" style="background:#856404;color:white" onclick="liberarId(${e.id}, '${e.user_id}')">Liberar ID dispositivo</button>` : ''}
         ${editandoId ? `<a href="/empleados/${e.id}/legajo" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">Legajo</a>` : ''}
         <button class="btn btn-secondary" onclick="cancelar()">Cancelar</button>
-        <button class="btn btn-primary" onclick="guardar()">Guardar</button>
+        <button id="btn-guardar" class="btn ${e.activo && e.fecha_egreso ? 'btn-danger' : 'btn-primary'}" onclick="guardar()">
+          ${e.activo && e.fecha_egreso ? 'Dar de baja' : 'Guardar'}
+        </button>
       </div>
     </form>`;
 }
@@ -871,9 +902,9 @@ function getFormData() {
     fecha_nacimiento: _val("f-nacimiento"),
     fecha_ingreso:    _val("f-ingreso"),
     fecha_egreso:     _val("f-egreso"),
-    cargo:        _val("f-cargo"),
-    departamento: _val("f-departamento"),
-    categoria:    _val("f-categoria"),
+    cargo_id:        parseInt(_val("f-cargo"))        || null,
+    departamento_id: parseInt(_val("f-departamento")) || null,
+    categoria_id:    parseInt(_val("f-categoria"))    || null,
     telefono:     _val("f-telefono"),
     email:        _val("f-email"),
     observaciones: _val("f-obs"),
@@ -881,9 +912,9 @@ function getFormData() {
     activo:  editandoActivo,
     nacionalidad:  _val("f-nacionalidad"),
     estado_civil:  _val("f-estado-civil"),
-    nivel_estudio: _val("f-nivel-estudio"),
-    turno:  _val("f-turno"),
-    sector: _val("f-sector"),
+    nivel_estudio_id: parseInt(_val("f-nivel-estudio")) || null,
+    turno_id:  parseInt(_val("f-turno"))  || null,
+    sector_id: parseInt(_val("f-sector")) || null,
     contacto_emergencia_nombre:      _val("f-emerg-nombre"),
     contacto_emergencia_telefono:    _val("f-emerg-tel"),
     contacto_emergencia_parentesco:  _val("f-emerg-parentesco"),
@@ -908,10 +939,25 @@ function getFormData() {
   };
 }
 
+function actualizarBtnGuardar() {
+  const btn = document.getElementById('btn-guardar');
+  if (!btn) return;
+  const fecha = document.getElementById('f-egreso')?.value;
+  if (editandoActivo && fecha) {
+    btn.className = 'btn btn-danger';
+    btn.textContent = 'Dar de baja';
+  } else {
+    btn.className = 'btn btn-primary';
+    btn.textContent = 'Guardar';
+  }
+}
+
 async function guardar() {
   if (!editandoId) return;
   const data = getFormData();
   if (!data.apellido || !data.nombre) { toast("Apellido y nombre son obligatorios"); return; }
+
+  const esBaja = editandoActivo && data.fecha_egreso;
 
   const res = await fetch(`/api/empleados/${editandoId}`, {
     method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data)
@@ -919,10 +965,9 @@ async function guardar() {
 
   if (res.ok) {
     const e = await res.json();
-    toast("Cambios guardados");
+    toast(esBaja ? "Empleado dado de baja" : "Cambios guardados");
     await cargar();
-    document.getElementById(`emp-item-${e.id}`)?.classList.add("activo");
-    document.getElementById("form-titulo").textContent = `${e.apellido}, ${e.nombre}`;
+    await editarEmpleado(editandoId);
   } else {
     const err = await res.json().catch(() => ({}));
     toast("Error: " + (err.detail || "desconocido"));
@@ -930,15 +975,16 @@ async function guardar() {
 }
 
 async function toggleActivo() {
-  if (!editandoId) return;
+  if (!editandoId || editandoActivo) return;
   const data = getFormData();
-  editandoActivo = editandoActivo ? 0 : 1;
-  data.activo = editandoActivo;
+  data.activo = 1;
+  data.fecha_egreso = null;
   const res = await fetch(`/api/empleados/${editandoId}`, {
     method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data)
   });
   if (res.ok) {
-    toast(editandoActivo ? "Empleado reactivado" : "Empleado dado de baja");
+    editandoActivo = 1;
+    toast("Empleado reactivado");
     await cargar();
     await editarEmpleado(editandoId);
   }
@@ -1173,9 +1219,6 @@ async function init() {
     const p = params.find(x => x.clave === "dias_minimos_antiguedad");
     if (p) _diasMinAntiguedad = parseInt(p.valor) || 90;
   }
-  document.getElementById("dl-cargos").innerHTML = cargosOpts.map(c => `<option value="${c.nombre}">`).join("");
-  document.getElementById("dl-deptos").innerHTML = deptosOpts.map(d => `<option value="${d.nombre}">`).join("");
-  document.getElementById("dl-categorias").innerHTML = categoriasOpts.map(c => `<option value="${c.nombre}">`).join("");
   _poblarSelectCatalogo("f-cargo-filtro", cargosOpts, "Todo cargo", "— Sin cargo —");
   _poblarSelectCatalogo("f-depto-filtro", deptosOpts, "Todo depto.", "— Sin depto. —");
   _poblarSelectCatalogo("f-categoria-filtro", categoriasOpts, "Todas", "— Sin categ. —");

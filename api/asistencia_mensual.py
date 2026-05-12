@@ -13,7 +13,7 @@ _EST_SIMPLE = {
     "tarde": "T", "tarde_y_salida_anticipada": "T", "tarde_y_sin_salida": "T",
     "ausente": "A", "franco": "F", "ft": "FT",
     "b1_ausente": "A", "b2_ausente": "A",
-    "nf": "NF",
+    "nf": "NF", "duda": "!",
 }
 _EST_B1 = {**_EST_SIMPLE, "b1_ausente": "A", "b2_ausente": "I"}
 _EST_B2 = {
@@ -23,7 +23,7 @@ _EST_B2 = {
     "tarde_y_sin_salida": "I",
     "ausente": "A", "franco": "F", "ft": "FT",
     "b1_ausente": "I", "b2_ausente": "A",
-    "nf": "NF",
+    "nf": "NF", "duda": "!",
 }
 
 CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "@", "NF"}
@@ -34,8 +34,8 @@ DIAS_SEMANA   = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]
 # ── Resolución de una celda/bloque ────────────────────────────────────────────
 def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_map):
     if f_ing and fecha < f_ing:
-        return {"letra": None, "tipo": "fuera"}
-    if f_egr and fecha > f_egr:
+        return {"letra": "O", "tipo": "antes_ingreso"}
+    if f_egr and fecha >= f_egr:
         return {"letra": "X", "tipo": "liquidacion"}
 
     # 1. Novedad manual: bloque específico primero, luego bloque=0 (día entero)
@@ -73,6 +73,51 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
 def _fmt(v: float):
     """Devuelve int si es entero, float si tiene decimal."""
     return int(v) if v == int(v) else v
+
+
+def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
+    dias_duda      = []
+    dias_faltantes = []
+    dias_activos   = 0
+
+    for fecha in fechas:
+        bloques = [celdas[fecha]["b1"], celdas[fecha]["b2"]] if cortado else [celdas[fecha]]
+
+        # Día entero fuera del período activo del empleado → ignorar
+        if all(b["tipo"] in ("antes_ingreso", "liquidacion") for b in bloques):
+            continue
+
+        dias_activos += 1
+        dia_num = int(fecha[8:])
+
+        if any(b.get("letra") == "!" for b in bloques):
+            dias_duda.append(dia_num)
+            continue  # duda ≠ faltante
+
+        if any(b["tipo"] in ("pendiente", "sin_plan") for b in bloques):
+            dias_faltantes.append(dia_num)
+
+    tiene_egreso_mes = bool(f_egr) and f0 <= f_egr <= f1
+
+    # Ventana de alerta: últimos 5 días del mes
+    ventana_desde = (date.fromisoformat(f1) - timedelta(days=4)).isoformat()
+    en_ventana    = hoy_str >= ventana_desde
+
+    if dias_activos < 3:
+        return {"estado": "vacio"}
+    if not dias_duda and not dias_faltantes:
+        return {"estado": "liquidacion" if tiene_egreso_mes else "completado"}
+    if dias_duda and not dias_faltantes:
+        return {"estado": "revisar", "dias_duda": dias_duda}
+    if not dias_duda:
+        # Solo días faltantes: detalle solo en la ventana final
+        if en_ventana:
+            return {"estado": "faltan", "dias_faltantes": dias_faltantes}
+        return {"estado": "en_curso"}
+    # Hay duda Y faltantes: siempre mostrar duda, faltantes solo en ventana
+    if en_ventana:
+        return {"estado": "mixto", "dias_duda": dias_duda, "dias_faltantes": dias_faltantes}
+    return {"estado": "revisar", "dias_duda": dias_duda}
 
 
 def _build_dias(fechas, feriados):
@@ -130,10 +175,11 @@ def asistencia_mensual(mes: str = Query(None)):
                 LEFT JOIN turnos t ON t.id = h.turno_id
                 WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
             )
-            SELECT e.id, e.user_id, e.nombre, e.apellido, e.cargo,
+            SELECT e.id, e.user_id, e.nombre, e.apellido, c.nombre AS cargo,
                    e.fecha_ingreso, e.fecha_egreso,
                    u.tipo AS hipo, u.turno_nombre
             FROM empleados e
+            LEFT JOIN cargos c ON c.id = e.cargo_id
             JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
             WHERE e.tipo != 'acceso'
               AND (e.activo = 1
@@ -246,6 +292,8 @@ def asistencia_mensual(mes: str = Query(None)):
 
         transporte = transporte_map.get(eid, 0)
         saldo_mes  = tots.get("FD", 0) - tots.get("FT", 0)
+        control    = _calcular_control(fechas, f_egr, celdas, cortado, f0, f1,
+                                       date.today().isoformat())
 
         grupos[grupo].append({
             "id":       eid,
@@ -254,6 +302,7 @@ def asistencia_mensual(mes: str = Query(None)):
             "apellido": emp["apellido"],
             "cargo":    emp["cargo"] or "",
             "celdas":   celdas,
+            "control":  control,
             "totales": {
                 **{k: _fmt(v) for k, v in tots.items()},
                 "transporte":         _fmt(transporte),
@@ -361,7 +410,7 @@ class OrdenItem(BaseModel):
 
 
 @router.get("/orden/{grupo}")
-def get_orden(grupo: str):
+def get_orden(grupo: str, mes: str | None = None):
     if grupo not in ("TM", "TN", "CO"):
         raise HTTPException(400, "Grupo inválido")
     with db_session() as conn:
@@ -370,6 +419,44 @@ def get_orden(grupo: str):
             "WHERE grupo=? ORDER BY posicion",
             (grupo,),
         ).fetchall()
+
+        if mes:
+            try:
+                from datetime import date
+                y, m = map(int, mes.split("-"))
+                import calendar
+                f0 = f"{y}-{m:02d}-01"
+                f1 = f"{y}-{m:02d}-{calendar.monthrange(y, m)[1]:02d}"
+            except Exception:
+                return [dict(r) for r in rows]
+
+            # Determinar grupo real de cada empleado para ese mes
+            emp_grupo = conn.execute("""
+                WITH ult AS (
+                    SELECT p.empleado_id,
+                           h.tipo, t.nombre AS turno_nombre,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY p.empleado_id ORDER BY p.fecha DESC
+                           ) AS rn
+                    FROM planificacion p
+                    JOIN horarios h ON h.id = p.horario_id
+                    LEFT JOIN turnos t ON t.id = h.turno_id
+                    WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
+                )
+                SELECT empleado_id,
+                    CASE
+                        WHEN tipo = 'cortado' THEN 'CO'
+                        WHEN lower(COALESCE(turno_nombre,'')) LIKE '%noche%'
+                          OR lower(COALESCE(turno_nombre,'')) LIKE '%madrugada%' THEN 'TN'
+                        ELSE 'TM'
+                    END AS grupo
+                FROM ult WHERE rn = 1
+            """, (f0, f1)).fetchall()
+            ids_del_grupo = {r["empleado_id"] for r in emp_grupo if r["grupo"] == grupo}
+
+            rows = [r for r in rows
+                    if r["empleado_id"] is None or r["empleado_id"] in ids_del_grupo]
+
     return [dict(r) for r in rows]
 
 

@@ -191,20 +191,22 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
                 (eid,)
             )
 
-            # Saltear solo si ya existe exactamente la misma asignación (mismo calendario, misma fecha_desde)
+            # Saltear solo si ya existe exactamente la misma asignación (mismo calendario,
+            # misma fecha_desde, mismo franco_rotativo y franco_dia_semana)
             ya_activo = conn.execute(
                 "SELECT id FROM asignaciones "
                 "WHERE empleado_id=? AND calendario_id=? AND fecha_desde=? "
+                "AND franco_rotativo=? AND COALESCE(franco_dia_semana,-1)=COALESCE(?,-1) "
                 "AND (fecha_hasta IS NULL OR fecha_hasta > ?)",
-                (eid, data.calendario_id, data.fecha_desde, data.fecha_desde)
+                (eid, data.calendario_id, data.fecha_desde,
+                 int(data.franco_rotativo), data.franco_dia_semana, data.fecha_desde)
             ).fetchone()
             if ya_activo:
                 continue
 
             conn.execute(
-                "UPDATE asignaciones SET fecha_hasta=? "
-                "WHERE empleado_id=? AND fecha_desde <= ? AND (fecha_hasta IS NULL OR fecha_hasta >= ?)",
-                (data.fecha_desde, eid, data.fecha_desde, data.fecha_desde)
+                "UPDATE asignaciones SET fecha_hasta=? WHERE empleado_id=?",
+                (data.fecha_desde, eid)
             )
             conn.execute(
                 "INSERT INTO asignaciones "

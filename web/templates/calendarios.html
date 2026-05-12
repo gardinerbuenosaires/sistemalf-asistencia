@@ -367,7 +367,7 @@ function renderEmpleados() {
     const asignado = asignadosIds.has(e.id);
     return `<label class="empleado-chk${asignado ? " ya-asignado" : ""}">
       <input type="checkbox" class="chk-emp" value="${e.id}"${asignado ? " checked" : ""}>
-      <span>${e.apellido}${e.nombre ? ", "+e.nombre.split(" ")[0] : ""} <small style="color:#888">${e.cargo||""}</small></span>
+      <span>${e.apellido}${e.nombre ? ", "+e.nombre : ""} <small style="color:#888">${e.cargo||""}</small></span>
       ${asignado ? '<small style="color:#27ae60;font-weight:bold;margin-left:auto">✓ asignado</small>' : ""}
     </label>`;
   }).join("");

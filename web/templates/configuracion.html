@@ -252,7 +252,7 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCargo()">+ Nuevo cargo</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th style="width:100px">Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th style="width:160px">Acciones</th></tr></thead>
         <tbody id="tabla-cargos"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -266,7 +266,7 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarDepto()">+ Nuevo departamento</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th style="width:160px">Acciones</th></tr></thead>
         <tbody id="tabla-deptos"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -280,7 +280,7 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCategoria()">+ Nueva categoría</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th style="width:160px">Acciones</th></tr></thead>
         <tbody id="tabla-categorias"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -294,7 +294,7 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarItemCatalogo('turno')">+ Nuevo turno</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th style="width:160px">Acciones</th></tr></thead>
         <tbody id="tabla-turnos-legajo"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -308,7 +308,7 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarItemCatalogo('sector')">+ Nuevo sector</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th style="width:160px">Acciones</th></tr></thead>
         <tbody id="tabla-sectores-legajo"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -322,7 +322,7 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarItemCatalogo('nivel')">+ Nuevo nivel</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:100px">Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th style="width:160px">Acciones</th></tr></thead>
         <tbody id="tabla-niveles-estudio"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -815,7 +815,17 @@ async function eliminarRol(id) {
 // ── Catálogos (Cargos, Departamentos y Categorías) ────────────────────────────
 let cargos = [], deptos = [], categorias = [];
 
+const _catStore = {};  // tbodyId → { lista, eliminarFn, api }
+const _catApis = {
+  "tabla-deptos":          "/api/departamentos",
+  "tabla-categorias":      "/api/categorias",
+  "tabla-turnos-legajo":   "/api/turnos-legajo",
+  "tabla-sectores-legajo": "/api/sectores-legajo",
+  "tabla-niveles-estudio": "/api/niveles-estudio",
+};
+
 function _renderCatalogo(lista, tbodyId, eliminarFn) {
+  _catStore[tbodyId] = { lista, eliminarFn };
   const tbody = document.getElementById(tbodyId);
   if (!lista.length) {
     tbody.innerHTML = `<tr><td colspan="2" style="color:#aaa">Sin registros</td></tr>`;
@@ -825,9 +835,54 @@ function _renderCatalogo(lista, tbodyId, eliminarFn) {
     <tr id="${tbodyId}-${item.id}">
       <td><strong>${item.nombre}</strong></td>
       <td>
-        ${canDo('empleados','editar') ? `<button class="btn btn-sm btn-danger" onclick="${eliminarFn}(${item.id},'${item.nombre.replace(/'/g,"\\'")}')">Eliminar</button>` : ''}
+        ${canDo('empleados','editar') ? `
+          <button class="btn btn-sm btn-secondary" onclick="_editarItemCatalogo('${tbodyId}',${item.id})">Editar</button>
+          <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="${eliminarFn}(${item.id},'${item.nombre.replace(/'/g,"\\'")}')">Eliminar</button>` : ''}
       </td>
     </tr>`).join("");
+}
+
+function _rerenderCatalogo(tbodyId) {
+  const s = _catStore[tbodyId];
+  if (s) _renderCatalogo(s.lista, tbodyId, s.eliminarFn);
+}
+
+function _editarItemCatalogo(tbodyId, id) {
+  const lista = (_catStore[tbodyId] || {}).lista || [];
+  const item = lista.find(i => i.id === id);
+  if (!item) return;
+  const tr = document.getElementById(`${tbodyId}-${id}`);
+  tr.className = "fila-edit";
+  tr.innerHTML = `
+    <td><input type="text" id="${tbodyId}-edit-${id}" value="${item.nombre.replace(/"/g,'&quot;')}" style="width:100%"
+      onkeydown="if(event.key==='Enter')_guardarItemCatalogo('${tbodyId}',${id});if(event.key==='Escape')_rerenderCatalogo('${tbodyId}')"></td>
+    <td>
+      <button class="btn btn-sm btn-primary" onclick="_guardarItemCatalogo('${tbodyId}',${id})">Guardar</button>
+      <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="_rerenderCatalogo('${tbodyId}')">Cancelar</button>
+    </td>`;
+  document.getElementById(`${tbodyId}-edit-${id}`).focus();
+}
+
+async function _guardarItemCatalogo(tbodyId, id) {
+  const nombre = document.getElementById(`${tbodyId}-edit-${id}`)?.value.trim();
+  if (!nombre) { toast("Ingresá el nombre"); return; }
+  const api = _catApis[tbodyId];
+  if (!api) return;
+  const res = await fetch(`${api}/${id}`, {
+    method: "PATCH", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ nombre })
+  });
+  if (res.ok) {
+    const updated = await res.json();
+    const lista = (_catStore[tbodyId] || {}).lista || [];
+    const item = lista.find(i => i.id === id);
+    if (item) item.nombre = updated.nombre;
+    _rerenderCatalogo(tbodyId);
+    toast("Actualizado");
+  } else {
+    const e = await res.json().catch(()=>({}));
+    toast("Error: " + (e.detail || "desconocido"));
+  }
 }
 
 function _renderCargos() {
@@ -845,9 +900,50 @@ function _renderCargos() {
           style="width:16px;height:16px;cursor:pointer;accent-color:#2c3e50">
       </td>
       <td>
-        ${canDo('empleados','editar') ? `<button class="btn btn-sm btn-danger" onclick="eliminarCargo(${item.id},'${item.nombre.replace(/'/g,"\\'")}')">Eliminar</button>` : ''}
+        ${canDo('empleados','editar') ? `
+          <button class="btn btn-sm btn-secondary" onclick="editarCargo(${item.id})">Editar</button>
+          <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="eliminarCargo(${item.id},'${item.nombre.replace(/'/g,"\\'")}')">Eliminar</button>` : ''}
       </td>
     </tr>`).join("");
+}
+
+function editarCargo(id) {
+  const item = cargos.find(c => c.id === id);
+  if (!item) return;
+  const tr = document.getElementById(`tabla-cargos-${id}`);
+  tr.className = "fila-edit";
+  tr.innerHTML = `
+    <td><input type="text" id="cargo-edit-nombre-${id}" value="${item.nombre.replace(/"/g,'&quot;')}" style="width:100%"
+      onkeydown="if(event.key==='Enter')guardarCargo(${id});if(event.key==='Escape')_renderCargos()"></td>
+    <td style="text-align:center">
+      <input type="checkbox" ${item.aplica_premio ? "checked" : ""} id="cargo-edit-premio-${id}"
+        style="width:16px;height:16px;cursor:pointer;accent-color:#2c3e50">
+    </td>
+    <td>
+      <button class="btn btn-sm btn-primary" onclick="guardarCargo(${id})">Guardar</button>
+      <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="_renderCargos()">Cancelar</button>
+    </td>`;
+  document.getElementById(`cargo-edit-nombre-${id}`).focus();
+}
+
+async function guardarCargo(id) {
+  const nombre = document.getElementById(`cargo-edit-nombre-${id}`).value.trim();
+  const aplica_premio = document.getElementById(`cargo-edit-premio-${id}`).checked;
+  if (!nombre) { toast("Ingresá el nombre"); return; }
+  const res = await fetch(`/api/cargos/${id}`, {
+    method: "PATCH", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ nombre, aplica_premio })
+  });
+  if (res.ok) {
+    const updated = await res.json();
+    const cargo = cargos.find(c => c.id === id);
+    if (cargo) { cargo.nombre = updated.nombre; cargo.aplica_premio = updated.aplica_premio; }
+    _renderCargos();
+    toast("Cargo actualizado");
+  } else {
+    const e = await res.json().catch(()=>({}));
+    toast("Error: " + (e.detail || "desconocido"));
+  }
 }
 
 async function toggleApremio(id, value) {

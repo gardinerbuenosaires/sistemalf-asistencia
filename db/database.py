@@ -79,9 +79,9 @@ def init_db():
                 fecha_nacimiento TEXT,
                 fecha_ingreso    TEXT,
                 fecha_egreso     TEXT,
-                cargo            TEXT,
-                departamento     TEXT,
-                categoria        TEXT,
+                cargo_id         INTEGER,
+                departamento_id  INTEGER,
+                categoria_id     INTEGER,
                 telefono         TEXT,
                 email            TEXT,
                 domicilio        TEXT,
@@ -663,6 +663,15 @@ def _migrate(conn):
         """)
         logger.info("Migración: columna rol en usuarios convertida a nullable")
 
+    # Eliminar columna rol legacy (rol_id es la fuente autorizada)
+    cols_usr = {c[1] for c in conn.execute("PRAGMA table_info(usuarios)").fetchall()}
+    if "rol" in cols_usr:
+        try:
+            conn.execute("ALTER TABLE usuarios DROP COLUMN rol")
+            logger.info("Migración: columna usuarios.rol eliminada")
+        except Exception:
+            pass
+
     cols_emp = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
     if "tipo" not in cols_emp:
         conn.execute("ALTER TABLE empleados ADD COLUMN tipo TEXT NOT NULL DEFAULT 'normal'")
@@ -690,20 +699,44 @@ def _migrate(conn):
         logger.info("Migración: columna aplica_premio agregada a cargos")
     conn.execute("CREATE TABLE IF NOT EXISTS departamentos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)")
     conn.execute("CREATE TABLE IF NOT EXISTS categorias (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)")
-    if conn.execute("SELECT COUNT(*) FROM cargos").fetchone()[0] == 0:
+    cols_emp_now = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
+    if conn.execute("SELECT COUNT(*) FROM cargos").fetchone()[0] == 0 and "cargo" in cols_emp_now:
         rows = conn.execute(
             "SELECT DISTINCT cargo FROM empleados WHERE cargo IS NOT NULL AND cargo != '' ORDER BY cargo"
         ).fetchall()
         if rows:
             conn.executemany("INSERT OR IGNORE INTO cargos (nombre) VALUES (?)", [(r[0],) for r in rows])
             logger.info("Migración: %d cargos importados desde empleados", len(rows))
-    if conn.execute("SELECT COUNT(*) FROM categorias").fetchone()[0] == 0:
+    if conn.execute("SELECT COUNT(*) FROM categorias").fetchone()[0] == 0 and "categoria" in cols_emp_now:
         rows = conn.execute(
             "SELECT DISTINCT categoria FROM empleados WHERE categoria IS NOT NULL AND categoria != '' ORDER BY categoria"
         ).fetchall()
         if rows:
             conn.executemany("INSERT OR IGNORE INTO categorias (nombre) VALUES (?)", [(r[0],) for r in rows])
             logger.info("Migración: %d categorías importadas desde empleados", len(rows))
+
+    # Migrar columnas de texto a IDs si aún existen (upgrade desde versión anterior)
+    _txt_to_id = [
+        ("cargo",         "cargo_id",         "cargos"),
+        ("departamento",  "departamento_id",  "departamentos"),
+        ("categoria",     "categoria_id",     "categorias"),
+        ("turno",         "turno_id",         "turnos_legajo"),
+        ("sector",        "sector_id",        "sectores_legajo"),
+        ("nivel_estudio", "nivel_estudio_id", "niveles_estudio"),
+    ]
+    cols_emp_now2 = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
+    for txt_col, id_col, tabla in _txt_to_id:
+        if txt_col in cols_emp_now2:
+            conn.execute(f"""
+                UPDATE empleados SET {id_col} = (
+                    SELECT id FROM {tabla} WHERE nombre = empleados.{txt_col}
+                ) WHERE {txt_col} IS NOT NULL AND {txt_col} != '' AND {id_col} IS NULL
+            """)
+            try:
+                conn.execute(f"ALTER TABLE empleados DROP COLUMN {txt_col}")
+                logger.info("Migración: columna %s migrada a %s en empleados", txt_col, id_col)
+            except Exception:
+                pass
 
     # Premios
     conn.execute("""CREATE TABLE IF NOT EXISTS premios_parametros (
@@ -760,12 +793,15 @@ def _migrate(conn):
     nuevas_emp = {
         "nacionalidad":                   "TEXT",
         "estado_civil":                   "TEXT",
-        "turno":                          "TEXT",
-        "sector":                         "TEXT",
+        "turno_id":                       "INTEGER",
+        "sector_id":                      "INTEGER",
         "contacto_emergencia_nombre":     "TEXT",
         "contacto_emergencia_telefono":   "TEXT",
         "contacto_emergencia_parentesco": "TEXT",
-        "nivel_estudio":                  "TEXT",
+        "nivel_estudio_id":               "INTEGER",
+        "cargo_id":                       "INTEGER",
+        "departamento_id":                "INTEGER",
+        "categoria_id":                   "INTEGER",
         "dom_calle":                      "TEXT",
         "dom_numero":                     "TEXT",
         "dom_piso":                       "TEXT",
@@ -825,10 +861,12 @@ def _migrate(conn):
             orden  INTEGER NOT NULL DEFAULT 0
         )
     """)
-    for t in [("TM", 1), ("TN", 2), ("CORTADO", 3)]:
-        conn.execute("INSERT OR IGNORE INTO turnos_legajo (nombre, orden) VALUES (?, ?)", t)
-    for s in [("SALÓN", 1), ("COCINA", 2)]:
-        conn.execute("INSERT OR IGNORE INTO sectores_legajo (nombre, orden) VALUES (?, ?)", s)
+    if not conn.execute("SELECT 1 FROM turnos_legajo LIMIT 1").fetchone():
+        for t in [("TM", 1), ("TN", 2), ("CORTADO", 3)]:
+            conn.execute("INSERT INTO turnos_legajo (nombre, orden) VALUES (?, ?)", t)
+    if not conn.execute("SELECT 1 FROM sectores_legajo LIMIT 1").fetchone():
+        for s in [("SALÓN", 1), ("COCINA", 2)]:
+            conn.execute("INSERT INTO sectores_legajo (nombre, orden) VALUES (?, ?)", s)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS niveles_estudio (
@@ -837,5 +875,6 @@ def _migrate(conn):
             orden  INTEGER NOT NULL DEFAULT 0
         )
     """)
-    for n in [("Primario", 1), ("Secundario", 2), ("Terciario", 3), ("Universitario", 4)]:
-        conn.execute("INSERT OR IGNORE INTO niveles_estudio (nombre, orden) VALUES (?, ?)", n)
+    if not conn.execute("SELECT 1 FROM niveles_estudio LIMIT 1").fetchone():
+        for n in [("Primario", 1), ("Secundario", 2), ("Terciario", 3), ("Universitario", 4)]:
+            conn.execute("INSERT INTO niveles_estudio (nombre, orden) VALUES (?, ?)", n)

@@ -301,9 +301,10 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
     with db_session() as conn:
         planes = conn.execute(
             """SELECT p.empleado_id, p.horario_id,
-                      e.user_id, e.nombre, e.apellido, e.cargo
+                      e.user_id, e.nombre, e.apellido, c.nombre AS cargo
                FROM planificacion p
                JOIN empleados e ON e.id = p.empleado_id
+               LEFT JOIN cargos c ON c.id = e.cargo_id
                WHERE p.fecha = ? AND p.es_franco = 0 AND p.horario_id IS NOT NULL
                AND e.activo = 1""",
             (hoy,)
@@ -314,9 +315,10 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
         # Empleados con franco planificado hoy
         francos_hoy = conn.execute(
             """SELECT p.empleado_id,
-                      e.user_id, e.nombre, e.apellido, e.cargo
+                      e.user_id, e.nombre, e.apellido, c.nombre AS cargo
                FROM planificacion p
                JOIN empleados e ON e.id = p.empleado_id
+               LEFT JOIN cargos c ON c.id = e.cargo_id
                WHERE p.fecha = ? AND p.es_franco = 1 AND e.activo = 1""",
             (hoy,)
         ).fetchall()
@@ -337,9 +339,10 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
         # Fichajes de hoy de todos los empleados (con y sin plan)
         todos_fichajes = conn.execute(
             """SELECT f.empleado_id, f.timestamp,
-                      e.user_id, e.nombre, e.apellido, e.cargo
+                      e.user_id, e.nombre, e.apellido, c.nombre AS cargo
                FROM fichajes f
                JOIN empleados e ON e.id = f.empleado_id
+               LEFT JOIN cargos c ON c.id = e.cargo_id
                WHERE date(f.timestamp) IN (?,?)
                ORDER BY f.empleado_id, f.timestamp""",
             (hoy, manana)

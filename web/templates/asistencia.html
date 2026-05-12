@@ -176,6 +176,10 @@
       </select>
     </div>
     <div class="fg">
+      <label>Buscar</label>
+      <input type="search" id="buscar-nombre" placeholder="Filtrar por nombre..." style="min-width:180px" oninput="filtrarNombre()">
+    </div>
+    <div class="fg">
       <label>Desde</label>
       <input type="date" id="f-desde">
     </div>
@@ -360,7 +364,7 @@ async function cargarEmpleados() {
   todosEmpleados.forEach(e => {
     const opt = document.createElement("option");
     opt.value = e.id;
-    opt.textContent = `${e.apellido}${e.nombre ? ", "+e.nombre.split(" ")[0] : ""} ${e.cargo ? "("+e.cargo+")" : ""}`;
+    opt.textContent = `${e.apellido}${e.nombre ? ", "+e.nombre : ""} ${e.cargo ? "("+e.cargo+")" : ""}`;
     sel.appendChild(opt);
   });
 }
@@ -368,6 +372,19 @@ async function cargarEmpleados() {
 async function cargar() {
   if (tabActual === "resultados") await cargarResultados();
   else await cargarFichajes();
+  filtrarNombre();
+}
+
+function filtrarNombre() {
+  const q = (document.getElementById("buscar-nombre").value || "")
+    .toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  document.querySelectorAll("#tabla-body tbody tr").forEach(tr => {
+    if (!q) { tr.style.display = ""; return; }
+    const cell = tr.querySelector(".emp-cell");
+    if (!cell) { tr.style.display = ""; return; }
+    const texto = cell.textContent.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    tr.style.display = texto.includes(q) ? "" : "none";
+  });
 }
 
 async function cargarResultados() {
@@ -417,7 +434,7 @@ function renderResumen(rows, desde, hasta) {
     </tr></thead>
     <tbody>${rows.filter(r => r.dias_planificados > 0).map(r => `
       <tr>
-        <td class="emp-cell" style="cursor:pointer" onclick="verEmpleado(${r.id})">${r.apellido}${r.nombre?", "+r.nombre.split(" ")[0]:""}</td>
+        <td class="emp-cell" style="cursor:pointer" onclick="verEmpleado(${r.id})">${r.apellido}${r.nombre?", "+r.nombre:""}</td>
         <td style="color:#888;font-size:.8rem">${r.cargo||"—"}</td>
         <td style="text-align:center">${r.dias_planificados}</td>
         <td style="text-align:center;color:#27ae60;font-weight:bold">${r.dias_ok}</td>
@@ -459,7 +476,7 @@ function renderDetalle(rows) {
     </tr></thead>
     <tbody>${rows.map(r => `
       <tr>
-        ${tieneNombre ? `<td><div class="emp-cell">${r.apellido}${r.nombre?", "+r.nombre.split(" ")[0]:""}</div><div class="emp-cargo">${r.cargo||""}</div></td>` : ""}
+        ${tieneNombre ? `<td><div class="emp-cell">${r.apellido}${r.nombre?", "+r.nombre:""}</div><div class="emp-cargo">${r.cargo||""}</div></td>` : ""}
         <td>${fmtFecha(r.fecha)}</td>
         <td style="font-size:.78rem;color:#555">${r.horario_nombre||"—"}</td>
         <td>${estadoBadge(r.estado)}</td>
@@ -502,7 +519,7 @@ async function cargarFichajes() {
       const e = empMap[f.user_id];
       grupos[key] = {
         fecha,
-        nombre: e ? `${e.apellido}${e.nombre ? ", "+e.nombre.split(" ")[0] : ""}` : f.user_id,
+        nombre: e ? `${e.apellido}${e.nombre ? ", "+e.nombre : ""}` : f.user_id,
         cargo:  e?.cargo || "",
         ts: []
       };
@@ -585,6 +602,7 @@ function fmtFecha(iso) {
 
 function verEmpleado(id) {
   document.getElementById("f-empleado").value = id;
+  document.getElementById("buscar-nombre").value = "";
   cargarResultados();
 }
 
@@ -629,7 +647,7 @@ function abrirModal(empId = null, fecha = null) {
   if (sel.options.length <= 1) {
     todosEmpleados.forEach(e => {
       const o = new Option(
-        `${e.apellido}${e.nombre ? ", "+e.nombre.split(" ")[0] : ""} ${e.cargo ? "("+e.cargo+")" : ""}`,
+        `${e.apellido}${e.nombre ? ", "+e.nombre : ""} ${e.cargo ? "("+e.cargo+")" : ""}`,
         e.id
       );
       sel.appendChild(o);
@@ -716,7 +734,7 @@ async function cargarEmpleadosGrupal() {
 
   _grupalEmps = activos.map(p => ({
     empleado_id:  p.empleado_id,
-    nombre:       `${p.apellido}${p.nombre ? ', '+p.nombre.split(' ')[0] : ''}`,
+    nombre:       `${p.apellido}${p.nombre ? ', '+p.nombre : ''}`,
     cargo:        p.cargo || '',
     hora_entrada: sugMap[p.empleado_id]?.hora_entrada || '',
     hora_salida:  sugMap[p.empleado_id]?.hora_salida  || '',
@@ -793,6 +811,7 @@ async function init() {
     }
     await cargarFichajes();
   } else {
+    if (empParam) document.getElementById('f-empleado').value = empParam;
     await cargar();
   }
 }

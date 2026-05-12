@@ -54,16 +54,21 @@ def main():
             else:
                 apellido, nombre = "", ""
 
+            cargo_id = None
+            if categoria:
+                row_c = conn.execute("SELECT id FROM cargos WHERE nombre = ?", (categoria,)).fetchone()
+                cargo_id = row_c[0] if row_c else None
+
             cur = conn.execute(
                 """
                 UPDATE empleados
                 SET apellido      = CASE WHEN ? != '' THEN ? ELSE apellido END,
                     nombre        = CASE WHEN ? != '' THEN ? ELSE nombre END,
-                    cargo         = CASE WHEN ? IS NOT NULL THEN ? ELSE cargo END,
+                    cargo_id      = CASE WHEN ? IS NOT NULL THEN ? ELSE cargo_id END,
                     modificado_en = datetime('now','localtime')
                 WHERE user_id = ?
                 """,
-                (apellido, apellido, nombre, nombre, categoria, categoria, user_id),
+                (apellido, apellido, nombre, nombre, cargo_id, cargo_id, user_id),
             )
             if cur.rowcount:
                 actualizados += 1

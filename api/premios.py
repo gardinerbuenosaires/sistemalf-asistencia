@@ -201,9 +201,8 @@ def _diagnostico(conn, fecha_desde: str, dias_min: int) -> dict:
     row = conn.execute("""
         SELECT
             COUNT(*)                                                                        AS total,
-            COUNT(*) FILTER (WHERE e.cargo IS NULL OR e.cargo = '')                        AS sin_cargo,
-            COUNT(*) FILTER (WHERE e.cargo IS NOT NULL AND e.cargo != ''
-                               AND c.id IS NULL)                                            AS cargo_no_catalogado,
+            COUNT(*) FILTER (WHERE e.cargo_id IS NULL)                                      AS sin_cargo,
+            COUNT(*) FILTER (WHERE e.cargo_id IS NOT NULL AND c.id IS NULL)                AS cargo_no_catalogado,
             COUNT(*) FILTER (WHERE c.id IS NOT NULL AND c.aplica_premio = 0)               AS cargo_sin_premio,
             COUNT(*) FILTER (WHERE c.aplica_premio = 1
                                AND (e.fecha_ingreso IS NULL OR e.fecha_ingreso = ''))       AS sin_fecha_ingreso,
@@ -214,7 +213,7 @@ def _diagnostico(conn, fecha_desde: str, dias_min: int) -> dict:
                                AND e.fecha_ingreso IS NOT NULL AND e.fecha_ingreso != ''
                                AND date(e.fecha_ingreso, '+' || ? || ' days') <= ?)        AS incluidos
         FROM empleados e
-        LEFT JOIN cargos c ON c.nombre = e.cargo
+        LEFT JOIN cargos c ON c.id = e.cargo_id
         WHERE e.activo = 1 AND e.tipo != 'acceso'
     """, (dias_min, fecha_desde, dias_min, fecha_desde)).fetchone()
     return dict(row)
@@ -242,7 +241,8 @@ def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver
                 LEFT JOIN turnos t ON t.id = h.turno_id
                 WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
             )
-            SELECT pe.*, e.apellido, e.nombre, e.cargo, e.departamento, e.categoria,
+            SELECT pe.*, e.apellido, e.nombre,
+                   c.nombre AS cargo, d.nombre AS departamento, cat.nombre AS categoria,
                    CASE
                        WHEN u.tipo = 'cortado' THEN 'CO'
                        WHEN lower(u.turno_nombre) LIKE '%noche%'
@@ -252,6 +252,9 @@ def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver
                    END AS grupo
             FROM premios_evaluacion pe
             JOIN empleados e ON e.id = pe.empleado_id
+            LEFT JOIN cargos c ON c.id = e.cargo_id
+            LEFT JOIN departamentos d ON d.id = e.departamento_id
+            LEFT JOIN categorias cat ON cat.id = e.categoria_id
             LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
             WHERE pe.periodo=?
             ORDER BY
@@ -295,7 +298,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
         diag = _diagnostico(conn, fecha_desde, dias_min)
         empleados = conn.execute("""
             SELECT e.id FROM empleados e
-            LEFT JOIN cargos c ON c.nombre = e.cargo
+            JOIN cargos c ON c.id = e.cargo_id
             WHERE e.activo=1 AND e.tipo != 'acceso'
               AND c.aplica_premio = 1
               AND e.fecha_ingreso IS NOT NULL AND e.fecha_ingreso != ''

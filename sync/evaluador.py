@@ -17,6 +17,8 @@ from db.database import db_session
 
 logger = logging.getLogger(__name__)
 
+MAX_DIST_MIN = 240  # ventana máxima (minutos) para asignar un fichaje a un slot
+
 
 def _dt(fecha: date, hora_str: str, dia_sig: bool = False) -> datetime:
     h, m = map(int, hora_str.split(":"))
@@ -36,10 +38,6 @@ def _clasificar_fichajes(fichajes: list, bloques: list, fecha: date) -> dict:
         bn = b["bloque"]
         slots.append((f"b{bn}_entrada", _dt(fecha, b["hora_entrada"])))
         slots.append((f"b{bn}_salida",  _dt(fecha, b["hora_salida"], dia_sig=cruza)))
-
-    # Fichajes a más de 4 horas de cualquier slot son de otro día (ej: salida nocturna
-    # que cruza medianoche y queda en la fecha siguiente, donde no corresponde).
-    MAX_DIST_MIN = 240
 
     acumulados: dict[str, list] = {nombre: [] for nombre, _ in slots}
 
@@ -323,6 +321,7 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                             b2_entrada_id = (slots.get("b2_entrada") or {}).get("id")
                             b2_salida_id  = (slots.get("b2_salida")  or {}).get("id")
                             b2r = _evaluar_bloque(bloques_ft[1], fecha, slots.get("b2_entrada"), slots.get("b2_salida"))
+                        estado = _calcular_estado(b1r, b2r)
                     else:
                         # Pendiente: encargado aún no asignó horario, registrar tiempos sin tardanza
                         fichajes_franco.sort(key=lambda f: f["timestamp"])
@@ -336,7 +335,7 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                             "sin_salida":        not tiene_salida,
                         }
                         b2r = None
-                    estado = "ft"
+                        estado = "ft"
                 else:
                     estado, b1r, b2r = "franco", {}, {}
             elif not p["horario_id"]:
@@ -362,6 +361,27 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                             slots.get("b2_entrada"), slots.get("b2_salida")
                         )
                     estado = _calcular_estado(b1r, b2r)
+                    if estado == "ausente":
+                        exit_slots = [
+                            _dt(fecha, b["hora_salida"], dia_sig=bool(b["cruza_medianoche"]))
+                            for b in bloques
+                        ]
+                        duda = any(
+                            min(
+                                abs((datetime.fromisoformat(f["timestamp"]) - slot).total_seconds()) / 60
+                                for slot in exit_slots
+                            ) <= MAX_DIST_MIN
+                            for f in fich_map.get(eid, [])
+                            if f["timestamp"][:10] == fecha_sig
+                        )
+                        if duda:
+                            estado = "duda"
+                    elif estado != "duda":
+                        # Solo salida sin entrada en algún bloque → presencia no confirmada
+                        solo_salida = (b1r.get("salida") and not b1r.get("entrada")) or \
+                                      (b2r and b2r.get("salida") and not b2r.get("entrada"))
+                        if solo_salida:
+                            estado = "duda"
 
             # Jerárquico sin fichaje: marcar como presente según horario planificado
             if estado == "ausente" and eid in jerarquico_set:

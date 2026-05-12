@@ -22,6 +22,7 @@ ESTADO_LABELS: dict[str, str] = {
     "sin_horario":              "Sin horario",
     "nf":                       "No fichó",
     "ft":                       "Franco trabajado",
+    "duda":                     "Presencia dudosa",
 }
 
 
@@ -75,11 +76,12 @@ def resultados_dia(fecha: str, _user=Depends(require_permiso("resultados", "ver"
     """Resultados de todos los empleados en una fecha."""
     with db_session() as conn:
         rows = conn.execute(
-            """SELECT r.*, e.nombre, e.apellido, e.cargo,
+            """SELECT r.*, e.nombre, e.apellido, c.nombre AS cargo,
                       h.nombre as horario_nombre, h.tipo as horario_tipo,
                       u.nombre as corregido_por_nombre
                FROM resultados_dia r
                JOIN empleados e ON e.id = r.empleado_id
+               LEFT JOIN cargos c ON c.id = e.cargo_id
                LEFT JOIN horarios h ON h.id = r.horario_id
                LEFT JOIN usuarios u ON u.id = r.corregido_por
                WHERE r.fecha = ?
@@ -172,10 +174,11 @@ def resultados_semana(fecha: str, _user=Depends(require_permiso("resultados", "v
     domingo = lunes + timedelta(days=6)
     with db_session() as conn:
         rows = conn.execute(
-            """SELECT r.*, e.nombre, e.apellido, e.cargo,
+            """SELECT r.*, e.nombre, e.apellido, c.nombre AS cargo,
                       h.nombre as horario_nombre
                FROM resultados_dia r
                JOIN empleados e ON e.id = r.empleado_id
+               LEFT JOIN cargos c ON c.id = e.cargo_id
                LEFT JOIN horarios h ON h.id = r.horario_id
                WHERE r.fecha BETWEEN ? AND ?
                ORDER BY r.fecha, e.apellido, e.nombre""",
@@ -205,7 +208,7 @@ def resumen_periodo(fecha_desde: str, fecha_hasta: str, _user=Depends(require_pe
     with db_session() as conn:
         rows = conn.execute(
             """SELECT
-                 e.id, e.apellido, e.nombre, e.cargo,
+                 e.id, e.apellido, e.nombre, c.nombre AS cargo,
                  COUNT(CASE WHEN r.estado NOT IN ('franco','sin_horario') THEN 1 END) as dias_planificados,
                  COUNT(CASE WHEN r.estado = 'ok' THEN 1 END)      as dias_ok,
                  COUNT(CASE WHEN r.estado = 'franco' THEN 1 END)  as dias_franco,
@@ -214,6 +217,7 @@ def resumen_periodo(fecha_desde: str, fecha_hasta: str, _user=Depends(require_pe
                  COUNT(CASE WHEN r.estado LIKE '%anticipada%' THEN 1 END) as dias_salida_ant,
                  SUM(COALESCE(r.b1_minutos_tarde,0) + COALESCE(r.b2_minutos_tarde,0)) as total_minutos_tarde
                FROM empleados e
+               LEFT JOIN cargos c ON c.id = e.cargo_id
                LEFT JOIN resultados_dia r ON r.empleado_id = e.id
                  AND r.fecha BETWEEN ? AND ?
                WHERE e.activo = 1

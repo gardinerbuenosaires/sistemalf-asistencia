@@ -28,11 +28,6 @@
   .usr-email { font-size: .75rem; color: #888; }
 
   .rol-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .72rem; font-weight: bold; }
-  .rol-sistema       { background: #d4edda; color: #155724; }
-  .rol-rrhh          { background: #cce5ff; color: #004085; }
-  .rol-administracion{ background: #e2d9f3; color: #4a235a; }
-  .rol-gerencia      { background: #fff3cd; color: #856404; }
-  .rol-encargado     { background: #f8d7da; color: #721c24; }
 
   .form-scroll { padding: 20px; }
   .form-group { margin-bottom: 14px; }
@@ -91,20 +86,8 @@
 <div id="toast"></div>
 
 <script>
-const ROLES = ["sistema","rrhh","administracion","gerencia","encargado"];
-const ROL_LABELS = {
-  sistema: "Sistema", rrhh: "RRHH", administracion: "Administración",
-  gerencia: "Gerencia", encargado: "Encargado"
-};
-const PERMISOS = {
-  sistema:        "Acceso total. Gestión de usuarios y configuración.",
-  rrhh:           "Empleados, calendarios, planificación, asistencia y reportes.",
-  administracion: "Consulta de empleados y asistencia. Sin configuración.",
-  gerencia:       "Dashboard y reportes. Solo lectura.",
-  encargado:      "Presencia en tiempo real y planificación de su sección."
-};
-
 let usuarios = [];
+let rolesList = [];
 let editandoId = null;
 let meId = null;
 
@@ -115,32 +98,45 @@ function toast(msg, ms=2500) {
   setTimeout(() => el.style.display="none", ms);
 }
 
-function rolBadge(rol) {
-  return `<span class="rol-badge rol-${rol}">${ROL_LABELS[rol]||rol}</span>`;
+const _PALETTE = ["#2c3e50","#2980b9","#8e44ad","#f39c12","#e74c3c","#27ae60","#16a085","#c0392b"];
+function colorRol(nombre) {
+  let h = 0; for (const c of (nombre||"")) h = (h*31 + c.charCodeAt(0)) & 0xFFFF;
+  return _PALETTE[h % _PALETTE.length];
+}
+
+function rolBadge(rid) {
+  const r = rolesList.find(x => x.id === rid);
+  if (!r) return '';
+  const c = colorRol(r.nombre);
+  return `<span class="rol-badge" style="background:${c}22;color:${c}">${r.nombre}</span>`;
 }
 
 function iniciales(nombre) {
   return nombre.split(" ").slice(0,2).map(p=>p[0]||"").join("").toUpperCase();
 }
 
-const COLORES = { sistema:"#2c3e50", rrhh:"#2980b9", administracion:"#8e44ad", gerencia:"#f39c12", encargado:"#e74c3c" };
-
 async function cargar() {
-  const [uRes, meRes] = await Promise.all([fetch("/api/usuarios"), fetch("/api/auth/me")]);
+  const [uRes, rRes, meRes] = await Promise.all([
+    fetch("/api/usuarios"), fetch("/api/roles"), fetch("/api/auth/me")
+  ]);
   usuarios = await uRes.json();
+  rolesList = await rRes.json();
   const me = await meRes.json();
   meId = me.id;
 
   document.getElementById("cnt").textContent = usuarios.length;
-  document.getElementById("usr-list").innerHTML = usuarios.map(u => `
+  document.getElementById("usr-list").innerHTML = usuarios.map(u => {
+    const c = colorRol(rolesList.find(r => r.id === u.rol_id)?.nombre || "");
+    return `
     <div class="usr-item${u.id===editandoId?" activo":""}" id="usr-${u.id}" onclick="editarUsuario(${u.id})">
-      <div class="usr-avatar" style="background:${COLORES[u.rol]||'#aaa'}">${iniciales(u.nombre)}</div>
+      <div class="usr-avatar" style="background:${c||'#aaa'}">${iniciales(u.nombre)}</div>
       <div style="flex:1;min-width:0">
         <div class="usr-nombre">${u.nombre}${u.id===meId?'<span class="me-badge">yo</span>':""} ${!u.activo?'<span class="me-badge">inactivo</span>':""}</div>
         <div class="usr-email">${u.email}</div>
       </div>
-      ${rolBadge(u.rol)}
-    </div>`).join("");
+      ${rolBadge(u.rol_id)}
+    </div>`;
+  }).join("");
 }
 
 function nuevoUsuario() {
@@ -160,7 +156,10 @@ async function editarUsuario(id) {
 }
 
 function buildForm(u={}) {
-  const esSistema = !u.id; // nuevo usuario siempre puede elegir rol
+  const optsRoles = rolesList.map(r =>
+    `<option value="${r.id}"${u.rol_id===r.id?" selected":""}>${r.nombre}</option>`
+  ).join("");
+  const rolActual = rolesList.find(r => r.id === u.rol_id);
   return `
     <div class="form-group">
       <label>Nombre completo</label>
@@ -173,9 +172,10 @@ function buildForm(u={}) {
     <div class="form-group">
       <label>Rol</label>
       <select id="f-rol" onchange="updatePermisoHint()">
-        ${ROLES.map(r=>`<option value="${r}"${u.rol===r?" selected":""}>${ROL_LABELS[r]}</option>`).join("")}
+        <option value="">— Seleccioná un rol —</option>
+        ${optsRoles}
       </select>
-      <div class="hint" id="permiso-hint">${PERMISOS[u.rol||"encargado"]}</div>
+      <div class="hint" id="permiso-hint">${rolActual?.descripcion||""}</div>
     </div>
     ${u.id ? `
     <div class="form-group">
@@ -205,9 +205,9 @@ function buildForm(u={}) {
 }
 
 function updatePermisoHint() {
-  const rol = document.getElementById("f-rol")?.value;
+  const rid = parseInt(document.getElementById("f-rol")?.value);
   const el  = document.getElementById("permiso-hint");
-  if (el && rol) el.textContent = PERMISOS[rol]||"";
+  if (el) el.textContent = rolesList.find(r => r.id === rid)?.descripcion || "";
 }
 
 function cancelar() {
@@ -220,17 +220,17 @@ function cancelar() {
 async function guardar() {
   const nombre   = document.getElementById("f-nombre")?.value.trim();
   const email    = document.getElementById("f-email")?.value.trim();
-  const rol      = document.getElementById("f-rol")?.value;
+  const rol_id   = parseInt(document.getElementById("f-rol")?.value) || null;
   const password = document.getElementById("f-password")?.value || "";
   const activo   = parseInt(document.getElementById("f-activo")?.value ?? "1");
 
-  if (!nombre || !email || !rol) { toast("Completá todos los campos"); return; }
+  if (!nombre || !email || !rol_id) { toast("Completá todos los campos"); return; }
 
   const url    = editandoId ? `/api/usuarios/${editandoId}` : "/api/usuarios";
   const method = editandoId ? "PUT" : "POST";
   const body   = editandoId
-    ? { nombre, email, rol, activo, password }
-    : { nombre, email, rol, password };
+    ? { nombre, email, rol_id, activo, password }
+    : { nombre, email, rol_id, password };
 
   const res = await fetch(url, { method, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
   if (res.ok) {

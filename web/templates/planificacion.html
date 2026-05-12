@@ -285,7 +285,7 @@ async function cargar() {
       html += `<tr class="grupo-header"><td colspan="8">${cargo}</td></tr>`;
       cargoActual = cargo;
     }
-    const nombre = `${emp.empleado.apellido}${emp.empleado.nombre ? ", " + emp.empleado.nombre.split(" ")[0] : ""}`;
+    const nombre = `${emp.empleado.apellido}${emp.empleado.nombre ? ", " + emp.empleado.nombre : ""}`;
     // Turnos que tiene este empleado esta semana
     const turnosEmp = data.dias.map(d => emp.dias[d]?.horario_id ? horarioTurnoMap[emp.dias[d].horario_id] : null).filter(Boolean);
     const dataTurnos = [...new Set(turnosEmp)].join(",");
@@ -391,7 +391,15 @@ async function generarSemana() {
   }
 }
 
-_loadPerms().then(() => cargar());
+_loadPerms().then(() => {
+  cargar().then(() => {
+    const emp = new URLSearchParams(location.search).get('empleado');
+    if (emp) {
+      document.getElementById('filtro-nombre').value = emp;
+      filtrarTabla();
+    }
+  });
+});
 </script>
 </body>
 </html>

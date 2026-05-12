@@ -9,8 +9,8 @@ router = APIRouter(prefix="/api/horarios", tags=["horarios"])
 
 class BloqueIn(BaseModel):
     bloque: int
-    hora_entrada: str
-    hora_salida: str
+    hora_entrada: str = "00:00"
+    hora_salida: str = "00:00"
     cruza_medianoche: bool = False
     aplica: bool = True
     tolerancia_entrada_antes: int = 15

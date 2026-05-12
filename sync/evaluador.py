@@ -34,20 +34,25 @@ def _clasificar_fichajes(fichajes: list, bloques: list, fecha: date) -> dict:
     """
     slots = []
     for b in bloques:
+        if not b.get("aplica", 1):
+            continue  # bloque MT: no crear slots, no atraer fichajes
         cruza = bool(b["cruza_medianoche"])
         bn = b["bloque"]
         slots.append((f"b{bn}_entrada", _dt(fecha, b["hora_entrada"])))
         slots.append((f"b{bn}_salida",  _dt(fecha, b["hora_salida"], dia_sig=cruza)))
 
-    acumulados: dict[str, list] = {nombre: [] for nombre, _ in slots}
+    # Inicializar todas las keys posibles (incluso las de bloques MT que no tienen slot)
+    todas_keys = [f"b{b['bloque']}_{lado}" for b in bloques for lado in ("entrada", "salida")]
+    acumulados: dict[str, list] = {k: [] for k in todas_keys}
 
-    for f in fichajes:
-        ft = datetime.fromisoformat(f["timestamp"])
-        nearest = min(slots, key=lambda s: abs((ft - s[1]).total_seconds()))
-        dist_min = abs((ft - nearest[1]).total_seconds()) / 60
-        if dist_min > MAX_DIST_MIN:
-            continue
-        acumulados[nearest[0]].append(f)
+    if slots:
+        for f in fichajes:
+            ft = datetime.fromisoformat(f["timestamp"])
+            nearest = min(slots, key=lambda s: abs((ft - s[1]).total_seconds()))
+            dist_min = abs((ft - nearest[1]).total_seconds()) / 60
+            if dist_min > MAX_DIST_MIN:
+                continue
+            acumulados[nearest[0]].append(f)
 
     resultado: dict[str, dict | None] = {}
     for slot_nombre, candidatos in acumulados.items():

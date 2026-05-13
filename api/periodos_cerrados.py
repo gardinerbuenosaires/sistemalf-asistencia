@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from auth.core import require_permiso, get_current_user
+from auth.core import require_permiso, get_current_user, verify_password
 from db.database import db_session
 
 router = APIRouter(prefix="/api/periodos-cerrados", tags=["periodos"])
@@ -46,6 +46,9 @@ def check_rango_abierto(conn, fecha_desde: str, fecha_hasta: str):
 class PeriodoIn(BaseModel):
     anio: int
     mes:  int
+
+class ReabrirIn(BaseModel):
+    password: str
 
 
 @router.get("")
@@ -93,8 +96,14 @@ def cerrar_periodo(data: PeriodoIn, user=Depends(require_permiso("periodos", "ce
 
 
 @router.delete("/{anio}/{mes}")
-def reabrir_periodo(anio: int, mes: int, _user=Depends(require_permiso("periodos", "reabrir"))):
+def reabrir_periodo(anio: int, mes: int, data: ReabrirIn,
+                   user=Depends(require_permiso("periodos", "reabrir"))):
     with db_session() as conn:
+        u = conn.execute(
+            "SELECT password_hash FROM usuarios WHERE id=?", (user["id"],)
+        ).fetchone()
+        if not u or not verify_password(data.password, u["password_hash"]):
+            raise HTTPException(400, "Contraseña incorrecta")
         if not es_periodo_cerrado(conn, anio, mes):
             raise HTTPException(404, "El período no está cerrado")
         conn.execute(

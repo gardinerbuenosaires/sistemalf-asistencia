@@ -354,6 +354,20 @@ tr[draggable="true"]:active { cursor: grabbing; }
 
 <div id="banner-cerrado"></div>
 
+<div id="modal-reabrir" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:10px;padding:28px 32px;width:320px;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <h3 style="margin:0 0 8px;font-size:1rem;color:#922b21">Reabrir período</h3>
+    <p style="margin:0 0 16px;font-size:.85rem;color:#555">Ingresá tu contraseña para confirmar.</p>
+    <input type="password" id="reabrir-pwd" placeholder="Contraseña"
+      style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:.9rem;margin-bottom:4px">
+    <p id="reabrir-error" style="color:#c0392b;font-size:.8rem;min-height:18px;margin:4px 0 12px"></p>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-sm" onclick="cerrarModalReabrir()">Cancelar</button>
+      <button class="btn-sm" style="background:#922b21;color:white;border-color:#922b21" onclick="confirmarReabrir()">Reabrir</button>
+    </div>
+  </div>
+</div>
+
 <div class="leyenda" id="leyenda"></div>
 
 <div style="display:flex; border-bottom:2px solid #dee2e6; background:white; padding: 0 16px; gap:0">
@@ -587,10 +601,7 @@ async function toggleCerrarPeriodo() {
   const [y, m] = mesActual.split('-').map(Number);
   const nombreMes = MESES_ES[m - 1];
   if (periodoCerrado) {
-    if (!confirm(`¿Reabrir el período ${nombreMes} ${y}? Se podrán volver a editar novedades y planificación.`)) return;
-    const r = await fetch(`/api/periodos-cerrados/${y}/${m}`, {method: 'DELETE'});
-    if (r.ok) { toast('Período reabierto'); cargar(); }
-    else { const e = await r.json(); toast('Error: ' + (e.detail || r.status)); }
+    abrirModalReabrir();
   } else {
     if (!confirm(`¿Cerrar el período ${nombreMes} ${y}?\n\nNo se podrán hacer modificaciones hasta reabrirlo.`)) return;
     const r = await fetch('/api/periodos-cerrados', {
@@ -600,6 +611,39 @@ async function toggleCerrarPeriodo() {
     });
     if (r.ok) { toast('Período cerrado'); cargar(); }
     else { const e = await r.json(); toast('Error: ' + (e.detail || r.status)); }
+  }
+}
+
+function abrirModalReabrir() {
+  document.getElementById('reabrir-pwd').value = '';
+  document.getElementById('reabrir-error').textContent = '';
+  const modal = document.getElementById('modal-reabrir');
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('reabrir-pwd').focus(), 50);
+}
+
+function cerrarModalReabrir() {
+  document.getElementById('modal-reabrir').style.display = 'none';
+}
+
+async function confirmarReabrir() {
+  const pwd = document.getElementById('reabrir-pwd').value;
+  if (!pwd) { document.getElementById('reabrir-error').textContent = 'Ingresá tu contraseña.'; return; }
+  const [y, m] = mesActual.split('-').map(Number);
+  const r = await fetch(`/api/periodos-cerrados/${y}/${m}`, {
+    method: 'DELETE',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({password: pwd}),
+  });
+  if (r.ok) {
+    cerrarModalReabrir();
+    toast('Período reabierto');
+    cargar();
+  } else {
+    const e = await r.json();
+    document.getElementById('reabrir-error').textContent = e.detail || 'Error al reabrir.';
+    document.getElementById('reabrir-pwd').value = '';
+    document.getElementById('reabrir-pwd').focus();
   }
 }
 

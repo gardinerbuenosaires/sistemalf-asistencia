@@ -24,9 +24,10 @@ TOKEN_TTL  = 8  # horas
 # Módulos y acciones disponibles en el sistema
 MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
-    "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones"
+    "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
+    "periodos",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir"]
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}
 _cache: dict[int, tuple[float, set]] = {}
@@ -147,6 +148,7 @@ PERMISOS_DEFAULT = {
         "sync":          ["procesar"],
         "premios":       ["ver"],
         "vacaciones":    ["ver"],
+        "periodos":      ["ver","cerrar","reabrir"],
     },
     "administracion": {
         "dashboard":     ["ver"],

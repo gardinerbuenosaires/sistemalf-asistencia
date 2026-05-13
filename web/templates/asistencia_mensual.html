@@ -574,7 +574,9 @@ function actualizarBannerCerrado(y, m) {
   } else {
     banner.style.display = 'none';
     if (btn) {
-      btn.style.display = canDo('periodos','cerrar') ? '' : 'none';
+      const hoy = new Date();
+      const esMesActual = y === hoy.getFullYear() && m === hoy.getMonth() + 1;
+      btn.style.display = (!esMesActual && canDo('periodos','cerrar')) ? '' : 'none';
       btn.textContent = 'Cerrar período';
       btn.className = 'btn-orden btn-cerrar';
     }

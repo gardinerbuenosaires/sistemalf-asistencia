@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from auth.core import require_permiso
 from db.database import db_session
@@ -90,79 +90,6 @@ def resultados_dia(fecha: str, _user=Depends(require_permiso("resultados", "ver"
         ).fetchall()
     return [dict(r) for r in rows]
 
-
-@router.get("/fichajes-disponibles")
-def fichajes_disponibles(empleado_id: int, fecha: str, _user=Depends(require_permiso("resultados", "ver"))):
-    """
-    Fichajes del empleado en esa fecha (y siguiente para horarios que cruzan medianoche).
-    Usado por la UI para mostrar opciones al corregir un slot.
-    """
-    fecha_sig = str(date.fromisoformat(fecha) + timedelta(days=1))
-    with db_session() as conn:
-        rows = conn.execute(
-            """SELECT id, timestamp, punch_raw, es_manual
-               FROM fichajes
-               WHERE empleado_id=? AND date(timestamp) IN (?,?)
-               ORDER BY timestamp""",
-            (empleado_id, fecha, fecha_sig)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-@router.patch("/corregir")
-def corregir_fichaje(
-    empleado_id: int = Body(...),
-    fecha: str = Body(...),
-    slot: str = Body(...),
-    fichaje_id: int | None = Body(default=None),
-    user=Depends(require_permiso("resultados", "corregir")),
-):
-    """
-    Corrige manualmente qué fichaje se usa para un slot de un resultado.
-    fichaje_id=null limpia el slot (lo deja sin fichaje asignado).
-    Registra el usuario que realizó la corrección.
-    """
-    SLOTS_VALIDOS = ("b1_entrada", "b1_salida", "b2_entrada", "b2_salida")
-    if slot not in SLOTS_VALIDOS:
-        raise HTTPException(400, "slot inválido")
-
-    from sync.evaluador import recalcular_resultado
-    from api.periodos_cerrados import check_periodo_abierto
-
-    with db_session() as conn:
-        check_periodo_abierto(conn, fecha)
-        r = conn.execute(
-            "SELECT id FROM resultados_dia WHERE empleado_id=? AND fecha=?",
-            (empleado_id, fecha)
-        ).fetchone()
-        if not r:
-            raise HTTPException(404, "No hay resultado para ese empleado/fecha")
-
-        nuevo_ts = None
-        if fichaje_id is not None:
-            fecha_sig = str(date.fromisoformat(fecha) + timedelta(days=1))
-            f = conn.execute(
-                "SELECT timestamp FROM fichajes WHERE id=? AND empleado_id=? AND date(timestamp) IN (?,?)",
-                (fichaje_id, empleado_id, fecha, fecha_sig)
-            ).fetchone()
-            if not f:
-                raise HTTPException(400, "El fichaje no corresponde al empleado o fecha")
-            nuevo_ts = f["timestamp"]
-
-        col_ts = slot
-        col_id = f"{slot}_id"
-        conn.execute(
-            f"""UPDATE resultados_dia
-                SET {col_ts}=?, {col_id}=?,
-                    corregido_manualmente=1,
-                    corregido_por=?,
-                    corregido_en=datetime('now','localtime')
-                WHERE empleado_id=? AND fecha=?""",
-            (nuevo_ts, fichaje_id, int(user["sub"]), empleado_id, fecha)
-        )
-
-    recalcular_resultado(empleado_id, fecha)
-    return {"ok": True}
 
 
 @router.get("/semana")

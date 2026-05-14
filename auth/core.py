@@ -28,6 +28,7 @@ MODULOS = [
     "periodos",
 ]
 ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir"]
+# corregir → asistencia:corregir (novedades en planilla)
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}
 _cache: dict[int, tuple[float, set]] = {}
@@ -143,8 +144,8 @@ PERMISOS_DEFAULT = {
         "horarios":      ["ver","editar","eliminar"],
         "planificacion": ["ver","editar"],
         "calendarios":   ["ver","editar","eliminar"],
-        "asistencia":    ["ver"],
-        "resultados":    ["ver","procesar","corregir"],
+        "asistencia":    ["ver","editar","corregir"],
+        "resultados":    ["ver","procesar"],
         "sync":          ["procesar"],
         "premios":       ["ver"],
         "vacaciones":    ["ver"],

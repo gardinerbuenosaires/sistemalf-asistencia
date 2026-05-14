@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from db.database import db_session
+from auth.core import require_permiso
 
 router = APIRouter(prefix="/api/turnos", tags=["turnos"])
 
@@ -18,7 +19,7 @@ def list_turnos():
 
 
 @router.post("", status_code=201)
-def create_turno(data: TurnoIn):
+def create_turno(data: TurnoIn, _user=Depends(require_permiso("horarios", "editar"))):
     with db_session() as conn:
         try:
             cur = conn.execute(
@@ -31,7 +32,7 @@ def create_turno(data: TurnoIn):
 
 
 @router.put("/{turno_id}")
-def update_turno(turno_id: int, data: TurnoIn):
+def update_turno(turno_id: int, data: TurnoIn, _user=Depends(require_permiso("horarios", "editar"))):
     with db_session() as conn:
         if not conn.execute("SELECT id FROM turnos WHERE id=?", (turno_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Turno no encontrado")
@@ -46,7 +47,7 @@ def update_turno(turno_id: int, data: TurnoIn):
 
 
 @router.delete("/{turno_id}")
-def delete_turno(turno_id: int):
+def delete_turno(turno_id: int, _user=Depends(require_permiso("horarios", "eliminar"))):
     with db_session() as conn:
         if not conn.execute("SELECT id FROM turnos WHERE id=?", (turno_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Turno no encontrado")

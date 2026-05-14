@@ -160,6 +160,11 @@ def recalcular_resultado(empleado_id: int, fecha_str: str):
     """
     fecha = date.fromisoformat(fecha_str)
     with db_session() as conn:
+        if conn.execute(
+            "SELECT 1 FROM periodos_cerrados WHERE anio=? AND mes=?", (fecha.year, fecha.month)
+        ).fetchone():
+            logger.info("recalcular_resultado omitido: período %d-%02d cerrado", fecha.year, fecha.month)
+            return
         r = conn.execute(
             "SELECT * FROM resultados_dia WHERE empleado_id=? AND fecha=?",
             (empleado_id, fecha_str)
@@ -214,6 +219,12 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
     resumen   = {"evaluados": 0, "ok": 0, "tarde": 0, "ausente": 0, "franco": 0, "otros": 0, "saltados": 0}
 
     with db_session() as conn:
+        if conn.execute(
+            "SELECT 1 FROM periodos_cerrados WHERE anio=? AND mes=?", (fecha.year, fecha.month)
+        ).fetchone():
+            logger.info("Fecha %s en período cerrado — evaluación omitida", fecha_str)
+            return resumen
+
         sql    = ("SELECT p.*, h.tipo as h_tipo FROM planificacion p "
                   "LEFT JOIN horarios h ON h.id = p.horario_id WHERE p.fecha = ?")
         params: tuple = (fecha_str,)

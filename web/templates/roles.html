@@ -15,6 +15,7 @@
   header h1 { font-size: 1.1rem; flex: 1; }
 
   main { padding: 20px; max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+  main > .panel { min-width: 0; }
 
   .panel { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
   .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid #eee; }
@@ -40,7 +41,12 @@
   /* Matriz de permisos */
   .matriz-titulo { font-size: .78rem; font-weight: bold; color: #666; text-transform: uppercase;
                    letter-spacing: .05em; margin: 16px 0 10px; }
-  .matriz { width: 100%; border-collapse: collapse; }
+  .matriz-wrap { overflow-x: auto; }
+  .matriz-wrap::-webkit-scrollbar { height: 8px; }
+  .matriz-wrap::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+  .matriz-wrap::-webkit-scrollbar-thumb { background: #aaa; border-radius: 4px; }
+  .matriz-wrap::-webkit-scrollbar-thumb:hover { background: #888; }
+  .matriz { width: 100%; border-collapse: collapse; min-width: 600px; }
   .matriz th { padding: 7px 10px; background: #f8f9fa; border-bottom: 2px solid #dee2e6;
                font-size: .75rem; text-transform: uppercase; color: #666; text-align: center; }
   .matriz th.col-modulo { text-align: left; min-width: 130px; }
@@ -101,9 +107,13 @@ const MODULO_LABELS = {
   dashboard: "Dashboard", empleados: "Empleados", horarios: "Horarios",
   planificacion: "Planificación", calendarios: "Calendarios",
   asistencia: "Asistencia", resultados: "Resultados",
-  usuarios: "Usuarios", roles: "Roles", sync: "Sincronización"
+  usuarios: "Usuarios", roles: "Roles", sync: "Sincronización",
+  premios: "Premios", vacaciones: "Vacaciones", periodos: "Períodos"
 };
-const ACCION_LABELS = { ver: "Ver", editar: "Editar", eliminar: "Eliminar", procesar: "Procesar" };
+const ACCION_LABELS = {
+  ver: "Ver", editar: "Editar", eliminar: "Eliminar", procesar: "Procesar",
+  corregir: "Corregir", cerrar: "Cerrar", reabrir: "Reabrir"
+};
 
 let roles = [];
 let modulos = [];
@@ -180,6 +190,7 @@ function renderEditor(rol={}) {
     </div>
 
     <div class="matriz-titulo">Permisos</div>
+    <div class="matriz-wrap">
     <table class="matriz">
       <thead>
         <tr>
@@ -208,6 +219,7 @@ function renderEditor(rol={}) {
         }).join("")}
       </tbody>
     </table>
+    </div>
 
     <div class="form-footer">
       ${rol.id ? `<button class="btn btn-danger btn-sm" onclick="eliminar(${rol.id})">Eliminar rol</button>` : ""}

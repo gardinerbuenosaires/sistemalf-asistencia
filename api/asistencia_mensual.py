@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta
 from collections import defaultdict
 from db.database import db_session
+from auth.core import require_permiso
 
 router = APIRouter(prefix="/api/asistencia", tags=["asistencia_mensual"])
 
@@ -149,7 +150,7 @@ def _build_dias(fechas, feriados):
 
 # ── Endpoint principal ────────────────────────────────────────────────────────
 @router.get("/mensual")
-def asistencia_mensual(mes: str = Query(None)):
+def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("asistencia", "ver"))):
     if not mes:
         mes = date.today().strftime("%Y-%m")
     try:
@@ -194,7 +195,7 @@ def asistencia_mensual(mes: str = Query(None)):
                    u.tipo AS hipo, u.turno_nombre
             FROM empleados e
             LEFT JOIN cargos c ON c.id = e.cargo_id
-            JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
+            LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
             WHERE e.tipo != 'acceso'
               AND (e.activo = 1
                OR (e.fecha_egreso >= ? AND e.fecha_egreso <= ?))
@@ -203,7 +204,7 @@ def asistencia_mensual(mes: str = Query(None)):
 
         if not emp_rows:
             return {"mes": mes, "dias": _build_dias(fechas, feriados),
-                    "TM": [], "TN": [], "CO": []}
+                    "TM": [], "TN": [], "CO": [], "ST": []}
 
         eids = [r["id"] for r in emp_rows]
         ph   = ",".join("?" * len(eids))
@@ -268,14 +269,20 @@ def asistencia_mensual(mes: str = Query(None)):
     ali_set       = {(a["empleado_id"], a["fecha"], a["bloque"]) for a in aliviadas}
     transporte_map = {s["empleado_id"]: s["saldo"] for s in saldos}
 
-    grupos = {"TM": [], "TN": [], "CO": []}
+    grupos = {"TM": [], "TN": [], "CO": [], "ST": []}
 
     for emp in emp_rows:
         eid       = emp["id"]
         turno     = (emp["turno_nombre"] or "").lower()
         cortado   = emp["hipo"] == "cortado"
-        grupo     = "CO" if cortado else (
-                    "TN" if ("noche" in turno or "madrugada" in turno) else "TM")
+        if cortado:
+            grupo = "CO"
+        elif not emp["turno_nombre"]:
+            grupo = "ST"
+        elif "noche" in turno or "madrugada" in turno:
+            grupo = "TN"
+        else:
+            grupo = "TM"
 
         f_ing = (emp["fecha_ingreso"] or "")[:10]
         f_egr = (emp["fecha_egreso"]  or "")[:10]
@@ -339,6 +346,7 @@ def asistencia_mensual(mes: str = Query(None)):
         "TM":   grupos["TM"],
         "TN":   grupos["TN"],
         "CO":   grupos["CO"],
+        "ST":   grupos["ST"],
     }
 
 
@@ -352,7 +360,7 @@ class NovedadIn(BaseModel):
 
 
 @router.post("/novedades", status_code=201)
-def upsert_novedad(data: NovedadIn):
+def upsert_novedad(data: NovedadIn, _user=Depends(require_permiso("asistencia", "corregir"))):
     if data.tipo not in LETRAS_VALIDAS:
         raise HTTPException(400, f"Tipo inválido. Válidos: {sorted(LETRAS_VALIDAS)}")
     if data.tipo == "@" and data.bloque not in (1, 2):
@@ -383,7 +391,7 @@ class NovedadRangoIn(BaseModel):
 
 # Ruta estática antes que la parametrizada para evitar que {nov_id} la capture
 @router.post("/novedades/borrar-rango", status_code=200)
-def eliminar_novedades_rango(data: NovedadRangoIn):
+def eliminar_novedades_rango(data: NovedadRangoIn, _user=Depends(require_permiso("asistencia", "corregir"))):
     if data.fecha_hasta < data.fecha_desde:
         raise HTTPException(400, "fecha_hasta debe ser >= fecha_desde")
     from api.periodos_cerrados import check_rango_abierto
@@ -398,7 +406,7 @@ def eliminar_novedades_rango(data: NovedadRangoIn):
 
 
 @router.delete("/novedades/{nov_id}")
-def eliminar_novedad(nov_id: int):
+def eliminar_novedad(nov_id: int, _user=Depends(require_permiso("asistencia", "corregir"))):
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
         row = conn.execute("SELECT id, fecha FROM novedades WHERE id=?", (nov_id,)).fetchone()
@@ -411,7 +419,7 @@ def eliminar_novedad(nov_id: int):
 
 # ── Saldo francos (TRANSPORTE carry-forward) ──────────────────────────────────
 @router.put("/saldo_francos/{empleado_id}/{mes}")
-def set_saldo_francos(empleado_id: int, mes: str, body: dict):
+def set_saldo_francos(empleado_id: int, mes: str, body: dict, _user=Depends(require_permiso("asistencia", "corregir"))):
     saldo = float(body.get("saldo", 0))
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
@@ -431,7 +439,7 @@ class OrdenItem(BaseModel):
 
 
 @router.get("/orden/{grupo}")
-def get_orden(grupo: str, mes: str | None = None):
+def get_orden(grupo: str, mes: str | None = None, _user=Depends(require_permiso("asistencia", "ver"))):
     if grupo not in ("TM", "TN", "CO"):
         raise HTTPException(400, "Grupo inválido")
     with db_session() as conn:
@@ -482,7 +490,7 @@ def get_orden(grupo: str, mes: str | None = None):
 
 
 @router.post("/orden/{grupo}", status_code=200)
-def set_orden(grupo: str, items: list[OrdenItem]):
+def set_orden(grupo: str, items: list[OrdenItem], _user=Depends(require_permiso("asistencia", "editar"))):
     if grupo not in ("TM", "TN", "CO"):
         raise HTTPException(400, "Grupo inválido")
     with db_session() as conn:

@@ -247,10 +247,11 @@ function buildDiasForm(valoresIniciales = {}) {
   const cont = document.getElementById("dias-form");
   const opts = `<option value="FRANCO">— Franco —</option>` +
     horarios.map(h => `<option value="${h.id}">${h.nombre}</option>`).join("");
+  const dis = canDo('calendarios','editar') ? '' : 'disabled';
 
   cont.innerHTML = DIAS_NOMBRES.map((nombre, i) => `
       <span class="dia-label">${nombre}</span>
-      <select class="dia-select" id="dia-${i}" onchange="colorSelect(this)">
+      <select class="dia-select" id="dia-${i}" ${dis} onchange="colorSelect(this)">
         ${opts}
       </select>`).join("");
 
@@ -285,9 +286,14 @@ async function editarCalendario(id) {
   editandoId = id;
   const res = await fetch(`/api/calendarios/${id}`);
   const cal = await res.json();
+  const editable = canDo('calendarios','editar');
+
+  document.getElementById("panel-editor").style.display = '';
   document.getElementById("editor-titulo").textContent = cal.nombre;
   document.getElementById("f-nombre").value = cal.nombre;
+  document.getElementById("f-nombre").disabled = !editable;
   document.getElementById("f-franco-feriado").checked = !!cal.franco_en_feriado;
+  document.getElementById("f-franco-feriado").disabled = !editable;
 
   const vals = {};
   cal.dias.forEach(d => vals[d.dia_semana] = {horario_id: d.horario_id, es_franco: d.es_franco});
@@ -297,6 +303,7 @@ async function editarCalendario(id) {
   asignadosIds = new Set(cal.empleados_asignados_ids || []);
   document.getElementById("asig-section").style.display = "block";
   document.getElementById("asig-desde").value = new Date().toISOString().slice(0,10);
+  document.getElementById("asig-desde").disabled = !editable;
   renderEmpleados();
 
   document.querySelectorAll(".cal-item").forEach(el => el.classList.remove("activo"));
@@ -363,10 +370,11 @@ function renderEmpleados() {
   const mostrar = filtro
     ? todosEmpleados.filter(e => `${e.apellido} ${e.nombre}`.toLowerCase().includes(filtro))
     : todosEmpleados;
+  const editable = canDo('calendarios','editar');
   lista.innerHTML = mostrar.map(e => {
     const asignado = asignadosIds.has(e.id);
     return `<label class="empleado-chk${asignado ? " ya-asignado" : ""}">
-      <input type="checkbox" class="chk-emp" value="${e.id}"${asignado ? " checked" : ""}>
+      <input type="checkbox" class="chk-emp" value="${e.id}"${asignado ? " checked" : ""}${editable ? "" : " disabled"}>
       <span>${e.apellido}${e.nombre ? ", "+e.nombre : ""} <small style="color:#888">${e.cargo||""}</small></span>
       ${asignado ? '<small style="color:#27ae60;font-weight:bold;margin-left:auto">✓ asignado</small>' : ""}
     </label>`;
@@ -411,7 +419,11 @@ async function init() {
   ]);
   horarios = await hRes.json();
   todosEmpleados = await eRes.json();
-  buildDiasForm();
+  if (canDo('calendarios','editar')) {
+    buildDiasForm();
+  } else {
+    document.getElementById('panel-editor').style.display = 'none';
+  }
   cargarLista();
 }
 

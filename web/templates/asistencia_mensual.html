@@ -7,6 +7,7 @@
 <title>Planilla Mensual — SistemAlf</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
+[data-perm] { display: none; }
 body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333;
        height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -335,7 +336,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
     <button onclick="navegarMes(1)">&#8594;</button>
   </div>
 
-  <button class="btn-orden" id="btn-toggle-orden" onclick="toggleOrden()">Editar orden</button>
+  <button class="btn-orden" id="btn-toggle-orden" data-perm="asistencia:editar" onclick="toggleOrden()">Editar orden</button>
 
   <div id="orden-bar">
     <button class="btn-sm btn-sep" onclick="agregarSeparador()">+ Separador</button>
@@ -343,7 +344,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
     <button class="btn-sm btn-cancelar-orden" onclick="cancelarOrden()">Cancelar</button>
   </div>
 
-  <button class="btn-orden" onclick="importarFeriados()" title="Importar feriados desde argentinadatos.com">
+  <button class="btn-orden" data-perm="calendarios:editar" onclick="importarFeriados()" title="Importar feriados desde argentinadatos.com">
     Importar feriados
   </button>
   <button class="btn-orden btn-cerrar" id="btn-cerrar-periodo" style="display:none" onclick="toggleCerrarPeriodo()">
@@ -374,12 +375,14 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <button class="tab-btn active" data-tab="TM" onclick="switchTab('TM')">Mañana</button>
   <button class="tab-btn"        data-tab="TN" onclick="switchTab('TN')">Noche</button>
   <button class="tab-btn"        data-tab="CO" onclick="switchTab('CO')">Cortado</button>
+  <button class="tab-btn"        data-tab="ST" onclick="switchTab('ST')">Sin turno</button>
   <span id="conteos" style="margin-left:auto;font-size:.78rem;color:#888;align-self:center"></span>
 </div>
 
 <div class="tab-panel active" id="panel-TM"><div class="tabla-outer" id="tabla-TM"></div></div>
 <div class="tab-panel"        id="panel-TN"><div class="tabla-outer" id="tabla-TN"></div></div>
 <div class="tab-panel"        id="panel-CO"><div class="tabla-outer" id="tabla-CO"></div></div>
+<div class="tab-panel"        id="panel-ST"><div class="tabla-outer" id="tabla-ST"></div></div>
 
 <!-- Modal novedad / fichaje manual -->
 <div id="modal-overlay" onclick="cerrarModal()"></div>
@@ -480,7 +483,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
 // ── Paleta de colores por letra ───────────────────────────────────────────────
 const C = {
   I:   {bg:'#ffffff', txt:'#000000'},
-  T:   {bg:'#E26B0A', txt:'#000000'},
+  T:   {bg:'#FF8C00', txt:'#000000'},
   F:   {bg:'#27ae60', txt:'#ffffff'},
   FT:  {bg:'#27ae60', txt:'#ffffff'},
   FD:  {bg:'#27ae60', txt:'#ffffff'},
@@ -739,8 +742,11 @@ function renderTodo() {
       renderGrupo(g, d.dias, d[g]);
     }
   });
+  renderGrupo('ST', d.dias, d.ST || []);
+  const st = (d.ST || []).length;
   document.getElementById('conteos').textContent =
-    `TM: ${d.TM.length}  TN: ${d.TN.length}  CO: ${d.CO.length}`;
+    `TM: ${d.TM.length}  TN: ${d.TN.length}  CO: ${d.CO.length}` +
+    (st ? `  Sin turno: ${st}` : '');
 }
 
 // ── Render planilla normal ────────────────────────────────────────────────────
@@ -1077,6 +1083,7 @@ function canDo(m, a) { return _perms.has(`${m}:${a}`); }
 
 function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   if (modoOrden) return;
+  if (!canDo('asistencia','corregir')) return;
   if (periodoCerrado) { toast('El período está cerrado — solo lectura'); return; }
   const emp = encontrarEmp(eid);
   if (!emp) return;
@@ -1088,7 +1095,7 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   // Mostrar pestañas según permiso y estado de la celda
   const tabBar = document.getElementById('modal-tab-bar');
   const bloqueado = _esBloqueado(celda, esCortado, bloqueInicial);
-  tabBar.style.display = (!bloqueado && canDo('asistencia','editar')) ? 'flex' : 'none';
+  tabBar.style.display = (!bloqueado && canDo('asistencia','corregir')) ? 'flex' : 'none';
 
   const letraActual = esCortado
     ? (bloqueInicial === 2 ? celda?.b2?.letra : celda?.b1?.letra)

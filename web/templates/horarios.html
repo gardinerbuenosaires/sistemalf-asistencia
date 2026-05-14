@@ -112,7 +112,7 @@
           <th>Tipo</th>
           <th>Bloques</th>
           <th>Turno</th>
-          <th>Acciones</th>
+          <th id="th-acciones">Acciones</th>
         </tr>
       </thead>
       <tbody id="tabla-horarios">
@@ -422,6 +422,8 @@ function formatBloques(bloques) {
 
 async function cargarHorarios() {
   await _loadPerms();
+  const canAcciones = canDo('horarios','editar') || canDo('horarios','eliminar');
+  document.getElementById('th-acciones').style.display = canAcciones ? '' : 'none';
   const [resH, resT] = await Promise.all([fetch("/api/horarios"), fetch("/api/turnos")]);
   const horarios = await resH.json();
   turnosDisponibles = await resT.json();
@@ -444,14 +446,15 @@ async function cargarHorarios() {
       <td>${formatBloques(h.bloques)}</td>
       <td>
         <select data-hid="${h.id}" onchange="asignarTurno(${h.id}, this.value)"
-          style="padding:3px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.82rem">
+          style="padding:3px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.82rem;${canDo('horarios','editar') ? '' : 'opacity:.5;pointer-events:none'}"
+          ${canDo('horarios','editar') ? '' : 'disabled'}>
           ${opcionesTurno}
         </select>
       </td>
-      <td>
+      ${canAcciones ? `<td>
         ${canDo('horarios','editar') ? `<button class="btn btn-sm btn-primary" onclick="abrirFormulario(horariosMap[${h.id}])">Editar</button>` : ''}
         ${canDo('horarios','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:6px" onclick="eliminarHorario(${h.id}, '${h.nombre.replace(/'/g, "\\'")}')">Eliminar</button>` : ''}
-      </td>
+      </td>` : ''}
     </tr>
   `).join("");
 

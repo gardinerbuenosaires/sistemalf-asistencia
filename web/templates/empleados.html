@@ -415,7 +415,7 @@ function renderListaAccesos(lista) {
 }
 
 function _sinDatos(e) {
-  return !!(e.user_id && !e.fecha_ingreso);
+  return !!(e.user_id && (!e.apellido || e.apellido === e.user_id));
 }
 
 function renderLista(lista) {
@@ -859,9 +859,9 @@ function buildForm(e = {}, asignaciones = []) {
         <button class="btn btn-sm" style="background:#856404;color:white" onclick="liberarId(${e.id}, '${e.user_id}')">Liberar ID dispositivo</button>` : ''}
         ${editandoId ? `<a href="/empleados/${e.id}/legajo" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">Legajo</a>` : ''}
         <button class="btn btn-secondary" onclick="cancelar()">Cancelar</button>
-        <button id="btn-guardar" class="btn ${e.activo && e.fecha_egreso ? 'btn-danger' : 'btn-primary'}" onclick="guardar()">
+        ${canDo('empleados','editar') ? `<button id="btn-guardar" class="btn ${e.activo && e.fecha_egreso ? 'btn-danger' : 'btn-primary'}" onclick="guardar()">
           ${e.activo && e.fecha_egreso ? 'Dar de baja' : 'Guardar'}
-        </button>
+        </button>` : ''}
       </div>
     </form>`;
 }
@@ -879,6 +879,9 @@ async function editarEmpleado(id) {
   document.getElementById("form-titulo").textContent = `${e.apellido}, ${e.nombre}`;
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
   document.getElementById("form-contenido").innerHTML = buildForm(e, asignaciones);
+  if (!canDo('empleados', 'editar')) {
+    document.querySelectorAll('#emp-form input, #emp-form select, #emp-form textarea').forEach(el => el.disabled = true);
+  }
   document.querySelectorAll(".emp-item").forEach(el => el.classList.remove("activo"));
   document.getElementById(`emp-item-${id}`)?.classList.add("activo");
   initMap(e);

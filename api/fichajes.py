@@ -104,7 +104,9 @@ def crear_fichaje_manual(
     """Agrega un fichaje manual para un empleado (entrada o salida individual)."""
     ts = _normalizar_ts(data.timestamp)
 
+    from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
+        check_periodo_abierto(conn, ts[:10])
         emp = conn.execute(
             "SELECT id, user_id FROM empleados WHERE id=?", (data.empleado_id,)
         ).fetchone()
@@ -144,10 +146,12 @@ def crear_fichajes_grupal(
     múltiples empleados en una fecha.  Las horas se pre-llenan desde
     el horario planificado pero el cliente puede editarlas antes de enviar.
     """
+    from api.periodos_cerrados import check_periodo_abierto
     creados: list[dict] = []
     errores: list[dict] = []
 
     with db_session() as conn:
+        check_periodo_abierto(conn, data.fecha)
         for item in data.empleados:
             emp = conn.execute(
                 "SELECT id, user_id FROM empleados WHERE id=?", (item.empleado_id,)
@@ -210,6 +214,7 @@ def eliminar_fichaje(
 ):
     """Elimina un fichaje manual. No permite borrar fichajes biométricos."""
     from sync.evaluador import recalcular_resultado
+    from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
         f = conn.execute(
             "SELECT id, es_manual, empleado_id, date(timestamp) as fecha FROM fichajes WHERE id=?",
@@ -219,6 +224,7 @@ def eliminar_fichaje(
             raise HTTPException(404, "Fichaje no encontrado")
         if not f["es_manual"]:
             raise HTTPException(400, "Solo se pueden eliminar fichajes manuales")
+        check_periodo_abierto(conn, f["fecha"])
         # Limpiar referencias en resultados_dia antes de borrar
         conn.execute(
             """UPDATE resultados_dia SET

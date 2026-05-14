@@ -69,7 +69,14 @@
 
   /* Usuarios — layout 2 columnas */
   .usr-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
+  .usr-layout > .usr-panel { min-width: 0; }
   .usr-panel  { border: 1px solid #e8e8e8; border-radius: 6px; overflow: hidden; }
+  .usr-panel.scrollable { overflow: visible; }
+  .matriz-wrap { overflow-x: auto; border-radius: 0 0 6px 6px; }
+  .matriz-wrap::-webkit-scrollbar { height: 8px; }
+  .matriz-wrap::-webkit-scrollbar-track { background: #f1f1f1; }
+  .matriz-wrap::-webkit-scrollbar-thumb { background: #aaa; border-radius: 4px; }
+  .matriz-wrap::-webkit-scrollbar-thumb:hover { background: #888; }
   .usr-panel-header { display: flex; justify-content: space-between; align-items: center;
                       padding: 10px 14px; background: #f8f9fa; border-bottom: 1px solid #eee; }
   .usr-panel-header h3 { font-size: .88rem; }
@@ -373,7 +380,7 @@
           </div>
           <div id="roles-lista"><div class="empty-form">Cargando...</div></div>
         </div>
-        <div class="usr-panel">
+        <div class="usr-panel scrollable">
           <div class="usr-panel-header">
             <h3 id="rol-editor-titulo">Seleccioná un rol</h3>
           </div>
@@ -477,6 +484,7 @@ async function cargarParams() {
   const res = await fetch("/api/configuracion");
   const params = await res.json();
   const cont = document.getElementById("params-container");
+  const editableSistema = canDo('usuarios','editar');
   cont.innerHTML = Object.entries(PARAMS_META).map(([clave, meta]) => {
     const actual = params.find(p => p.clave === clave);
     const valor = actual ? actual.valor : "";
@@ -486,8 +494,8 @@ async function cargarParams() {
         <span>${meta.descripcion}</span>
       </div>
       <input type="${meta.tipo}" id="param-${clave}" value="${valor}"
-        min="${meta.min||''}" max="${meta.max||''}">
-      <button class="btn btn-primary btn-sm" onclick="guardarParam('${clave}')">Guardar</button>
+        min="${meta.min||''}" max="${meta.max||''}" ${editableSistema ? '' : 'disabled'}>
+      ${editableSistema ? `<button class="btn btn-primary btn-sm" onclick="guardarParam('${clave}')">Guardar</button>` : ''}
     </div>`;
   }).join("");
 }
@@ -560,6 +568,8 @@ function editarUsuario(id) {
 }
 
 function buildForm(u={}) {
+  const editable = canDo('usuarios','editar');
+  const dis = editable ? '' : 'disabled';
   const optsRol = roles.map(r =>
     `<option value="${r.id}"${u.rol_id===r.id?" selected":""}>${r.nombre}</option>`
   ).join("");
@@ -567,15 +577,15 @@ function buildForm(u={}) {
   return `
     <div class="form-group">
       <label>Nombre completo</label>
-      <input type="text" id="f-nombre" value="${u.nombre||''}">
+      <input type="text" id="f-nombre" value="${u.nombre||''}" ${dis}>
     </div>
     <div class="form-group">
       <label>Email</label>
-      <input type="email" id="f-email" value="${u.email||''}">
+      <input type="email" id="f-email" value="${u.email||''}" ${dis}>
     </div>
     <div class="form-group">
       <label>Rol</label>
-      <select id="f-rol" onchange="updateRolHint()">
+      <select id="f-rol" onchange="updateRolHint()" ${dis}>
         ${optsRol}
       </select>
       <div class="hint" id="rol-hint">${descRol}</div>
@@ -583,24 +593,24 @@ function buildForm(u={}) {
     ${u.id ? `
     <div class="form-group">
       <label>Estado</label>
-      <select id="f-activo">
+      <select id="f-activo" ${dis}>
         <option value="1"${u.activo?" selected":""}>Activo</option>
         <option value="0"${!u.activo?" selected":""}>Inactivo</option>
       </select>
     </div>
-    <div class="clave-section">
+    ${editable ? `<div class="clave-section">
       <h4>Cambiar contraseña (opcional)</h4>
       <input type="password" id="f-password" placeholder="Nueva contraseña — dejar vacío para no cambiar">
       <div class="hint">Mínimo 6 caracteres si cambiás</div>
-    </div>` : `
+    </div>` : ''}` : `
     <div class="form-group">
       <label>Contraseña</label>
-      <input type="password" id="f-password" placeholder="Mínimo 6 caracteres">
+      <input type="password" id="f-password" placeholder="Mínimo 6 caracteres" ${dis}>
     </div>`}
     <div class="form-footer">
       ${u.id && u.id!==meId && canDo('usuarios','eliminar') ? `<button class="btn btn-danger btn-sm" onclick="eliminarUsuario(${u.id})">Eliminar</button>` : ""}
       <button class="btn btn-secondary btn-sm" onclick="cancelarUsuario()">Cancelar</button>
-      ${canDo('usuarios','editar') ? `<button class="btn btn-primary btn-sm" onclick="guardarUsuario()">Guardar</button>` : ""}
+      ${editable ? `<button class="btn btn-primary btn-sm" onclick="guardarUsuario()">Guardar</button>` : ""}
     </div>`;
 }
 
@@ -655,9 +665,13 @@ async function eliminarUsuario(id) {
 const MODULO_LABELS = {
   dashboard:"Dashboard", empleados:"Empleados", horarios:"Horarios",
   planificacion:"Planificación", calendarios:"Calendarios", asistencia:"Asistencia",
-  resultados:"Resultados", usuarios:"Usuarios", roles:"Roles", sync:"Sincronización"
+  resultados:"Resultados", usuarios:"Usuarios", roles:"Roles", sync:"Sincronización",
+  premios:"Premios", vacaciones:"Vacaciones", periodos:"Períodos"
 };
-const ACCION_LABELS = { ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar" };
+const ACCION_LABELS = {
+  ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
+  corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir"
+};
 
 let rolesList = [], modulos = [], acciones = [], rolEditandoId = null;
 
@@ -702,22 +716,25 @@ function editarRol(id) {
 
 function renderRolEditor(rol={}) {
   const permsActuales = new Set((rol.permisos||[]).map(p => `${p.modulo}|${p.accion}`));
+  const editable = canDo('roles','editar');
+  const dis = editable ? '' : 'disabled';
   document.getElementById("rol-editor-contenido").innerHTML = `
     <div class="form-row-3">
       <div class="form-group">
         <label>Nombre</label>
-        <input type="text" id="rf-nombre" value="${rol.nombre||''}">
+        <input type="text" id="rf-nombre" value="${rol.nombre||''}" ${dis}>
       </div>
       <div class="form-group">
         <label>Descripción</label>
-        <input type="text" id="rf-desc" value="${rol.descripcion||''}">
+        <input type="text" id="rf-desc" value="${rol.descripcion||''}" ${dis}>
       </div>
       <div class="form-group">
         <label>Nivel</label>
-        <input type="number" id="rf-nivel" value="${rol.nivel||1}" min="1" max="100">
+        <input type="number" id="rf-nivel" value="${rol.nivel||1}" min="1" max="100" ${dis}>
       </div>
     </div>
     <div style="font-size:.75rem;font-weight:bold;color:#666;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Permisos</div>
+    <div class="matriz-wrap">
     <table class="matriz">
       <thead><tr>
         <th class="col-modulo">Módulo</th>
@@ -732,16 +749,17 @@ function renderRolEditor(rol={}) {
             ${acciones.map(a => `
               <td><input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
                 ${permsActuales.has(`${m}|${a}`) ? " checked" : ""}
-                onchange="onPermChange(this)"></td>`).join("")}
+                ${editable ? `onchange="onPermChange(this)"` : "disabled"}></td>`).join("")}
             <td class="col-all">
               <input type="checkbox" class="chk-all" data-m="${m}"
                 ${todosCheck ? " checked" : ""}
-                onchange="toggleModulo(this,'${m}')">
+                ${editable ? `onchange="toggleModulo(this,'${m}')"` : "disabled"}>
             </td>
           </tr>`;
         }).join("")}
       </tbody>
     </table>
+    </div>
     <div class="form-footer">
       ${rol.id && canDo('roles','eliminar') ? `<button class="btn btn-danger btn-sm" onclick="eliminarRol(${rol.id})">Eliminar</button>` : ""}
       <button class="btn btn-secondary btn-sm" onclick="cancelarRol()">Cancelar</button>
@@ -1147,11 +1165,12 @@ async function cargarParametrosPremios() {
     ..._paramsPremios.filter(p => !_ORDEN_PARAMS.includes(p.clave)),
   ];
   const tbody = document.getElementById("tbody-params-premios");
+  const editablePremios = canDo('premios','editar');
   tbody.innerHTML = ordenado.map(p => `
     <tr>
       <td style="font-family:monospace;font-size:.8rem;color:#555">${p.clave}</td>
       <td style="font-size:.82rem">${p.descripcion}</td>
-      <td><input type="number" id="pp-${p.clave}" value="${p.valor}" step="${p.tipo==='porcentaje'?'0.01':'1'}" style="width:110px;padding:4px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem"></td>
+      <td><input type="number" id="pp-${p.clave}" value="${p.valor}" step="${p.tipo==='porcentaje'?'0.01':'1'}" style="width:110px;padding:4px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem" ${editablePremios ? '' : 'disabled'}></td>
     </tr>`).join("");
   _renderFormula();
 }

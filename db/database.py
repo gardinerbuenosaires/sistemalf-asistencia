@@ -487,6 +487,10 @@ def _migrate(conn):
              'Horas sin salida para considerar ciclo abierto en empleados sin planificación'),
             ('sync_interval_minutos', '5',
              'Intervalo de sincronización con el dispositivo ZKTeco (minutos)'),
+            ('device_ip',       '192.168.1.201', 'Dirección IP del lector de huellas ZKTeco'),
+            ('device_port',     '4370',          'Puerto TCP del lector de huellas ZKTeco'),
+            ('device_password', '0',             'Contraseña del lector de huellas ZKTeco (0 = sin contraseña)'),
+            ('device_timeout',  '10',            'Tiempo de espera de conexión al dispositivo (segundos)'),
         ]
     )
 

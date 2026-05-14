@@ -57,13 +57,26 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
         if bloque == 1 and res.get("b1_mt"):
             if res.get("b1_entrada"):
                 return {"letra": "MT", "tipo": "mt_trabajado"}
-            return {"letra": None, "tipo": "mt"}
+            return {"letra": "MT", "tipo": "mt"}
         if bloque == 2 and res.get("b2_mt"):
             if res.get("b2_entrada"):
                 return {"letra": "MT", "tipo": "mt_trabajado"}
-            return {"letra": None, "tipo": "mt"}
+            return {"letra": "MT", "tipo": "mt"}
 
         estado = res["estado"]
+
+        if estado == "no_iniciado":
+            return {"letra": None, "tipo": "no_iniciado"}
+
+        if estado.endswith("_b2_ni"):
+            if bloque == 2:
+                return {"letra": None, "tipo": "no_iniciado"}
+            base = estado[:-6]  # strip "_b2_ni"
+            mapa = _EST_B1 if bloque == 1 else _EST_SIMPLE
+            letra = mapa.get(base)
+            if letra:
+                return {"letra": letra, "tipo": "normal"}
+
         # Si b1 es MT, el estado representa solo b2 evaluado como bloque simple → usar _EST_B1 para bloque 2
         if bloque == 2 and res.get("b1_mt"):
             mapa = _EST_B1
@@ -96,7 +109,11 @@ def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
     dias_activos   = 0
 
     for fecha in fechas:
-        bloques = [celdas[fecha]["b1"], celdas[fecha]["b2"]] if cortado else [celdas[fecha]]
+        celda = celdas[fecha]
+        if cortado or celda.get("es_cortado_dia"):
+            bloques = [celda["b1"], celda["b2"]]
+        else:
+            bloques = [celda]
 
         # Día entero fuera del período activo del empleado → ignorar
         if all(b["tipo"] in ("antes_ingreso", "liquidacion") for b in bloques):
@@ -210,8 +227,10 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
         ph   = ",".join("?" * len(eids))
 
         planes = conn.execute(
-            f"SELECT empleado_id, fecha, es_franco, horario_id "
-            f"FROM planificacion WHERE empleado_id IN ({ph}) AND fecha>=? AND fecha<=?",
+            f"SELECT p.empleado_id, p.fecha, p.es_franco, p.horario_id, h.tipo AS horario_tipo "
+            f"FROM planificacion p "
+            f"LEFT JOIN horarios h ON h.id = p.horario_id "
+            f"WHERE p.empleado_id IN ({ph}) AND p.fecha>=? AND p.fecha<=?",
             (*eids, f0, f1)
         ).fetchall()
 
@@ -308,15 +327,33 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
                     if any(l != "@" for l in letras_feri):
                         feriados_trab += len(letras_feri) * 0.5
             else:
-                c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
-                celdas[fecha] = c
-                l = c["letra"]
-                if l and c["tipo"] == "normal":
-                    tots[l] += 1.0
-                    if l in CONTABLES:
-                        tots["dias"] += 1.0
-                    if fecha in feriados and l in ("I", "T", "FT"):
-                        feriados_trab += 1.0
+                plan = plan_map.get((eid, fecha))
+                dia_cortado = plan and plan.get("horario_tipo") == "cortado"
+                if dia_cortado:
+                    b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                    b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                    celdas[fecha] = {"b1": b1, "b2": b2, "es_cortado_dia": True}
+                    for b in (b1, b2):
+                        l = b["letra"]
+                        if l and b["tipo"] == "normal":
+                            tots[l] += 0.5
+                            if l in CONTABLES:
+                                tots["dias"] += 0.5
+                    if fecha in feriados:
+                        letras_feri = [b["letra"] for b in (b1, b2)
+                                       if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@")]
+                        if any(l != "@" for l in letras_feri):
+                            feriados_trab += len(letras_feri) * 0.5
+                else:
+                    c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                    celdas[fecha] = c
+                    l = c["letra"]
+                    if l and c["tipo"] == "normal":
+                        tots[l] += 1.0
+                        if l in CONTABLES:
+                            tots["dias"] += 1.0
+                        if fecha in feriados and l in ("I", "T", "FT"):
+                            feriados_trab += 1.0
 
         transporte = transporte_map.get(eid, 0)
         saldo_mes  = tots.get("FD", 0) - tots.get("FT", 0)
@@ -324,13 +361,14 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
                                        date.today().isoformat())
 
         grupos[grupo].append({
-            "id":       eid,
-            "cod":      emp["user_id"],
-            "nombre":   emp["nombre"],
-            "apellido": emp["apellido"],
-            "cargo":    emp["cargo"] or "",
-            "celdas":   celdas,
-            "control":  control,
+            "id":         eid,
+            "cod":        emp["user_id"],
+            "nombre":     emp["nombre"],
+            "apellido":   emp["apellido"],
+            "cargo":      emp["cargo"] or "",
+            "fecha_egreso": f_egr or None,
+            "celdas":     celdas,
+            "control":    control,
             "totales": {
                 **{k: _fmt(v) for k, v in tots.items()},
                 "transporte":         _fmt(transporte),

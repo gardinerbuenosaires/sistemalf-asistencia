@@ -453,8 +453,28 @@ async function logout() {
 
 // ── Parámetros ────────────────────────────────────────────────────────────────
 const PARAMS_META = {
+  device_ip: {
+    label: "IP del lector de huellas",
+    tipo: "text", width: "150px",
+    descripcion: "Dirección IP del dispositivo ZKTeco en la red local. Requiere reiniciar el servicio para aplicar."
+  },
+  device_port: {
+    label: "Puerto del lector",
+    tipo: "number", min: 1, max: 65535,
+    descripcion: "Puerto TCP del dispositivo ZKTeco (por defecto 4370). Requiere reiniciar el servicio para aplicar."
+  },
+  device_password: {
+    label: "Contraseña del dispositivo",
+    tipo: "number", min: 0,
+    descripcion: "Contraseña numérica del dispositivo ZKTeco. Usar 0 si no tiene contraseña configurada."
+  },
+  device_timeout: {
+    label: "Timeout de conexión (segundos)",
+    tipo: "number", min: 1, max: 60,
+    descripcion: "Segundos de espera antes de dar por fallida la conexión al dispositivo."
+  },
   sync_interval_minutos: {
-    label: "Intervalo de sync ZKTeco (minutos)",
+    label: "Intervalo de sync (minutos)",
     tipo: "number", min: 1, max: 60,
     descripcion: "Cada cuántos minutos el sistema consulta el dispositivo biométrico. El cambio se aplica en el próximo ciclo sin reiniciar."
   },
@@ -494,7 +514,8 @@ async function cargarParams() {
         <span>${meta.descripcion}</span>
       </div>
       <input type="${meta.tipo}" id="param-${clave}" value="${valor}"
-        min="${meta.min||''}" max="${meta.max||''}" ${editableSistema ? '' : 'disabled'}>
+        min="${meta.min||''}" max="${meta.max||''}" ${editableSistema ? '' : 'disabled'}
+        style="${meta.width ? `width:${meta.width}` : ''}">
       ${editableSistema ? `<button class="btn btn-primary btn-sm" onclick="guardarParam('${clave}')">Guardar</button>` : ''}
     </div>`;
   }).join("");

@@ -151,12 +151,12 @@ table.planilla tbody td.saldo-neg { color: #c0392b; font-weight: bold; }
 table.planilla tbody td.saldo-pos { color: #27ae60; font-weight: bold; }
 
 /* Fila separador */
-tr.fila-sep td {
+table.planilla tr.fila-sep td {
   background: #f0f0f0; font-size: .72rem; color: #555; font-weight: bold;
   border-top: 2px solid #c8ccd0; border-bottom: 1px solid #d5d8da;
   padding: 3px 8px; text-align: left;
 }
-tr.fila-sep td:first-child { position: sticky; left: 0; z-index: 2; }
+table.planilla tr.fila-sep td:first-child { position: sticky; left: 0; z-index: 2; }
 tr.fila-sep.dragging { opacity: .4; }
 
 /* Drag & drop */
@@ -198,11 +198,11 @@ tr[draggable="true"]:active { cursor: grabbing; }
 #modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; }
 #modal {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  background: white; border-radius: 10px; padding: 24px; width: 320px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.2); z-index: 101;
+  background: white; border-radius: 12px; padding: 20px 24px 24px; width: 340px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.22); z-index: 101;
 }
-#modal h3 { font-size: .95rem; margin-bottom: 4px; }
-#modal .subtitulo { font-size: .78rem; color: #888; margin-bottom: 16px; }
+#modal h3 { font-size: 1rem; font-weight: 700; color: #1a2633; margin-bottom: 2px; }
+#modal .subtitulo { font-size: .78rem; color: #999; margin-bottom: 0; }
 .tipos-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-bottom: 16px; }
 .tipo-btn {
   padding: 8px 4px; border: 2px solid #dee2e6; border-radius: 6px;
@@ -230,9 +230,21 @@ tr[draggable="true"]:active { cursor: grabbing; }
 .nov-rango-label { font-size: .72rem; color: #666; font-weight: bold; display: block; margin-bottom: 4px; }
 .nov-rango-hint { font-weight: normal; color: #aaa; }
 #nov-desde, #nov-hasta { width: 100%; padding: 6px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; }
-.modal-tab-bar { display: flex; gap: 6px; margin-bottom: 14px; }
-.modal-tab-btn { padding: 5px 14px; border: 2px solid #dee2e6; border-radius: 5px; cursor: pointer; font-size: .8rem; background: white; color: #555; }
-.modal-tab-btn.activo { border-color: #2c3e50; background: #2c3e50; color: white; }
+.modal-tab-bar {
+  display: flex; gap: 0;
+  border-bottom: 2px solid #e8ecf0;
+  margin: 14px -24px 16px;
+  padding: 0 24px;
+}
+.modal-tab-btn {
+  padding: 7px 14px; border: none;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  cursor: pointer; font-size: .78rem; font-weight: 500;
+  background: transparent; color: #aaa; letter-spacing: .01em;
+  border-radius: 4px 4px 0 0; transition: color .15s;
+}
+.modal-tab-btn:hover:not(.activo) { color: #555; background: #f5f7f9; }
+.modal-tab-btn.activo { border-bottom-color: #2c3e50; color: #2c3e50; font-weight: 600; }
 .fm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 .fm-grid label { font-size: .72rem; color: #666; font-weight: bold; display: block; margin-bottom: 3px; }
 .fm-grid input { width: 100%; padding: 6px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; }
@@ -425,9 +437,9 @@ tr[draggable="true"]:active { cursor: grabbing; }
     </div>
   </div>
 
-  <!-- Panel asignar horario (FT pendiente) -->
+  <!-- Panel asignar horario -->
   <div id="mpanel-ft" style="display:none">
-    <div class="mpanel-ft-info">Este empleado fichó en su día franco. Asigná el horario que corresponde para calcular puntualidad.</div>
+    <div class="mpanel-ft-info">Cambiá el horario asignado para este día. Se recalculará la evaluación automáticamente.</div>
     <select id="ft-horario-sel">
       <option value="">— Seleccioná un horario —</option>
     </select>
@@ -530,7 +542,8 @@ async function init() {
   const hoy = new Date();
   mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
   construirLeyenda();
-  await Promise.all([cargar(), cargarOrdenes()]);
+  await cargarOrdenes();
+  await cargar();
 }
 
 function construirLeyenda() {
@@ -569,6 +582,7 @@ async function cargar() {
     document.getElementById('loading-msg').textContent = '';
   } catch(e) {
     document.getElementById('loading-msg').textContent = 'Error al cargar';
+    console.error(e);
   }
 }
 
@@ -739,14 +753,26 @@ function renderTodo() {
     if (modoOrden) {
       renderGrupoOrden(g);
     } else {
-      renderGrupo(g, d.dias, d[g]);
+      try {
+        renderGrupo(g, d.dias, d[g]);
+      } catch(err) {
+        document.getElementById('loading-msg').textContent = `ERROR ${g}: ${err.message}`;
+        console.error('renderGrupo', g, err);
+        throw err;
+      }
     }
   });
   renderGrupo('ST', d.dias, d.ST || []);
   const st = (d.ST || []).length;
-  document.getElementById('conteos').textContent =
-    `TM: ${d.TM.length}  TN: ${d.TN.length}  CO: ${d.CO.length}` +
-    (st ? `  Sin turno: ${st}` : '');
+  const mesStr = mesActual.slice(0, 7); // "YYYY-MM"
+  const esBaja = e => e.fecha_egreso && e.fecha_egreso.slice(0, 7) === mesStr;
+  const bajas = [...d.TM, ...d.TN, ...d.CO].filter(esBaja).length;
+  const total = d.TM.length + d.TN.length + d.CO.length + st - bajas;
+  let txt = `TM: ${d.TM.length}  TN: ${d.TN.length}  CO: ${d.CO.length}`;
+  if (st) txt += `  ST: ${st}`;
+  if (bajas) txt += `  Bajas: ${bajas}`;
+  txt += `  Total: ${total}`;
+  document.getElementById('conteos').textContent = txt;
 }
 
 // ── Render planilla normal ────────────────────────────────────────────────────
@@ -858,7 +884,11 @@ function filaHtmlSimple(emp, dias, resCols) {
   dias.forEach(dia => {
     const c = emp.celdas[dia.fecha] || {letra:null, tipo:'sin_plan'};
     const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
-    h += `<td style="padding:0">${celdaSimpleHtml(c, emp.id, dia.fecha, mark)}</td>`;
+    if (c.es_cortado_dia) {
+      h += `<td style="padding:0">${celdaCortadoHtml(c, emp.id, dia.fecha, mark)}</td>`;
+    } else {
+      h += `<td style="padding:0">${celdaSimpleHtml(c, emp.id, dia.fecha, mark)}</td>`;
+    }
   });
   h += '<td class="col-sep"></td>';
   resCols.forEach(col => {
@@ -1040,8 +1070,9 @@ function estiloBloque(celda) {
   if (celda.tipo === 'fuera')          return {bg:'#d5d8dc', txt:'#d5d8dc', cls:'tipo-fuera'};
   if (celda.tipo === 'liquidacion')    return {bg:'#5d6d7e', txt:'#ffffff', cls:''};
   if (celda.tipo === 'pendiente')      return {bg:'#f0f3f5', txt:'#c0c8d0', cls:'tipo-pendiente'};
-  if (celda.tipo === 'mt')             return {bg:'#ecf0f1', txt:'#95a5a6', cls:'tipo-mt'};
+  if (celda.tipo === 'mt')             return {bg:'#C4D79B', txt:'#4F6228', cls:'tipo-mt'};
   if (celda.tipo === 'mt_trabajado')   return {bg: C.MT.bg, txt: C.MT.txt, cls:'tipo-mt-trabajado'};
+  if (celda.tipo === 'no_iniciado')    return {bg:'#f0f3f5', txt:'#c0c8d0', cls:'tipo-pendiente'};
   if (!celda.letra)                    return {bg:'#ffffff', txt:'transparent', cls:'tipo-sin_plan'};
   const col = C[celda.letra] || {bg:'#eee', txt:'#333'};
   return {bg: col.bg, txt: col.txt, cls: ''};
@@ -1103,10 +1134,11 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   const ftPendienteActual = esCortado
     ? (bloqueInicial === 2 ? celda?.b2?.ft_pendiente : celda?.b1?.ft_pendiente)
     : celda?.ft_pendiente;
-  const esFT     = !bloqueado && letraActual === 'FT' && canDo('planificacion','editar');
+  const esFT      = !bloqueado && letraActual === 'FT' && canDo('planificacion','editar');
+  const canHorario = !bloqueado && canDo('planificacion','editar');
   const canFranco = !bloqueado && !periodoCerrado && canDo('planificacion','editar')
     && letraActual !== 'F' && letraActual !== 'FT' && letraActual !== 'FD';
-  document.getElementById('mtab-ft').style.display     = esFT      ? 'inline-block' : 'none';
+  document.getElementById('mtab-ft').style.display     = canHorario ? 'inline-block' : 'none';
   document.getElementById('mtab-franco').style.display = canFranco ? 'inline-block' : 'none';
 
   if (bloqueado) {

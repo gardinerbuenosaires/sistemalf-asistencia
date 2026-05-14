@@ -140,8 +140,11 @@ def delete_calendario(cid: int, _user=Depends(require_permiso("calendarios", "el
     hoy = str(date.today())
     with db_session() as conn:
         activas = conn.execute(
-            "SELECT COUNT(*) FROM asignaciones WHERE calendario_id=? "
-            "AND (fecha_hasta IS NULL OR fecha_hasta > ?)",
+            "SELECT COUNT(*) FROM asignaciones a "
+            "JOIN empleados e ON e.id = a.empleado_id "
+            "WHERE a.calendario_id=? "
+            "AND (a.fecha_hasta IS NULL OR a.fecha_hasta > ?) "
+            "AND e.activo = 1",
             (cid, hoy)
         ).fetchone()[0]
         if activas:

@@ -8,17 +8,33 @@ import logging
 from datetime import datetime
 from zk import ZK
 from config import DEVICE_IP, DEVICE_PORT, DEVICE_PASSWORD, DEVICE_TIMEOUT
-from db.database import db_session
+from db.database import db_session, get_config
 
 logger = logging.getLogger(__name__)
 
 
+def _get_device_config() -> dict:
+    """Lee config del dispositivo desde la DB; cae a config.py si falla."""
+    try:
+        with db_session() as conn:
+            return {
+                "ip":       get_config(conn, "device_ip",       DEVICE_IP),
+                "port":     int(get_config(conn, "device_port",     str(DEVICE_PORT))),
+                "password": int(get_config(conn, "device_password", str(DEVICE_PASSWORD))),
+                "timeout":  int(get_config(conn, "device_timeout",  str(DEVICE_TIMEOUT))),
+            }
+    except Exception:
+        return {"ip": DEVICE_IP, "port": DEVICE_PORT,
+                "password": DEVICE_PASSWORD, "timeout": DEVICE_TIMEOUT}
+
+
 def _connect():
+    cfg = _get_device_config()
     zk = ZK(
-        DEVICE_IP,
-        port=DEVICE_PORT,
-        timeout=DEVICE_TIMEOUT,
-        password=DEVICE_PASSWORD,
+        cfg["ip"],
+        port=cfg["port"],
+        timeout=cfg["timeout"],
+        password=cfg["password"],
         force_udp=False,
         ommit_ping=False,
     )
@@ -36,7 +52,8 @@ def sync_attendances() -> dict:
 
     conn_zk = None
     try:
-        logger.info("Conectando a %s:%s...", DEVICE_IP, DEVICE_PORT)
+        cfg = _get_device_config()
+        logger.info("Conectando a %s:%s...", cfg["ip"], cfg["port"])
         conn_zk = _connect()
 
         attendances = conn_zk.get_attendance()
@@ -145,7 +162,8 @@ def sync_users() -> dict:
     result = {"leidos": 0, "nuevos": 0, "nuevos_ids": [], "fichajes_vinculados": 0, "fuera_de_dispositivo": [], "error": None}
     conn_zk = None
     try:
-        logger.info("Conectando a %s:%s para sync de usuarios...", DEVICE_IP, DEVICE_PORT)
+        cfg = _get_device_config()
+        logger.info("Conectando a %s:%s para sync de usuarios...", cfg["ip"], cfg["port"])
         conn_zk = _connect()
         users = conn_zk.get_users()
         result["leidos"] = len(users)

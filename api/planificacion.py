@@ -161,11 +161,12 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
     with db_session() as conn:
         check_periodo_abierto(conn, fecha_str)
         plan = conn.execute(
-            "SELECT id FROM planificacion WHERE empleado_id=? AND fecha=? AND es_franco=1",
+            "SELECT id, es_franco FROM planificacion WHERE empleado_id=? AND fecha=?",
             (empleado_id, fecha_str)
         ).fetchone()
         if not plan:
-            raise HTTPException(404, "No existe planificación franco para ese empleado y fecha")
+            raise HTTPException(404, "No existe planificación para ese empleado y fecha")
+        es_franco = plan["es_franco"]
 
         bloques = [dict(b) for b in conn.execute(
             "SELECT * FROM horarios_bloques WHERE horario_id=? ORDER BY bloque",
@@ -204,7 +205,7 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
                 b2_entrada, b2_salida, b2_minutos_tarde, b2_salida_anticipada, b2_ausente, b2_sin_salida,
                 b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id,
                 corregido_manualmente, corregido_por, corregido_en, procesado_en)
-               VALUES (?,?,?,1,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, 0,NULL,NULL, datetime('now','localtime'))
+               VALUES (?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, 0,NULL,NULL, datetime('now','localtime'))
                ON CONFLICT(empleado_id, fecha) DO UPDATE SET
                horario_id=excluded.horario_id, estado=excluded.estado,
                b1_entrada=excluded.b1_entrada, b1_salida=excluded.b1_salida,
@@ -218,7 +219,7 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
                b1_entrada_id=excluded.b1_entrada_id, b1_salida_id=excluded.b1_salida_id,
                b2_entrada_id=excluded.b2_entrada_id, b2_salida_id=excluded.b2_salida_id,
                procesado_en=datetime('now','localtime')""",
-            (empleado_id, fecha_str, horario_id, estado,
+            (empleado_id, fecha_str, horario_id, es_franco, estado,
              b1r.get("entrada"), b1r.get("salida"), b1r.get("minutos_tarde"),
              int(b1r.get("salida_anticipada", False)), int(b1r.get("ausente", False)), int(b1r.get("sin_salida", False)),
              (b2r or {}).get("entrada"), (b2r or {}).get("salida"), (b2r or {}).get("minutos_tarde"),

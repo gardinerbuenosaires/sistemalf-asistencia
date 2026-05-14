@@ -319,11 +319,29 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                     ).fetchone()
                     if bloques_noche:
                         excluir_antes = _dt(fecha - timedelta(days=1), bloques_noche["hora_salida"], dia_sig=True) + timedelta(minutes=30)
+                # Fallback: si el resultado del día anterior tiene una salida que cae en este día
+                # (turno cruzó medianoche pero la flag cruza_medianoche no está configurada)
+                if excluir_antes is None:
+                    res_ant = conn.execute(
+                        "SELECT b1_salida, b2_salida FROM resultados_dia WHERE empleado_id=? AND fecha=?",
+                        (eid, str(fecha - timedelta(days=1)))
+                    ).fetchone()
+                    if res_ant:
+                        for col in ("b1_salida", "b2_salida"):
+                            ts = res_ant[col]
+                            if ts and ts[:10] == fecha_str:
+                                excluir_antes = datetime.fromisoformat(ts) + timedelta(minutes=30)
+                                break
                 fichajes_franco = [
                     f for f in fich_map.get(eid, [])
                     if f["timestamp"][:10] == fecha_str
                     and (excluir_antes is None or datetime.fromisoformat(f["timestamp"]) > excluir_antes)
                 ]
+                # Último recurso: un único fichaje antes de las 08:00 en un día franco
+                # es casi siempre la salida del turno nocturno anterior, no presencia real
+                if excluir_antes is None and len(fichajes_franco) == 1:
+                    if datetime.fromisoformat(fichajes_franco[0]["timestamp"]).hour < 8:
+                        fichajes_franco = []
                 if fichajes_franco:
                     hid_ft = p.get("horario_id")  # NULL hasta que el encargado lo asigne
                     if hid_ft and hid_ft not in bloques_map:
@@ -370,33 +388,52 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                 if not bloques:
                     estado, b1r, b2r = "sin_horario", {}, {}
                 else:
-                    slots = _clasificar_fichajes(fich_map[eid], bloques, fecha)
-                    b1_entrada_id = (slots.get("b1_entrada") or {}).get("id")
-                    b1_salida_id  = (slots.get("b1_salida")  or {}).get("id")
-                    b2_entrada_id = (slots.get("b2_entrada") or {}).get("id")
-                    b2_salida_id  = (slots.get("b2_salida")  or {}).get("id")
-                    b1r = _evaluar_bloque(
-                        bloques[0], fecha,
-                        slots.get("b1_entrada"), slots.get("b1_salida")
-                    )
-                    b2r = None
-                    if len(bloques) > 1:
-                        b2r = _evaluar_bloque(
-                            bloques[1], fecha,
-                            slots.get("b2_entrada"), slots.get("b2_salida")
+                    ahora       = datetime.now()
+                    es_hoy      = (fecha == date.today())
+                    b1_ni       = es_hoy and ahora < _dt(fecha, bloques[0]["hora_entrada"])
+                    b2_ni       = (len(bloques) > 1 and es_hoy
+                                   and ahora < _dt(fecha, bloques[1]["hora_entrada"],
+                                                   dia_sig=bool(bloques[1]["cruza_medianoche"])))
+
+                    if b1_ni:
+                        estado, b1r, b2r = "no_iniciado", {}, {}
+                    else:
+                        slots = _clasificar_fichajes(fich_map[eid], bloques, fecha)
+                        b1_entrada_id = (slots.get("b1_entrada") or {}).get("id")
+                        b1_salida_id  = (slots.get("b1_salida")  or {}).get("id")
+                        b2_entrada_id = (slots.get("b2_entrada") or {}).get("id")
+                        b2_salida_id  = (slots.get("b2_salida")  or {}).get("id")
+                        b1r = _evaluar_bloque(
+                            bloques[0], fecha,
+                            slots.get("b1_entrada"), slots.get("b1_salida")
                         )
+                        b2r = None
+                        if len(bloques) > 1:
+                            b2r = _evaluar_bloque(
+                                bloques[1], fecha,
+                                slots.get("b2_entrada"), slots.get("b2_salida")
+                            )
 
                     b1_aplica = bool(bloques[0].get("aplica", 1))
                     b2_aplica = len(bloques) > 1 and bool(bloques[1].get("aplica", 1))
                     b1_mt_val = not b1_aplica
                     b2_mt_val = len(bloques) > 1 and not b2_aplica
 
-                    if b1_mt_val and b2r is not None:
+                    if b1_ni:
+                        pass  # estado ya seteado
+                    elif b1_mt_val and b2r is not None:
                         # b1 no aplica: evaluar solo b2 como si fuera bloque único
-                        estado = _calcular_estado(b2r, None)
+                        if b2_ni:
+                            estado = "no_iniciado"
+                        else:
+                            estado = _calcular_estado(b2r, None)
                     elif b2_mt_val and b2r is not None:
                         # b2 no aplica: evaluar solo b1 como bloque único
                         estado = _calcular_estado(b1r, None)
+                    elif b2_ni:
+                        # b2 no empezó: evaluar b1 solo y marcar b2 como no iniciado
+                        estado = _calcular_estado(b1r, None) + "_b2_ni"
+                        b2r = None
                     else:
                         estado = _calcular_estado(b1r, b2r)
 

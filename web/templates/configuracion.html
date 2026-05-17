@@ -204,9 +204,14 @@
     <div class="section" data-perm="usuarios:editar">
       <div class="section-header">
         <div>
-          <div class="section-title">Logo de la empresa</div>
-          <div class="section-desc" style="margin-bottom:0">Se muestra en el legajo imprimible de cada empleado.</div>
+          <div class="section-title">Nombre y logo de la empresa</div>
+          <div class="section-desc" style="margin-bottom:0">Aparecen en la pantalla de login y en los reportes impresos.</div>
         </div>
+      </div>
+      <div style="margin-top:14px;margin-bottom:18px;display:flex;align-items:center;gap:10px">
+        <input type="text" id="input-nombre-empresa" placeholder="Nombre del restaurante o empresa"
+               style="flex:1;max-width:360px;padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:.9rem">
+        <button class="btn btn-primary btn-sm" onclick="guardarNombreEmpresa()">Guardar nombre</button>
       </div>
       <div style="display:flex;align-items:center;gap:20px;margin-top:14px;flex-wrap:wrap">
         <div id="logo-preview-wrap" style="width:160px;height:70px;border:1px dashed #ccc;border-radius:6px;display:flex;align-items:center;justify-content:center;background:#fafafa;overflow:hidden">
@@ -691,7 +696,7 @@ const MODULO_LABELS = {
 };
 const ACCION_LABELS = {
   ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
-  corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir"
+  corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir", carga_inicial:"Carga inicial"
 };
 
 let rolesList = [], modulos = [], acciones = [], rolEditandoId = null;
@@ -1205,7 +1210,7 @@ function _renderFormula() {
     `<b>Base:</b> $${get('monto_base').toLocaleString()}`,
     `<b>Descalificadores (→ $0):</b> no fichadas ≥ ${get('limite_no_fichadas')} · ausente ≥ 1 día · suspensión ≥ 1 día · enfermedad > ${get('limite_enfermedad_dias')} días`,
     `<b>Retardo efectivo:</b> min. sistema + (no fichadas × ${get('min_por_no_fichada')} min)`,
-    `<b>Puntualidad:</b> 0 min → PERFECTA ($0) · < ${get('umbral_puntualidad_ok_min')} min → OK ($0) · ${get('umbral_puntualidad_ok_min')}–${get('umbral_puntualidad_total_min')} min → PARCIAL (−${get('pct_descuento_puntualidad')}%) · ≥ ${get('umbral_puntualidad_total_min')} min → PIERDE ($0)`,
+    `<b>Puntualidad:</b> 0 min → PERFECTA ($0) · < ${get('umbral_puntualidad_ok_min')} min → OK ($0) · ${get('umbral_puntualidad_ok_min')}–${get('umbral_puntualidad_total_min')} min → PARCIAL (−${get('pct_descuento_puntualidad')}%) · ≥ ${get('umbral_puntualidad_total_min')} min → NO CUMPLE ($0)`,
     `<b>BPM NO CONFORME:</b> −${get('pct_descuento_bpm')}% del monto base`,
     `<b>Vacaciones:</b> −(base ÷ ${get('dias_base_vacaciones')}) × días de vacación`,
     `<b>Redondeo:</b> al múltiplo de ${get('redondeo') || '—'}`,
@@ -1350,6 +1355,26 @@ function switchCfgTab(tab) {
 }
 
 // ── Logo ──────────────────────────────────────────────────────────────────────
+async function cargarNombreEmpresa() {
+  try {
+    const data = await fetch("/api/config/nombre-empresa").then(r => r.json());
+    const el = document.getElementById("input-nombre-empresa");
+    if (el && data.nombre) el.value = data.nombre;
+  } catch {}
+}
+
+async function guardarNombreEmpresa() {
+  const el = document.getElementById("input-nombre-empresa");
+  const nombre = el?.value?.trim() ?? "";
+  const res = await fetch("/api/configuracion/nombre_empresa", {
+    method: "PUT",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({valor: nombre})
+  });
+  if (res.ok) toast("Nombre guardado");
+  else toast("Error al guardar el nombre");
+}
+
 async function cargarLogo() {
   try {
     const res = await fetch("/api/config/logo");
@@ -1411,6 +1436,7 @@ _loadPerms().then(() => {
   cargarCatalogos();
   cargarParametrosPremios();
   cargarLogo();
+  cargarNombreEmpresa();
 });
 </script>
 </body>

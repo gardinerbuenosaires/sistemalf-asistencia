@@ -20,6 +20,9 @@ class EvaluacionUpdate(BaseModel):
     bpm: Optional[str] = None
     desempenio: Optional[str] = None
     monto_base: Optional[int] = None
+    tolerar_nf: Optional[bool] = None
+    tolerar_e: Optional[bool] = None
+    anular_premio: Optional[bool] = None
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -97,14 +100,14 @@ def _calcular(ev: dict, params: dict) -> dict:
         status = "PARCIAL"
         deduccion_puntualidad = round(base * params["pct_descuento_puntualidad"] / 100)
     else:
-        status = "PIERDE"
+        status = "NO CUMPLE"
         desglose.update({"puntualidad_status": status, "descalificado": True, "motivo_descalificacion": "puntualidad"})
         return _finalizar(desglose, 0, params)
 
     desglose["puntualidad_status"] = status
     desglose["deduccion_puntualidad"] = deduccion_puntualidad
 
-    # BPM
+    # BPM  ("NO APLICA" y "OK" no generan descuento)
     deduccion_bpm = round(base * params["pct_descuento_bpm"] / 100) if bpm == "NO CONFORME" else 0
     desglose["deduccion_bpm"] = deduccion_bpm
 
@@ -316,11 +319,23 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
         else:
             conn.execute("DELETE FROM premios_evaluacion WHERE periodo=?", (periodo,))
 
+        # Preserve BPM and monto_base already saved by editors
+        existentes = {
+            r["empleado_id"]: dict(r)
+            for r in conn.execute(
+                "SELECT empleado_id, bpm, monto_base FROM premios_evaluacion WHERE periodo=?",
+                (periodo,)
+            ).fetchall()
+        }
+
         generados = 0
         for emp in empleados:
             eid = emp["id"]
+            ev_existente = existentes.get(eid, {})
+            bpm_actual = ev_existente.get("bpm") or ""
+            monto_actual = ev_existente.get("monto_base") or params["monto_base"]
             datos = _acumular_periodo(conn, eid, periodo)
-            desglose = _calcular({**datos, "bpm": "OK", "desempenio": None, "monto_base": params["monto_base"]}, params)
+            desglose = _calcular({**datos, "bpm": bpm_actual, "desempenio": None, "monto_base": monto_actual}, params)
 
             conn.execute("""
                 INSERT INTO premios_evaluacion
@@ -335,7 +350,6 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
                     dias_enfermo=excluded.dias_enfermo,
                     dias_suspension=excluded.dias_suspension,
                     dias_ausente=excluded.dias_ausente,
-                    monto_base=excluded.monto_base,
                     desglose_json=excluded.desglose_json,
                     valor_calculado=excluded.valor_calculado,
                     valor_final=excluded.valor_final,
@@ -344,7 +358,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
                 eid, periodo,
                 datos["minutos_retardo"], datos["no_fichadas"], datos["dias_vacacion"],
                 datos["dias_enfermo"], datos["dias_suspension"], datos["dias_ausente"],
-                "", params["monto_base"],
+                bpm_actual, monto_actual,
                 json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"]
             ))
             generados += 1
@@ -367,6 +381,12 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             ev["desempenio"] = data.desempenio
         if data.monto_base is not None:
             ev["monto_base"] = data.monto_base
+        if data.tolerar_nf is not None:
+            ev["tolerar_nf"] = int(data.tolerar_nf)
+        if data.tolerar_e is not None:
+            ev["tolerar_e"] = int(data.tolerar_e)
+        if data.anular_premio is not None:
+            ev["anular_premio"] = int(data.anular_premio)
 
         params = _get_params(conn)
         desglose = _calcular(ev, params)
@@ -374,11 +394,13 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         conn.execute("""
             UPDATE premios_evaluacion SET
                 bpm=?, desempenio=?, monto_base=?,
+                tolerar_nf=?, tolerar_e=?, anular_premio=?,
                 desglose_json=?, valor_calculado=?, valor_final=?,
                 modificado_en=datetime('now','localtime')
             WHERE id=?
         """, (
             ev["bpm"], ev["desempenio"], ev["monto_base"],
+            ev.get("tolerar_nf", 0), ev.get("tolerar_e", 0), ev.get("anular_premio", 0),
             json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
             ev_id
         ))

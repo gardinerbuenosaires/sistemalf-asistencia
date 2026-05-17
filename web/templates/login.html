@@ -28,7 +28,7 @@
   <div class="logo">
     <img src="/static/img/logo_icono.svg" alt="Sistemalf">
     <h1>Sistema de Fichaje</h1>
-    <p>Gardiner Buenos Aires</p>
+    <p id="nombre-empresa"></p>
   </div>
   <div class="error" id="error"></div>
   <div class="form-group">
@@ -70,6 +70,11 @@ function showError(msg) {
   el.textContent = msg;
   el.style.display = "block";
 }
+
+fetch("/api/config/nombre-empresa").then(r => r.json()).then(d => {
+  const el = document.getElementById("nombre-empresa");
+  if (el && d.nombre) el.textContent = d.nombre;
+}).catch(() => {});
 </script>
 </body>
 </html>

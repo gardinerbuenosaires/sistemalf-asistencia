@@ -392,8 +392,7 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                     es_hoy      = (fecha == date.today())
                     b1_ni       = es_hoy and ahora < _dt(fecha, bloques[0]["hora_entrada"])
                     b2_ni       = (len(bloques) > 1 and es_hoy
-                                   and ahora < _dt(fecha, bloques[1]["hora_entrada"],
-                                                   dia_sig=bool(bloques[1]["cruza_medianoche"])))
+                                   and ahora < _dt(fecha, bloques[1]["hora_entrada"]))
 
                     if b1_ni:
                         estado, b1r, b2r = "no_iniciado", {}, {}

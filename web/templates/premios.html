@@ -92,6 +92,16 @@
   .firma-cell, .th-firma { display: none; }
   .firma-linea { display: inline-block; width: 130px; border-bottom: 1px solid #ccc; }
 
+  /* Determinantes de premio */
+  .det-col { width: 26px; text-align: center; padding: 2px 4px; }
+  .det-col input[type=checkbox] { cursor: pointer; width: 14px; height: 14px; margin: 0; }
+  .det-tol { display: inline-block; font-size: .62rem; color: #27ae60;
+             background: #e9f7ef; border: 1px solid #a9dfbf;
+             border-radius: 3px; padding: 0 3px; margin-left: 3px; vertical-align: middle; }
+  .det-inline { margin-left: 5px; cursor: pointer; vertical-align: middle; width: 13px; height: 13px; }
+  .falta-bpm { color: #e67e22; font-size: .75rem; font-style: italic; }
+  .print-only { display: none; }
+
   #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 12px 20px; border-radius: 8px; display: none; z-index: 100; }
   .empty-state { padding: 40px; text-align: center; color: #aaa; }
 
@@ -108,8 +118,13 @@
     .field-bpm select { border: none; background: transparent; -webkit-appearance: none; appearance: none; font-size: .7rem; }
     .field-desempenio textarea { border: none; background: transparent; resize: none; font-size: .7rem; overflow: hidden; min-height: 0; }
     .firma-cell, .th-firma { display: table-cell !important; min-width: 120px; }
+    .det-col, .th-det { display: none !important; }
+    .screen-only { display: none !important; }
+    .print-only { display: inline !important; }
     .firma-linea { border-bottom: 1px solid #333; width: 110px; display: inline-block; }
     .grupo-header td { padding: 5px 8px !important; }
+    tbody td { border-bottom: 1px solid #aaa !important; }
+    .print-only { display: block !important; }
   }
 </style>
 </head>
@@ -153,8 +168,6 @@
     <h1>Evaluación de Premios</h1>
     <label style="font-size:.85rem;color:#666">Período</label>
     <input type="month" id="periodo-sel">
-    <button class="btn btn-secondary" onclick="cargar()">Ver</button>
-    <button class="btn btn-primary" data-perm="premios:editar" onclick="generarPeriodo()">Generar / Actualizar período</button>
     <button class="btn btn-secondary" onclick="window.print()" title="Imprime el turno activo en oficio horizontal">Imprimir / PDF</button>
   </div>
 
@@ -176,6 +189,8 @@
     <button class="tab-btn" onclick="switchTab('_sin_turno')" id="tab-_sin_turno" style="display:none">Sin turno<span class="cnt" id="cnt-tab-_sin_turno">0</span></button>
   </div>
 
+  <div id="print-titulo" class="print-only" style="font-size:1.1rem;font-weight:bold;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #333;"></div>
+
   <div class="section">
     <table>
       <thead>
@@ -183,20 +198,21 @@
           <th style="width:24px"></th>
           <th>Empleado</th>
           <th>Premio</th>
+          <th class="det-col th-det" title="Anular premio para este período"><span style="color:#e74c3c;font-weight:bold">✕</span></th>
           <th>Desempeño</th>
           <th>BPM</th>
           <th>Puntualidad</th>
           <th>Retardo</th>
-          <th>NF</th>
+          <th title="No fichadas / ignorar NF">NF <span style="color:#e74c3c;font-size:.7em">✕</span></th>
           <th>V</th>
-          <th>E</th>
+          <th title="Enfermedad / ignorar E">E <span style="color:#e74c3c;font-size:.7em">✕</span></th>
           <th>S</th>
           <th>A</th>
           <th class="th-firma">Firma</th>
         </tr>
       </thead>
       <tbody id="tbody-premios">
-        <tr><td colspan="13"><div class="empty-state">Seleccioná un período y presioná "Ver".</div></td></tr>
+        <tr><td colspan="14"><div class="empty-state">Sin datos para este período.</div></td></tr>
       </tbody>
     </table>
   </div>
@@ -207,6 +223,7 @@
 <script>
 let _perms = new Set();
 let _evaluaciones = [];
+let _nombreEmpresa = "";
 
 async function _loadPerms() {
   try {
@@ -251,7 +268,8 @@ function _fmtPesos(v) {
 function _badgePuntualidad(status) {
   if (!status) return "—";
   const cls = status === "PERFECTA" || status === "OK" ? "badge-ok"
-            : status === "PARCIAL" ? "badge-parcial" : "badge-pierde";
+            : status === "PARCIAL" ? "badge-parcial"
+            : status === "NO CUMPLE" ? "badge-pierde" : "badge-pierde";
   return `<span class="badge ${cls}">${status}</span>`;
 }
 
@@ -292,12 +310,23 @@ function switchTab(grupo) {
   _mostrarTab();
 }
 
+function _fmtPeriodo(periodo) {
+  if (!periodo) return "";
+  const [y, m] = periodo.split("-");
+  const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  return `${meses[parseInt(m,10)-1]} ${y}`;
+}
+
 function _mostrarTab() {
   const editar = canDo("premios", "editar");
   const tbody = document.getElementById("tbody-premios");
+  const periodo = document.getElementById("periodo-sel").value;
+  const tituloEl = document.getElementById("print-titulo");
+  const prefijo = _nombreEmpresa ? `${_nombreEmpresa} — ` : "";
+  if (tituloEl) tituloEl.textContent = `${prefijo}Premios ${_GRUPO_LABEL[_tabActiva] || _tabActiva} — ${_fmtPeriodo(periodo)}`;
   const data = _grupos[_tabActiva] || [];
   if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state">Sin empleados en este turno para el período.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="14"><div class="empty-state">Sin empleados en este turno para el período.</div></td></tr>`;
     _recalcularCards();
     return;
   }
@@ -308,17 +337,39 @@ function _mostrarTab() {
 function _filaHtml(ev, editar) {
   const d = ev.desglose || {};
   const vf = ev.valor_final ?? 0;
-  const clsValor = vf === 0 ? "valor-cero" : "valor-final";
+  const vfPantalla = ev.anular_premio ? 0 : vf;
+  const clsValor = vfPantalla === 0 ? "valor-cero" : "valor-final";
+  const sinBpm = !ev.bpm;
   const bpmBadge = ev.bpm === "NO CONFORME"
     ? `<span class="badge badge-bpm-nc">NO CONFORME</span>`
     : ev.bpm === "OK"
     ? `<span class="badge badge-bpm-ok">OK</span>`
+    : ev.bpm === "NO APLICA"
+    ? `<span class="badge" style="background:#6c757d;color:white">NO APLICA</span>`
     : `<span style="color:#aaa">—</span>`;
   const bpmSelect = `<select onchange="guardarFila(${ev.id})">
     <option value=""${!ev.bpm ? " selected" : ""}>— evaluar —</option>
     <option value="OK"${ev.bpm === "OK" ? " selected" : ""}>OK</option>
+    <option value="NO APLICA"${ev.bpm === "NO APLICA" ? " selected" : ""}>NO APLICA</option>
     <option value="NO CONFORME"${ev.bpm === "NO CONFORME" ? " selected" : ""}>NO CONFORME</option>
   </select>`;
+  const chkAnula = editar
+    ? `<input type="checkbox" class="det-chk" title="Anular premio para este período"
+         ${ev.anular_premio ? 'checked' : ''}
+         onchange="guardarDeterminante(${ev.id}, 'anular_premio', this.checked)">`
+    : '';
+  const chkTolNF = editar
+    ? `<input type="checkbox" class="det-inline" title="Ignorar NF en el cálculo de este período"
+         ${ev.tolerar_nf ? 'checked' : ''}
+         onchange="guardarDeterminante(${ev.id}, 'tolerar_nf', this.checked)">`
+    : '';
+  const chkTolE = editar
+    ? `<input type="checkbox" class="det-inline" title="Ignorar E en el cálculo de este período"
+         ${ev.tolerar_e ? 'checked' : ''}
+         onchange="guardarDeterminante(${ev.id}, 'tolerar_e', this.checked)">`
+    : '';
+  const tolNFbadge = ev.tolerar_nf ? '<span class="det-tol">tol</span>' : '';
+  const tolEbadge  = ev.tolerar_e  ? '<span class="det-tol">tol</span>' : '';
   return `<tr data-id="${ev.id}">
     <td><button class="btn-expand" onclick="toggleDesglose(${ev.id})" title="Ver desglose">▶</button></td>
     <td>
@@ -326,7 +377,11 @@ function _filaHtml(ev, editar) {
       <div style="font-size:.72rem;color:#aaa">${ev.cargo||''}</div>
       ${_renderDesglose(d)}
     </td>
-    <td class="${clsValor}">${_fmtPesos(vf)}</td>
+    <td class="${sinBpm ? '' : (ev.anular_premio ? 'valor-cero' : clsValor)}">
+      <span class="screen-only">${sinBpm ? '<span class="falta-bpm">Falta BPM</span>' : _fmtPesos(vfPantalla)}</span>
+      <span class="print-only">${_fmtPesos(vf)}</span>
+    </td>
+    <td class="det-col">${chkAnula}</td>
     <td class="field-desempenio" style="min-width:160px">
       ${editar
         ? `<textarea onchange="guardarFila(${ev.id})">${ev.desempenio||""}</textarea>`
@@ -335,9 +390,9 @@ function _filaHtml(ev, editar) {
     <td class="field-bpm">${editar ? bpmSelect : bpmBadge}</td>
     <td class="cell-puntualidad">${_badgePuntualidad(d.puntualidad_status)}</td>
     <td>${_fmtMin(ev.minutos_retardo)}</td>
-    <td>${ev.no_fichadas}</td>
+    <td>${ev.no_fichadas}${tolNFbadge}${chkTolNF}</td>
     <td>${ev.dias_vacacion}</td>
-    <td>${ev.dias_enfermo}</td>
+    <td>${ev.dias_enfermo}${tolEbadge}${chkTolE}</td>
     <td>${ev.dias_suspension}</td>
     <td>${ev.dias_ausente}</td>
     <td class="firma-cell"><span class="firma-linea"></span></td>
@@ -351,7 +406,7 @@ function _renderTabla(data) {
     _grupos = {};
     document.getElementById("tabs-turnos").style.display = "none";
     document.getElementById("tbody-premios").innerHTML =
-      `<tr><td colspan="13"><div class="empty-state">Sin datos para este período. Usá "Generar / Actualizar período".</div></td></tr>`;
+      `<tr><td colspan="14"><div class="empty-state">Sin datos para este período.</div></td></tr>`;
     _recalcularCards();
     return;
   }
@@ -385,11 +440,41 @@ function _renderTabla(data) {
   _mostrarTab();
 }
 
+function _sincGrupos(idx) {
+  const ev = _evaluaciones[idx];
+  const g = ev.grupo || "_sin_turno";
+  if (_grupos[g]) {
+    const gi = _grupos[g].findIndex(e => e.id === ev.id);
+    if (gi !== -1) _grupos[g][gi] = ev;
+  }
+}
+
 function toggleDesglose(id) {
   const row = document.querySelector(`tr[data-id="${id}"]`);
   const btn = row.querySelector(".btn-expand");
   row.classList.toggle("expandido");
   btn.textContent = row.classList.contains("expandido") ? "▼" : "▶";
+}
+
+async function guardarDeterminante(id, campo, valor) {
+  const res = await fetch(`/api/premios/evaluacion/${id}`, {
+    method: "PUT", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ [campo]: valor })
+  });
+  if (res.ok) {
+    const ev = await res.json();
+    const idx = _evaluaciones.findIndex(e => e.id === id);
+    if (idx !== -1) {
+      _evaluaciones[idx] = {..._evaluaciones[idx], ...ev,
+        tolerar_nf: ev.tolerar_nf, tolerar_e: ev.tolerar_e, anular_premio: ev.anular_premio};
+      _sincGrupos(idx);
+      const row = document.querySelector(`tr[data-id="${id}"]`);
+      if (row) row.outerHTML = _filaHtml(_evaluaciones[idx], canDo("premios","editar"));
+    }
+    _recalcularCards();
+  } else {
+    toast("Error al guardar determinante");
+  }
 }
 
 async function guardarFila(id) {
@@ -406,23 +491,23 @@ async function guardarFila(id) {
   });
   if (res.ok) {
     const ev = await res.json();
-    // Actualizar celda de valor final
-    const clsValor = ev.valor_final === 0 ? "valor-cero" : "valor-final";
-    const celdaValor = row.querySelector(".valor-final, .valor-cero");
-    if (celdaValor) { celdaValor.className = clsValor; celdaValor.textContent = _fmtPesos(ev.valor_final); }
-    // Actualizar desglose y puntualidad
-    const desgloseEl = row.querySelector(".desglose");
-    if (desgloseEl) desgloseEl.outerHTML = _renderDesglose(ev.desglose);
-    const celdaPunt = row.querySelector(".cell-puntualidad");
-    if (celdaPunt) celdaPunt.innerHTML = _badgePuntualidad((ev.desglose||{}).puntualidad_status);
-    // Actualizar en memoria y recalcular cards
+    // Actualizar en memoria y re-renderizar fila completa (respeta sinBpm, NO APLICA, etc.)
     const idx = _evaluaciones.findIndex(e => e.id === id);
-    if (idx !== -1) _evaluaciones[idx] = {..._evaluaciones[idx], ...ev};
+    if (idx !== -1) {
+      _evaluaciones[idx] = {..._evaluaciones[idx], ...ev};
+      _sincGrupos(idx);
+      const newRow = document.createElement("tbody");
+      newRow.innerHTML = _filaHtml(_evaluaciones[idx], canDo("premios", "editar"));
+      row.outerHTML = newRow.querySelector("tr").outerHTML;
+    }
     _recalcularCards();
     // Feedback visual breve en la fila
-    row.style.transition = "background .15s";
-    row.style.background = "#f0fdf4";
-    setTimeout(() => { row.style.background = ""; }, 700);
+    const updatedRow = document.querySelector(`tr[data-id="${id}"]`);
+    if (updatedRow) {
+      updatedRow.style.transition = "background .15s";
+      updatedRow.style.background = "#f0fdf4";
+      setTimeout(() => { updatedRow.style.background = ""; }, 700);
+    }
   } else {
     const e = await res.json().catch(()=>({}));
     toast("Error: " + (e.detail || "desconocido"));
@@ -433,7 +518,7 @@ function _recalcularCards() {
   const data = _grupos[_tabActiva] || [];
   let total = 0, completo = 0, descuento = 0, cero = 0;
   data.forEach(ev => {
-    const vf = ev.valor_final ?? 0;
+    const vf = (ev.anular_premio || !ev.bpm) ? 0 : (ev.valor_final ?? 0);
     total += vf;
     if (vf === 0) cero++;
     else if (vf < ev.monto_base) descuento++;
@@ -486,7 +571,7 @@ async function cargar(spinner = true) {
   const periodo = document.getElementById("periodo-sel").value;
   if (!periodo) { toast("Seleccioná un período"); return; }
   if (spinner) document.getElementById("tbody-premios").innerHTML =
-    `<tr><td colspan="13"><div class="empty-state">Cargando...</div></td></tr>`;
+    `<tr><td colspan="14"><div class="empty-state">Cargando...</div></td></tr>`;
   const [res] = await Promise.all([
     fetch(`/api/premios/${periodo}`),
     cargarDiagnostico(),
@@ -518,13 +603,37 @@ async function generarPeriodo() {
 }
 
 // Init
-_loadPerms().then(() => {
-  // Período por defecto: mes anterior (para evaluar el período que se paga)
+_loadPerms().then(async () => {
+  // Leer nombre empresa y día de corte
+  let diaCorte = 10;
+  try {
+    const [params, cfgNombre] = await Promise.all([
+      fetch('/api/premios/parametros').then(r => r.json()),
+      fetch('/api/config/nombre-empresa').then(r => r.json()).catch(() => ({}))
+    ]);
+    const p = params.find(p => p.clave === 'dia_corte_mes_anterior');
+    if (p) diaCorte = parseInt(p.valor) || 10;
+    if (cfgNombre.nombre) _nombreEmpresa = cfgNombre.nombre;
+  } catch(e) {}
+
+  // Período por defecto: mes anterior hasta el día de corte, luego mes actual
   const hoy = new Date();
-  const mesAnterior = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
-  const periodo = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth()+1).padStart(2,'0')}`;
+  const ref = hoy.getDate() <= diaCorte
+    ? new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+    : new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const periodo = `${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,'0')}`;
   document.getElementById("periodo-sel").value = periodo;
-  cargar();
+
+  document.getElementById("periodo-sel").addEventListener("change", () => {
+    if (canDo("premios", "editar")) generarPeriodo();
+    else cargar();
+  });
+
+  if (canDo("premios", "editar")) {
+    await generarPeriodo();
+  } else {
+    await cargar();
+  }
 });
 </script>
 </body>

@@ -24,6 +24,7 @@ from api.fichajes import router as fichajes_router
 from api.catalogos import router as catalogos_router
 from api.premios import router as premios_router
 from api.vacaciones import router as vacaciones_router
+from api.francos import router as francos_router
 from api.periodos_cerrados import router as periodos_cerrados_router
 from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user
 
@@ -66,6 +67,7 @@ app.include_router(fichajes_router)
 app.include_router(catalogos_router)
 app.include_router(premios_router)
 app.include_router(vacaciones_router)
+app.include_router(francos_router)
 app.include_router(periodos_cerrados_router)
 
 
@@ -272,6 +274,14 @@ def get_logo():
     return {"url": row["valor"] if row else None}
 
 
+@app.get("/api/config/nombre-empresa", tags=["configuracion"])
+def get_nombre_empresa():
+    from db.database import db_session
+    with db_session() as conn:
+        row = conn.execute("SELECT valor FROM configuracion WHERE clave='nombre_empresa'").fetchone()
+    return {"nombre": row["valor"] if row else ""}
+
+
 @app.post("/api/dispositivo/sincronizar-hora", tags=["dispositivo"])
 def sincronizar_hora_dispositivo(_user=Depends(require_permiso("usuarios", "editar"))):
     from sync.downloader import sync_time
@@ -306,7 +316,7 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
                JOIN empleados e ON e.id = p.empleado_id
                LEFT JOIN cargos c ON c.id = e.cargo_id
                WHERE p.fecha = ? AND p.es_franco = 0 AND p.horario_id IS NOT NULL
-               AND e.activo = 1""",
+               AND e.activo = 1 AND e.tipo != 'jerarquico'""",
             (hoy,)
         ).fetchall()
 

@@ -491,6 +491,7 @@ def _migrate(conn):
             ('device_port',     '4370',          'Puerto TCP del lector de huellas ZKTeco'),
             ('device_password', '0',             'Contraseña del lector de huellas ZKTeco (0 = sin contraseña)'),
             ('device_timeout',  '10',            'Tiempo de espera de conexión al dispositivo (segundos)'),
+            ('nombre_empresa',  '',              'Nombre del restaurante o empresa (aparece en login y reportes'),
         ]
     )
 
@@ -614,6 +615,13 @@ def _migrate(conn):
             UNIQUE(empleado_id, mes)
         )
     """)
+
+    # Determinantes de premios (tolerar_nf, tolerar_e, anular_premio)
+    cols_pe = {r[1] for r in conn.execute("PRAGMA table_info(premios_evaluacion)").fetchall()}
+    for col in ("tolerar_nf", "tolerar_e", "anular_premio"):
+        if col not in cols_pe:
+            conn.execute(f"ALTER TABLE premios_evaluacion ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+            logger.info("Migración: columna %s agregada a premios_evaluacion", col)
 
     # Tabla periodos_cerrados
     conn.execute("""
@@ -785,10 +793,14 @@ def _migrate(conn):
             defaults
         )
         logger.info("Migración: parámetros de premios inicializados con valores por defecto")
-    conn.execute(
+    conn.executemany(
         "INSERT OR IGNORE INTO premios_parametros (clave, valor, tipo, descripcion) VALUES (?,?,?,?)",
-        ("dias_minimos_antiguedad", "90", "entero",
-         "Días de antigüedad mínima al 1° del mes para aplicar al premio")
+        [
+            ("dias_minimos_antiguedad", "90", "entero",
+             "Días de antigüedad mínima al 1° del mes para aplicar al premio"),
+            ("dia_corte_mes_anterior", "10", "entero",
+             "Hasta qué día del mes se muestra el mes anterior por defecto en premios (1-28)"),
+        ]
     )
 
     # Saldo inicial de vacaciones (carga única al arrancar el sistema)

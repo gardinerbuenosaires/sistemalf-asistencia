@@ -304,6 +304,18 @@ tr[draggable="true"]:active { cursor: grabbing; }
   padding: 6px 10px; background: #f8f9fa;
   border: 1px solid #dee2e6; border-radius: 5px; min-height: 28px;
 }
+.modal-sf { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4);
+            z-index: 1000; align-items: center; justify-content: center; }
+.modal-sf.open { display: flex; }
+.modal-sf-box { background: white; border-radius: 10px; padding: 24px;
+                max-width: 620px; width: 97%; max-height: 88vh;
+                display: flex; flex-direction: column;
+                box-shadow: 0 8px 32px rgba(0,0,0,.2); }
+.modal-sf-box table th { font-size: .8rem; font-weight: 600; }
+.modal-sf-box td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; font-size: .83rem; }
+.modal-sf-box tr.row-ok td { background: #f0fff4; }
+.modal-sf-box input[type=number] { width: 80px; padding: 3px 6px;
+  border: 1px solid #ced4da; border-radius: 4px; text-align: center; font-size: .82rem; }
 </style>
 </head>
 <body>
@@ -359,10 +371,44 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <button class="btn-orden" data-perm="calendarios:editar" onclick="importarFeriados()" title="Importar feriados desde argentinadatos.com">
     Importar feriados
   </button>
+  <button class="btn-orden" data-perm="asistencia:carga_inicial" onclick="abrirSaldoFrancos()"
+          style="background:#856404;color:white;border-color:#856404">Saldo inicial francos</button>
   <button class="btn-orden btn-cerrar" id="btn-cerrar-periodo" style="display:none" onclick="toggleCerrarPeriodo()">
     Cerrar período
   </button>
   <span id="loading-msg" style="font-size:.85rem;color:#888"></span>
+</div>
+
+<div class="modal-sf" id="modal-sf" onclick="if(event.target===this)cerrarSaldoFrancos()">
+  <div class="modal-sf-box">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-shrink:0">
+      <h3 style="margin:0;font-size:1rem">Saldo inicial francos</h3>
+      <label style="font-size:.82rem;color:#555;display:flex;align-items:center;gap:6px">
+        Mes de referencia
+        <input type="month" id="sf-mes" onchange="cargarSaldoFrancos()" style="padding:3px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.82rem">
+      </label>
+      <button class="btn-sm" style="background:#e9ecef;color:#333;margin-left:4px" onclick="cargarSaldoFrancos()">↻</button>
+      <button class="btn-sm" style="background:#e9ecef;color:#333;margin-left:auto" onclick="cerrarSaldoFrancos()">✕</button>
+    </div>
+    <p style="font-size:.78rem;color:#666;margin-bottom:10px;flex-shrink:0">
+      Ingresá el saldo de francos acumulado al cierre del mes seleccionado.
+      Positivo = francos que la empresa le debe al empleado. Negativo = el empleado debe francos.
+      Filas en verde ya tienen datos guardados.
+    </p>
+    <div style="overflow:auto;flex:1">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;position:sticky;top:0;z-index:1">Empleado</th>
+            <th style="padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;position:sticky;top:0;z-index:1">Cargo</th>
+            <th style="padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;position:sticky;top:0;z-index:1" title="Positivo: debe la empresa. Negativo: debe el empleado.">Saldo</th>
+            <th style="padding:8px 10px;background:#f8f9fa;border-bottom:2px solid #dee2e6;position:sticky;top:0;z-index:1"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody-sf"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <div id="banner-cerrado"></div>
@@ -1533,7 +1579,75 @@ document.addEventListener('contextmenu', e => {
 
 document.addEventListener('click',  () => document.getElementById('ctx-menu').style.display = 'none');
 document.addEventListener('scroll', () => document.getElementById('ctx-menu').style.display = 'none', true);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('ctx-menu').style.display = 'none'; });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('ctx-menu').style.display = 'none';
+    cerrarSaldoFrancos();
+  }
+});
+
+// ── Saldo inicial francos ──────────────────────────────────────────────────────
+let _sfData = [];
+
+function abrirSaldoFrancos() {
+  const el = document.getElementById('sf-mes');
+  if (!el.value) {
+    const hoy = new Date();
+    hoy.setMonth(hoy.getMonth() - 1);
+    el.value = hoy.toISOString().slice(0, 7);
+  }
+  document.getElementById('modal-sf').classList.add('open');
+  cargarSaldoFrancos();
+}
+
+function cerrarSaldoFrancos() {
+  document.getElementById('modal-sf').classList.remove('open');
+}
+
+async function cargarSaldoFrancos() {
+  const mes = document.getElementById('sf-mes').value;
+  if (!mes) { toast('Seleccioná un mes'); return; }
+  const r = await fetch(`/api/francos/saldo-inicial?mes=${mes}`);
+  if (!r.ok) { toast('Error al cargar'); return; }
+  _sfData = await r.json();
+  renderSaldoFrancos();
+}
+
+function renderSaldoFrancos() {
+  document.getElementById('tbody-sf').innerHTML = _sfData.map((e, i) => `
+    <tr class="${e.tiene_saldo ? 'row-ok' : ''}">
+      <td style="background:inherit">${e.apellido}, ${e.nombre}</td>
+      <td>${e.cargo || '—'}</td>
+      <td>
+        <input type="number" step="0.5" id="sf-saldo-${i}"
+               value="${e.saldo !== null && e.saldo !== undefined ? e.saldo : ''}">
+      </td>
+      <td>
+        <button class="btn-sm" style="background:#2c3e50;color:white" onclick="guardarSaldoFrancos(${i})">Guardar</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function guardarSaldoFrancos(i) {
+  const mes   = document.getElementById('sf-mes').value;
+  const val   = document.getElementById(`sf-saldo-${i}`).value;
+  const saldo = parseFloat(val);
+  if (val === '' || isNaN(saldo)) { toast('Valor inválido'); return; }
+  const e = _sfData[i];
+  const r = await fetch('/api/francos/saldo-inicial', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ empleado_id: e.empleado_id, mes, saldo })
+  });
+  if (r.ok) {
+    _sfData[i] = { ...e, saldo, tiene_saldo: true };
+    renderSaldoFrancos();
+    toast('Guardado');
+  } else {
+    toast('Error al guardar');
+  }
+}
 </script>
 
 <div id="ctx-menu">

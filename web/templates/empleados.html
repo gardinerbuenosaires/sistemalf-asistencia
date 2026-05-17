@@ -201,7 +201,7 @@
           <label>Cargo</label>
           <select id="f-cargo-filtro" onchange="filtrar()">
             <option value="">Todos</option>
-            <option value="__vacio__">— Sin cargo —</option>
+            <option value="__vacio__">— Sin cargo asignado —</option>
           </select>
         </div>
         <div class="fg">
@@ -223,6 +223,7 @@
           <select id="f-datos-filtro" onchange="filtrar()">
             <option value="">Todos</option>
             <option value="pendiente">Sin completar</option>
+            <option value="sin_dispositivo">Sin dispositivo</option>
           </select>
         </div>
         <div class="filtros-footer">
@@ -366,7 +367,8 @@ function filtrar() {
   if (filtroImportadosIds) base = base.filter(e => filtroImportadosIds.has(e.id));
   if (estado === "activo")        base = base.filter(e => e.activo);
   if (estado === "inactivo")      base = base.filter(e => !e.activo);
-  if (datos === "pendiente")      base = base.filter(e => e.user_id && !e.fecha_ingreso);
+  if (datos === "pendiente")       base = base.filter(e => e.user_id && !e.fecha_ingreso);
+  if (datos === "sin_dispositivo") base = base.filter(e => e.en_dispositivo === 0);
   if (tipo)                       base = base.filter(e => (e.tipo || "normal") === tipo);
   if (cargo === "__vacio__")      base = base.filter(e => !e.cargo_id);
   else if (cargo)                 base = base.filter(e => e.cargo_id === parseInt(cargo));
@@ -1226,7 +1228,7 @@ async function init() {
     const p = params.find(x => x.clave === "dias_minimos_antiguedad");
     if (p) _diasMinAntiguedad = parseInt(p.valor) || 90;
   }
-  _poblarSelectCatalogo("f-cargo-filtro", cargosOpts, "Todo cargo", "— Sin cargo —");
+  _poblarSelectCatalogo("f-cargo-filtro", cargosOpts, "Todo cargo", "— Sin cargo asignado —");
   _poblarSelectCatalogo("f-depto-filtro", deptosOpts, "Todo depto.", "— Sin depto. —");
   _poblarSelectCatalogo("f-categoria-filtro", categoriasOpts, "Todas", "— Sin categ. —");
 }

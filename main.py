@@ -306,6 +306,7 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
 
     ahora  = datetime.now()
     hoy    = str(ahora.date())
+    ayer   = str((ahora - timedelta(days=1)).date())
     manana = str((ahora + timedelta(days=1)).date())
 
     with db_session() as conn:
@@ -351,11 +352,11 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
             """SELECT f.empleado_id, f.timestamp,
                       e.user_id, e.nombre, e.apellido, c.nombre AS cargo
                FROM fichajes f
-               JOIN empleados e ON e.id = f.empleado_id
+               JOIN empleados e ON e.id = f.empleado_id AND e.activo = 1
                LEFT JOIN cargos c ON c.id = e.cargo_id
-               WHERE date(f.timestamp) IN (?,?)
+               WHERE date(f.timestamp) IN (?,?,?)
                ORDER BY f.empleado_id, f.timestamp""",
-            (hoy, manana)
+            (ayer, hoy, manana)
         ).fetchall()
 
     fich_map: dict = defaultdict(list)
@@ -376,10 +377,12 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
         if not bloques:
             continue
 
-        fichajes_emp = [f for f in fich_map[eid] if f["timestamp"][:10] in (hoy, manana)]
+        fichajes_emp = [f for f in fich_map[eid] if f["timestamp"][:10] in (ayer, hoy, manana)]
         slots = _clasificar_fichajes(fichajes_emp, bloques, fecha)
 
         for b in bloques:
+            if not b.get("aplica", 1):
+                continue  # bloque MT: no aplica, ignorar
             bn        = b["bloque"]
             f_entrada = slots.get(f"b{bn}_entrada")
             f_salida  = slots.get(f"b{bn}_salida")
@@ -387,6 +390,9 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
             t_entrada = _dt(fecha, b["hora_entrada"])
             cruza     = bool(b["cruza_medianoche"])
             t_salida  = _dt(fecha, b["hora_salida"], dia_sig=cruza)
+            # Compensar cruza_medianoche no seteado: si salida < entrada, sumar un día
+            if t_salida <= t_entrada:
+                t_salida += timedelta(days=1)
 
             if not f_entrada:
                 tol_entrada = timedelta(minutes=b.get("tolerancia_entrada_despues", 60))
@@ -435,7 +441,13 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
     for fila in francos_hoy:
         eid = fila["empleado_id"]
         fichajes_hoy_f = [f for f in fich_map.get(eid, []) if f["timestamp"][:10] == hoy]
-        if not fichajes_hoy_f or len(fichajes_hoy_f) % 2 == 0:
+        if not fichajes_hoy_f:
+            continue
+        # Salida de turno noche que cruza medianoche: todos los fichajes de hoy son antes de las
+        # 06:00 y hay al menos una entrada ayer después de las 17:00 → par completo, ignorar.
+        fichajes_ayer_f = [f for f in fich_map.get(eid, []) if f["timestamp"][:10] == ayer]
+        if (all(f["timestamp"][11:16] < "06:00" for f in fichajes_hoy_f)
+                and any(f["timestamp"][11:16] >= "17:00" for f in fichajes_ayer_f)):
             continue
         ultimo_dt = datetime.strptime(fichajes_hoy_f[-1]["timestamp"], "%Y-%m-%d %H:%M:%S")
         entrada = {
@@ -459,7 +471,12 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
         if eid in eids_con_plan or eid in eids_con_franco:
             continue
         fichajes_hoy_s = [f for f in fichajes if f["timestamp"][:10] == hoy]
-        if not fichajes_hoy_s or len(fichajes_hoy_s) % 2 == 0:
+        if not fichajes_hoy_s:
+            continue
+        # Salida de turno noche que cruza medianoche: mismo criterio que en la sección franco
+        fichajes_ayer_s = [f for f in fichajes if f["timestamp"][:10] == ayer]
+        if (all(f["timestamp"][11:16] < "06:00" for f in fichajes_hoy_s)
+                and any(f["timestamp"][11:16] >= "17:00" for f in fichajes_ayer_s)):
             continue
         ultimo = fichajes_hoy_s[-1]
         if ultimo["user_id"] in vistos:

@@ -20,6 +20,7 @@ _fecha_ultimo_reset = None
 _fecha_ultima_generacion: str | None = None
 _mes_ultimo_sync_feriados: str | None = None
 _fecha_ultimo_sync_hora: str | None = None
+_mes_ultimo_cierre_auto: str | None = None
 
 
 def _run_sync():
@@ -161,6 +162,44 @@ def _sincronizar_hora_auto():
         logger.error("Error en sync automático de hora: %s", e)
 
 
+def _cerrar_periodo_auto():
+    """
+    Cierra automáticamente el período del mes anterior el día 6 de cada mes a la madrugada.
+    Los sueldos se pagan el 5, por lo que a partir del 6 no deben hacerse correcciones libres.
+    """
+    global _mes_ultimo_cierre_auto
+    ahora = datetime.now()
+
+    if ahora.day != 6 or ahora.hour not in (1, 2):
+        return
+
+    mes_actual = ahora.strftime("%Y-%m")
+    if _mes_ultimo_cierre_auto == mes_actual:
+        return
+
+    # Mes a cerrar: el anterior al actual
+    primer_dia_mes = ahora.replace(day=1)
+    mes_anterior = primer_dia_mes - timedelta(days=1)
+    anio, mes = mes_anterior.year, mes_anterior.month
+
+    try:
+        from db.database import db_session
+        from api.periodos_cerrados import es_periodo_cerrado
+        with db_session() as conn:
+            if es_periodo_cerrado(conn, anio, mes):
+                logger.info("Cierre automático: período %d-%02d ya estaba cerrado", anio, mes)
+                _mes_ultimo_cierre_auto = mes_actual
+                return
+            conn.execute(
+                "INSERT INTO periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,NULL)",
+                (anio, mes)
+            )
+        _mes_ultimo_cierre_auto = mes_actual
+        logger.info("Cierre automático: período %d-%02d cerrado correctamente", anio, mes)
+    except Exception as e:
+        logger.error("Error en cierre automático de período: %s", e)
+
+
 def _get_sync_interval() -> int:
     """Lee el intervalo de sync de la DB; cae al valor de config.py si falla."""
     try:
@@ -192,6 +231,7 @@ def start_scheduler():
             _generar_planificacion_auto()
             _sync_feriados_auto()
             _sincronizar_hora_auto()
+            _cerrar_periodo_auto()
             time.sleep(3600)  # revisar cada hora; cada función ejecuta solo en su ventana horaria
 
     threading.Thread(target=sync_loop, daemon=True, name="sync-scheduler").start()

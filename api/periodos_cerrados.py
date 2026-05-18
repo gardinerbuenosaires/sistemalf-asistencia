@@ -55,7 +55,7 @@ class ReabrirIn(BaseModel):
 def listar(_user=Depends(require_permiso("periodos", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
-            "SELECT pc.*, u.nombre as cerrado_por_nombre "
+            "SELECT pc.*, COALESCE(u.nombre, 'Automático') as cerrado_por_nombre "
             "FROM periodos_cerrados pc "
             "LEFT JOIN usuarios u ON u.id = pc.cerrado_por "
             "ORDER BY pc.anio DESC, pc.mes DESC"
@@ -67,7 +67,7 @@ def listar(_user=Depends(require_permiso("periodos", "ver"))):
 def get_periodo(anio: int, mes: int, _user=Depends(require_permiso("periodos", "ver"))):
     with db_session() as conn:
         row = conn.execute(
-            "SELECT pc.*, u.nombre as cerrado_por_nombre "
+            "SELECT pc.*, COALESCE(u.nombre, 'Automático') as cerrado_por_nombre "
             "FROM periodos_cerrados pc "
             "LEFT JOIN usuarios u ON u.id = pc.cerrado_por "
             "WHERE pc.anio=? AND pc.mes=?",

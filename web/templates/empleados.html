@@ -368,7 +368,7 @@ function filtrar() {
   if (estado === "activo")        base = base.filter(e => e.activo);
   if (estado === "inactivo")      base = base.filter(e => !e.activo);
   if (datos === "pendiente")       base = base.filter(e => e.user_id && !e.fecha_ingreso);
-  if (datos === "sin_dispositivo") base = base.filter(e => e.en_dispositivo === 0);
+  if (datos === "sin_dispositivo") base = base.filter(e => e.en_dispositivo === 0 && e.user_id);
   if (tipo)                       base = base.filter(e => (e.tipo || "normal") === tipo);
   if (cargo === "__vacio__")      base = base.filter(e => !e.cargo_id);
   else if (cargo)                 base = base.filter(e => e.cargo_id === parseInt(cargo));
@@ -431,10 +431,11 @@ function renderLista(lista) {
     const badges = [];
     if (!e.activo)             badges.push('<span class="badge-inactivo">Inactivo</span>');
     if (sinDatos)              badges.push('<span class="badge-sindatos">Sin datos</span>');
-    if (e.en_dispositivo === 0) badges.push('<span class="badge-sindisp">SIN DISPOSITIVO</span>');
+    const sinDisp = e.en_dispositivo === 0 && e.user_id;
+    if (sinDisp) badges.push('<span class="badge-sindisp">SIN DISPOSITIVO</span>');
     const badgesHtml = badges.length ? " " + badges.join(" ") : "";
-    const avatarStyle = sinDatos ? 'style="background:#856404"' : e.en_dispositivo === 0 ? 'style="background:#e74c3c"' : "";
-    const extraCls = e.en_dispositivo === 0 ? " sin-dispositivo" : "";
+    const avatarStyle = sinDatos ? 'style="background:#856404"' : sinDisp ? 'style="background:#e74c3c"' : "";
+    const extraCls = sinDisp ? " sin-dispositivo" : "";
     return `
     <div class="emp-item${e.id === editandoId ? " activo" : ""}${extraCls}" id="emp-item-${e.id}" onclick="editarEmpleado(${e.id})">
       <div class="emp-avatar" ${avatarStyle}>${sinDatos ? "?" : iniciales(e.apellido, e.nombre)}</div>

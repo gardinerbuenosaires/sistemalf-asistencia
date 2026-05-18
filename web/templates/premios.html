@@ -168,7 +168,7 @@
     <h1>Evaluación de Premios</h1>
     <label style="font-size:.85rem;color:#666">Período</label>
     <input type="month" id="periodo-sel">
-    <button class="btn btn-secondary" onclick="window.print()" title="Imprime el turno activo en oficio horizontal">Imprimir / PDF</button>
+    <button class="btn btn-secondary" onclick="imprimirPremios()" title="Imprime el turno activo en oficio horizontal">Imprimir / PDF</button>
   </div>
 
   <div class="cards">
@@ -177,6 +177,11 @@
     <div class="card"><div class="lbl">Con descuento</div><div class="val" id="cnt-descuento" style="color:#e67e22">—</div></div>
     <div class="card"><div class="lbl">Sin premio</div><div class="val" id="cnt-cero" style="color:#c0392b">—</div></div>
     <div class="card"><div class="lbl">Total a pagar</div><div class="val" id="total-pagar" style="color:#2c3e50">—</div></div>
+  </div>
+
+  <div id="banner-periodo-abierto" style="display:none;background:#fff8e1;border:1px solid #f9a825;border-radius:8px;
+       padding:10px 16px;margin-bottom:16px;font-size:.88rem;color:#795500;align-items:center;gap:10px;flex-wrap:wrap">
+    ⚠ <b>El período no está cerrado en asistencia</b> — los valores pueden cambiar si se modifican novedades o fichajes.
   </div>
 
   <div id="diag-bar" style="background:white; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.08);
@@ -224,6 +229,7 @@
 let _perms = new Set();
 let _evaluaciones = [];
 let _nombreEmpresa = "";
+let _periodoAbierto = false;
 
 async function _loadPerms() {
   try {
@@ -380,6 +386,7 @@ function _filaHtml(ev, editar) {
     <td class="${sinBpm ? '' : (ev.anular_premio ? 'valor-cero' : clsValor)}">
       <span class="screen-only">${sinBpm ? '<span class="falta-bpm">Falta BPM</span>' : _fmtPesos(vfPantalla)}</span>
       <span class="print-only">${_fmtPesos(vf)}</span>
+      ${_periodoAbierto && !sinBpm ? '<div style="font-size:.65rem;color:#b8860b;font-style:italic;line-height:1.1;margin-top:2px">a confirmar</div>' : ''}
     </td>
     <td class="det-col">${chkAnula}</td>
     <td class="field-desempenio" style="min-width:160px">
@@ -567,6 +574,23 @@ async function cargarDiagnostico() {
   if (res.ok) _renderDiagnostico(await res.json());
 }
 
+function imprimirPremios() {
+  if (_periodoAbierto) {
+    alert("⚠ El período no está cerrado en asistencia.\nLos valores pueden cambiar — cerrá el período antes de imprimir.");
+    return;
+  }
+  window.print();
+}
+
+async function _verificarPeriodoCerrado(periodo) {
+  try {
+    const [y, m] = periodo.split("-");
+    const data = await fetch(`/api/periodos-cerrados/${y}/${parseInt(m)}`).then(r => r.json());
+    _periodoAbierto = !data.cerrado;
+  } catch { _periodoAbierto = false; }
+  document.getElementById("banner-periodo-abierto").style.display = _periodoAbierto ? "flex" : "none";
+}
+
 async function cargar(spinner = true) {
   const periodo = document.getElementById("periodo-sel").value;
   if (!periodo) { toast("Seleccioná un período"); return; }
@@ -575,6 +599,7 @@ async function cargar(spinner = true) {
   const [res] = await Promise.all([
     fetch(`/api/premios/${periodo}`),
     cargarDiagnostico(),
+    _verificarPeriodoCerrado(periodo),
   ]);
   if (!res.ok) { toast("Error al cargar"); return; }
   const data = await res.json();
@@ -585,6 +610,7 @@ async function generarPeriodo() {
   const periodo = document.getElementById("periodo-sel").value;
   if (!periodo) { toast("Seleccioná un período"); return; }
   toast("Generando...", 10000);
+  await _verificarPeriodoCerrado(periodo);
   const res = await fetch(`/api/premios/${periodo}/generar`, {method:"POST"});
   if (res.ok) {
     const d = await res.json();

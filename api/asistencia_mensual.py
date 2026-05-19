@@ -12,23 +12,23 @@ router = APIRouter(prefix="/api/asistencia", tags=["asistencia_mensual"])
 _EST_SIMPLE = {
     "ok": "I", "salida_anticipada": "I", "sin_salida": "I", "sin_horario": "I",
     "tarde": "T", "tarde_y_salida_anticipada": "T", "tarde_y_sin_salida": "T",
-    "ausente": "A", "franco": "F", "ft": "FT",
-    "b1_ausente": "A", "b2_ausente": "A",
+    "ausente": "A!!!", "franco": "F", "ft": "FT",
+    "b1_ausente": "A!!!", "b2_ausente": "A!!!",
     "nf": "NF", "duda": "!",
 }
-_EST_B1 = {**_EST_SIMPLE, "b1_ausente": "A", "b2_ausente": "I"}
+_EST_B1 = {**_EST_SIMPLE, "b1_ausente": "A!!!", "b2_ausente": "I"}
 _EST_B2 = {
     "ok": "I", "salida_anticipada": "I", "sin_salida": "I", "sin_horario": "I",
     "tarde": "I",                        # tarde afecta la entrada del b1
     "tarde_y_salida_anticipada": "I",
     "tarde_y_sin_salida": "I",
-    "ausente": "A", "franco": "F", "ft": "FT",
-    "b1_ausente": "I", "b2_ausente": "A",
+    "ausente": "A!!!", "franco": "F", "ft": "FT",
+    "b1_ausente": "I", "b2_ausente": "A!!!",
     "nf": "NF", "duda": "!",
 }
 
 CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "@", "NF"}
-LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "@", "NF"}
+LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "@", "NF", "A"}
 DIAS_SEMANA   = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]
 
 
@@ -44,7 +44,12 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
     if nov is None and bloque != 0:
         nov = nov_map.get((eid, fecha, 0))
     if nov:
-        return {"letra": nov["tipo"], "tipo": "normal", "nov_id": nov["id"]}
+        r = {"letra": nov["tipo"], "tipo": "normal", "nov_id": nov["id"]}
+        if nov.get("descripcion"):
+            r["descripcion"] = nov["descripcion"]
+        if nov.get("creado_por"):
+            r["creado_por"] = nov["creado_por"]
+        return r
 
     # 2. Aliviada (solo bloques 1 y 2)
     if bloque in (1, 2) and (eid, fecha, bloque) in ali_set:
@@ -104,9 +109,10 @@ def _fmt(v: float):
 
 
 def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
-    dias_duda      = []
-    dias_faltantes = []
-    dias_activos   = 0
+    dias_duda          = []
+    dias_faltantes     = []
+    dias_ausentes_sc   = []
+    dias_activos       = 0
 
     for fecha in fechas:
         celda = celdas[fecha]
@@ -126,6 +132,10 @@ def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
             dias_duda.append(dia_num)
             continue  # duda ≠ faltante
 
+        if any(b.get("letra") == "A!!!" for b in bloques):
+            dias_ausentes_sc.append(dia_num)
+            continue  # ausente sin confirmar ≠ faltante
+
         if any(b["tipo"] in ("pendiente", "sin_plan") for b in bloques):
             dias_faltantes.append(dia_num)
 
@@ -135,17 +145,21 @@ def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
     ventana_desde = (date.fromisoformat(f1) - timedelta(days=4)).isoformat()
     en_ventana    = hoy_str >= ventana_desde
 
+    extra = {"dias_ausentes_sc": dias_ausentes_sc} if dias_ausentes_sc else {}
+
     if dias_activos < 3:
-        return {"estado": "vacio"}
+        return {"estado": "vacio", **extra}
     if not dias_duda and not dias_faltantes:
+        if dias_ausentes_sc:
+            return {"estado": "ausentes_sc", **extra}
         return {"estado": "liquidacion" if tiene_egreso_mes else "completado"}
     if dias_duda and not dias_faltantes:
-        return {"estado": "revisar", "dias_duda": dias_duda}
+        return {"estado": "revisar", "dias_duda": dias_duda, **extra}
     if not dias_duda:
         # Solo días faltantes: detalle solo en la ventana final
         if en_ventana:
-            return {"estado": "faltan", "dias_faltantes": dias_faltantes}
-        return {"estado": "en_curso"}
+            return {"estado": "faltan", "dias_faltantes": dias_faltantes, **extra}
+        return {"estado": "en_curso", **extra}
     # Hay duda Y faltantes: siempre mostrar duda, faltantes solo en ventana
     if en_ventana:
         return {"estado": "mixto", "dias_duda": dias_duda, "dias_faltantes": dias_faltantes}
@@ -241,7 +255,7 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
         ).fetchall()
 
         novedades = conn.execute(
-            f"SELECT id, empleado_id, fecha, bloque, tipo "
+            f"SELECT id, empleado_id, fecha, bloque, tipo, descripcion, creado_por "
             f"FROM novedades WHERE empleado_id IN ({ph}) AND fecha>=? AND fecha<=?",
             (*eids, f0, f1)
         ).fetchall()
@@ -281,10 +295,17 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
     for f in fichajes_manuales:
         fm_count[f["empleado_id"]] += 1
     nov_map  = {}
+    comentarios_map: dict[int, list] = defaultdict(list)
     for n in novedades:
         nov_map[(n["empleado_id"], n["fecha"], n["bloque"])] = {
-            "id": n["id"], "tipo": n["tipo"]
+            "id": n["id"], "tipo": n["tipo"], "descripcion": n["descripcion"],
+            "creado_por": n["creado_por"],
         }
+        comentarios_map[n["empleado_id"]].append({
+            "fecha": n["fecha"], "bloque": n["bloque"],
+            "tipo": n["tipo"], "descripcion": n["descripcion"],
+            "creado_por": n["creado_por"],
+        })
     ali_set       = {(a["empleado_id"], a["fecha"], a["bloque"]) for a in aliviadas}
     transporte_map = {s["empleado_id"]: s["saldo"] for s in saldos}
 
@@ -317,13 +338,13 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
                 celdas[fecha] = {"b1": b1, "b2": b2}
                 for b in (b1, b2):
                     l = b["letra"]
-                    if l and b["tipo"] == "normal":
+                    if l and b["tipo"] == "normal" and l != "A!!!":
                         tots[l] += 0.5
                         if l in CONTABLES:
                             tots["dias"] += 0.5
                 if fecha in feriados:
                     letras_feri = [b["letra"] for b in (b1, b2)
-                                   if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@")]
+                                   if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF")]
                     if any(l != "@" for l in letras_feri):
                         feriados_trab += len(letras_feri) * 0.5
             else:
@@ -335,24 +356,24 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
                     celdas[fecha] = {"b1": b1, "b2": b2, "es_cortado_dia": True}
                     for b in (b1, b2):
                         l = b["letra"]
-                        if l and b["tipo"] == "normal":
+                        if l and b["tipo"] == "normal" and l != "A!!!":
                             tots[l] += 0.5
                             if l in CONTABLES:
                                 tots["dias"] += 0.5
                     if fecha in feriados:
                         letras_feri = [b["letra"] for b in (b1, b2)
-                                       if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@")]
+                                       if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF")]
                         if any(l != "@" for l in letras_feri):
                             feriados_trab += len(letras_feri) * 0.5
                 else:
                     c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
                     celdas[fecha] = c
                     l = c["letra"]
-                    if l and c["tipo"] == "normal":
+                    if l and c["tipo"] == "normal" and l != "A!!!":
                         tots[l] += 1.0
                         if l in CONTABLES:
                             tots["dias"] += 1.0
-                        if fecha in feriados and l in ("I", "T", "FT"):
+                        if fecha in feriados and l in ("I", "T", "FT", "NF"):
                             feriados_trab += 1.0
 
         transporte = transporte_map.get(eid, 0)
@@ -369,6 +390,7 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
             "fecha_egreso": f_egr or None,
             "celdas":     celdas,
             "control":    control,
+            "comentarios": comentarios_map.get(eid, []),
             "totales": {
                 **{k: _fmt(v) for k, v in tots.items()},
                 "transporte":         _fmt(transporte),
@@ -398,20 +420,22 @@ class NovedadIn(BaseModel):
 
 
 @router.post("/novedades", status_code=201)
-def upsert_novedad(data: NovedadIn, _user=Depends(require_permiso("asistencia", "corregir"))):
+def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "corregir"))):
     if data.tipo not in LETRAS_VALIDAS:
         raise HTTPException(400, f"Tipo inválido. Válidos: {sorted(LETRAS_VALIDAS)}")
     if data.tipo == "@" and data.bloque not in (1, 2):
         raise HTTPException(400, "La aliviada (@) requiere bloque 1 o 2")
+    creado_por = user.get("email") or user.get("sub")
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
         check_periodo_abierto(conn, data.fecha)
         conn.execute(
-            """INSERT INTO novedades (empleado_id, fecha, bloque, tipo, descripcion)
-               VALUES (?,?,?,?,?)
+            """INSERT INTO novedades (empleado_id, fecha, bloque, tipo, descripcion, creado_por)
+               VALUES (?,?,?,?,?,?)
                ON CONFLICT(empleado_id, fecha, bloque)
-               DO UPDATE SET tipo=excluded.tipo, descripcion=excluded.descripcion""",
-            (data.empleado_id, data.fecha, data.bloque, data.tipo, data.descripcion),
+               DO UPDATE SET tipo=excluded.tipo, descripcion=excluded.descripcion,
+                             creado_por=excluded.creado_por""",
+            (data.empleado_id, data.fecha, data.bloque, data.tipo, data.descripcion, creado_por),
         )
         row = conn.execute(
             "SELECT * FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=?",

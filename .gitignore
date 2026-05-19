@@ -34,3 +34,16 @@ registros_zk.json
 
 # Capturas de horarios
 horarios/
+
+# Logo y archivos subidos (se suben por la UI, no van al repo)
+web/static/uploads/*
+!web/static/uploads/.gitkeep
+
+# Logs del servidor
+*.log
+server.log
+uvicorn.log
+uvicorn_err.log
+
+# Archivos de debug
+debug_*.py

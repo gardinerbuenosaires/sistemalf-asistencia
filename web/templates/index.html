@@ -127,25 +127,11 @@
 
   <div class="section">
     <h2>Presencia ahora <span id="cnt-presentes" style="font-size:.85rem;color:#888;font-weight:normal;margin-left:8px"></span></h2>
-    <div id="presencia-sin-plan-wrap" style="display:none">
-      <div class="alerta-sin-plan">
-        <div class="alerta-sin-plan-titulo">
-          <span class="icono">⚠</span>
-          Sin planificación asignada
-          <span id="cnt-sin-plan" style="font-weight:normal"></span>
-        </div>
-        <div id="presencia-sin-plan" class="presencia-grid"></div>
-      </div>
-    </div>
-    <div id="presencia-ciclo-wrap" style="display:none">
-      <div class="alerta-ciclo">
-        <div class="alerta-ciclo-titulo">
-          <span class="icono">⚠</span>
-          Ciclo sin cerrar — posible salida no fichada
-          <span id="cnt-ciclo" style="font-weight:normal"></span>
-        </div>
-        <div id="presencia-ciclo" class="presencia-grid"></div>
-      </div>
+    <div id="presencia-ausentes-wrap" style="display:none;margin-top:8px;padding-top:16px;border-top:1px solid #eee">
+      <h3 style="font-size:.8rem;font-weight:bold;text-transform:uppercase;color:#e74c3c;letter-spacing:.05em;margin-bottom:10px">
+        No ficharon <span id="cnt-ausentes" style="font-weight:normal"></span>
+      </h3>
+      <div id="presencia-ausentes" class="presencia-grid"></div>
     </div>
     <div id="presencia-franco-wrap" style="display:none">
       <div class="alerta-franco">
@@ -159,11 +145,25 @@
       </div>
     </div>
     <div id="presencia-container"><p class="presencia-empty">Cargando...</p></div>
-    <div id="presencia-ausentes-wrap" style="display:none;margin-top:20px;padding-top:16px;border-top:1px solid #eee">
-      <h3 style="font-size:.8rem;font-weight:bold;text-transform:uppercase;color:#e74c3c;letter-spacing:.05em;margin-bottom:10px">
-        No ficharon <span id="cnt-ausentes" style="font-weight:normal"></span>
-      </h3>
-      <div id="presencia-ausentes" class="presencia-grid"></div>
+    <div id="presencia-ciclo-wrap" style="display:none">
+      <div class="alerta-ciclo">
+        <div class="alerta-ciclo-titulo">
+          <span class="icono">⚠</span>
+          Ciclo sin cerrar — posible salida no fichada
+          <span id="cnt-ciclo" style="font-weight:normal"></span>
+        </div>
+        <div id="presencia-ciclo" class="presencia-grid"></div>
+      </div>
+    </div>
+    <div id="presencia-sin-plan-wrap" style="display:none">
+      <div class="alerta-sin-plan">
+        <div class="alerta-sin-plan-titulo">
+          <span class="icono">⚠</span>
+          Sin planificación asignada
+          <span id="cnt-sin-plan" style="font-weight:normal"></span>
+        </div>
+        <div id="presencia-sin-plan" class="presencia-grid"></div>
+      </div>
     </div>
   </div>
 

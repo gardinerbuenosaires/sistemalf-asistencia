@@ -140,6 +140,23 @@ Write-Info "Registrando servicio $ServiceName en puerto $Port..."
 & $nssmExe set $ServiceName AppRotateFiles     1
 & $nssmExe set $ServiceName AppRotateBytes     5242880
 
+# ── Pausa para restaurar DB existente ────────────────────────────────────────
+$dbDest = "$DataDir\fichajes.db"
+if (-not (Test-Path $dbDest)) {
+    Write-Host ""
+    Write-Host "──────────────────────────────────────────────────" -ForegroundColor Yellow
+    Write-Host "  MIGRACION DE DATOS (opcional)" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Si tenes un respaldo de la base de datos," -ForegroundColor Yellow
+    Write-Host "  copialo ahora a:" -ForegroundColor Yellow
+    Write-Host "    $dbDest" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  Si es una instalacion nueva, dejalo en blanco." -ForegroundColor Yellow
+    Write-Host "──────────────────────────────────────────────────" -ForegroundColor Yellow
+    Write-Host ""
+    Read-Host "  Presiona Enter cuando este listo para continuar"
+}
+
 # Iniciar servicio
 Write-Step "Iniciando servicio"
 & $nssmExe start $ServiceName

@@ -1,10 +1,10 @@
 @echo off
-:: SistemaLF — Instalador
+:: SistemAlf — Instalador
 :: Descargar este archivo, clic derecho → "Ejecutar como administrador"
 
 echo.
 echo ╔══════════════════════════════════════════╗
-echo ║       SistemaLF — Instalacion           ║
+echo ║       SistemAlf — Instalacion           ║
 echo ╚══════════════════════════════════════════╝
 echo.
 

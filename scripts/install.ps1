@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Instala SistemaLF en una PC nueva (Windows 10/11).
+    Instala SistemAlf en una PC nueva (Windows 10/11).
 
 .DESCRIPTION
     Instala Python y Git si no están presentes, clona el repositorio,
@@ -26,9 +26,9 @@
 param(
     [string]$Port        = "8000",
     [string]$RepoUrl     = "https://github.com/gardinerbuenosaires/sistemalf-asistencia.git",
-    [string]$InstallDir  = "C:\SistemaLF",
-    [string]$DataDir     = "C:\ProgramData\SistemaLF",
-    [string]$ServiceName = "SistemaLF"
+    [string]$InstallDir  = "C:\SistemAlf",
+    [string]$DataDir     = "C:\ProgramData\SistemAlf",
+    [string]$ServiceName = "SistemAlf"
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,8 +131,8 @@ Write-Info "Registrando servicio $ServiceName en puerto $Port..."
 & $nssmExe install $ServiceName $pythonExe
 & $nssmExe set $ServiceName AppParameters "-m uvicorn main:app --host 0.0.0.0 --port $Port"
 & $nssmExe set $ServiceName AppDirectory  $InstallDir
-& $nssmExe set $ServiceName DisplayName   "SistemaLF - Asistencia"
-& $nssmExe set $ServiceName Description   "Sistema de fichaje y asistencia SistemaLF"
+& $nssmExe set $ServiceName DisplayName   "SistemAlf - Asistencia"
+& $nssmExe set $ServiceName Description   "Sistema de fichaje y asistencia SistemAlf"
 & $nssmExe set $ServiceName Start         SERVICE_AUTO_START
 & $nssmExe set $ServiceName AppEnvironmentExtra "DB_PATH=$DataDir\fichajes.db" "API_PORT=$Port"
 & $nssmExe set $ServiceName AppStdout     "$DataDir\uvicorn.log"

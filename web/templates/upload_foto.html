@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Subir foto — SistemAlf</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; min-height: 100vh;
+         display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+  .card { background: white; border-radius: 12px; padding: 28px 20px; max-width: 360px;
+          width: 100%; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,.1); }
+  .logo { height: 36px; margin-bottom: 20px; }
+  h1 { font-size: 1.1rem; color: #2c3e50; margin-bottom: 20px; }
+  .btn { display: block; width: 100%; padding: 15px; font-size: 1rem; font-weight: bold;
+         border: none; border-radius: 10px; cursor: pointer; margin-bottom: 10px; }
+  .btn-oscuro  { background: #2c3e50; color: white; }
+  .btn-oscuro:active  { background: #1a252f; }
+  .btn-verde   { background: #27ae60; color: white; }
+  .btn-verde:active   { background: #1e8449; }
+  .btn-verde:disabled { background: #aaa; cursor: not-allowed; }
+  #status { font-size: .9rem; margin-top: 8px; min-height: 36px; }
+  .ok  { color: #1a6b4a; font-weight: bold; }
+  .err { color: #dc3545; }
+  input[type=file] { display: none; }
+
+  /* PIN */
+  .pin-input { font-size: 1.4rem; letter-spacing: .3em; text-align: center; padding: 12px;
+               border: 2px solid #ced4da; border-radius: 10px; width: 100%; margin-bottom: 10px; }
+  .pin-input:focus { outline: none; border-color: #2c3e50; }
+
+  /* Crop */
+  #crop-wrap { display: none; margin: 0 auto 12px; position: relative; }
+  #crop-canvas { display: block; cursor: grab; touch-action: none; border: 2px solid #2c3e50; border-radius: 6px; }
+  #crop-canvas:active { cursor: grabbing; }
+  .crop-hint { font-size: .75rem; color: #aaa; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" class="logo"
+       onerror="this.style.display='none'">
+  <h1>Foto del empleado</h1>
+
+  <!-- Panel PIN -->
+  <div id="pin-panel" style="display:none">
+    <input class="pin-input" type="password" inputmode="numeric" id="inp-pin"
+           placeholder="••••" onkeydown="if(event.key==='Enter') verificarPin()">
+    <button class="btn btn-oscuro" onclick="verificarPin()">Continuar</button>
+    <div id="pin-status" class="err" style="min-height:22px;font-size:.88rem"></div>
+  </div>
+
+  <!-- Panel subida -->
+  <div id="upload-panel" style="display:none">
+    <button class="btn btn-oscuro" onclick="document.getElementById('inp-foto').click()">
+      📷 Elegir foto
+    </button>
+    <input type="file" id="inp-foto" accept="image/*" onchange="cargarFoto()">
+
+    <div id="crop-wrap">
+      <canvas id="crop-canvas"></canvas>
+    </div>
+    <div id="crop-hint" style="display:none;margin-bottom:10px">
+      <p class="crop-hint" style="margin-bottom:8px">Arrastrá para centrar · Pellizcá para hacer zoom</p>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:.8rem;color:#aaa">−45°</span>
+        <input type="range" id="rot-slider" min="-45" max="45" step="0.5" value="0"
+               style="flex:1;accent-color:#2c3e50" oninput="rotarSlider(this.value)">
+        <span style="font-size:.8rem;color:#aaa">+45°</span>
+      </div>
+      <div style="font-size:.78rem;color:#888;margin-top:2px" id="rot-label">0°</div>
+      <button onclick="resetRotacion()" style="margin-top:4px;background:none;border:1px solid #ccc;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer">Centrar rotación</button>
+    </div>
+
+    <button class="btn btn-verde" id="btn-subir" style="display:none" onclick="subirFoto()">
+      Subir foto
+    </button>
+    <div id="status"></div>
+  </div>
+</div>
+
+<script>
+// ── Estado del recorte ────────────────────────────────────────────────────────
+const VIEW = 280;
+const OUT  = 500;
+
+let imgEl = null;
+let tx = 0, ty = 0, sc = 1, rotDeg = 0;
+let imgW = 0, imgH = 0;
+
+let dragging = false, dragStartX = 0, dragStartY = 0;
+let pinchDist0 = 0, pinchSc0 = 1, pinchCx = 0, pinchCy = 0;
+
+function clamp() {
+  const w = imgW * sc, h = imgH * sc;
+  if (tx > 0) tx = 0;
+  if (ty > 0) ty = 0;
+  if (tx + w < VIEW) tx = VIEW - w;
+  if (ty + h < VIEW) ty = VIEW - h;
+}
+
+function drawCrop() {
+  const canvas = document.getElementById('crop-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, VIEW, VIEW);
+  ctx.save();
+  ctx.translate(VIEW / 2, VIEW / 2);
+  ctx.rotate(rotDeg * Math.PI / 180);
+  ctx.translate(-VIEW / 2, -VIEW / 2);
+  ctx.drawImage(imgEl, tx, ty, imgW * sc, imgH * sc);
+  ctx.restore();
+}
+
+function rotarSlider(val) {
+  rotDeg = parseFloat(val);
+  document.getElementById('rot-label').textContent = (rotDeg >= 0 ? '+' : '') + rotDeg + '°';
+  drawCrop();
+}
+
+function resetRotacion() {
+  rotDeg = 0;
+  document.getElementById('rot-slider').value = 0;
+  document.getElementById('rot-label').textContent = '0°';
+  drawCrop();
+}
+
+function cargarFoto() {
+  const file = document.getElementById('inp-foto').files[0];
+  if (!file) return;
+  imgEl = new Image();
+  imgEl.onload = () => {
+    imgW = imgEl.naturalWidth;
+    imgH = imgEl.naturalHeight;
+    rotDeg = 0;
+    const slider = document.getElementById('rot-slider');
+    if (slider) { slider.value = 0; }
+    const lbl = document.getElementById('rot-label');
+    if (lbl) lbl.textContent = '0°';
+    const minSc = Math.max(VIEW / imgW, VIEW / imgH);
+    sc = minSc * 1.05;
+    tx = (VIEW - imgW * sc) / 2;
+    ty = (VIEW - imgH * sc) / 2;
+    clamp();
+
+    const canvas = document.getElementById('crop-canvas');
+    canvas.width  = VIEW;
+    canvas.height = VIEW;
+    drawCrop();
+
+    document.getElementById('crop-wrap').style.display = 'block';
+    document.getElementById('crop-hint').style.display = 'block';
+    document.getElementById('btn-subir').style.display = 'block';
+    document.getElementById('status').textContent = '';
+  };
+  imgEl.src = URL.createObjectURL(file);
+}
+
+// ── Eventos mouse ─────────────────────────────────────────────────────────────
+const canvas = () => document.getElementById('crop-canvas');
+
+document.addEventListener('mousedown', e => {
+  if (e.target !== canvas()) return;
+  dragging = true;
+  dragStartX = e.clientX - tx;
+  dragStartY = e.clientY - ty;
+});
+document.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  tx = e.clientX - dragStartX;
+  ty = e.clientY - dragStartY;
+  clamp(); drawCrop();
+});
+document.addEventListener('mouseup', () => dragging = false);
+
+canvas && document.getElementById('crop-canvas')?.addEventListener('wheel', e => {
+  e.preventDefault();
+  const minSc = Math.max(VIEW / imgW, VIEW / imgH);
+  const delta = e.deltaY > 0 ? 0.92 : 1.08;
+  const cx = (VIEW / 2 - tx) / sc;
+  const cy = (VIEW / 2 - ty) / sc;
+  sc = Math.max(minSc, sc * delta);
+  tx = VIEW / 2 - cx * sc;
+  ty = VIEW / 2 - cy * sc;
+  clamp(); drawCrop();
+}, { passive: false });
+
+// ── Eventos touch ─────────────────────────────────────────────────────────────
+document.addEventListener('touchstart', e => {
+  if (e.target !== document.getElementById('crop-canvas')) return;
+  if (e.touches.length === 1) {
+    dragging = true;
+    dragStartX = e.touches[0].clientX - tx;
+    dragStartY = e.touches[0].clientY - ty;
+  } else if (e.touches.length === 2) {
+    dragging = false;
+    pinchDist0 = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    pinchSc0 = sc;
+    pinchCx = (VIEW / 2 - tx) / sc;
+    pinchCy = (VIEW / 2 - ty) / sc;
+  }
+}, { passive: true });
+
+document.addEventListener('touchmove', e => {
+  if (e.target !== document.getElementById('crop-canvas')) return;
+  e.preventDefault();
+  if (e.touches.length === 1 && dragging) {
+    tx = e.touches[0].clientX - dragStartX;
+    ty = e.touches[0].clientY - dragStartY;
+    clamp(); drawCrop();
+  } else if (e.touches.length === 2) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const minSc = Math.max(VIEW / imgW, VIEW / imgH);
+    sc = Math.max(minSc, pinchSc0 * dist / pinchDist0);
+    tx = VIEW / 2 - pinchCx * sc;
+    ty = VIEW / 2 - pinchCy * sc;
+    clamp(); drawCrop();
+  }
+}, { passive: false });
+
+document.addEventListener('touchend', e => {
+  if (e.touches.length === 0) dragging = false;
+}, { passive: true });
+
+// ── Subir ─────────────────────────────────────────────────────────────────────
+async function subirFoto() {
+  const btn = document.getElementById('btn-subir');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  btn.textContent = 'Subiendo...';
+  status.textContent = ''; status.className = '';
+
+  const out = document.createElement('canvas');
+  out.width = OUT; out.height = OUT;
+  const ctx = out.getContext('2d');
+  const ratio = OUT / VIEW;
+  ctx.save();
+  ctx.translate(OUT / 2, OUT / 2);
+  ctx.rotate(rotDeg * Math.PI / 180);
+  ctx.translate(-OUT / 2, -OUT / 2);
+  ctx.drawImage(imgEl, tx * ratio, ty * ratio, imgW * sc * ratio, imgH * sc * ratio);
+  ctx.restore();
+
+  out.toBlob(async blob => {
+    const fd = new FormData();
+    fd.append('file', blob, 'foto.jpg');
+    try {
+      const r = await fetch('/api/fotos/upload', { method: 'POST', body: fd });
+      const data = await r.json();
+      if (r.ok && data.ok) {
+        status.innerHTML = '✓ Foto subida correctamente.<br>Ya puede asignarse al empleado desde el sistema.';
+        status.className = 'ok';
+        btn.style.display = 'none';
+        document.getElementById('crop-wrap').style.display = 'none';
+        document.getElementById('crop-hint').style.display = 'none';
+      } else {
+        status.textContent = 'Error: ' + (data.detail || 'No se pudo subir la foto.');
+        status.className = 'err';
+        btn.disabled = false; btn.textContent = 'Subir foto';
+      }
+    } catch {
+      status.textContent = 'Error de conexión. Verificá que estés en la red del local.';
+      status.className = 'err';
+      btn.disabled = false; btn.textContent = 'Subir foto';
+    }
+  }, 'image/jpeg', 0.9);
+}
+
+// ── PIN ───────────────────────────────────────────────────────────────────────
+async function verificarPin() {
+  const pin = document.getElementById('inp-pin').value.trim();
+  const r = await fetch('/api/fotos/verificar-pin', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({pin})
+  });
+  const data = await r.json();
+  if (data.ok) {
+    document.getElementById('pin-panel').style.display = 'none';
+    document.getElementById('upload-panel').style.display = 'block';
+  } else {
+    document.getElementById('pin-status').textContent = 'PIN incorrecto.';
+    document.getElementById('inp-pin').value = '';
+    document.getElementById('inp-pin').focus();
+  }
+}
+
+async function init() {
+  const r = await fetch('/api/fotos/verificar-pin', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({pin: ''})
+  });
+  const data = await r.json();
+  if (data.ok) {
+    document.getElementById('upload-panel').style.display = 'block';
+  } else {
+    document.getElementById('pin-panel').style.display = 'block';
+    document.getElementById('inp-pin').focus();
+  }
+}
+
+init();
+</script>
+</body>
+</html>

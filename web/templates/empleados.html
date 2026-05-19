@@ -7,6 +7,7 @@
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/js/qrcode.min.js"></script>
 <title>Empleados — Sistema de Fichaje</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -111,6 +112,21 @@
 
   #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 7px; display: none; z-index: 200; font-size: .88rem; }
 
+  /* Foto empleado */
+  .foto-seccion { display: flex; align-items: flex-start; gap: 20px; padding: 14px; background: #f8f9fa; border-radius: 8px; margin-bottom: 20px; }
+  .foto-avatar { width: 150px; height: 150px; object-fit: cover; border-radius: 8px; border: 2px solid #dee2e6; flex-shrink: 0; }
+  .foto-placeholder { width: 150px; height: 150px; background: #e9ecef; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 3.5rem; color: #aaa; flex-shrink: 0; }
+  .foto-info { flex: 1; min-width: 0; }
+  .foto-qr { display: block; width: 110px; height: 110px; border-radius: 4px; margin-bottom: 4px; }
+  .foto-url { font-size: .68rem; color: #aaa; word-break: break-all; }
+  .foto-acciones { display: flex; flex-direction: row; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .foto-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .foto-modal { background: white; border-radius: 10px; padding: 20px; max-width: 480px; width: 100%; max-height: 80vh; display: flex; flex-direction: column; }
+  .foto-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; overflow-y: auto; margin: 12px 0; }
+  .foto-thumb { aspect-ratio: 1; width: 100%; object-fit: cover; border-radius: 6px; cursor: pointer; border: 3px solid transparent; }
+  .foto-thumb:hover { border-color: #2c3e50; }
+  .foto-thumb.sel { border-color: #27ae60; }
+
   /* Diagrama de manzana */
   .manzana-wrap { display: flex; flex-direction: column; align-items: center; gap: 0; }
   .manzana-top-row, .manzana-bottom-row { display: flex; justify-content: center; }
@@ -168,6 +184,7 @@
       <h2 id="panel-titulo">Personal (<span id="cnt">0</span>)</h2>
       <button class="btn btn-secondary btn-sm" data-perm="sync:procesar" onclick="importarDesdeDispositivo()" id="btn-importar">Importar desde dispositivo</button>
       <a href="/empleados/listado" class="btn btn-secondary btn-sm" style="text-decoration:none">Listado imprimible</a>
+      <button class="btn btn-secondary btn-sm" data-perm="empleados:editar" onclick="abrirQrFotos()" title="QR para subir fotos desde el celular">📷 QR fotos</button>
     </div>
     <div class="tabs">
       <button class="tab-btn activo" id="tab-personal" onclick="cambiarTab('personal')">Personal</button>
@@ -307,6 +324,76 @@ function toast(msg, ms = 2500) {
 
 function iniciales(apellido, nombre) {
   return ((apellido[0] || "") + (nombre[0] || "")).toUpperCase();
+}
+
+// ── Fotos de empleados ────────────────────────────────────────────────────────
+let _fotosPendientes = [];
+let _fotoSeleccionada = null;
+
+async function abrirFotosPendientes() {
+  const r = await fetch('/api/empleados/fotos-pendientes', {credentials:'include'});
+  if (!r.ok) { toast('Error al cargar fotos pendientes'); return; }
+  _fotosPendientes = await r.json();
+  _fotoSeleccionada = null;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'foto-modal-overlay';
+  overlay.id = 'foto-modal-overlay';
+  const vacia = `<p style="color:#888;text-align:center;padding:24px 0">No hay fotos pendientes.<br>Escaneá el QR del legajo para subir una.</p>`;
+  const grid = _fotosPendientes.length === 0 ? vacia : `
+    <div class="foto-grid">
+      ${_fotosPendientes.map((f, i) =>
+        `<img class="foto-thumb" src="${f.url}" data-idx="${i}" onclick="selFotoModal(this)" alt="">`
+      ).join('')}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('foto-modal-overlay').remove()">Cancelar</button>
+      <button id="btn-asignar-foto" class="btn btn-primary btn-sm" disabled onclick="asignarFotoSel()">Asignar</button>
+    </div>`;
+  overlay.innerHTML = `
+    <div class="foto-modal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <strong>Fotos pendientes (${_fotosPendientes.length})</strong>
+        <button onclick="document.getElementById('foto-modal-overlay').remove()"
+          style="background:none;border:none;font-size:1.3rem;cursor:pointer;line-height:1">✕</button>
+      </div>
+      ${grid}
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function selFotoModal(el) {
+  document.querySelectorAll('.foto-thumb').forEach(t => t.classList.remove('sel'));
+  el.classList.add('sel');
+  _fotoSeleccionada = _fotosPendientes[parseInt(el.dataset.idx)].filename;
+  document.getElementById('btn-asignar-foto').disabled = false;
+}
+
+async function asignarFotoSel() {
+  if (!_fotoSeleccionada || !editandoId) return;
+  const r = await fetch(`/api/empleados/${editandoId}/foto`, {
+    method: 'POST', credentials: 'include',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({filename: _fotoSeleccionada})
+  });
+  document.getElementById('foto-modal-overlay')?.remove();
+  if (r.ok) {
+    await editarEmpleado(editandoId);
+    toast('Foto asignada');
+  } else {
+    toast('Error al asignar foto');
+  }
+}
+
+async function eliminarFoto() {
+  if (!editandoId || !confirm('¿Quitar la foto de este empleado?')) return;
+  const r = await fetch(`/api/empleados/${editandoId}/foto`, {method:'DELETE', credentials:'include'});
+  if (r.ok) {
+    await editarEmpleado(editandoId);
+    toast('Foto eliminada');
+  } else {
+    toast('Error al eliminar foto');
+  }
 }
 
 function cambiarTab(tab) {
@@ -628,9 +715,51 @@ function _buildPremioAviso(e) {
   }
 }
 
+function buildFotoSection(e) {
+  const fotoUrl = e.foto_path || null;
+  return `
+    <div class="foto-seccion">
+      ${fotoUrl
+        ? `<img class="foto-avatar" src="${fotoUrl}" alt="Foto">`
+        : `<div class="foto-placeholder">👤</div>`}
+      <div class="foto-info">
+        <div style="font-size:.72rem;font-weight:bold;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Foto del empleado</div>
+        ${canDo('empleados','editar') ? `<div class="foto-acciones">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="abrirFotosPendientes()">Asignar foto pendiente</button>
+          ${fotoUrl ? `<button type="button" class="btn btn-sm" style="background:#e74c3c;color:white" onclick="eliminarFoto()">Quitar foto</button>` : ''}
+        </div>` : ''}
+      </div>
+    </div>`;
+}
+
+function abrirQrFotos() {
+  const uploadUrl = window.location.origin + '/upload-foto';
+  const overlay = document.createElement('div');
+  overlay.className = 'foto-modal-overlay';
+  overlay.id = 'qr-modal-overlay';
+  overlay.innerHTML = `
+    <div class="foto-modal" style="max-width:300px;align-items:center;text-align:center">
+      <div style="display:flex;justify-content:space-between;align-items:center;width:100%;margin-bottom:12px">
+        <strong>Subir foto desde el celular</strong>
+        <button onclick="document.getElementById('qr-modal-overlay').remove()"
+          style="background:none;border:none;font-size:1.3rem;cursor:pointer;line-height:1">✕</button>
+      </div>
+      <div id="qr-popup-container" style="width:200px;height:200px;margin:0 auto 10px"></div>
+      <div style="font-size:.72rem;color:#aaa;word-break:break-all">${uploadUrl}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+  if (typeof QRCode !== 'undefined') {
+    new QRCode(document.getElementById('qr-popup-container'), {
+      text: uploadUrl, width: 200, height: 200,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }
+}
+
 function buildForm(e = {}, asignaciones = []) {
   return `
     <form id="emp-form" onsubmit="return false">
+      ${buildFotoSection(e)}
       <div class="form-section">
         <div class="form-section-title">Datos personales</div>
         <div class="form-grid">

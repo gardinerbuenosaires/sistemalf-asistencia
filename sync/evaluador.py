@@ -212,7 +212,9 @@ def recalcular_resultado(empleado_id: int, fecha_str: str):
 
 
 def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
-                  solo_empleado_id: int | None = None) -> dict:
+                  solo_empleado_id: int | None = None,
+                  solo_horario_id: int | None = None,
+                  horario_ids: list | None = None) -> dict:
     """Procesa todos los empleados con planificación en fecha_str."""
     fecha     = date.fromisoformat(fecha_str)
     fecha_sig = str(fecha + timedelta(days=1))
@@ -231,6 +233,13 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
         if solo_empleado_id:
             sql    += " AND p.empleado_id = ?"
             params += (solo_empleado_id,)
+        if solo_horario_id:
+            sql    += " AND p.horario_id = ?"
+            params += (solo_horario_id,)
+        elif horario_ids:
+            ph_h = ",".join("?" * len(horario_ids))
+            sql    += f" AND p.horario_id IN ({ph_h})"
+            params += tuple(horario_ids)
         planes = conn.execute(sql, params).fetchall()
 
         if not planes:

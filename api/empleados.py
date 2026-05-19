@@ -1,8 +1,14 @@
+import shutil
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from db.database import db_session
 from auth.core import require_permiso, get_current_user
+from config import DATA_DIR
+
+FOTOS_DIR            = DATA_DIR / "fotos"
+FOTOS_PENDIENTES_DIR = DATA_DIR / "fotos_pendientes"
 
 router = APIRouter(prefix="/api/empleados", tags=["empleados"])
 
@@ -90,6 +96,18 @@ def liberar_id_dispositivo(eid: int, _user=Depends(require_permiso("empleados", 
             raise HTTPException(400, "Este empleado no tiene ID de dispositivo asignado")
         conn.execute("UPDATE empleados SET user_id=NULL WHERE id=?", (eid,))
     return {"ok": True}
+
+
+@router.get("/fotos-pendientes")
+def list_fotos_pendientes(_user=Depends(require_permiso("empleados", "editar"))):
+    if not FOTOS_PENDIENTES_DIR.exists():
+        return []
+    files = sorted(
+        (f for f in FOTOS_PENDIENTES_DIR.iterdir() if f.is_file()),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True
+    )
+    return [{"filename": f.name, "url": f"/fotos/{f.name}"} for f in files]
 
 
 @router.get("/{eid}")
@@ -184,3 +202,37 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
             LEFT JOIN niveles_estudio ne ON ne.id = e.nivel_estudio_id
             WHERE e.id=?
         """, (eid,)).fetchone())
+
+
+@router.post("/{eid}/foto")
+def asignar_foto(eid: int, body: dict, _user=Depends(require_permiso("empleados", "editar"))):
+    filename = body.get("filename")
+    if not filename:
+        raise HTTPException(400, "filename requerido")
+    src = FOTOS_PENDIENTES_DIR / filename
+    if not src.exists():
+        raise HTTPException(404, "Foto pendiente no encontrada")
+    FOTOS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = FOTOS_DIR / filename
+    with db_session() as conn:
+        old = conn.execute("SELECT foto_path FROM empleados WHERE id=?", (eid,)).fetchone()
+        if not old:
+            raise HTTPException(404, "Empleado no encontrado")
+        if old["foto_path"]:
+            old_file = FOTOS_DIR / Path(old["foto_path"]).name
+            old_file.unlink(missing_ok=True)
+        shutil.move(str(src), str(dest))
+        conn.execute("UPDATE empleados SET foto_path=? WHERE id=?", (f"/fotos/{filename}", eid))
+    return {"ok": True, "foto_path": f"/fotos/{filename}"}
+
+
+@router.delete("/{eid}/foto")
+def eliminar_foto(eid: int, _user=Depends(require_permiso("empleados", "editar"))):
+    with db_session() as conn:
+        row = conn.execute("SELECT foto_path FROM empleados WHERE id=?", (eid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Empleado no encontrado")
+        if row["foto_path"]:
+            (FOTOS_DIR / Path(row["foto_path"]).name).unlink(missing_ok=True)
+        conn.execute("UPDATE empleados SET foto_path=NULL WHERE id=?", (eid,))
+    return {"ok": True}

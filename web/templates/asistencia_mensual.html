@@ -86,7 +86,7 @@ table.planilla thead th.col-dias  { width: 40px; min-width: 40px; font-size: .65
 table.planilla thead th.col-ctrl  { width: 130px; min-width: 130px; font-size: .65rem; background: #1a252f; text-align: left; padding-left: 6px; }
 table.planilla tbody td.col-ctrl  { font-size: .68rem; font-weight: bold; padding: 0 5px; text-align: left; white-space: normal; line-height: 1.25; }
 .ctrl-completado  { background: #d4edda; color: #155724; }
-.ctrl-liquidacion { background: #6c0000; color: #ffffff; }
+.ctrl-liquidacion { background: #e74c3c; color: #ffffff; }
 .ctrl-revisar     { background: #fff3cd; color: #7d5a00; }
 .ctrl-faltan      { background: #f8d7da; color: #721c24; }
 .ctrl-mixto       { background: #f8d7da; color: #721c24; }
@@ -285,7 +285,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
 .leyenda { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px;
            background: white; border-bottom: 1px solid #eee; }
 .ley-item { display: flex; align-items: center; gap: 4px; font-size: .72rem; color: #555; }
-.ley-box { width: 16px; height: 16px; border-radius: 3px; display: inline-flex;
+.ley-box { min-width: 16px; height: 16px; padding: 0 3px; border-radius: 3px; display: inline-flex;
            align-items: center; justify-content: center; font-size: .6rem; font-weight: bold; }
 
 /* Tooltip de fichajes */
@@ -533,9 +533,12 @@ tr[draggable="true"]:active { cursor: grabbing; }
 
   <!-- Panel ausente sin confirmar -->
   <div id="mpanel-ausente-sc" style="display:none">
-    <div style="font-size:.83rem;color:#555;margin-bottom:10px">
-      El sistema no recibió fichajes para este día.<br>
+    <div style="font-size:.83rem;color:#555;margin-bottom:6px">
+      El sistema no recibió fichajes para este día.
       Confirmá si el empleado estuvo realmente ausente, o usá otra novedad si corresponde.
+    </div>
+    <div id="asc-aviso-turno" style="display:none;font-size:.78rem;background:#fff3cd;color:#7d5a00;border-radius:5px;padding:6px 8px;margin-bottom:8px">
+      ⚠ El turno de este empleado aún no cerró. Verificá los fichajes en el tooltip antes de confirmar.
     </div>
     <textarea id="asc-comentario" placeholder="Comentario (opcional)" rows="2"
       style="width:100%;box-sizing:border-box;border:1px solid #ced4da;border-radius:6px;padding:6px 8px;font-size:.83rem;resize:vertical"></textarea>
@@ -590,9 +593,9 @@ const TIPOS_NOVEDAD        = ['ILT','LSG','L','E','V','S','FT','FD','NF'];
 const TIPOS_NOVEDAD_CORTADO = ['ILT','LSG','L','E','V','S','FT','FD','@','NF'];
 const NOMBRES_LETRA = {
   I:'Presente', T:'Tarde', F:'Franco', FT:'Franco Trabaj.', FD:'Franco Devuelto',
-  A:'Ausente', 'A!!!':'Ausente sin confirmar', E:'Enfermedad', ILT:'ILT / Accidente',
+  A:'Ausente', 'A!!!':'Ausente sin confirmar', E:'Enfermedad', ILT:'Accidente',
   V:'Vacaciones', L:'Licencia', LSG:'Lic. sin sueldo', S:'Suspendido', '@':'Aliviada',
-  NF:'No fichó', MT:'MT Trabajado', '!':'Presencia dudosa'
+  NF:'No fichó', MT:'Medio Turno', '!':'Presencia dudosa'
 };
 const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio',
                   'julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -918,22 +921,41 @@ function renderGrupo(grupo, dias, empleados) {
 
   html += '</tbody></table>';
 
-  // Informe de comentarios del mes
-  const comentariosTodos = empleados.flatMap(e =>
-    (e.comentarios || []).map(c => ({nombre: `${e.apellido}, ${e.nombre}`, ...c}))
-  ).sort((a,b) => a.fecha.localeCompare(b.fecha));
+  // Informe de novedades del mes — agrupando runs consecutivos por empleado
+  function _fmtD(iso) { const [,m,d] = iso.split('-'); return `${d}-${m}`; }
+  const novedadesAgrupadas = empleados.flatMap(e => {
+    const novs = (e.comentarios || []).map(c => ({nombre: `${e.apellido}, ${e.nombre}`, ...c}));
+    if (!novs.length) return [];
+    const grupos = [];
+    let cur = {...novs[0], fecha_hasta: novs[0].fecha};
+    for (let i = 1; i < novs.length; i++) {
+      const n = novs[i];
+      const diffDias = (new Date(n.fecha + 'T00:00:00') - new Date(cur.fecha_hasta + 'T00:00:00')) / 86400000;
+      if (n.tipo === cur.tipo && n.bloque === cur.bloque &&
+          n.creado_por === cur.creado_por && n.descripcion === cur.descripcion && diffDias === 1) {
+        cur.fecha_hasta = n.fecha;
+      } else {
+        grupos.push(cur);
+        cur = {...n, fecha_hasta: n.fecha};
+      }
+    }
+    grupos.push(cur);
+    return grupos;
+  }).sort((a,b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
 
-  if (comentariosTodos.length) {
+  if (novedadesAgrupadas.length) {
     html += '<div class="informe-comentarios">';
     html += '<div class="informe-titulo">Novedades del mes</div>';
-    comentariosTodos.forEach(c => {
-      const [y,m,d] = c.fecha.split('-');
-      const blq = c.bloque > 0 ? ` B${c.bloque}` : '';
+    novedadesAgrupadas.forEach(c => {
+      const blq   = c.bloque > 0 ? ` B${c.bloque}` : '';
+      const rango = c.fecha_hasta !== c.fecha
+        ? `${_fmtD(c.fecha)} → ${_fmtD(c.fecha_hasta)}${blq}`
+        : `${_fmtD(c.fecha)}${blq}`;
       const autor = c.creado_por ? `<span class="informe-autor">${escHtml(c.creado_por)}</span>` : '<span class="informe-autor" style="color:#ddd">—</span>';
       const desc  = c.descripcion ? escHtml(c.descripcion) : '';
       html += `<div class="informe-fila">
         <span class="informe-nombre">${escHtml(c.nombre)}</span>
-        <span class="informe-fecha">${d}-${m}-${y}${blq}</span>
+        <span class="informe-fecha">${rango}</span>
         <span class="informe-tipo" style="background:${(C[c.tipo]||{bg:'#eee'}).bg};color:${(C[c.tipo]||{txt:'#333'}).txt}">${c.tipo}</span>
         ${autor}
         <span class="informe-desc">${desc}</span>
@@ -1198,6 +1220,11 @@ function escHtml(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function _localDateStr() {
+  const h = new Date();
+  return `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`;
+}
+
 // ── Modal de edición de novedad ───────────────────────────────────────────────
 function modalTabPlani(tab) {
   document.getElementById('mpanel-nov').style.display        = tab === 'nov'        ? 'block' : 'none';
@@ -1258,6 +1285,7 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
     if (lnk) lnk.href = `/asistencia?tab=fichajes&empleado=${eid}&fecha=${fecha}`;
   } else if (letraActual === 'A!!!') {
     document.getElementById('asc-comentario').value = '';
+    document.getElementById('asc-aviso-turno').style.display = fecha === _localDateStr() ? 'block' : 'none';
     modalTabPlani('ausente-sc');
   } else if (esFT && ftPendienteActual) {
     _poblarHorariosFT();

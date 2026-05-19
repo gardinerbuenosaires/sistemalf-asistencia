@@ -84,11 +84,11 @@ if (Test-Path "$InstallDir\.git") {
 }
 Write-OK "Codigo en $InstallDir"
 
-# ── Directorio de datos (DB, logs) ────────────────────────────────────────────
+# ── Directorio de datos (DB, logs, fotos) ─────────────────────────────────────
 Write-Step "Creando directorio de datos"
-if (-not (Test-Path $DataDir)) {
-    New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
-}
+New-Item -ItemType Directory -Path $DataDir                   -Force | Out-Null
+New-Item -ItemType Directory -Path "$DataDir\fotos"           -Force | Out-Null
+New-Item -ItemType Directory -Path "$DataDir\fotos_pendientes" -Force | Out-Null
 Write-OK "Datos en $DataDir"
 
 # ── Dependencias Python ───────────────────────────────────────────────────────

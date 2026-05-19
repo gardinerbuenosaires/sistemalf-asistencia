@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 _bloques_evaluados_hoy: set[str] = set()
 _fecha_ultimo_reset = None
 _fecha_ultima_generacion: str | None = None
+_fecha_catchall: str | None = None
+_fecha_barrido_manana: str | None = None
 _mes_ultimo_sync_feriados: str | None = None
 _fecha_ultimo_sync_hora: str | None = None
 _mes_ultimo_cierre_auto: str | None = None
@@ -34,13 +36,15 @@ def _run_sync():
 
 def _check_y_evaluar():
     """
-    Corre cada 5 minutos. Si la hora actual está dentro de los 30 minutos
-    posteriores a la hora de salida de algún bloque activo, evalúa hoy.
+    Corre cada 5 minutos. Evalúa hoy en dos momentos por bloque:
+      1. Al inicio: cuando hora_entrada ya pasó (estado provisorio durante el turno).
+      2. Al cierre: ventana de 30 minutos después de hora_salida (resultado definitivo).
     """
     global _fecha_ultimo_reset
 
     ahora = datetime.now()
     hoy   = str(ahora.date())
+    ahora_hhmm = ahora.strftime("%H:%M")
 
     # Resetear registro al cambiar de día
     if _fecha_ultimo_reset != hoy:
@@ -51,36 +55,49 @@ def _check_y_evaluar():
         from db.database import db_session
         with db_session() as conn:
             bloques = conn.execute(
-                "SELECT h.nombre, hb.bloque, hb.hora_salida "
+                "SELECT h.id AS horario_id, h.nombre, hb.bloque, hb.hora_entrada, hb.hora_salida "
                 "FROM horarios_bloques hb JOIN horarios h ON h.id=hb.horario_id "
-                "WHERE h.activo=1"
+                "WHERE h.activo=1 AND hb.aplica=1"
             ).fetchall()
     except Exception as e:
         logger.warning("Error leyendo bloques para evaluación automática: %s", e)
         return
 
+    evaluado_hoy = False
+
     for b in bloques:
-        clave = f"{hoy}_{b['nombre']}_b{b['bloque']}"
-        if clave in _bloques_evaluados_hoy:
-            continue
+        nombre_bloque = f"{b['nombre']}_b{b['bloque']}"
 
-        hh, mm = map(int, b["hora_salida"].split(":"))
-        t_salida = ahora.replace(hour=hh, minute=mm, second=0, microsecond=0)
-        ventana_inicio = t_salida
-        ventana_fin    = t_salida + timedelta(minutes=30)
+        # ── Evaluación al cierre (definitiva) ────────────────────────────────
+        clave_cierre = f"{hoy}_{nombre_bloque}_cierre"
+        if clave_cierre not in _bloques_evaluados_hoy:
+            hh, mm = map(int, b["hora_salida"].split(":"))
+            t_salida = ahora.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            if t_salida <= ahora <= t_salida + timedelta(minutes=30):
+                try:
+                    from sync.evaluador import evaluar_fecha
+                    resumen = evaluar_fecha(hoy)
+                    logger.info("Evaluación cierre %s: %s", hoy, resumen)
+                except Exception as e:
+                    logger.error("Error en evaluación de cierre: %s", e)
+                _bloques_evaluados_hoy.add(clave_cierre)
 
-        if ventana_inicio <= ahora <= ventana_fin:
-            logger.info(
-                "Evaluación automática: bloque %s/%s cerró a las %s",
-                b["nombre"], b["bloque"], b["hora_salida"]
-            )
-            try:
-                from sync.evaluador import evaluar_fecha
-                resumen = evaluar_fecha(hoy)
-                logger.info("Evaluación automática %s: %s", hoy, resumen)
-                _bloques_evaluados_hoy.add(clave)
-            except Exception as e:
-                logger.error("Error en evaluación automática: %s", e)
+        # ── Evaluación al inicio (provisoria, 30 min después de hora_entrada) ─
+        clave_inicio = f"{hoy}_{nombre_bloque}_inicio"
+        if clave_inicio not in _bloques_evaluados_hoy and b["hora_entrada"]:
+            hh_e, mm_e = map(int, b["hora_entrada"].split(":"))
+            t_entrada = ahora.replace(hour=hh_e, minute=mm_e, second=0, microsecond=0)
+            ventana_inicio_i = t_entrada + timedelta(minutes=30)
+            ventana_fin_i    = t_entrada + timedelta(minutes=60)
+            if ventana_inicio_i <= ahora <= ventana_fin_i:
+                try:
+                    from sync.evaluador import evaluar_fecha
+                    resumen = evaluar_fecha(hoy, solo_horario_id=b["horario_id"])
+                    logger.info("Evaluación inicio turno %s bloque %s/%s: %s",
+                                hoy, b["nombre"], b["bloque"], resumen)
+                except Exception as e:
+                    logger.error("Error en evaluación de inicio: %s", e)
+                _bloques_evaluados_hoy.add(clave_inicio)
 
 
 def _generar_planificacion_auto():
@@ -211,6 +228,100 @@ def _get_sync_interval() -> int:
         return SYNC_INTERVAL_MINUTES * 60
 
 
+def _horarios_por_tipo(hora_corte: str = "22:00") -> tuple[list, list]:
+    """
+    Devuelve (ids_diurnos, ids_nocturnos).
+    Diurnos: todos los bloques tienen hora_salida <= hora_corte.
+    Nocturnos: algún bloque cruza medianoche o tiene hora_salida > hora_corte.
+    """
+    try:
+        from db.database import db_session
+        with db_session() as conn:
+            rows = conn.execute(
+                "SELECT horario_id, MAX(hora_salida) AS max_salida, MAX(cruza_medianoche) AS cruza "
+                "FROM horarios_bloques hb JOIN horarios h ON h.id=hb.horario_id "
+                "WHERE h.activo=1 AND hb.aplica=1 "
+                "GROUP BY horario_id"
+            ).fetchall()
+        diurnos   = [r["horario_id"] for r in rows if r["max_salida"] <= hora_corte and not r["cruza"]]
+        nocturnos = [r["horario_id"] for r in rows if r["max_salida"] >  hora_corte or  r["cruza"]]
+        return diurnos, nocturnos
+    except Exception as e:
+        logger.warning("Error clasificando horarios: %s", e)
+        return [], []
+
+
+def _evaluar_catchall():
+    """
+    Barrido nocturno (23:00): evalúa solo horarios diurnos del día actual.
+    Los nocturnos aún están en curso — los cubre el barrido matutino del día siguiente.
+    """
+    global _fecha_catchall
+    ahora = datetime.now()
+    hoy   = str(ahora.date())
+
+    if _fecha_catchall == hoy or ahora.hour != 23:
+        return
+
+    diurnos, _ = _horarios_por_tipo()
+    if not diurnos:
+        return
+
+    try:
+        from sync.evaluador import evaluar_fecha
+        resumen = evaluar_fecha(hoy, horario_ids=diurnos)
+        _fecha_catchall = hoy
+        logger.info("Barrido nocturno (diurnos) %s: %s", hoy, resumen)
+    except Exception as e:
+        logger.error("Error en barrido nocturno: %s", e)
+
+
+def _evaluar_barrido_manana():
+    """
+    Barrido matutino (06:00): evalúa horarios nocturnos del día anterior.
+    Cubre turnos noche que cerraron pasada la medianoche.
+    """
+    global _fecha_barrido_manana
+    ahora = datetime.now()
+    hoy   = str(ahora.date())
+
+    if _fecha_barrido_manana == hoy or ahora.hour != 6:
+        return
+
+    _, nocturnos = _horarios_por_tipo()
+    if not nocturnos:
+        _fecha_barrido_manana = hoy
+        return
+
+    ayer = str((ahora - timedelta(days=1)).date())
+    try:
+        from sync.evaluador import evaluar_fecha
+        resumen = evaluar_fecha(ayer, horario_ids=nocturnos)
+        _fecha_barrido_manana = hoy
+        logger.info("Barrido matutino (nocturnos, ayer=%s): %s", ayer, resumen)
+    except Exception as e:
+        logger.error("Error en barrido matutino: %s", e)
+
+
+def _evaluar_al_arranque():
+    """
+    Corre una vez al iniciar el servidor. Evalúa hoy y ayer (si es antes de las 06:00)
+    para recuperar ventanas que se hayan perdido mientras el servidor estaba caído.
+    """
+    ahora = datetime.now()
+    hoy   = str(ahora.date())
+    try:
+        from sync.evaluador import evaluar_fecha
+        resumen = evaluar_fecha(hoy)
+        logger.info("Evaluación al arranque (%s): %s", hoy, resumen)
+        if ahora.hour < 6:
+            ayer = str((ahora - timedelta(days=1)).date())
+            resumen_ayer = evaluar_fecha(ayer)
+            logger.info("Evaluación al arranque — ayer (%s): %s", ayer, resumen_ayer)
+    except Exception as e:
+        logger.error("Error en evaluación al arranque: %s", e)
+
+
 def start_scheduler():
     def sync_loop():
         _run_sync()
@@ -219,10 +330,12 @@ def start_scheduler():
             _run_sync()
 
     def eval_loop():
-        # Esperar 2 min al inicio para que la DB esté lista
+        # Esperar 2 min al inicio para que la DB esté lista, luego evaluar al arranque
         time.sleep(120)
+        _evaluar_al_arranque()
         while True:
             _check_y_evaluar()
+            _evaluar_catchall()
             time.sleep(300)  # cada 5 minutos
 
     def plan_loop():
@@ -232,6 +345,7 @@ def start_scheduler():
             _sync_feriados_auto()
             _sincronizar_hora_auto()
             _cerrar_periodo_auto()
+            _evaluar_barrido_manana()
             time.sleep(3600)  # revisar cada hora; cada función ejecuta solo en su ventana horaria
 
     threading.Thread(target=sync_loop, daemon=True, name="sync-scheduler").start()

@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from config import API_HOST, API_PORT
+from config import API_HOST, API_PORT, DATA_DIR
 from db.database import init_db
 from sync.scheduler import start_scheduler
 from api.horarios import router as horarios_router
@@ -39,8 +39,14 @@ logger = logging.getLogger(__name__)
 
 
 
+FOTOS_DIR            = DATA_DIR / "fotos"
+FOTOS_PENDIENTES_DIR = DATA_DIR / "fotos_pendientes"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    FOTOS_DIR.mkdir(parents=True, exist_ok=True)
+    FOTOS_PENDIENTES_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
     ensure_admin()
     start_scheduler()
@@ -137,6 +143,44 @@ def page_empleados_listado(request: Request):
 @app.get("/empleados/{eid}/legajo", include_in_schema=False)
 def page_legajo_imprimible(eid: int, request: Request):
     return FileResponse("web/templates/legajo_imprimible.html") if _auth(request, "empleados") else RedirectResponse("/login")
+
+@app.get("/upload-foto", include_in_schema=False)
+def page_upload_foto():
+    return FileResponse("web/templates/upload_foto.html")
+
+@app.post("/api/fotos/verificar-pin", tags=["fotos"])
+async def verificar_pin_foto(body: dict):
+    from db.database import db_session, get_config
+    with db_session() as conn:
+        pin_config = get_config(conn, "pin_upload_foto", "")
+    if not pin_config:
+        return {"ok": True}
+    return {"ok": body.get("pin", "") == pin_config}
+
+@app.post("/api/fotos/upload", tags=["fotos"])
+async def upload_foto_pendiente(file: UploadFile = File(...)):
+    import uuid
+    from fastapi import HTTPException as _HTTPException
+    ext = Path(file.filename).suffix.lower() if file.filename else ""
+    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif"):
+        ext = ".jpg"
+    filename = f"{uuid.uuid4().hex}{ext}"
+    dest = FOTOS_PENDIENTES_DIR / filename
+    with dest.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return {"ok": True, "filename": filename}
+
+@app.get("/fotos/{filename}", include_in_schema=False)
+def serve_foto(filename: str):
+    from fastapi import HTTPException as _HTTPException
+    import re
+    if not re.match(r'^[a-zA-Z0-9_\-\.]+$', filename):
+        raise _HTTPException(400)
+    for d in (FOTOS_DIR, FOTOS_PENDIENTES_DIR):
+        p = d / filename
+        if p.exists():
+            return FileResponse(str(p))
+    raise _HTTPException(404)
 
 
 # --- Rutas de la API (se expanden en etapas siguientes) ---

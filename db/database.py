@@ -841,6 +841,7 @@ def _migrate(conn):
         "dom_lat":                        "REAL",
         "dom_lng":                        "REAL",
         "dom_mapa":                       "TEXT",
+        "foto_path":                      "TEXT",
     }
     # Migrar dom_entre_calles existente a los nuevos campos separados
     cols_after = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}

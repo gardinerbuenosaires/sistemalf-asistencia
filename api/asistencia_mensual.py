@@ -139,7 +139,8 @@ def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
         if any(b["tipo"] in ("pendiente", "sin_plan") for b in bloques):
             dias_faltantes.append(dia_num)
 
-    tiene_egreso_mes = bool(f_egr) and f0 <= f_egr <= f1
+    f1_mas1 = (date.fromisoformat(f1) + timedelta(days=1)).isoformat()
+    tiene_egreso_mes = bool(f_egr) and f0 <= f_egr <= f1_mas1
 
     # Ventana de alerta: últimos 5 días del mes
     ventana_desde = (date.fromisoformat(f1) - timedelta(days=4)).isoformat()
@@ -229,7 +230,7 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
             LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
             WHERE e.tipo != 'acceso'
               AND (e.activo = 1
-               OR (e.fecha_egreso >= ? AND e.fecha_egreso <= ?))
+               OR (e.fecha_egreso > ? AND e.fecha_egreso <= ?))
             ORDER BY e.apellido, e.nombre
         """, (f0, f1, f0, f1)).fetchall()
 

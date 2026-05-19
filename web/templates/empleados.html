@@ -258,6 +258,9 @@
 <div id="toast"></div>
 
 <script>
+function _localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 const DIAS_NOMBRES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
 let todos = [];
@@ -503,7 +506,7 @@ async function liberarId(eid, userId) {
 }
 
 function buildCalendarioSection(asignaciones = []) {
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = _localDateStr();
   const vigente = asignaciones.find(a =>
     a.fecha_desde <= hoy && (a.fecha_hasta === null || a.fecha_hasta > hoy)
   );

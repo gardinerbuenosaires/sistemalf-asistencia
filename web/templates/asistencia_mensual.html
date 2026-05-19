@@ -1594,7 +1594,7 @@ function abrirSaldoFrancos() {
   if (!el.value) {
     const hoy = new Date();
     hoy.setMonth(hoy.getMonth() - 1);
-    el.value = hoy.toISOString().slice(0, 7);
+    el.value = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
   }
   document.getElementById('modal-sf').classList.add('open');
   cargarSaldoFrancos();

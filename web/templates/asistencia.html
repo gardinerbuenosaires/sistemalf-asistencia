@@ -297,6 +297,9 @@
 </div>
 
 <script>
+function _localDateStr(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 async function logout() {
   await fetch('/api/auth/logout', {method:'POST'});
   location.href = '/login';
@@ -315,7 +318,7 @@ async function _loadPerms() {
 }
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }
 
-const hoy = new Date().toISOString().slice(0,10);
+const hoy = _localDateStr();
 const primerDiaMes = hoy.slice(0,7) + "-01";
 let tabActual = "resultados";
 let todosEmpleados = [];
@@ -612,7 +615,7 @@ async function procesar() {
   if (!desde || !hasta) { toast("Seleccioná el período"); return; }
 
   // Si el período incluye hoy, avisar sobre bloques que aún no cerraron
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = _localDateStr();
   if (hasta >= hoy) {
     const bRes = await fetch("/api/resultados/bloques-pendientes");
     const pendientes = await bRes.json();
@@ -654,7 +657,7 @@ function abrirModal(empId = null, fecha = null) {
     });
   }
   sel.value = empId || "";
-  document.getElementById('m-fecha').value = fecha || new Date().toISOString().slice(0,10);
+  document.getElementById('m-fecha').value = fecha || _localDateStr();
   document.getElementById('m-entrada').value = "";
   document.getElementById('m-salida').value = "";
   document.getElementById('m-motivo').value = "";
@@ -794,7 +797,7 @@ async function guardarGrupal() {
 async function init() {
   await _loadPerms();
   await cargarEmpleados();
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy = _localDateStr();
   await fetch(`/api/resultados/procesar?fecha_desde=${hoy}&fecha_hasta=${hoy}`, { method: 'POST' }).catch(() => {});
 
   const params = new URLSearchParams(location.search);

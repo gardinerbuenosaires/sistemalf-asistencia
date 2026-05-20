@@ -219,10 +219,23 @@ async function loadCntHoy() {
 
 async function loadSyncLog() {
   const logs = await api("/api/sync/log?limit=1");
-  if (logs.length) {
-    const l = logs[0];
-    document.getElementById("ultima-sync").textContent =
-      `${l.finalizado_en || l.iniciado_en} — ${l.registros_nuevos} nuevos de ${l.registros_leidos} leídos`;
+  if (!logs.length) return;
+  const l = logs[0];
+  const ts = l.finalizado_en || l.iniciado_en;
+  let fechaFmt = ts || '—';
+  if (ts) {
+    const [fecha, hora] = ts.split(' ');
+    const [a, m, d] = fecha.split('-');
+    fechaFmt = `${d}-${m}-${a} ${hora.slice(0,5)}`;
+  }
+  const el = document.getElementById("ultima-sync");
+  const card = el.closest('.card');
+  if (l.error) {
+    el.innerHTML = `${fechaFmt}<br><span style="color:#e74c3c;font-size:.85rem;font-weight:bold">&#9888; ${l.error}</span>`;
+    card.style.borderLeft = '4px solid #e74c3c';
+  } else {
+    el.textContent = `${fechaFmt} — ${l.registros_nuevos} nuevos de ${l.registros_leidos} leídos`;
+    card.style.borderLeft = '';
   }
 }
 

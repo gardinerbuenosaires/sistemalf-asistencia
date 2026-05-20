@@ -16,7 +16,7 @@ class FeriadoIn(BaseModel):
 
 
 @router.get("")
-def listar_feriados(año: int | None = None, _user=Depends(get_current_user)):
+def listar_feriados(año: int | None = None, _user=Depends(require_permiso("calendarios", "ver"))):
     with db_session() as conn:
         if año:
             rows = conn.execute(

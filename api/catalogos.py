@@ -2,7 +2,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from db.database import db_session
-from auth.core import require_permiso
+from auth.core import require_permiso, get_current_user
 
 router = APIRouter(tags=["catalogos"])
 
@@ -19,7 +19,7 @@ class CargoUpdate(BaseModel):
 # ── Cargos ────────────────────────────────────────────────────────────────────
 
 @router.get("/api/cargos")
-def list_cargos():
+def list_cargos(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute("SELECT id, nombre, aplica_premio FROM cargos ORDER BY nombre").fetchall()
     return [dict(r) for r in rows]
@@ -73,7 +73,7 @@ def delete_cargo(cid: int, _user=Depends(require_permiso("empleados", "editar"))
 # ── Departamentos ─────────────────────────────────────────────────────────────
 
 @router.get("/api/departamentos")
-def list_departamentos():
+def list_departamentos(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute("SELECT id, nombre FROM departamentos ORDER BY nombre").fetchall()
     return [dict(r) for r in rows]
@@ -124,7 +124,7 @@ def delete_departamento(did: int, _user=Depends(require_permiso("empleados", "ed
 # ── Categorías ────────────────────────────────────────────────────────────────
 
 @router.get("/api/categorias")
-def list_categorias():
+def list_categorias(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute("SELECT id, nombre FROM categorias ORDER BY nombre").fetchall()
     return [dict(r) for r in rows]
@@ -175,7 +175,7 @@ def delete_categoria(cid: int, _user=Depends(require_permiso("empleados", "edita
 # ── Turnos del legajo ──────────────────────────────────────────────────────────
 
 @router.get("/api/turnos-legajo")
-def list_turnos_legajo():
+def list_turnos_legajo(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute("SELECT id, nombre, orden FROM turnos_legajo ORDER BY orden, nombre").fetchall()
     return [dict(r) for r in rows]
@@ -227,7 +227,7 @@ def delete_turno_legajo(tid: int, _user=Depends(require_permiso("empleados", "ed
 # ── Sectores del legajo ────────────────────────────────────────────────────────
 
 @router.get("/api/sectores-legajo")
-def list_sectores_legajo():
+def list_sectores_legajo(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute("SELECT id, nombre, orden FROM sectores_legajo ORDER BY orden, nombre").fetchall()
     return [dict(r) for r in rows]
@@ -279,7 +279,7 @@ def delete_sector_legajo(sid: int, _user=Depends(require_permiso("empleados", "e
 # ── Niveles de estudio ─────────────────────────────────────────────────────────
 
 @router.get("/api/niveles-estudio")
-def list_niveles_estudio():
+def list_niveles_estudio(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute("SELECT id, nombre, orden FROM niveles_estudio ORDER BY orden, nombre").fetchall()
     return [dict(r) for r in rows]

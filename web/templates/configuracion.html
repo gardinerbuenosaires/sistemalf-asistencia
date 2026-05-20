@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -152,23 +152,23 @@
     <div class="nav-group">
       <span class="nav-trigger">Programación ▾</span>
       <div class="nav-dropdown">
-        <a href="/horarios">Horarios</a>
-        <a href="/planificacion">Planificación</a>
-        <a href="/calendarios">Calendarios</a>
+        <a href="/horarios" data-perm="horarios:ver">Horarios</a>
+        <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
     <div class="nav-group">
       <span class="nav-trigger">Registro ▾</span>
       <div class="nav-dropdown">
-        <a href="/asistencia">Asistencia</a>
-        <a href="/fichajes">Fichajes</a>
-        <a href="/asistencia-mensual">Planilla</a>
+        <a href="/asistencia" data-perm="asistencia:ver">Asistencia</a>
+        <a href="/fichajes" data-perm="asistencia:ver">Fichajes</a>
+        <a href="/asistencia-mensual" data-perm="asistencia:ver">Planilla</a>
       </div>
     </div>
     <div class="nav-group">
       <span class="nav-trigger">Personal ▾</span>
       <div class="nav-dropdown">
-        <a href="/empleados">Listado</a>
+        <a href="/empleados" data-perm="empleados:ver">Listado</a>
         <a href="/premios" data-perm="premios:ver">Premios</a>
         <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
       </div>
@@ -183,7 +183,7 @@
 
   <div class="cfg-tabs">
     <button class="cfg-tab" id="tab-sistema"   onclick="switchCfgTab('sistema')">Sistema</button>
-    <button class="cfg-tab" id="tab-catalogos" onclick="switchCfgTab('catalogos')">Cargos</button>
+    <button class="cfg-tab" data-perm="empleados:ver" id="tab-catalogos" onclick="switchCfgTab('catalogos')">Cargos</button>
     <button class="cfg-tab" id="tab-usuarios"  onclick="switchCfgTab('usuarios')">Usuarios</button>
     <button class="cfg-tab" data-perm="premios:ver" id="tab-premios" onclick="switchCfgTab('premios')">Premios</button>
   </div>
@@ -253,7 +253,7 @@
   </div>
 
   <!-- ── Panel: Catálogos ── -->
-  <div class="cfg-panel" id="panel-catalogos">
+  <div class="cfg-panel" data-perm="empleados:ver" id="panel-catalogos">
 
     <div class="section">
       <div class="section-header">
@@ -370,7 +370,7 @@
       </div>
     </div>
 
-    <div class="section">
+    <div class="section" data-perm="roles:ver">
       <div class="section-header">
         <div>
           <div class="section-title">Roles y permisos</div>
@@ -439,6 +439,10 @@ async function _loadPerms() {
   } catch(e) {}
   document.querySelectorAll('[data-perm]').forEach(el => {
     if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+    });
+    document.querySelectorAll('.nav-group').forEach(g => {
+      const links = g.querySelectorAll('a[href]');
+      if (links.length && [...links].every(a => a.hasAttribute('data-perm'))) g.style.display = 'none';
   });
 }
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }
@@ -764,6 +768,26 @@ function renderRolEditor(rol={}) {
         <input type="number" id="rf-nivel" value="${rol.nivel||1}" min="1" max="100" ${dis}>
       </div>
     </div>
+    <div class="form-row-3" style="margin-top:8px">
+      <div class="form-group">
+        <label>Página de inicio</label>
+        <select id="rf-pagina-inicio" ${dis}>
+          ${[
+            ['/', 'Dashboard'],
+            ['/premios', 'Premios'],
+            ['/asistencia', 'Asistencia'],
+            ['/asistencia-mensual', 'Planilla mensual'],
+            ['/fichajes', 'Fichajes'],
+            ['/planificacion', 'Planificación'],
+            ['/horarios', 'Horarios'],
+            ['/calendarios', 'Calendarios'],
+            ['/empleados', 'Personal'],
+            ['/vacaciones', 'Vacaciones'],
+            ['/configuracion', 'Configuración'],
+          ].map(([v,l]) => `<option value="${v}"${(rol.pagina_inicio||'/')===v?' selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+    </div>
     <div style="font-size:.75rem;font-weight:bold;color:#666;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Permisos</div>
     <div class="matriz-wrap">
     <table class="matriz">
@@ -816,22 +840,23 @@ function cancelarRol() {
 }
 
 async function guardarRol() {
-  const nombre = document.getElementById("rf-nombre").value.trim();
-  const desc   = document.getElementById("rf-desc").value.trim();
-  const nivel  = parseInt(document.getElementById("rf-nivel").value) || 1;
+  const nombre        = document.getElementById("rf-nombre").value.trim();
+  const desc          = document.getElementById("rf-desc").value.trim();
+  const nivel         = parseInt(document.getElementById("rf-nivel").value) || 1;
+  const paginaInicio  = document.getElementById("rf-pagina-inicio").value.trim() || "/";
   if (!nombre) { toast("El nombre es obligatorio"); return; }
 
   let rid = rolEditandoId;
   if (rid) {
     const r = await fetch(`/api/roles/${rid}`, {
       method:"PUT", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({nombre, descripcion:desc, nivel})
+      body: JSON.stringify({nombre, descripcion:desc, nivel, pagina_inicio:paginaInicio})
     });
     if (!r.ok) { toast("Error al guardar"); return; }
   } else {
     const r = await fetch("/api/roles", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({nombre, descripcion:desc, nivel})
+      body: JSON.stringify({nombre, descripcion:desc, nivel, pagina_inicio:paginaInicio})
     });
     if (!r.ok) { const e=await r.json().catch(()=>({})); toast("Error: "+(e.detail||"desconocido")); return; }
     const data = await r.json();

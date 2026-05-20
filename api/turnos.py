@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from db.database import db_session
-from auth.core import require_permiso
+from auth.core import require_permiso, get_current_user
 
 router = APIRouter(prefix="/api/turnos", tags=["turnos"])
 
@@ -12,7 +12,7 @@ class TurnoIn(BaseModel):
 
 
 @router.get("")
-def list_turnos():
+def list_turnos(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute("SELECT * FROM turnos ORDER BY hora_desde").fetchall()
     return [dict(r) for r in rows]

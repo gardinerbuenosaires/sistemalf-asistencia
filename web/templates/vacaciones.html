@@ -272,7 +272,8 @@ function fmt(n) {
 }
 
 async function cargar() {
-  const anio = document.getElementById('sel-anio').value;
+  const anio = parseInt(document.getElementById('sel-anio').value);
+  if (!anio || anio < 2000 || anio > 2100) return;
   const r = await fetch(`/api/vacaciones?anio=${anio}`);
   if (!r.ok) { toast('Error al cargar datos'); return; }
   _data = await r.json();

@@ -496,6 +496,11 @@ const PARAMS_META = {
     label: "PIN para subir fotos",
     tipo: "text", width: "120px",
     descripcion: "PIN requerido para acceder a la página de subida de fotos desde el celular. Dejarlo vacío para no requerir PIN."
+  },
+  inactividad_minutos: {
+    label: "Tiempo de inactividad para cerrar sesión (minutos)",
+    tipo: "number", min: 1, max: 480,
+    descripcion: "Minutos sin actividad antes de desloguear al usuario automáticamente. El cambio aplica en el próximo login."
   }
 };
 

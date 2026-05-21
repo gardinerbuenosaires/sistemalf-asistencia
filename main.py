@@ -62,6 +62,23 @@ app = FastAPI(
 )
 
 _SKIP_INACTIVITY = {"/login", "/upload-foto", "/api/auth/login", "/api/auth/logout"}
+_inactividad_cache: dict = {"ttl": 0, "segundos": INACTIVITY_TTL}
+
+def _get_inactividad_segundos() -> int:
+    """Lee el timeout de inactividad desde la DB, con cache de 60 segundos."""
+    now = time.time()
+    if now < _inactividad_cache["ttl"]:
+        return _inactividad_cache["segundos"]
+    from db.database import db_session, get_config
+    with db_session() as conn:
+        val = get_config(conn, "inactividad_minutos", "10")
+    try:
+        segundos = max(1, int(val)) * 60
+    except (ValueError, TypeError):
+        segundos = INACTIVITY_TTL
+    _inactividad_cache.update({"ttl": now + 60, "segundos": segundos})
+    return segundos
+
 
 class SlidingSessionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -73,7 +90,8 @@ class SlidingSessionMiddleware(BaseHTTPMiddleware):
         if token:
             payload = decode_token(token)
             if payload:
-                if time.time() - payload.get("la", 0) > INACTIVITY_TTL:
+                timeout = _get_inactividad_segundos()
+                if time.time() - payload.get("la", 0) > timeout:
                     resp = (
                         JSONResponse({"detail": "Sesión expirada por inactividad"}, status_code=401)
                         if path.startswith("/api/") else RedirectResponse("/login")
@@ -83,7 +101,7 @@ class SlidingSessionMiddleware(BaseHTTPMiddleware):
                 response = await call_next(request)
                 response.set_cookie(
                     "session", refresh_token(payload),
-                    httponly=True, samesite="lax", max_age=INACTIVITY_TTL
+                    httponly=True, samesite="lax", max_age=timeout
                 )
                 return response
 

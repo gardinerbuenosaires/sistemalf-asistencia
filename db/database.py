@@ -492,6 +492,7 @@ def _migrate(conn):
             ('device_password', '0',             'Contraseña del lector de huellas ZKTeco (0 = sin contraseña)'),
             ('device_timeout',  '10',            'Tiempo de espera de conexión al dispositivo (segundos)'),
             ('nombre_empresa',  '',              'Nombre del restaurante o empresa (aparece en login y reportes'),
+            ('inactividad_minutos', '10',        'Minutos sin actividad antes de cerrar la sesión automáticamente'),
         ]
     )
 
@@ -872,6 +873,12 @@ def _migrate(conn):
         if col not in cols_emp:
             conn.execute(f"ALTER TABLE empleados ADD COLUMN {col} {tipo}")
             logger.info("Migración: columna %s agregada a empleados", col)
+
+    # Página de inicio por rol
+    cols_roles = {r[1] for r in conn.execute("PRAGMA table_info(roles)").fetchall()}
+    if "pagina_inicio" not in cols_roles:
+        conn.execute("ALTER TABLE roles ADD COLUMN pagina_inicio TEXT NOT NULL DEFAULT '/'")
+        logger.info("Migración: columna pagina_inicio agregada a roles")
 
     # Catálogos configurables del legajo (turno y sector)
     conn.execute("""

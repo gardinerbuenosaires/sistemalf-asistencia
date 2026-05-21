@@ -1352,14 +1352,14 @@ async function init() {
     fetch("/api/premios/parametros"),
     fetch("/api/turnos-legajo"), fetch("/api/sectores-legajo"), fetch("/api/niveles-estudio")
   ]);
-  calendarios = await cRes.json();
-  horarios = await hRes.json();
-  cargosOpts = await cgRes.json();
-  deptosOpts = await dRes.json();
-  categoriasOpts = await catRes.json();
-  turnosLegajoOpts = await tlRes.json();
-  sectoresLegajoOpts = await slRes.json();
-  nivelesEstudioOpts = await nlRes.json();
+  calendarios = cRes.ok ? await cRes.json() : [];
+  horarios = hRes.ok ? await hRes.json() : [];
+  cargosOpts = cgRes.ok ? await cgRes.json() : [];
+  deptosOpts = dRes.ok ? await dRes.json() : [];
+  categoriasOpts = catRes.ok ? await catRes.json() : [];
+  turnosLegajoOpts = tlRes.ok ? await tlRes.json() : [];
+  sectoresLegajoOpts = slRes.ok ? await slRes.json() : [];
+  nivelesEstudioOpts = nlRes.ok ? await nlRes.json() : [];
   if (pRes.ok) {
     const params = await pRes.json();
     const p = params.find(x => x.clave === "dias_minimos_antiguedad");

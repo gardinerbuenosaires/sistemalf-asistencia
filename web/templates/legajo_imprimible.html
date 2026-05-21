@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -114,7 +114,7 @@ body { font-family: Arial, sans-serif; font-size: 10pt; background: #aaa; color:
 
 <div class="print-bar no-print">
   <button class="btn-print" onclick="window.print()">Imprimir</button>
-  <a href="javascript:window.close()">← Cerrar</a>
+  <a href="javascript:window.close()">â† Cerrar</a>
 </div>
 
 <div class="page">
@@ -151,7 +151,7 @@ function renderManzana(mapa, e) {
       <div class="manzana-mid">
         <div class="manzana-v-label izq">${e.dom_entre_calle1 || ''}</div>
         <div class="manzana-sq">
-          ${hasPos ? `<div class="manzana-house" style="left:${mapa.x*100}%;top:${mapa.y*100}%">🏠</div>` : ''}
+          ${hasPos ? `<div class="manzana-house" style="left:${mapa.x*100}%;top:${mapa.y*100}%">ðŸ </div>` : ''}
         </div>
         <div class="manzana-v-label">${e.dom_entre_calle2 || ''}</div>
       </div>
@@ -200,8 +200,8 @@ async function cargar() {
         </div>
 
         <div style="margin-bottom:6px">
-          ${["CERT. MANIPULACIÓN ALIM","ALTA AFIP","COPIA DNI","MANUALES",
-             "COPIA SERVICIO PÚBLICO","CERTIF. REINCIDENCIA"]
+          ${["CERT. MANIPULACIÃ“N ALIM","ALTA AFIP","COPIA DNI","MANUALES",
+             "COPIA SERVICIO PÃšBLICO","CERTIF. REINCIDENCIA"]
             .map(item => `<div class="check-item"><div class="check-box"></div>${item}</div>`)
             .join("")}
         </div>
@@ -223,8 +223,8 @@ async function cargar() {
             <li>Alta temprana</li>
             <li>Agregar a asistencia</li>
             <li>Registrar huella y asignar perfil para puertas si corresponde</li>
-            <li>Entregar manuales y/o check list por celular para verificar el número</li>
-            <li>Charla inicial de bienvenida y recorrido por toda la instalación</li>
+            <li>Entregar manuales y/o check list por celular para verificar el nÃºmero</li>
+            <li>Charla inicial de bienvenida y recorrido por toda la instalaciÃ³n</li>
             <li>Asignar a un tutor para entrenamiento</li>
           </ol>
         </div>
@@ -246,7 +246,7 @@ async function cargar() {
         ${field("DNI", e.dni)}
 
         <div class="f-row c2">
-          ${field("Categoría", e.categoria)}
+          ${field("CategorÃ­a", e.categoria)}
           ${field("Fecha de ingreso", e.fecha_ingreso)}
         </div>
 
@@ -254,7 +254,7 @@ async function cargar() {
           <div class="f-label" style="margin-bottom:5px">En caso de emergencia llamar a</div>
           <div class="f-row c3">
             ${field("Nombre", e.contacto_emergencia_nombre)}
-            ${field("Teléfono", e.contacto_emergencia_telefono)}
+            ${field("TelÃ©fono", e.contacto_emergencia_telefono)}
             ${field("Parentesco", e.contacto_emergencia_parentesco)}
           </div>
         </div>
@@ -264,7 +264,7 @@ async function cargar() {
         ${field("Calle", e.dom_calle)}
 
         <div class="f-row c2">
-          ${field("N°", e.dom_numero)}
+          ${field("NÂ°", e.dom_numero)}
           ${field("Piso / Depto.", e.dom_piso)}
         </div>
 
@@ -280,7 +280,7 @@ async function cargar() {
 
         <div class="f-row c2">
           ${field("Provincia", e.dom_provincia)}
-          ${field("Código postal", e.dom_cp)}
+          ${field("CÃ³digo postal", e.dom_cp)}
         </div>
 
         ${field("Celular", e.telefono)}
@@ -294,10 +294,11 @@ async function cargar() {
       </div>
     </div>`;
 
-  document.title = `Legajo — ${e.apellido}, ${e.nombre}`;
+  document.title = `Legajo â€” ${e.apellido}, ${e.nombre}`;
 }
 
 cargar();
 </script>
 </body>
 </html>
+

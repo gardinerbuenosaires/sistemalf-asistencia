@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -40,7 +40,7 @@
 
   #cnt { font-size: .8rem; color: #666; }
 
-  /* ── ESTILOS DE IMPRESIÓN ─────────────────────────────────────────────── */
+  /* â”€â”€ ESTILOS DE IMPRESIÃ“N â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   @media print {
     @page { size: legal landscape; margin: 10mm 8mm; }
 
@@ -72,7 +72,7 @@
     <input type="checkbox" id="chk-baja" onchange="cargar()"> Incluir bajas
   </label>
   <span id="cnt"></span>
-  <button class="btn btn-secondary" onclick="location.href='/empleados'">← Volver</button>
+  <button class="btn btn-secondary" onclick="location.href='/empleados'">â† Volver</button>
   <button class="btn btn-primary" onclick="window.print()">Imprimir / PDF</button>
 </div>
 
@@ -88,8 +88,8 @@
         <th class="col-dni">DNI</th>
         <th class="col-cuil">CUIL</th>
         <th class="col-car">Cargo</th>
-        <th class="col-tel">Teléfono</th>
-        <th class="col-dir">Dirección</th>
+        <th class="col-tel">TelÃ©fono</th>
+        <th class="col-dir">DirecciÃ³n</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -109,7 +109,7 @@ function render(data) {
   const tb = document.getElementById('tbody');
   document.getElementById('cnt').textContent = `${data.length} empleados`;
   document.getElementById('fecha-gen').textContent =
-    `Generado el ${new Date().toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'})} — ${document.getElementById('chk-baja').checked ? 'activos e inactivos' : 'solo activos'}`;
+    `Generado el ${new Date().toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'})} â€” ${document.getElementById('chk-baja').checked ? 'activos e inactivos' : 'solo activos'}`;
 
   tb.innerHTML = data.map((e, i) => `
     <tr>
@@ -136,3 +136,4 @@ cargar();
 </script>
 </body>
 </html>
+

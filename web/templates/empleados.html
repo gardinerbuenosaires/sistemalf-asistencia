@@ -27,7 +27,7 @@
   .nav-group:hover .nav-dropdown { display: block; }
   .nav-dropdown a { display: block; padding: 8px 16px; }
   .nav-dropdown a:hover { background: #f4f6f9; }
-  [data-perm] { display: none; }
+  [data-perm] { display: none !important; }
 
   main { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px; max-width: 1300px; margin: 0 auto; align-items: stretch; flex: 1; min-height: 0; width: 100%; }
 
@@ -1380,3 +1380,4 @@ init().then(async () => {
 </script>
 </body>
 </html>
+

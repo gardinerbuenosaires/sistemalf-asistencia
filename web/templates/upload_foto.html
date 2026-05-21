@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Subir foto — SistemAlf</title>
+<title>Subir foto â€” SistemAlf</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; min-height: 100vh;
@@ -45,7 +45,7 @@
   <!-- Panel PIN -->
   <div id="pin-panel" style="display:none">
     <input class="pin-input" type="password" inputmode="numeric" id="inp-pin"
-           placeholder="••••" onkeydown="if(event.key==='Enter') verificarPin()">
+           placeholder="â€¢â€¢â€¢â€¢" onkeydown="if(event.key==='Enter') verificarPin()">
     <button class="btn btn-oscuro" onclick="verificarPin()">Continuar</button>
     <div id="pin-status" class="err" style="min-height:22px;font-size:.88rem"></div>
   </div>
@@ -53,7 +53,7 @@
   <!-- Panel subida -->
   <div id="upload-panel" style="display:none">
     <button class="btn btn-oscuro" onclick="document.getElementById('inp-foto').click()">
-      📷 Elegir foto
+      ðŸ“· Elegir foto
     </button>
     <input type="file" id="inp-foto" accept="image/*" onchange="cargarFoto()">
 
@@ -61,15 +61,15 @@
       <canvas id="crop-canvas"></canvas>
     </div>
     <div id="crop-hint" style="display:none;margin-bottom:10px">
-      <p class="crop-hint" style="margin-bottom:8px">Arrastrá para centrar · Pellizcá para hacer zoom</p>
+      <p class="crop-hint" style="margin-bottom:8px">ArrastrÃ¡ para centrar Â· PellizcÃ¡ para hacer zoom</p>
       <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:.8rem;color:#aaa">−45°</span>
+        <span style="font-size:.8rem;color:#aaa">âˆ’45Â°</span>
         <input type="range" id="rot-slider" min="-45" max="45" step="0.5" value="0"
                style="flex:1;accent-color:#2c3e50" oninput="rotarSlider(this.value)">
-        <span style="font-size:.8rem;color:#aaa">+45°</span>
+        <span style="font-size:.8rem;color:#aaa">+45Â°</span>
       </div>
-      <div style="font-size:.78rem;color:#888;margin-top:2px" id="rot-label">0°</div>
-      <button onclick="resetRotacion()" style="margin-top:4px;background:none;border:1px solid #ccc;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer">Centrar rotación</button>
+      <div style="font-size:.78rem;color:#888;margin-top:2px" id="rot-label">0Â°</div>
+      <button onclick="resetRotacion()" style="margin-top:4px;background:none;border:1px solid #ccc;border-radius:6px;padding:3px 10px;font-size:.78rem;cursor:pointer">Centrar rotaciÃ³n</button>
     </div>
 
     <button class="btn btn-verde" id="btn-subir" style="display:none" onclick="subirFoto()">
@@ -80,7 +80,7 @@
 </div>
 
 <script>
-// ── Estado del recorte ────────────────────────────────────────────────────────
+// â”€â”€ Estado del recorte â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const VIEW = 280;
 const OUT  = 500;
 
@@ -113,14 +113,14 @@ function drawCrop() {
 
 function rotarSlider(val) {
   rotDeg = parseFloat(val);
-  document.getElementById('rot-label').textContent = (rotDeg >= 0 ? '+' : '') + rotDeg + '°';
+  document.getElementById('rot-label').textContent = (rotDeg >= 0 ? '+' : '') + rotDeg + 'Â°';
   drawCrop();
 }
 
 function resetRotacion() {
   rotDeg = 0;
   document.getElementById('rot-slider').value = 0;
-  document.getElementById('rot-label').textContent = '0°';
+  document.getElementById('rot-label').textContent = '0Â°';
   drawCrop();
 }
 
@@ -135,7 +135,7 @@ function cargarFoto() {
     const slider = document.getElementById('rot-slider');
     if (slider) { slider.value = 0; }
     const lbl = document.getElementById('rot-label');
-    if (lbl) lbl.textContent = '0°';
+    if (lbl) lbl.textContent = '0Â°';
     const minSc = Math.max(VIEW / imgW, VIEW / imgH);
     sc = minSc * 1.05;
     tx = (VIEW - imgW * sc) / 2;
@@ -155,7 +155,7 @@ function cargarFoto() {
   imgEl.src = URL.createObjectURL(file);
 }
 
-// ── Eventos mouse ─────────────────────────────────────────────────────────────
+// â”€â”€ Eventos mouse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const canvas = () => document.getElementById('crop-canvas');
 
 document.addEventListener('mousedown', e => {
@@ -184,7 +184,7 @@ canvas && document.getElementById('crop-canvas')?.addEventListener('wheel', e =>
   clamp(); drawCrop();
 }, { passive: false });
 
-// ── Eventos touch ─────────────────────────────────────────────────────────────
+// â”€â”€ Eventos touch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 document.addEventListener('touchstart', e => {
   if (e.target !== document.getElementById('crop-canvas')) return;
   if (e.touches.length === 1) {
@@ -227,7 +227,7 @@ document.addEventListener('touchend', e => {
   if (e.touches.length === 0) dragging = false;
 }, { passive: true });
 
-// ── Subir ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Subir â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function subirFoto() {
   const btn = document.getElementById('btn-subir');
   const status = document.getElementById('status');
@@ -253,7 +253,7 @@ async function subirFoto() {
       const r = await fetch('/api/fotos/upload', { method: 'POST', body: fd });
       const data = await r.json();
       if (r.ok && data.ok) {
-        status.innerHTML = '✓ Foto subida correctamente.<br>Ya puede asignarse al empleado desde el sistema.';
+        status.innerHTML = 'âœ“ Foto subida correctamente.<br>Ya puede asignarse al empleado desde el sistema.';
         status.className = 'ok';
         btn.style.display = 'none';
         document.getElementById('crop-wrap').style.display = 'none';
@@ -264,14 +264,14 @@ async function subirFoto() {
         btn.disabled = false; btn.textContent = 'Subir foto';
       }
     } catch {
-      status.textContent = 'Error de conexión. Verificá que estés en la red del local.';
+      status.textContent = 'Error de conexiÃ³n. VerificÃ¡ que estÃ©s en la red del local.';
       status.className = 'err';
       btn.disabled = false; btn.textContent = 'Subir foto';
     }
   }, 'image/jpeg', 0.9);
 }
 
-// ── PIN ───────────────────────────────────────────────────────────────────────
+// â”€â”€ PIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function verificarPin() {
   const pin = document.getElementById('inp-pin').value.trim();
   const r = await fetch('/api/fotos/verificar-pin', {
@@ -307,3 +307,4 @@ init();
 </script>
 </body>
 </html>
+

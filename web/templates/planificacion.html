@@ -23,7 +23,7 @@
   .nav-group:hover .nav-dropdown { display: block; }
   .nav-dropdown a { display: block; padding: 8px 16px; }
   .nav-dropdown a:hover { background: #f4f6f9; }
-  [data-perm] { display: none; }
+  [data-perm] { display: none !important; }
 
   .toolbar { background: white; border-bottom: 1px solid #e0e0e0; padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .nav-semana { display: flex; align-items: center; gap: 8px; }
@@ -410,3 +410,4 @@ _loadPerms().then(() => {
 </script>
 </body>
 </html>
+

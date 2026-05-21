@@ -166,7 +166,7 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
                 if fi <= hoy:
                     dias_trabajados = (hoy - fi).days + 1
                     dias_proporcional = float(math.floor(dias_trabajados / 20 + 0.5))
-                    if dias_proporcional > 0:
+                    if dias_proporcional > 0 and dias_trabajados >= 180:
                         usa_proporcional = True
             except ValueError:
                 pass

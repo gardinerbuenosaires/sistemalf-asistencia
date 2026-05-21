@@ -145,6 +145,8 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
             nov_map[key] = {}
         nov_map[key][r["mes"]] = r["dias"]
 
+    hoy = date.today()
+
     result = []
     for e in empleados:
         eid = e["id"]
@@ -155,13 +157,27 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
         meses_emp  = nov_map.get((eid, anio + 1), {})
         dias_v     = sum(meses_emp.values())
 
+        # Cálculo auxiliar proporcional: solo cuando fórmula = 0 y sin saldo inicial
+        usa_proporcional = False
+        dias_proporcional = 0.0
+        if not saldo and dias_formula == 0 and e["fecha_ingreso"]:
+            try:
+                fi = date.fromisoformat(e["fecha_ingreso"])
+                if fi <= hoy:
+                    dias_trabajados = (hoy - fi).days + 1
+                    dias_proporcional = float(math.floor(dias_trabajados / 20 + 0.5))
+                    if dias_proporcional > 0:
+                        usa_proporcional = True
+            except ValueError:
+                pass
+
         if saldo:
             dias_correspondian = saldo["dias_correspondian"]
             dias_tomados       = saldo["dias_tomados"] + dias_v
             arrastre           = 0.0
         else:
             arrastre           = _get_arrastre(eid, anio, e["fecha_ingreso"], saldos, nov_map)
-            dias_correspondian = dias_formula + arrastre
+            dias_correspondian = (dias_proporcional if usa_proporcional else dias_formula) + arrastre
             dias_tomados       = dias_v
 
         dias_restan = round(dias_correspondian - dias_tomados, 1)
@@ -175,6 +191,8 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
             "fecha_ingreso":       e["fecha_ingreso"],
             "anios_antiguedad":    anios,
             "dias_formula":        dias_formula,
+            "dias_proporcional":   dias_proporcional,
+            "usa_proporcional":    usa_proporcional,
             "arrastre":            arrastre,
             "dias_correspondian":  dias_correspondian,
             "dias_tomados":        dias_tomados,

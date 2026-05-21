@@ -44,6 +44,8 @@
   .restan-ok  { background: #d4edda !important; color: #155724; font-weight: bold; }
   .restan-neg { background: #f8d7da !important; color: #721c24; font-weight: bold; }
   .restan-cero { background: #fff3cd !important; color: #856404; font-weight: bold; }
+  .td-proporcional { background: #fff8e1 !important; color: #7c5a00; font-style: italic; }
+  tr.row-proporcional td.col-emp::after { content: ' ⚑'; color: #e67e22; font-size: .75rem; }
 
   /* Carga inicial (modal) */
   #modal-ci input[type=number] { width: 72px; padding: 3px 6px; border: 1px solid #ced4da; border-radius: 4px; text-align: center; font-size: .82rem; }
@@ -299,16 +301,21 @@ function renderTabla(rows) {
       const d = e.meses?.[m];
       return `<td class="col-num">${d ? fmt(d) : ''}</td>`;
     }).join('');
-    return `<tr>
+    const prop = e.usa_proporcional;
+    const formulaCls = prop ? 'col-num td-proporcional' : 'col-num';
+    const formulaVal = prop
+      ? `<span title="Cálculo auxiliar proporcional a hoy (días trabajados / 20). No refleja la fórmula anual.">~${fmt(e.dias_proporcional)}</span>`
+      : fmt(e.dias_formula);
+    return `<tr${prop ? ' class="row-proporcional"' : ''}>
       <td class="col-emp">${e.apellido}, ${e.nombre}</td>
       <td>${e.cargo || '—'}</td>
       <td>${e.fecha_ingreso || '—'}</td>
       <td>${aniosStr}</td>
-      <td class="col-num">${fmt(e.dias_formula)}</td>
+      <td class="${formulaCls}">${formulaVal}</td>
       <td class="col-num" style="${e.arrastre > 0 ? 'background:#d4edda;color:#155724;font-weight:bold' : e.arrastre < 0 ? 'background:#f8d7da;color:#721c24;font-weight:bold' : 'color:#ccc'}">
         ${e.arrastre > 0 ? '↩ +' + fmt(e.arrastre) : e.arrastre < 0 ? '↩ ' + fmt(e.arrastre) : '—'}
       </td>
-      <td class="col-num">${fmt(e.dias_correspondian)}</td>
+      <td class="col-num${prop ? ' td-proporcional' : ''}">${fmt(e.dias_correspondian)}</td>
       <td class="col-num">${fmt(e.dias_tomados)}</td>
       <td class="col-num ${clsR}">${fmt(r)}</td>
       ${mTds}

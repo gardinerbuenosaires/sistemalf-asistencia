@@ -103,9 +103,10 @@
     <h1>Vacaciones</h1>
     <label style="font-size:.85rem;color:#555">Año
       <input type="number" id="sel-anio" value="" min="2020" max="2035"
-             style="width:80px;margin-left:6px;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.88rem">
+             style="width:80px;margin-left:6px;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.88rem"
+             onchange="cargar(); _actualizarIndicadorAnio()">
     </label>
-    <button class="btn btn-secondary" onclick="cargar()">Ver</button>
+    <button id="btn-volver-anio" class="btn btn-secondary btn-sm" style="display:none" onclick="volverAnioDefault()">← Año anterior</button>
     <input type="text" id="buscar" placeholder="Buscar por nombre o cargo…" oninput="filtrar()"
            style="padding:7px 10px;border:1px solid #ced4da;border-radius:4px;font-size:.88rem;width:220px">
     <button class="btn btn-secondary btn-sm" onclick="abrirInfo()" title="Explicación del cálculo">ⓘ Cálculo</button>
@@ -383,8 +384,21 @@ async function guardarCI(i) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+const _ANIO_DEFAULT = new Date().getFullYear() - 1;
+
+function _actualizarIndicadorAnio() {
+  const anio = parseInt(document.getElementById('sel-anio').value);
+  document.getElementById('btn-volver-anio').style.display = anio !== _ANIO_DEFAULT ? '' : 'none';
+}
+
+function volverAnioDefault() {
+  document.getElementById('sel-anio').value = _ANIO_DEFAULT;
+  _actualizarIndicadorAnio();
+  cargar();
+}
+
 async function init() {
-  document.getElementById('sel-anio').value = new Date().getFullYear();
+  document.getElementById('sel-anio').value = _ANIO_DEFAULT;
   await _loadPerms();
   await cargar();
 }

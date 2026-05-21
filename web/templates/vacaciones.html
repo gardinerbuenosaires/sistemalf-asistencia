@@ -8,8 +8,9 @@
 <title>Vacaciones — Sistema de Fichaje</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
-  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; display: flex; flex-direction: column; }
+  header { flex-shrink: 0; background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
   nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
   nav a:hover { opacity: 1; }
   nav a.activo { opacity: 1; font-weight: bold; }
@@ -22,9 +23,9 @@
   .nav-dropdown a:hover { background: #f4f6f9; }
   [data-perm] { display: none !important; }
 
-  main { padding: 20px; max-width: 100%; margin: 0 auto; }
+  main { flex: 1; display: flex; flex-direction: column; padding: 20px; overflow: hidden; }
 
-  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar { flex-shrink: 0; display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
   .toolbar h1 { font-size: 1.1rem; flex: 1; min-width: 120px; }
   .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: .88rem; font-weight: bold; }
   .btn-secondary { background: #eee; color: #555; }
@@ -32,10 +33,11 @@
   .btn-sm { padding: 5px 12px; font-size: .8rem; font-weight: normal; }
 
   /* Tabla principal */
-  .table-wrap { overflow-x: auto; background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  #cards-arrastre { flex-shrink: 0; }
+  .table-wrap { flex: 1; overflow: auto; background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
   table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-  th { background: #f8f9fa; border-bottom: 2px solid #dee2e6; padding: 8px 10px; white-space: nowrap; font-size: .76rem; text-align: center; }
-  th.col-emp { text-align: left; position: sticky; left: 0; z-index: 2; background: #f8f9fa; }
+  th { position: sticky; top: 0; z-index: 3; background: #f8f9fa; border-bottom: 2px solid #dee2e6; padding: 8px 10px; white-space: nowrap; font-size: .76rem; text-align: center; }
+  th.col-emp { text-align: left; position: sticky; top: 0; left: 0; z-index: 4; background: #f8f9fa; }
   td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; text-align: center; white-space: nowrap; }
   td.col-emp { text-align: left; position: sticky; left: 0; background: white; z-index: 1; min-width: 180px; }
   tr:hover td { background: #eef2f7 !important; }

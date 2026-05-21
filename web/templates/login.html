@@ -58,7 +58,8 @@ async function login() {
   });
 
   if (res.ok) {
-    window.location.href = "/";
+    const data = await res.json();
+    window.location.href = data.pagina_inicio || "/";
   } else {
     const data = await res.json().catch(() => ({}));
     showError(data.detail || "Error al iniciar sesión");

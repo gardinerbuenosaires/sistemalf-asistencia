@@ -90,23 +90,23 @@
     <div class="nav-group activo">
       <span class="nav-trigger">Programación ▾</span>
       <div class="nav-dropdown">
-        <a href="/horarios">Horarios</a>
-        <a href="/planificacion">Planificación</a>
-        <a href="/calendarios" class="activo">Calendarios</a>
+        <a href="/horarios" data-perm="horarios:ver">Horarios</a>
+        <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/calendarios" class="activo" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
     <div class="nav-group">
       <span class="nav-trigger">Registro ▾</span>
       <div class="nav-dropdown">
-        <a href="/asistencia">Asistencia</a>
-        <a href="/fichajes">Fichajes</a>
-        <a href="/asistencia-mensual">Planilla</a>
+        <a href="/asistencia" data-perm="asistencia:ver">Asistencia</a>
+        <a href="/fichajes" data-perm="asistencia:ver">Fichajes</a>
+        <a href="/asistencia-mensual" data-perm="asistencia:ver">Planilla</a>
       </div>
     </div>
     <div class="nav-group">
       <span class="nav-trigger">Personal ▾</span>
       <div class="nav-dropdown">
-        <a href="/empleados">Listado</a>
+        <a href="/empleados" data-perm="empleados:ver">Listado</a>
         <a href="/premios" data-perm="premios:ver">Premios</a>
         <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
       </div>
@@ -200,6 +200,10 @@ async function _loadPerms() {
   } catch(e) {}
   document.querySelectorAll('[data-perm]').forEach(el => {
     if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+    });
+    document.querySelectorAll('.nav-group').forEach(g => {
+      const links = g.querySelectorAll('a[href]');
+      if (links.length && [...links].every(a => a.hasAttribute('data-perm'))) g.style.display = 'none';
   });
 }
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }
@@ -393,6 +397,27 @@ async function asignarEmpleados() {
   if (!desde) { toast("Seleccioná fecha desde"); return; }
   const ids = [...document.querySelectorAll(".chk-emp:checked")].map(c => parseInt(c.value));
   if (!ids.length) { toast("Seleccioná al menos un empleado"); return; }
+
+  // Confirmación para fechas pasadas
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const dDesde = new Date(desde + "T00:00:00");
+  if (dDesde < hoy) {
+    const dias = Math.round((hoy - dDesde) / 86400000);
+    const fmtDesde = dDesde.toLocaleDateString('es-AR');
+    const mesDistinto = dDesde.getMonth() !== hoy.getMonth() || dDesde.getFullYear() !== hoy.getFullYear();
+
+    let msg = `La fecha de inicio (${fmtDesde}) es anterior a hoy.\n\n`
+      + `Esto va a reescribir la planificación de ${dias} día${dias !== 1 ? 's' : ''} `
+      + `y borrar los resultados de asistencia procesados de ese período.\n`
+      + `(Los fichajes biométricos no se tocan y se pueden reprocesar.)\n\n`;
+
+    if (mesDistinto) {
+      msg += `⚠ ATENCIÓN: la fecha cae en un mes anterior al actual.\n`
+           + `Esto afecta días de un período que posiblemente ya fue revisado.\n\n`;
+    }
+
+    if (!confirm(msg + '¿Confirmar la asignación?')) return;
+  }
 
   const res = await fetch("/api/calendarios/asignar", {
     method: "POST",

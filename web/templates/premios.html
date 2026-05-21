@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -136,23 +136,23 @@
     <div class="nav-group">
       <span class="nav-trigger">Programación ▾</span>
       <div class="nav-dropdown">
-        <a href="/horarios">Horarios</a>
-        <a href="/planificacion">Planificación</a>
-        <a href="/calendarios">Calendarios</a>
+        <a href="/horarios" data-perm="horarios:ver">Horarios</a>
+        <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
     <div class="nav-group">
       <span class="nav-trigger">Registro ▾</span>
       <div class="nav-dropdown">
-        <a href="/asistencia">Asistencia</a>
-        <a href="/fichajes">Fichajes</a>
-        <a href="/asistencia-mensual">Planilla</a>
+        <a href="/asistencia" data-perm="asistencia:ver">Asistencia</a>
+        <a href="/fichajes" data-perm="asistencia:ver">Fichajes</a>
+        <a href="/asistencia-mensual" data-perm="asistencia:ver">Planilla</a>
       </div>
     </div>
     <div class="nav-group activo">
       <span class="nav-trigger">Personal ▾</span>
       <div class="nav-dropdown">
-        <a href="/empleados">Listado</a>
+        <a href="/empleados" data-perm="empleados:ver">Listado</a>
         <a href="/premios" class="activo">Premios</a>
         <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
       </div>
@@ -168,7 +168,13 @@
     <h1>Evaluación de Premios</h1>
     <label style="font-size:.85rem;color:#666">Período</label>
     <input type="month" id="periodo-sel">
+    <button class="btn btn-secondary btn-sm" onclick="toggleFormula()">Ver fórmula</button>
     <button class="btn btn-secondary" onclick="imprimirPremios()" title="Imprime el turno activo en oficio horizontal">Imprimir / PDF</button>
+  </div>
+
+  <div id="formula-box" style="display:none;margin-bottom:16px;padding:14px 16px;background:#f8f9fa;border-radius:8px;border:1px solid #e0e0e0;font-size:.82rem;line-height:1.8">
+    <strong style="font-size:.85rem">Fórmula de cálculo:</strong>
+    <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px" id="formula-pasos-premios"></div>
   </div>
 
   <div class="cards">
@@ -239,6 +245,10 @@ async function _loadPerms() {
   } catch(e) {}
   document.querySelectorAll('[data-perm]').forEach(el => {
     if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+    });
+    document.querySelectorAll('.nav-group').forEach(g => {
+      const links = g.querySelectorAll('a[href]');
+      if (links.length && [...links].every(a => a.hasAttribute('data-perm'))) g.style.display = 'none';
   });
 }
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }
@@ -661,6 +671,27 @@ _loadPerms().then(async () => {
     await cargar();
   }
 });
+
+async function toggleFormula() {
+  const box = document.getElementById("formula-box");
+  if (box.style.display !== "none") { box.style.display = "none"; return; }
+  const res = await fetch("/api/premios/parametros");
+  if (!res.ok) return;
+  const params = await res.json();
+  const get = k => { const p = params.find(x => x.clave === k); return p ? parseFloat(p.valor) : '?'; };
+  const pasos = [
+    `<b>Base:</b> $${get('monto_base').toLocaleString()}`,
+    `<b>Descalificadores (→ $0):</b> no fichadas ≥ ${get('limite_no_fichadas')} · ausente ≥ 1 día · suspensión ≥ 1 día · enfermedad > ${get('limite_enfermedad_dias')} días`,
+    `<b>Retardo efectivo:</b> min. sistema + (no fichadas × ${get('min_por_no_fichada')} min)`,
+    `<b>Puntualidad:</b> 0 min → PERFECTA ($0) · < ${get('umbral_puntualidad_ok_min')} min → OK ($0) · ${get('umbral_puntualidad_ok_min')}–${get('umbral_puntualidad_total_min')} min → PARCIAL (−${get('pct_descuento_puntualidad')}%) · ≥ ${get('umbral_puntualidad_total_min')} min → NO CUMPLE ($0)`,
+    `<b>BPM NO CONFORME:</b> −${get('pct_descuento_bpm')}% del monto base`,
+    `<b>Vacaciones:</b> −(base ÷ ${get('dias_base_vacaciones')}) × días de vacación`,
+    `<b>Redondeo:</b> al múltiplo de ${get('redondeo') || '—'}`,
+  ];
+  document.getElementById("formula-pasos-premios").innerHTML =
+    pasos.map(p => `<div style="padding:2px 0;border-bottom:1px solid #eee">${p}</div>`).join("");
+  box.style.display = "block";
+}
 </script>
 </body>
 </html>

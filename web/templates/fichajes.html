@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -58,23 +58,23 @@
     <div class="nav-group">
       <span class="nav-trigger">Programación ▾</span>
       <div class="nav-dropdown">
-        <a href="/horarios">Horarios</a>
-        <a href="/planificacion">Planificación</a>
-        <a href="/calendarios">Calendarios</a>
+        <a href="/horarios" data-perm="horarios:ver">Horarios</a>
+        <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
     <div class="nav-group activo">
       <span class="nav-trigger">Registro ▾</span>
       <div class="nav-dropdown">
-        <a href="/asistencia">Asistencia</a>
-        <a href="/fichajes" class="activo">Fichajes</a>
-        <a href="/asistencia-mensual">Planilla</a>
+        <a href="/asistencia" data-perm="asistencia:ver">Asistencia</a>
+        <a href="/fichajes" class="activo" data-perm="asistencia:ver">Fichajes</a>
+        <a href="/asistencia-mensual" data-perm="asistencia:ver">Planilla</a>
       </div>
     </div>
     <div class="nav-group">
       <span class="nav-trigger">Personal ▾</span>
       <div class="nav-dropdown">
-        <a href="/empleados">Listado</a>
+        <a href="/empleados" data-perm="empleados:ver">Listado</a>
         <a href="/premios" data-perm="premios:ver">Premios</a>
         <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
       </div>
@@ -139,6 +139,10 @@ async function _loadPerms() {
   } catch(e) {}
   document.querySelectorAll('[data-perm]').forEach(el => {
     if (_perms.has(el.dataset.perm)) el.removeAttribute('data-perm');
+    });
+    document.querySelectorAll('.nav-group').forEach(g => {
+      const links = g.querySelectorAll('a[href]');
+      if (links.length && [...links].every(a => a.hasAttribute('data-perm'))) g.style.display = 'none';
   });
 }
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }

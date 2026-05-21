@@ -4,6 +4,7 @@ from typing import Optional
 from datetime import date, timedelta
 from db.database import db_session
 from auth.core import require_permiso, get_current_user
+from api.periodos_cerrados import check_periodo_abierto, check_rango_abierto
 
 router = APIRouter(prefix="/api/calendarios", tags=["calendarios"])
 
@@ -171,6 +172,8 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
     d_hasta = max(d_desde + timedelta(days=30), hoy + timedelta(days=30))
 
     with db_session() as conn:
+        check_periodo_abierto(conn, data.fecha_desde)
+
         dias_cal = conn.execute(
             "SELECT dia_semana, horario_id, es_franco FROM calendarios_dias WHERE calendario_id=?",
             (data.calendario_id,)
@@ -282,6 +285,7 @@ def eliminar_asignacion(asignacion_id: int, _user=Depends(require_permiso("calen
         row = conn.execute("SELECT empleado_id FROM asignaciones WHERE id=?", (asignacion_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Asignación no encontrada")
+        check_periodo_abierto(conn, str(date.today()))
         eid = row["empleado_id"]
         conn.execute("DELETE FROM asignaciones WHERE id=?", (asignacion_id,))
         conn.execute(
@@ -311,6 +315,8 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
     omitidos = 0
 
     with db_session() as conn:
+        check_rango_abierto(conn, dias[0], dias[-1])
+
         # Empleados activos con asignación vigente
         asignaciones = conn.execute(
             """

@@ -501,6 +501,11 @@ const PARAMS_META = {
     label: "Tiempo de inactividad para cerrar sesión (minutos)",
     tipo: "number", min: 1, max: 480,
     descripcion: "Minutos sin actividad antes de desloguear al usuario automáticamente. El cambio aplica en el próximo login."
+  },
+  dia_cierre_periodo: {
+    label: "Día de cierre automático de período",
+    tipo: "number", min: 1, max: 28,
+    descripcion: "Día del mes en que el sistema cierra automáticamente el período del mes anterior (entre 1 y 28)."
   }
 };
 

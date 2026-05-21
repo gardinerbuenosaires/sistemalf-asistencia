@@ -179,15 +179,24 @@ def _sincronizar_hora_auto():
         logger.error("Error en sync automático de hora: %s", e)
 
 
+def _get_dia_cierre_auto() -> int:
+    """Lee el día de cierre automático de períodos desde la DB."""
+    try:
+        from db.database import db_session, get_config
+        with db_session() as conn:
+            return max(1, min(28, int(get_config(conn, "dia_cierre_periodo", "6"))))
+    except Exception:
+        return 6
+
+
 def _cerrar_periodo_auto():
     """
-    Cierra automáticamente el período del mes anterior el día 6 de cada mes a la madrugada.
-    Los sueldos se pagan el 5, por lo que a partir del 6 no deben hacerse correcciones libres.
+    Cierra automáticamente el período del mes anterior el día configurado de cada mes a la madrugada.
     """
     global _mes_ultimo_cierre_auto
     ahora = datetime.now()
 
-    if ahora.day != 6 or ahora.hour not in (1, 2):
+    if ahora.day != _get_dia_cierre_auto() or ahora.hour not in (1, 2):
         return
 
     mes_actual = ahora.strftime("%Y-%m")

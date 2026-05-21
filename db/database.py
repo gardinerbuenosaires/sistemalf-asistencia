@@ -493,6 +493,7 @@ def _migrate(conn):
             ('device_timeout',  '10',            'Tiempo de espera de conexión al dispositivo (segundos)'),
             ('nombre_empresa',  '',              'Nombre del restaurante o empresa (aparece en login y reportes'),
             ('inactividad_minutos', '10',        'Minutos sin actividad antes de cerrar la sesión automáticamente'),
+            ('dia_cierre_periodo', '6',          'Día del mes en que se cierra automáticamente el período anterior'),
         ]
     )
 

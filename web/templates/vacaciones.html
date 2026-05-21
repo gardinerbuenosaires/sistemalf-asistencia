@@ -46,6 +46,10 @@
   .restan-cero { background: #fff3cd !important; color: #856404; font-weight: bold; }
   .td-proporcional { background: #fff8e1 !important; color: #7c5a00; font-style: italic; }
   tr.row-proporcional td.col-emp::after { content: ' ⚑'; color: #e67e22; font-size: .75rem; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { background: #e9ecef; }
+  th.sort-asc::after  { content: ' ▲'; font-size: .65rem; }
+  th.sort-desc::after { content: ' ▼'; font-size: .65rem; }
 
   /* Carga inicial (modal) */
   #modal-ci input[type=number] { width: 72px; padding: 3px 6px; border: 1px solid #ced4da; border-radius: 4px; text-align: center; font-size: .82rem; }
@@ -122,9 +126,9 @@
     <table>
       <thead>
         <tr>
-          <th class="col-emp">Apellido y Nombre</th>
-          <th>Cargo</th>
-          <th>Ingreso</th>
+          <th class="col-emp sortable" onclick="ordenar('nombre')">Apellido y Nombre</th>
+          <th class="sortable" onclick="ordenar('cargo')">Cargo</th>
+          <th class="sortable" onclick="ordenar('ingreso')">Ingreso</th>
           <th>Antigüedad</th>
           <th title="Días del año según antigüedad (fórmula)">Fórmula</th>
           <th title="Sobrante arrastrado del año anterior">Arrastre</th>
@@ -239,6 +243,27 @@ function toast(msg, ms = 3000) {
 }
 
 // ── Tabla principal ───────────────────────────────────────────────────────────
+let _sortCol = 'nombre', _sortDir = 1;
+
+function ordenar(col) {
+  if (_sortCol === col) { _sortDir *= -1; } else { _sortCol = col; _sortDir = 1; }
+  document.querySelectorAll('th.sortable').forEach(th => th.classList.remove('sort-asc', 'sort-desc'));
+  const thMap = { nombre: 0, cargo: 1, ingreso: 2 };
+  const ths = document.querySelectorAll('th.sortable');
+  ths[thMap[col]].classList.add(_sortDir === 1 ? 'sort-asc' : 'sort-desc');
+  filtrar();
+}
+
+function _sortData(rows) {
+  return [...rows].sort((a, b) => {
+    let va, vb;
+    if (_sortCol === 'nombre')  { va = `${a.apellido} ${a.nombre}`; vb = `${b.apellido} ${b.nombre}`; }
+    if (_sortCol === 'cargo')   { va = a.cargo || ''; vb = b.cargo || ''; }
+    if (_sortCol === 'ingreso') { va = a.fecha_ingreso || ''; vb = b.fecha_ingreso || ''; }
+    return va.localeCompare(vb, 'es') * _sortDir;
+  });
+}
+
 function fmt(n) {
   if (n === null || n === undefined || n === '') return '';
   return Number.isInteger(n) ? String(n) : parseFloat(n.toFixed(1)).toString();
@@ -281,7 +306,7 @@ function filtrar() {
     ? _data.filter(e => `${e.apellido} ${e.nombre}`.toLowerCase().includes(q)
                      || (e.cargo || '').toLowerCase().includes(q))
     : _data;
-  renderTabla(rows);
+  renderTabla(_sortData(rows));
 }
 
 function renderTabla(rows) {
@@ -406,6 +431,7 @@ function volverAnioDefault() {
 
 async function init() {
   document.getElementById('sel-anio').value = _ANIO_DEFAULT;
+  document.querySelectorAll('th.sortable')[0].classList.add('sort-asc');
   await _loadPerms();
   await cargar();
 }

@@ -1012,7 +1012,7 @@ async function editarEmpleado(id) {
     fetch(`/api/calendarios/asignaciones/empleado/${id}`)
   ]);
   const e = await eRes.json();
-  const asignaciones = aRes.ok ? await aRes.json() : [];
+  const asignaciones = await aRes.json();
   editandoId = id;
   editandoActivo = e.activo;
   document.getElementById("form-titulo").textContent = `${e.apellido}, ${e.nombre}`;

@@ -263,7 +263,7 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
 
 
 @router.get("/asignaciones/empleado/{empleado_id}")
-def asignaciones_empleado(empleado_id: int, _user=Depends(require_permiso("calendarios", "ver"))):
+def asignaciones_empleado(empleado_id: int, _user=Depends(require_permiso("empleados", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
             "SELECT a.*, c.nombre as calendario_nombre FROM asignaciones a "

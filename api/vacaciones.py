@@ -92,7 +92,7 @@ def _get_arrastre(eid: int, anio: int, fecha_ingreso_str: str | None,
         dias_corr_prev = dias_formula_prev + arrastre_prev
         dias_tom_prev  = dias_v_prev
 
-    return round(dias_corr_prev - dias_tom_prev, 1)
+    return max(0.0, round(dias_corr_prev - dias_tom_prev, 1))
 
 
 # ── Modelos ────────────────────────────────────────────────────────────────────

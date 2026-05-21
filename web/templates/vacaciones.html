@@ -282,7 +282,7 @@ async function cargar() {
 
 function renderCards(rows) {
   const conArrastre  = rows.filter(e => e.arrastre > 0);
-  const conDeuda     = rows.filter(e => e.arrastre < 0);
+  const conDeuda     = rows.filter(e => e.dias_restan < 0);
   const totalDias    = conArrastre.reduce((s, e) => s + e.arrastre, 0);
   const div = document.getElementById('cards-arrastre');
   if (!conArrastre.length && !conDeuda.length) { div.style.display = 'none'; return; }

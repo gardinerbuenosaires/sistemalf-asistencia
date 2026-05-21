@@ -78,9 +78,13 @@ def _get_arrastre(eid: int, anio: int, fecha_ingreso_str: str | None,
     meses_prev = nov_map.get((eid, anio), {})
     dias_v_prev = sum(meses_prev.values())
 
-    # Sin ningún dato para ese año → año pre-sistema, no acumular
     if not saldo_prev and not meses_prev:
-        return 0.0
+        # Sin novedades ni saldo: verificar si el empleado tenía entitlement
+        _, dias_formula_prev = _calcular_dias_formula(fecha_ingreso_str, prev)
+        if dias_formula_prev == 0:
+            return 0.0  # No estaba contratado → no acumular
+        # Tenía días pero no hay registro → tomó 0, el arrastre es su fórmula
+        return max(0.0, round(dias_formula_prev, 1))
 
     if saldo_prev:
         dias_corr_prev = saldo_prev["dias_correspondian"]

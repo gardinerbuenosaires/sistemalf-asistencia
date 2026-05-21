@@ -640,7 +640,7 @@ function buildCalendarioSection(asignaciones = []) {
     html += `<div class="cal-vigente">
       <div class="cal-nombre">${vigente.calendario_nombre}${francoLabel}</div>
       <div class="cal-desde">desde ${vigente.fecha_desde}${vigente.fecha_hasta ? " hasta " + vigente.fecha_hasta : ""}</div>
-      <a href="/calendarios" class="cal-link">Ver calendarios</a>
+      ${canDo('calendarios','ver') ? `<a href="/calendarios" class="cal-link">Ver calendarios</a>` : ''}
       ${canDo('calendarios','editar') ? `<button type="button" class="btn btn-sm" style="background:#e74c3c;color:white;margin-left:auto"
         onclick="quitarCalendario(${vigente.id})">Quitar</button>` : ''}
     </div>`;

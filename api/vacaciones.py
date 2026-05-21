@@ -78,14 +78,15 @@ def _get_arrastre(eid: int, anio: int, fecha_ingreso_str: str | None,
     meses_prev = nov_map.get((eid, anio), {})
     dias_v_prev = sum(meses_prev.values())
 
+    # Sin ningún dato para ese año → año pre-sistema, no acumular
+    if not saldo_prev and not meses_prev:
+        return 0.0
+
     if saldo_prev:
         dias_corr_prev = saldo_prev["dias_correspondian"]
         dias_tom_prev  = saldo_prev["dias_tomados"] + dias_v_prev
     else:
         _, dias_formula_prev = _calcular_dias_formula(fecha_ingreso_str, prev)
-        # Sin entitlement y sin novedades → año pre-sistema, no acumular
-        if dias_formula_prev == 0 and not meses_prev:
-            return 0.0
         arrastre_prev  = _get_arrastre(eid, prev, fecha_ingreso_str, saldos, nov_map, depth + 1)
         dias_corr_prev = dias_formula_prev + arrastre_prev
         dias_tom_prev  = dias_v_prev

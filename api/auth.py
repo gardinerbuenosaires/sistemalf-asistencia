@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from db.database import db_session
 from auth.core import (verify_password, create_token, get_current_user,
                        hash_password, require_permiso, invalidar_cache,
-                       MODULOS, ACCIONES)
+                       MODULOS, ACCIONES, INACTIVITY_TTL)
 
 router = APIRouter(tags=["auth"])
 
@@ -30,6 +30,7 @@ class RolIn(BaseModel):
     nombre: str
     descripcion: str = ""
     nivel: int = 1
+    pagina_inicio: str = "/"
 
 
 class PermisosIn(BaseModel):
@@ -42,7 +43,7 @@ class PermisosIn(BaseModel):
 def login(data: LoginIn, response: Response):
     with db_session() as conn:
         row = conn.execute(
-            """SELECT u.*, r.nombre as rol_nombre
+            """SELECT u.*, r.nombre as rol_nombre, r.pagina_inicio
                FROM usuarios u LEFT JOIN roles r ON r.id=u.rol_id
                WHERE u.email=? AND u.activo=1""",
             (data.email.strip(),)
@@ -50,8 +51,9 @@ def login(data: LoginIn, response: Response):
     if not row or not verify_password(data.password, row["password_hash"]):
         raise HTTPException(401, "Email o contraseña incorrectos")
     token = create_token(row["id"], row["email"], row["rol_id"], row["rol_nombre"] or "")
-    response.set_cookie("session", token, httponly=True, samesite="lax", max_age=8*3600)
-    return {"ok": True, "rol": row["rol_nombre"], "nombre": row["nombre"]}
+    response.set_cookie("session", token, httponly=True, samesite="lax", max_age=INACTIVITY_TTL)
+    return {"ok": True, "rol": row["rol_nombre"], "nombre": row["nombre"],
+            "pagina_inicio": row["pagina_inicio"] or "/"}
 
 
 @router.post("/api/auth/logout")
@@ -172,8 +174,8 @@ def create_rol(data: RolIn, user=Depends(require_permiso("roles", "editar"))):
         if conn.execute("SELECT id FROM roles WHERE nombre=?", (data.nombre,)).fetchone():
             raise HTTPException(409, "Ya existe un rol con ese nombre")
         cur = conn.execute(
-            "INSERT INTO roles (nombre, descripcion, nivel) VALUES (?,?,?)",
-            (data.nombre.strip(), data.descripcion.strip(), data.nivel)
+            "INSERT INTO roles (nombre, descripcion, nivel, pagina_inicio) VALUES (?,?,?,?)",
+            (data.nombre.strip(), data.descripcion.strip(), data.nivel, data.pagina_inicio.strip() or "/")
         )
         return {"id": cur.lastrowid, "ok": True}
 
@@ -184,8 +186,9 @@ def update_rol(rid: int, data: RolIn, user=Depends(require_permiso("roles", "edi
         if not conn.execute("SELECT id FROM roles WHERE id=?", (rid,)).fetchone():
             raise HTTPException(404)
         conn.execute(
-            "UPDATE roles SET nombre=?,descripcion=?,nivel=? WHERE id=?",
-            (data.nombre.strip(), data.descripcion.strip(), data.nivel, rid)
+            "UPDATE roles SET nombre=?,descripcion=?,nivel=?,pagina_inicio=? WHERE id=?",
+            (data.nombre.strip(), data.descripcion.strip(), data.nivel,
+             data.pagina_inicio.strip() or "/", rid)
         )
     invalidar_cache(rid)
     return {"ok": True}

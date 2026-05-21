@@ -1,12 +1,14 @@
 import logging
+import time
 import uvicorn
 import shutil
 from pathlib import Path
 from fastapi import Depends, FastAPI, Cookie, Request, UploadFile, File
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
 from contextlib import asynccontextmanager
 from typing import Optional
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from config import API_HOST, API_PORT, DATA_DIR
 from db.database import init_db
@@ -26,7 +28,7 @@ from api.premios import router as premios_router
 from api.vacaciones import router as vacaciones_router
 from api.francos import router as francos_router
 from api.periodos_cerrados import router as periodos_cerrados_router
-from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user
+from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,6 +61,36 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_SKIP_INACTIVITY = {"/login", "/upload-foto", "/api/auth/login", "/api/auth/logout"}
+
+class SlidingSessionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/static") or path.startswith("/api/fotos") or path in _SKIP_INACTIVITY:
+            return await call_next(request)
+
+        token = request.cookies.get("session")
+        if token:
+            payload = decode_token(token)
+            if payload:
+                if time.time() - payload.get("la", 0) > INACTIVITY_TTL:
+                    resp = (
+                        JSONResponse({"detail": "Sesión expirada por inactividad"}, status_code=401)
+                        if path.startswith("/api/") else RedirectResponse("/login")
+                    )
+                    resp.delete_cookie("session")
+                    return resp
+                response = await call_next(request)
+                response.set_cookie(
+                    "session", refresh_token(payload),
+                    httponly=True, samesite="lax", max_age=INACTIVITY_TTL
+                )
+                return response
+
+        return await call_next(request)
+
+app.add_middleware(SlidingSessionMiddleware)
+
 app.mount("/static", StaticFiles(directory="web/static"), name="static")
 app.include_router(horarios_router)
 app.include_router(planificacion_router)
@@ -77,8 +109,13 @@ app.include_router(francos_router)
 app.include_router(periodos_cerrados_router)
 
 
-def _auth(request: Request, modulo: str, accion: str = "ver"):
-    return check_page_auth(request.cookies.get("session"), modulo, accion)
+def _page(request: Request, template: str, modulo: str, accion: str = "ver"):
+    token = request.cookies.get("session")
+    if not token or not decode_token(token):
+        return RedirectResponse("/login")
+    if not check_page_auth(token, modulo, accion):
+        return RedirectResponse("/")
+    return FileResponse(template)
 
 
 @app.get("/login", include_in_schema=False)
@@ -86,27 +123,40 @@ def page_login(): return FileResponse("web/templates/login.html")
 
 @app.get("/", include_in_schema=False)
 def root(request: Request):
-    return FileResponse("web/templates/index.html") if _auth(request, "dashboard") else RedirectResponse("/login")
+    token = request.cookies.get("session")
+    payload = decode_token(token) if token else None
+    if not payload:
+        return RedirectResponse("/login")
+    if check_page_auth(token, "dashboard"):
+        return FileResponse("web/templates/index.html")
+    from db.database import db_session
+    with db_session() as conn:
+        rol = conn.execute("SELECT pagina_inicio FROM roles WHERE id=?",
+                           (payload.get("rol_id"),)).fetchone()
+    destino = (rol["pagina_inicio"] if rol and rol["pagina_inicio"] else None) or "/"
+    if destino == "/":
+        return FileResponse("web/templates/index.html")
+    return RedirectResponse(destino)
 
 @app.get("/horarios", include_in_schema=False)
 def page_horarios(request: Request):
-    return FileResponse("web/templates/horarios.html") if _auth(request, "horarios") else RedirectResponse("/login")
+    return _page(request, "web/templates/horarios.html", "horarios")
 
 @app.get("/planificacion", include_in_schema=False)
 def page_planificacion(request: Request):
-    return FileResponse("web/templates/planificacion.html") if _auth(request, "planificacion") else RedirectResponse("/login")
+    return _page(request, "web/templates/planificacion.html", "planificacion")
 
 @app.get("/calendarios", include_in_schema=False)
 def page_calendarios(request: Request):
-    return FileResponse("web/templates/calendarios.html") if _auth(request, "calendarios") else RedirectResponse("/login")
+    return _page(request, "web/templates/calendarios.html", "calendarios")
 
 @app.get("/empleados", include_in_schema=False)
 def page_empleados(request: Request):
-    return FileResponse("web/templates/empleados.html") if _auth(request, "empleados") else RedirectResponse("/login")
+    return _page(request, "web/templates/empleados.html", "empleados")
 
 @app.get("/asistencia", include_in_schema=False)
 def page_asistencia(request: Request):
-    return FileResponse("web/templates/asistencia.html") if _auth(request, "asistencia") else RedirectResponse("/login")
+    return _page(request, "web/templates/asistencia.html", "asistencia")
 
 @app.get("/usuarios", include_in_schema=False)
 def page_usuarios(request: Request):
@@ -114,35 +164,35 @@ def page_usuarios(request: Request):
 
 @app.get("/roles", include_in_schema=False)
 def page_roles(request: Request):
-    return FileResponse("web/templates/roles.html") if _auth(request, "roles") else RedirectResponse("/login")
+    return _page(request, "web/templates/roles.html", "roles")
 
 @app.get("/configuracion", include_in_schema=False)
 def page_configuracion(request: Request):
-    return FileResponse("web/templates/configuracion.html") if _auth(request, "usuarios") else RedirectResponse("/login")
+    return _page(request, "web/templates/configuracion.html", "usuarios")
 
 @app.get("/fichajes", include_in_schema=False)
 def page_fichajes(request: Request):
-    return FileResponse("web/templates/fichajes.html") if _auth(request, "asistencia") else RedirectResponse("/login")
+    return _page(request, "web/templates/fichajes.html", "asistencia")
 
 @app.get("/asistencia-mensual", include_in_schema=False)
 def page_asistencia_mensual(request: Request):
-    return FileResponse("web/templates/asistencia_mensual.html") if _auth(request, "asistencia") else RedirectResponse("/login")
+    return _page(request, "web/templates/asistencia_mensual.html", "asistencia")
 
 @app.get("/premios", include_in_schema=False)
 def page_premios(request: Request):
-    return FileResponse("web/templates/premios.html") if _auth(request, "premios") else RedirectResponse("/login")
+    return _page(request, "web/templates/premios.html", "premios")
 
 @app.get("/vacaciones", include_in_schema=False)
 def page_vacaciones(request: Request):
-    return FileResponse("web/templates/vacaciones.html") if _auth(request, "vacaciones") else RedirectResponse("/login")
+    return _page(request, "web/templates/vacaciones.html", "vacaciones")
 
 @app.get("/empleados/listado", include_in_schema=False)
 def page_empleados_listado(request: Request):
-    return FileResponse("web/templates/empleados_listado.html") if _auth(request, "empleados") else RedirectResponse("/login")
+    return _page(request, "web/templates/empleados_listado.html", "empleados")
 
 @app.get("/empleados/{eid}/legajo", include_in_schema=False)
 def page_legajo_imprimible(eid: int, request: Request):
-    return FileResponse("web/templates/legajo_imprimible.html") if _auth(request, "empleados") else RedirectResponse("/login")
+    return _page(request, "web/templates/legajo_imprimible.html", "empleados")
 
 @app.get("/upload-foto", include_in_schema=False)
 def page_upload_foto():
@@ -379,6 +429,14 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
         ).fetchall()
         eids_con_franco = {f["empleado_id"] for f in francos_hoy}
 
+        # Empleados con novedad de ausencia justificada hoy (no deben aparecer como ausentes)
+        novedades_justificadas = conn.execute(
+            """SELECT DISTINCT empleado_id FROM novedades
+               WHERE fecha = ? AND tipo IN ('E','V','ILT','LSG','L','S','@')""",
+            (hoy,)
+        ).fetchall()
+        eids_con_novedad = {r["empleado_id"] for r in novedades_justificadas}
+
         umbral_h = int(get_config(conn, "umbral_ciclo_abierto_horas", "4"))
 
         hids = list({p["horario_id"] for p in planes}) if planes else []
@@ -440,7 +498,9 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
 
             if not f_entrada:
                 tol_entrada = timedelta(minutes=b.get("tolerancia_entrada_despues", 60))
-                if ahora > t_entrada + tol_entrada and ahora < t_salida + timedelta(hours=2):
+                if (ahora > t_entrada + tol_entrada
+                        and ahora < t_salida + timedelta(hours=2)
+                        and eid not in eids_con_novedad):
                     ausentes.append({
                         "empleado_id":       plan["empleado_id"],
                         "user_id":           plan["user_id"],

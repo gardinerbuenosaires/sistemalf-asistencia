@@ -17,9 +17,10 @@ from jose import JWTError, jwt
 
 from db.database import db_session
 
-SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
-ALGORITHM  = "HS256"
-TOKEN_TTL  = 8  # horas
+SECRET_KEY      = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
+ALGORITHM       = "HS256"
+TOKEN_TTL       = 8    # horas — expiración absoluta
+INACTIVITY_TTL  = 600  # segundos — 10 minutos sin actividad desloguea
 
 # Módulos y acciones disponibles en el sistema
 MODULOS = [
@@ -54,7 +55,15 @@ def create_token(user_id: int, email: str, rol_id: int, rol_nombre: str) -> str:
     exp = datetime.now(timezone.utc) + timedelta(hours=TOKEN_TTL)
     return jwt.encode(
         {"sub": str(user_id), "email": email,
-         "rol_id": rol_id, "rol": rol_nombre, "exp": exp},
+         "rol_id": rol_id, "rol": rol_nombre, "exp": exp, "la": time.time()},
+        SECRET_KEY, algorithm=ALGORITHM
+    )
+
+
+def refresh_token(payload: dict) -> str:
+    """Renueva last_active manteniendo la expiración absoluta original."""
+    return jwt.encode(
+        {**payload, "la": time.time()},
         SECRET_KEY, algorithm=ALGORITHM
     )
 

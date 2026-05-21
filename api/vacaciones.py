@@ -74,7 +74,8 @@ def _get_arrastre(eid: int, anio: int, fecha_ingreso_str: str | None,
         return 0.0
 
     saldo_prev = saldos.get((eid, prev))
-    meses_prev = nov_map.get((eid, prev), {})
+    # Las vacaciones del período prev se toman durante el año siguiente (anio)
+    meses_prev = nov_map.get((eid, anio), {})
     dias_v_prev = sum(meses_prev.values())
 
     # Sin ningún dato para ese año → año pre-sistema, no acumular
@@ -150,7 +151,8 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
         anios, dias_formula = _calcular_dias_formula(e["fecha_ingreso"], anio)
 
         saldo      = saldos.get((eid, anio))
-        meses_emp  = nov_map.get((eid, anio), {})
+        # Las vacaciones del período anio se toman durante el año siguiente
+        meses_emp  = nov_map.get((eid, anio + 1), {})
         dias_v     = sum(meses_emp.values())
 
         if saldo:

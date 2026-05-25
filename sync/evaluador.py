@@ -260,6 +260,13 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
             ).fetchall()
         }
 
+        cp_set: set[int] = {
+            r["empleado_id"] for r in conn.execute(
+                "SELECT DISTINCT empleado_id FROM novedades WHERE fecha=? AND tipo='CP'",
+                (fecha_str,)
+            ).fetchall()
+        }
+
         # Cargar tipo de empleado para los que tienen planificación
         eids_plan = [p["empleado_id"] for p in planes]
         if eids_plan:
@@ -328,29 +335,31 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                     ).fetchone()
                     if bloques_noche:
                         excluir_antes = _dt(fecha - timedelta(days=1), bloques_noche["hora_salida"], dia_sig=True) + timedelta(minutes=30)
-                # Fallback: si el resultado del día anterior tiene una salida que cae en este día
-                # (turno cruzó medianoche pero la flag cruza_medianoche no está configurada)
-                if excluir_antes is None:
-                    res_ant = conn.execute(
-                        "SELECT b1_salida, b2_salida FROM resultados_dia WHERE empleado_id=? AND fecha=?",
-                        (eid, str(fecha - timedelta(days=1)))
-                    ).fetchone()
-                    if res_ant:
-                        for col in ("b1_salida", "b2_salida"):
-                            ts = res_ant[col]
-                            if ts and ts[:10] == fecha_str:
-                                excluir_antes = datetime.fromisoformat(ts) + timedelta(minutes=30)
-                                break
+                # Ajustar excluir_antes con la salida real del día anterior si fue más tardía que la planificada
+                res_ant = conn.execute(
+                    "SELECT b1_salida, b2_salida FROM resultados_dia WHERE empleado_id=? AND fecha=?",
+                    (eid, str(fecha - timedelta(days=1)))
+                ).fetchone()
+                if res_ant:
+                    for col in ("b1_salida", "b2_salida"):
+                        ts = res_ant[col]
+                        if ts and ts[:10] == fecha_str:
+                            actual_excluir = datetime.fromisoformat(ts) + timedelta(minutes=30)
+                            if excluir_antes is None or actual_excluir > excluir_antes:
+                                excluir_antes = actual_excluir
+                            break
                 fichajes_franco = [
                     f for f in fich_map.get(eid, [])
                     if f["timestamp"][:10] == fecha_str
                     and (excluir_antes is None or datetime.fromisoformat(f["timestamp"]) > excluir_antes)
                 ]
-                # Último recurso: un único fichaje antes de las 08:00 en un día franco
-                # es casi siempre la salida del turno nocturno anterior, no presencia real
+                # Último recurso: un único fichaje antes de las 06:00 en un día franco
+                # solo se descarta si hay fichajes de ayer después de las 17:00 (evidencia de turno noche anterior)
                 if excluir_antes is None and len(fichajes_franco) == 1:
-                    if datetime.fromisoformat(fichajes_franco[0]["timestamp"]).hour < 8:
-                        fichajes_franco = []
+                    if datetime.fromisoformat(fichajes_franco[0]["timestamp"]).hour < 6:
+                        fichajes_ayer = [f for f in fich_map.get(eid, []) if f["timestamp"][:10] == str(fecha - timedelta(days=1))]
+                        if any(f["timestamp"][11:16] >= "17:00" for f in fichajes_ayer):
+                            fichajes_franco = []
                 if fichajes_franco:
                     hid_ft = p.get("horario_id")  # NULL hasta que el encargado lo asigne
                     if hid_ft and hid_ft not in bloques_map:
@@ -496,6 +505,34 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                             "sin_salida":        False,
                         }
                     estado = "ok"
+
+            # Si tiene novedad CP y resultó ausente, marcar como presente (timestamps fantasma)
+            if estado == "ausente" and eid in cp_set:
+                bloques = bloques_map.get(p.get("horario_id"), [])
+                if bloques:
+                    b1 = bloques[0]
+                    cruza1 = bool(b1["cruza_medianoche"])
+                    b1r = {
+                        "entrada":           f"{fecha_str} {b1['hora_entrada']}:00",
+                        "salida":            f"{str(fecha + timedelta(days=1)) if cruza1 else fecha_str} {b1['hora_salida']}:00",
+                        "minutos_tarde":     None,
+                        "salida_anticipada": False,
+                        "ausente":           False,
+                        "sin_salida":        False,
+                    }
+                    b2r = None
+                    if len(bloques) > 1:
+                        b2 = bloques[1]
+                        cruza2 = bool(b2["cruza_medianoche"])
+                        b2r = {
+                            "entrada":           f"{fecha_str} {b2['hora_entrada']}:00",
+                            "salida":            f"{str(fecha + timedelta(days=1)) if cruza2 else fecha_str} {b2['hora_salida']}:00",
+                            "minutos_tarde":     None,
+                            "salida_anticipada": False,
+                            "ausente":           False,
+                            "sin_salida":        False,
+                        }
+                estado = "ok"
 
             # Si el empleado tiene novedad NF y resultó ausente, usar horario planificado
             if estado == "ausente" and eid in nf_set:

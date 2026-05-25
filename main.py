@@ -447,10 +447,18 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
         ).fetchall()
         eids_con_franco = {f["empleado_id"] for f in francos_hoy}
 
-        # Empleados con novedad de ausencia justificada hoy (no deben aparecer como ausentes)
+        # FT con horario ya asignado → situación atendida, no mostrar en "franco con fichaje"
+        eids_ft_resuelto = {
+            r["empleado_id"]
+            for r in conn.execute(
+                "SELECT empleado_id FROM resultados_dia WHERE fecha=? AND es_franco=1 AND horario_id IS NOT NULL",
+                (hoy,)
+            ).fetchall()
+        }
+
+        # Empleados con cualquier novedad hoy (situación ya atendida → no mostrar en "no ficharon")
         novedades_justificadas = conn.execute(
-            """SELECT DISTINCT empleado_id FROM novedades
-               WHERE fecha = ? AND tipo IN ('E','V','ILT','LSG','L','S','@')""",
+            "SELECT DISTINCT empleado_id FROM novedades WHERE fecha = ?",
             (hoy,)
         ).fetchall()
         eids_con_novedad = {r["empleado_id"] for r in novedades_justificadas}
@@ -562,6 +570,8 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
     # — Empleados con franco planificado pero que ficharon hoy —
     for fila in francos_hoy:
         eid = fila["empleado_id"]
+        if eid in eids_ft_resuelto:
+            continue  # horario ya asignado → situación atendida
         fichajes_hoy_f = [f for f in fich_map.get(eid, []) if f["timestamp"][:10] == hoy]
         if not fichajes_hoy_f:
             continue

@@ -129,11 +129,12 @@ def set_dia(data: PlanDiaIn, _user=Depends(require_permiso("planificacion", "edi
             (data.empleado_id, data.fecha),
         ).fetchone()
 
-    try:
-        from sync.evaluador import evaluar_fecha
-        evaluar_fecha(data.fecha, respetar_correcciones=False, solo_empleado_id=data.empleado_id)
-    except Exception:
-        pass
+    if data.fecha <= str(date.today()):
+        try:
+            from sync.evaluador import evaluar_fecha
+            evaluar_fecha(data.fecha, respetar_correcciones=False, solo_empleado_id=data.empleado_id)
+        except Exception:
+            pass
 
     return dict(row)
 

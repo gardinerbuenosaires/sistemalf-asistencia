@@ -14,7 +14,7 @@ def _calcular_dias_formula(fecha_ingreso_str: str | None, anio: int) -> tuple[in
       D = TRUNCAR((ref - ingreso) / 365.25, 0)          → años antigüedad
       F = tramo según D (14/21/28/35/0)
       G = si F==0: (si días>=180 → 14, si no → REDONDEAR(días/20, 0))
-    Fecha de referencia: 31/12 del año anterior al período.
+    Fecha de referencia: 31/12 del período (anio).
     """
     if not fecha_ingreso_str:
         return 0, 0.0
@@ -23,7 +23,7 @@ def _calcular_dias_formula(fecha_ingreso_str: str | None, anio: int) -> tuple[in
     except ValueError:
         return 0, 0.0
 
-    ref = date(anio - 1, 12, 31)
+    ref = date(anio, 12, 31)
     if fecha_ingreso > ref:
         return 0, 0.0
 
@@ -79,12 +79,8 @@ def _get_arrastre(eid: int, anio: int, fecha_ingreso_str: str | None,
     dias_v_prev = sum(meses_prev.values())
 
     if not saldo_prev and not meses_prev:
-        # Sin novedades ni saldo: verificar si el empleado tenía entitlement
-        _, dias_formula_prev = _calcular_dias_formula(fecha_ingreso_str, prev)
-        if dias_formula_prev == 0:
-            return 0.0  # No estaba contratado → no acumular
-        # Tenía días pero no hay registro → tomó 0, el arrastre es su fórmula
-        return max(0.0, round(dias_formula_prev, 1))
+        # Sin novedades ni saldo_inicial: no hay datos del año anterior → sin arrastre
+        return 0.0
 
     if saldo_prev:
         dias_corr_prev = saldo_prev["dias_correspondian"]
@@ -113,7 +109,7 @@ class SaldoInicialIn(BaseModel):
 def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "ver"))):
     """Devuelve todos los empleados activos con su cálculo de vacaciones para el año."""
     if not anio:
-        anio = date.today().year
+        anio = date.today().year - 1
 
     with db_session() as conn:
         empleados = conn.execute(
@@ -160,10 +156,14 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
         meses_emp  = nov_map.get((eid, anio + 1), {})
         dias_v     = sum(meses_emp.values())
 
-        # Cálculo auxiliar proporcional: solo cuando fórmula = 0 y sin saldo inicial
+        # Cálculo auxiliar proporcional a hoy:
+        #   - cuando fórmula = 0 (no estaba contratado al 31/12)
+        #   - cuando primer año y no llegó a 180 días al 31/12 (la fórmula da un valor parcial)
         usa_proporcional = False
+        sin_180_aun      = False
         dias_proporcional = 0.0
-        if not saldo and dias_formula == 0 and e["fecha_ingreso"]:
+        primer_anio_sin_180 = not saldo and anios == 0 and 0 < dias_formula < 14
+        if not saldo and (dias_formula == 0 or primer_anio_sin_180) and e["fecha_ingreso"]:
             try:
                 fi = date.fromisoformat(e["fecha_ingreso"])
                 if fi <= hoy:
@@ -175,8 +175,9 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
                     elif anios_aux >= 1:  dias_proporcional = 14.0
                     elif dias_trabajados >= 180: dias_proporcional = 14.0
                     else: dias_proporcional = float(math.floor(dias_trabajados / 20 + 0.5))
-                    if dias_proporcional > 0 and dias_trabajados >= 180:
+                    if dias_proporcional > 0:
                         usa_proporcional = True
+                        sin_180_aun = dias_trabajados < 180
             except ValueError:
                 pass
 
@@ -202,6 +203,7 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
             "dias_formula":        dias_formula,
             "dias_proporcional":   dias_proporcional,
             "usa_proporcional":    usa_proporcional,
+            "sin_180_aun":         sin_180_aun,
             "arrastre":            arrastre,
             "dias_correspondian":  dias_correspondian,
             "dias_tomados":        dias_tomados,
@@ -247,6 +249,63 @@ def get_saldo_inicial(anio: int, _user=Depends(require_permiso("vacaciones", "ed
             "tiene_saldo":      saldo is not None,
         })
     return result
+
+
+@router.get("/saldo-empleado")
+def get_saldo_empleado(empleado_id: int, anio: int = 0,
+                       _user=Depends(require_permiso("asistencia", "corregir"))):
+    """Saldo de vacaciones de un empleado para un período (anio = año del período vacacional)."""
+    if not anio:
+        anio = date.today().year - 1
+
+    with db_session() as conn:
+        emp = conn.execute(
+            "SELECT fecha_ingreso FROM empleados WHERE id=?", (empleado_id,)
+        ).fetchone()
+        if not emp:
+            raise HTTPException(404, "Empleado no encontrado")
+
+        saldos = {
+            (r["empleado_id"], r["anio"]): dict(r)
+            for r in conn.execute("SELECT * FROM vacaciones_saldo_inicial").fetchall()
+        }
+
+        nov_rows = conn.execute("""
+            SELECT CAST(strftime('%Y', fecha) AS INTEGER) AS anio,
+                   SUM(CASE WHEN bloque = 0 THEN 1.0 ELSE 0.5 END) AS dias
+            FROM novedades
+            WHERE tipo = 'V' AND empleado_id = ?
+            GROUP BY anio
+        """, (empleado_id,)).fetchall()
+
+    nov_map: dict = {}
+    for r in nov_rows:
+        # novedades del año N+1 corresponden al período N
+        period = r["anio"] - 1
+        nov_map[period] = nov_map.get(period, 0.0) + r["dias"]
+
+    _, dias_formula = _calcular_dias_formula(emp["fecha_ingreso"], anio)
+    saldo = saldos.get((empleado_id, anio))
+    dias_v = nov_map.get(anio, 0.0)
+
+    if saldo:
+        dias_correspondian = saldo["dias_correspondian"]
+        dias_tomados       = saldo["dias_tomados"] + dias_v
+        arrastre           = 0.0
+    else:
+        arrastre           = _get_arrastre(empleado_id, anio, emp["fecha_ingreso"], saldos,
+                                           {(empleado_id, anio + 1): {"01": dias_v} if dias_v else {}})
+        dias_correspondian = dias_formula + arrastre
+        dias_tomados       = dias_v
+
+    dias_restan = round(dias_correspondian - dias_tomados, 1)
+    return {
+        "empleado_id":     empleado_id,
+        "anio":            anio,
+        "dias_correspondian": dias_correspondian,
+        "dias_tomados":    dias_tomados,
+        "dias_restan":     dias_restan,
+    }
 
 
 @router.post("/saldo-inicial", status_code=200)

@@ -236,6 +236,13 @@
           </select>
         </div>
         <div class="fg">
+          <label>Turno</label>
+          <select id="f-turno-filtro" onchange="filtrar()">
+            <option value="">Todos</option>
+            <option value="__vacio__">— Sin turno —</option>
+          </select>
+        </div>
+        <div class="fg">
           <label>Datos</label>
           <select id="f-datos-filtro" onchange="filtrar()">
             <option value="">Todos</option>
@@ -274,11 +281,14 @@
 
 <div id="toast"></div>
 
+<script src="/static/js/session.js"></script>
+<script src="/static/js/user-menu.js"></script>
 <script>
 function _localDateStr(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 const DIAS_NOMBRES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const _fmtF = f => f ? f.split('-').reverse().join('-') : '';
 
 let todos = [];
 let calendarios = [];
@@ -435,6 +445,7 @@ function _actualizarIndicadorFiltros() {
                  document.getElementById("f-cargo-filtro").value ||
                  document.getElementById("f-depto-filtro").value ||
                  document.getElementById("f-categoria-filtro").value ||
+                 document.getElementById("f-turno-filtro").value ||
                  document.getElementById("f-datos-filtro").value ||
                  filtroImportadosIds;
   btn.classList.toggle("con-filtros", !!activo);
@@ -455,6 +466,7 @@ function filtrar() {
   const cargo     = document.getElementById("f-cargo-filtro").value;
   const depto     = document.getElementById("f-depto-filtro").value;
   const categoria = document.getElementById("f-categoria-filtro").value;
+  const turno     = document.getElementById("f-turno-filtro").value;
   const datos     = document.getElementById("f-datos-filtro").value;
 
   let base = todos.filter(e => e.tipo !== "acceso");
@@ -470,6 +482,8 @@ function filtrar() {
   else if (depto)                 base = base.filter(e => e.departamento_id === parseInt(depto));
   if (categoria === "__vacio__")  base = base.filter(e => !e.categoria_id);
   else if (categoria)             base = base.filter(e => e.categoria_id === parseInt(categoria));
+  if (turno === "__vacio__")      base = base.filter(e => !e.turno_id);
+  else if (turno)                 base = base.filter(e => e.turno_id === parseInt(turno));
   if (q) base = base.filter(e => `${e.apellido} ${e.nombre} ${e.cargo||""} ${e.departamento||""} ${e.categoria||""}`.toLowerCase().includes(q));
 
   renderLista(base);
@@ -483,6 +497,7 @@ function limpiarFiltros() {
   document.getElementById("f-cargo-filtro").value = "";
   document.getElementById("f-depto-filtro").value = "";
   document.getElementById("f-categoria-filtro").value = "";
+  document.getElementById("f-turno-filtro").value = "";
   document.getElementById("f-datos-filtro").value = "";
   _actualizarIndicadorFiltros();
   limpiarFiltroImportados();
@@ -639,7 +654,7 @@ function buildCalendarioSection(asignaciones = []) {
       : "";
     html += `<div class="cal-vigente">
       <div class="cal-nombre">${vigente.calendario_nombre}${francoLabel}</div>
-      <div class="cal-desde">desde ${vigente.fecha_desde}${vigente.fecha_hasta ? " hasta " + vigente.fecha_hasta : ""}</div>
+      <div class="cal-desde">desde ${_fmtF(vigente.fecha_desde)}${vigente.fecha_hasta ? " hasta " + _fmtF(vigente.fecha_hasta) : ""}</div>
       ${canDo('calendarios','ver') ? `<a href="/calendarios" class="cal-link">Ver calendarios</a>` : ''}
       ${canDo('calendarios','editar') ? `<button type="button" class="btn btn-sm" style="background:#e74c3c;color:white;margin-left:auto"
         onclick="quitarCalendario(${vigente.id})">Quitar</button>` : ''}
@@ -651,7 +666,7 @@ function buildCalendarioSection(asignaciones = []) {
   if (historial.length) {
     html += `<div class="cal-historial-label">Historial:</div>`;
     html += historial.map(a =>
-      `<div class="cal-historial-item">${a.calendario_nombre} <span>${a.fecha_desde} → ${a.fecha_hasta || "activo"}</span></div>`
+      `<div class="cal-historial-item">${a.calendario_nombre} <span>${_fmtF(a.fecha_desde)} → ${a.fecha_hasta ? _fmtF(a.fecha_hasta) : "activo"}</span></div>`
     ).join("");
   }
 
@@ -1368,10 +1383,17 @@ async function init() {
   _poblarSelectCatalogo("f-cargo-filtro", cargosOpts, "Todo cargo", "— Sin cargo asignado —");
   _poblarSelectCatalogo("f-depto-filtro", deptosOpts, "Todo depto.", "— Sin depto. —");
   _poblarSelectCatalogo("f-categoria-filtro", categoriasOpts, "Todas", "— Sin categ. —");
+  _poblarSelectCatalogo("f-turno-filtro", turnosLegajoOpts, "Todos", "— Sin turno —");
 }
 
 init().then(async () => {
-  const id = new URLSearchParams(location.search).get('id');
+  const params = new URLSearchParams(location.search);
+  const id    = params.get('id');
+  const cargo = params.get('cargo');
+  if (cargo) {
+    document.getElementById('f-cargo-filtro').value = cargo;
+    filtrar();
+  }
   if (id) {
     await editarEmpleado(parseInt(id));
     document.getElementById(`emp-item-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });

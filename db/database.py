@@ -618,9 +618,9 @@ def _migrate(conn):
         )
     """)
 
-    # Determinantes de premios (tolerar_nf, tolerar_e, anular_premio)
+    # Determinantes de premios (tolerar_nf, tolerar_e, tolerar_retardo, anular_premio)
     cols_pe = {r[1] for r in conn.execute("PRAGMA table_info(premios_evaluacion)").fetchall()}
-    for col in ("tolerar_nf", "tolerar_e", "anular_premio"):
+    for col in ("tolerar_nf", "tolerar_e", "tolerar_retardo", "anular_premio"):
         if col not in cols_pe:
             conn.execute(f"ALTER TABLE premios_evaluacion ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
             logger.info("Migración: columna %s agregada a premios_evaluacion", col)

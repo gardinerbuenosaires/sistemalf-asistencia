@@ -48,6 +48,8 @@
   .restan-cero { background: #fff3cd !important; color: #856404; font-weight: bold; }
   .td-proporcional { background: #fff8e1 !important; color: #7c5a00; font-style: italic; }
   tr.row-proporcional td.col-emp::after { content: ' ⚑'; color: #e67e22; font-size: .75rem; }
+  .td-sin180 { background: #fdecea !important; color: #922b21; font-style: italic; }
+  tr.row-sin180 td.col-emp::after { content: ' ⚑'; color: #c0392b; font-size: .75rem; }
   th.sortable { cursor: pointer; user-select: none; }
   th.sortable:hover { background: #e9ecef; }
   th.sort-asc::after  { content: ' ▲'; font-size: .65rem; }
@@ -213,6 +215,8 @@
 
 <div id="toast"></div>
 
+<script src="/static/js/session.js"></script>
+<script src="/static/js/user-menu.js"></script>
 <script>
 let _data = [];
 let _ciData = [];
@@ -329,12 +333,17 @@ function renderTabla(rows) {
       const d = e.meses?.[m];
       return `<td class="col-num">${d ? fmt(d) : ''}</td>`;
     }).join('');
-    const prop = e.usa_proporcional;
-    const formulaCls = prop ? 'col-num td-proporcional' : 'col-num';
-    const formulaVal = prop
-      ? `<span title="Cálculo auxiliar proporcional a hoy (días trabajados / 20). No refleja la fórmula anual.">~${fmt(e.dias_proporcional)}</span>`
+    const prop   = e.usa_proporcional && !e.sin_180_aun;
+    const sin180 = e.sin_180_aun;
+    const formulaCls = sin180 ? 'col-num td-sin180' : prop ? 'col-num td-proporcional' : 'col-num';
+    const formulaTitle = sin180
+      ? 'Aún no cumplió 180 días — sin derecho a vacaciones todavía'
+      : 'Cálculo auxiliar proporcional a hoy. No refleja la fórmula anual.';
+    const formulaVal = (prop || sin180)
+      ? `<span title="${formulaTitle}">~${fmt(e.dias_proporcional)}</span>`
       : fmt(e.dias_formula);
-    return `<tr${prop ? ' class="row-proporcional"' : ''}>
+    const rowCls = sin180 ? ' class="row-sin180"' : prop ? ' class="row-proporcional"' : '';
+    return `<tr${rowCls}>
       <td class="col-emp">${e.apellido}, ${e.nombre}</td>
       <td>${e.cargo || '—'}</td>
       <td>${e.fecha_ingreso ? e.fecha_ingreso.split('-').reverse().join('-') : '—'}</td>
@@ -343,7 +352,7 @@ function renderTabla(rows) {
       <td class="col-num" style="${e.arrastre > 0 ? 'background:#d4edda;color:#155724;font-weight:bold' : e.arrastre < 0 ? 'background:#f8d7da;color:#721c24;font-weight:bold' : 'color:#ccc'}">
         ${e.arrastre > 0 ? '↩ +' + fmt(e.arrastre) : e.arrastre < 0 ? '↩ ' + fmt(e.arrastre) : '—'}
       </td>
-      <td class="col-num${prop ? ' td-proporcional' : ''}">${fmt(e.dias_correspondian)}</td>
+      <td class="col-num${sin180 ? ' td-sin180' : prop ? ' td-proporcional' : ''}">${fmt(e.dias_correspondian)}</td>
       <td class="col-num">${fmt(e.dias_tomados)}</td>
       <td class="col-num ${clsR}">${fmt(r)}</td>
       ${mTds}

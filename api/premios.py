@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from db.database import db_session
-from auth.core import require_permiso
+from auth.core import require_permiso, tiene_permiso
+from api.asistencia_mensual import get_control_estados_batch
 
 router = APIRouter(prefix="/api/premios", tags=["premios"])
 
@@ -22,6 +23,7 @@ class EvaluacionUpdate(BaseModel):
     monto_base: Optional[int] = None
     tolerar_nf: Optional[bool] = None
     tolerar_e: Optional[bool] = None
+    tolerar_retardo: Optional[bool] = None
     anular_premio: Optional[bool] = None
 
 
@@ -47,6 +49,10 @@ def _calcular(ev: dict, params: dict) -> dict:
     dias_vacacion = ev["dias_vacacion"]
     minutos_retardo = ev["minutos_retardo"]
     bpm = ev["bpm"]
+
+    if ev.get("tolerar_nf"):      no_fichadas = 0
+    if ev.get("tolerar_e"):       dias_enfermo = 0
+    if ev.get("tolerar_retardo"): minutos_retardo = 0
 
     desglose = {
         "monto_base": base,
@@ -134,31 +140,63 @@ def _finalizar(desglose: dict, valor_bruto: int, params: dict) -> dict:
 
 
 def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
-    """Extrae los datos de asistencia del período para un empleado."""
+    """
+    Lee los contadores de asistencia aplicando la misma resolución de novedades
+    que usa la planilla: las novedades tienen prioridad sobre resultados_dia.
+    """
     anio, mes = periodo.split("-")
     fecha_desde = f"{anio}-{mes}-01"
-    # Último día del mes
-    if mes == "12":
-        fecha_hasta = f"{int(anio)+1}-01-01"
-    else:
-        fecha_hasta = f"{anio}-{int(mes)+1:02d}-01"
+    fecha_hasta = f"{int(anio)+1}-01-01" if mes == "12" else f"{anio}-{int(mes)+1:02d}-01"
 
-    # Tardanzas y ausencias de resultados_dia (excluye francos)
+    # Contadores desde resultados_dia respetando overrides de novedades.
+    # Un día con novedad E/ILT/S/V/NF/CP no se cuenta como ausente ni NF.
+    # El retardo solo se acumula en días efectivamente presentes (sin novedad de ausencia).
     r = conn.execute("""
         SELECT
-            COALESCE(SUM(COALESCE(b1_minutos_tarde,0) + COALESCE(b2_minutos_tarde,0)), 0) AS minutos_retardo,
-            COUNT(CASE WHEN estado='nf'     THEN 1 END) AS no_fichadas,
-            COUNT(CASE WHEN estado='ausente' THEN 1 END) AS dias_ausente
-        FROM resultados_dia
-        WHERE empleado_id=? AND fecha>=? AND fecha<? AND es_franco=0
+            COALESCE(SUM(CASE
+                WHEN rd.estado IN ('ok','tarde','nf','sin_salida')
+                 AND NOT EXISTS (
+                     SELECT 1 FROM novedades n
+                     WHERE n.empleado_id = rd.empleado_id
+                       AND n.fecha = rd.fecha
+                       AND n.tipo IN ('E','ILT','S','V')
+                 )
+                THEN COALESCE(rd.b1_minutos_tarde,0) + COALESCE(rd.b2_minutos_tarde,0)
+                ELSE 0
+            END), 0) AS minutos_retardo,
+            COUNT(CASE
+                WHEN (
+                    rd.estado = 'nf'
+                     AND NOT EXISTS (
+                         SELECT 1 FROM novedades n
+                         WHERE n.empleado_id = rd.empleado_id
+                           AND n.fecha = rd.fecha
+                           AND n.tipo IN ('E','ILT','S','V')
+                     )
+                ) OR (
+                    rd.estado = 'ausente'
+                     AND EXISTS (
+                         SELECT 1 FROM novedades n
+                         WHERE n.empleado_id = rd.empleado_id
+                           AND n.fecha = rd.fecha
+                           AND n.tipo = 'NF'
+                     )
+                )
+                THEN 1
+            END) AS no_fichadas
+        FROM resultados_dia rd
+        WHERE rd.empleado_id=? AND rd.fecha>=? AND rd.fecha<? AND rd.es_franco=0
     """, (empleado_id, fecha_desde, fecha_hasta)).fetchone()
 
-    # Novedades del período
+    # Novedades: fuente de verdad para ausencias categorizadas (igual que planilla)
+    # 'A' = ausencia confirmada (lo que planilla muestra como A, no A!!!)
+    # A!!! = estado previo sin confirmar, no cuenta como ausente
     n = conn.execute("""
         SELECT
-            COUNT(DISTINCT fecha) FILTER (WHERE tipo='V')              AS dias_vacacion,
-            COUNT(DISTINCT fecha) FILTER (WHERE tipo IN ('E','ILT'))   AS dias_enfermo,
-            COUNT(DISTINCT fecha) FILTER (WHERE tipo='S')              AS dias_suspension
+            COUNT(DISTINCT fecha) FILTER (WHERE tipo='V')            AS dias_vacacion,
+            COUNT(DISTINCT fecha) FILTER (WHERE tipo IN ('E','ILT')) AS dias_enfermo,
+            COUNT(DISTINCT fecha) FILTER (WHERE tipo='S')            AS dias_suspension,
+            COUNT(DISTINCT fecha) FILTER (WHERE tipo='A')            AS dias_ausente
         FROM novedades
         WHERE empleado_id=? AND fecha>=? AND fecha<?
     """, (empleado_id, fecha_desde, fecha_hasta)).fetchone()
@@ -166,7 +204,7 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
     return {
         "minutos_retardo": r["minutos_retardo"],
         "no_fichadas":     r["no_fichadas"],
-        "dias_ausente":    r["dias_ausente"],
+        "dias_ausente":    n["dias_ausente"],
         "dias_vacacion":   n["dias_vacacion"],
         "dias_enfermo":    n["dias_enfermo"],
         "dias_suspension": n["dias_suspension"],
@@ -224,6 +262,45 @@ def _diagnostico(conn, fecha_desde: str, dias_min: int) -> dict:
 
 # ── Evaluaciones ───────────────────────────────────────────────────────────────
 
+_QUERY_EVALUACIONES = """
+    WITH ult AS (
+        SELECT p.empleado_id, h.tipo, t.nombre AS turno_nombre,
+               ROW_NUMBER() OVER (
+                   PARTITION BY p.empleado_id ORDER BY p.fecha DESC
+               ) AS rn
+        FROM planificacion p
+        JOIN horarios h ON h.id = p.horario_id
+        LEFT JOIN turnos t ON t.id = h.turno_id
+        WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
+    )
+    SELECT pe.*, e.apellido, e.nombre,
+           c.nombre AS cargo, d.nombre AS departamento, cat.nombre AS categoria,
+           CASE
+               WHEN u.tipo = 'cortado' THEN 'CO'
+               WHEN lower(u.turno_nombre) LIKE '%noche%'
+                 OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 'TN'
+               WHEN u.tipo IS NOT NULL THEN 'TM'
+               ELSE NULL
+           END AS grupo
+    FROM premios_evaluacion pe
+    JOIN empleados e ON e.id = pe.empleado_id
+    LEFT JOIN cargos c ON c.id = e.cargo_id
+    LEFT JOIN departamentos d ON d.id = e.departamento_id
+    LEFT JOIN categorias cat ON cat.id = e.categoria_id
+    LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
+    WHERE pe.periodo=?
+    ORDER BY
+        CASE
+            WHEN u.tipo = 'cortado' THEN 3
+            WHEN lower(u.turno_nombre) LIKE '%noche%'
+              OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 2
+            WHEN u.tipo IS NOT NULL THEN 1
+            ELSE 4
+        END,
+        e.apellido, e.nombre
+"""
+
+
 @router.get("/{periodo}")
 def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver"))):
     with db_session() as conn:
@@ -233,49 +310,52 @@ def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver
         f0 = f"{anio_i:04d}-{mes_i:02d}-01"
         f1 = f"{anio_i:04d}-{mes_i:02d}-{_cal.monthrange(anio_i, mes_i)[1]:02d}"
 
-        rows = conn.execute("""
-            WITH ult AS (
-                SELECT p.empleado_id, h.tipo, t.nombre AS turno_nombre,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY p.empleado_id ORDER BY p.fecha DESC
-                       ) AS rn
-                FROM planificacion p
-                JOIN horarios h ON h.id = p.horario_id
-                LEFT JOIN turnos t ON t.id = h.turno_id
-                WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
-            )
-            SELECT pe.*, e.apellido, e.nombre,
-                   c.nombre AS cargo, d.nombre AS departamento, cat.nombre AS categoria,
-                   CASE
-                       WHEN u.tipo = 'cortado' THEN 'CO'
-                       WHEN lower(u.turno_nombre) LIKE '%noche%'
-                         OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 'TN'
-                       WHEN u.tipo IS NOT NULL THEN 'TM'
-                       ELSE NULL
-                   END AS grupo
-            FROM premios_evaluacion pe
-            JOIN empleados e ON e.id = pe.empleado_id
-            LEFT JOIN cargos c ON c.id = e.cargo_id
-            LEFT JOIN departamentos d ON d.id = e.departamento_id
-            LEFT JOIN categorias cat ON cat.id = e.categoria_id
-            LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
-            WHERE pe.periodo=?
-            ORDER BY
-                CASE
-                    WHEN u.tipo = 'cortado' THEN 3
-                    WHEN lower(u.turno_nombre) LIKE '%noche%'
-                      OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 2
-                    WHEN u.tipo IS NOT NULL THEN 1
-                    ELSE 4
-                END,
-                e.apellido, e.nombre
-        """, (f0, f1, periodo)).fetchall()
+        # Auto-refresh de contadores de asistencia para períodos abiertos
+        cerrado = conn.execute(
+            "SELECT 1 FROM periodos_cerrados WHERE anio=? AND mes=?",
+            (anio_i, mes_i)
+        ).fetchone()
+
+        if not cerrado:
+            params = _get_params(conn)
+            evs = conn.execute(
+                "SELECT id, empleado_id FROM premios_evaluacion WHERE periodo=?", (periodo,)
+            ).fetchall()
+            for ev in evs:
+                datos = _acumular_periodo(conn, ev["empleado_id"], periodo)
+                ev_full = dict(conn.execute(
+                    "SELECT * FROM premios_evaluacion WHERE id=?", (ev["id"],)
+                ).fetchone())
+                ev_full.update(datos)
+                desglose = _calcular(ev_full, params)
+                conn.execute("""
+                    UPDATE premios_evaluacion SET
+                        minutos_retardo=?, no_fichadas=?, dias_vacacion=?,
+                        dias_enfermo=?, dias_suspension=?, dias_ausente=?,
+                        desglose_json=?, valor_calculado=?, valor_final=?,
+                        modificado_en=datetime('now','localtime')
+                    WHERE id=?
+                """, (
+                    datos["minutos_retardo"], datos["no_fichadas"], datos["dias_vacacion"],
+                    datos["dias_enfermo"], datos["dias_suspension"], datos["dias_ausente"],
+                    json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
+                    ev["id"]
+                ))
+
+        rows = conn.execute(_QUERY_EVALUACIONES, (f0, f1, periodo)).fetchall()
+
+        eids = [r["empleado_id"] for r in rows]
+        control_estados = get_control_estados_batch(conn, eids, f0, f1)
+
     result = []
     for r in rows:
+        if control_estados.get(r["empleado_id"]) == "liquidacion":
+            continue
         d = dict(r)
         if d.get("desglose_json"):
             d["desglose"] = json.loads(d["desglose_json"])
         del d["desglose_json"]
+        d["asistencia_incompleta"] = control_estados.get(d["empleado_id"]) not in ("completado", "vacio")
         result.append(d)
     return result
 
@@ -375,6 +455,11 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             raise HTTPException(404, "Evaluación no encontrada")
         ev = dict(ev)
 
+        campos_corregir = [data.tolerar_nf, data.tolerar_e, data.tolerar_retardo, data.anular_premio]
+        if any(v is not None for v in campos_corregir):
+            if not tiene_permiso(_user.get("rol_id"), "premios", "corregir"):
+                raise HTTPException(403, "Sin permiso: premios.corregir")
+
         if data.bpm is not None:
             ev["bpm"] = data.bpm
         if data.desempenio is not None:
@@ -385,6 +470,8 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             ev["tolerar_nf"] = int(data.tolerar_nf)
         if data.tolerar_e is not None:
             ev["tolerar_e"] = int(data.tolerar_e)
+        if data.tolerar_retardo is not None:
+            ev["tolerar_retardo"] = int(data.tolerar_retardo)
         if data.anular_premio is not None:
             ev["anular_premio"] = int(data.anular_premio)
 
@@ -394,13 +481,13 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         conn.execute("""
             UPDATE premios_evaluacion SET
                 bpm=?, desempenio=?, monto_base=?,
-                tolerar_nf=?, tolerar_e=?, anular_premio=?,
+                tolerar_nf=?, tolerar_e=?, tolerar_retardo=?, anular_premio=?,
                 desglose_json=?, valor_calculado=?, valor_final=?,
                 modificado_en=datetime('now','localtime')
             WHERE id=?
         """, (
             ev["bpm"], ev["desempenio"], ev["monto_base"],
-            ev.get("tolerar_nf", 0), ev.get("tolerar_e", 0), ev.get("anular_premio", 0),
+            ev.get("tolerar_nf", 0), ev.get("tolerar_e", 0), ev.get("tolerar_retardo", 0), ev.get("anular_premio", 0),
             json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
             ev_id
         ))

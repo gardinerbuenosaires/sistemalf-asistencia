@@ -28,7 +28,7 @@ _EST_B2 = {
 }
 
 CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "@", "NF"}
-LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "@", "NF", "A"}
+LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "F", "@", "NF", "A", "CP"}
 DIAS_SEMANA   = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]
 
 
@@ -44,7 +44,10 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
     if nov is None and bloque != 0:
         nov = nov_map.get((eid, fecha, 0))
     if nov:
-        r = {"letra": nov["tipo"], "tipo": "normal", "nov_id": nov["id"]}
+        if nov["tipo"] == "CP":
+            r = {"letra": "I", "tipo": "normal", "cp": True, "nov_id": nov["id"]}
+        else:
+            r = {"letra": nov["tipo"], "tipo": "normal", "nov_id": nov["id"]}
         if nov.get("descripcion"):
             r["descripcion"] = nov["descripcion"]
         if nov.get("creado_por"):
@@ -81,6 +84,13 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
             letra = mapa.get(base)
             if letra:
                 return {"letra": letra, "tipo": "normal"}
+
+        # Duda causada por un bloque con solo salida: el otro bloque completo muestra como presente
+        if estado == "duda":
+            if bloque == 1 and res.get("b1_entrada"):
+                return {"letra": "I", "tipo": "normal"}
+            if bloque == 2 and res.get("b2_entrada"):
+                return {"letra": "I", "tipo": "normal"}
 
         # Si b1 es MT, el estado representa solo b2 evaluado como bloque simple → usar _EST_B1 para bloque 2
         if bloque == 2 and res.get("b1_mt"):
@@ -167,6 +177,111 @@ def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
     return {"estado": "revisar", "dias_duda": dias_duda}
 
 
+def get_control_estados_batch(conn, eids: list, f0: str, f1: str) -> dict:
+    """
+    Devuelve {empleado_id: estado_control} para una lista de empleados en el período f0-f1.
+    Usa la misma lógica que la planilla (_resolver + _calcular_control).
+    Premios lo importa para saber si el empleado tiene asistencia completada.
+    """
+    if not eids:
+        return {}
+
+    fechas = []
+    d = date.fromisoformat(f0)
+    last = date.fromisoformat(f1)
+    while d <= last:
+        fechas.append(d.isoformat())
+        d += timedelta(days=1)
+
+    ph = ",".join("?" * len(eids))
+
+    emp_rows = conn.execute(
+        f"SELECT id, fecha_ingreso, fecha_egreso FROM empleados WHERE id IN ({ph})", eids
+    ).fetchall()
+
+    # Tipo de horario predominante por empleado (para saber si es cortado)
+    cortado_rows = conn.execute(f"""
+        SELECT p.empleado_id, h.tipo
+        FROM planificacion p
+        JOIN horarios h ON h.id = p.horario_id
+        WHERE p.empleado_id IN ({ph}) AND p.fecha >= ? AND p.fecha <= ?
+          AND p.horario_id IS NOT NULL
+        ORDER BY p.fecha DESC
+    """, (*eids, f0, f1)).fetchall()
+    cortado_map = {}
+    for r in cortado_rows:
+        if r["empleado_id"] not in cortado_map:
+            cortado_map[r["empleado_id"]] = (r["tipo"] == "cortado")
+
+    planes = conn.execute(
+        f"SELECT p.empleado_id, p.fecha, p.es_franco, p.horario_id, h.tipo AS horario_tipo "
+        f"FROM planificacion p LEFT JOIN horarios h ON h.id=p.horario_id "
+        f"WHERE p.empleado_id IN ({ph}) AND p.fecha>=? AND p.fecha<=?",
+        (*eids, f0, f1)
+    ).fetchall()
+
+    resultados = conn.execute(
+        f"SELECT empleado_id, fecha, estado, horario_id, b1_mt, b2_mt, b1_entrada, b2_entrada "
+        f"FROM resultados_dia WHERE empleado_id IN ({ph}) AND fecha>=? AND fecha<=?",
+        (*eids, f0, f1)
+    ).fetchall()
+
+    novedades = conn.execute(
+        f"SELECT id, empleado_id, fecha, bloque, tipo, descripcion, creado_por "
+        f"FROM novedades WHERE empleado_id IN ({ph}) AND fecha>=? AND fecha<=?",
+        (*eids, f0, f1)
+    ).fetchall()
+
+    aliviadas = conn.execute(
+        f"SELECT empleado_id, fecha, bloque FROM aliviadas "
+        f"WHERE empleado_id IN ({ph}) AND fecha>=? AND fecha<=?",
+        (*eids, f0, f1)
+    ).fetchall()
+
+    plan_map = {(r["empleado_id"], r["fecha"]): dict(r) for r in planes}
+    res_map  = {
+        (r["empleado_id"], r["fecha"]): {
+            "estado": r["estado"], "horario_id": r["horario_id"],
+            "b1_mt": r["b1_mt"], "b2_mt": r["b2_mt"],
+            "b1_entrada": r["b1_entrada"], "b2_entrada": r["b2_entrada"],
+        }
+        for r in resultados
+    }
+    nov_map = {}
+    for n in novedades:
+        nov_map[(n["empleado_id"], n["fecha"], n["bloque"])] = {
+            "id": n["id"], "tipo": n["tipo"],
+            "descripcion": n["descripcion"], "creado_por": n["creado_por"],
+        }
+    ali_set = {(a["empleado_id"], a["fecha"], a["bloque"]) for a in aliviadas}
+
+    hoy_str = date.today().isoformat()
+    resultado = {}
+
+    for emp in emp_rows:
+        eid   = emp["id"]
+        f_ing = (emp["fecha_ingreso"] or "")[:10]
+        f_egr = (emp["fecha_egreso"]  or "")[:10]
+        cortado = cortado_map.get(eid, False)
+
+        celdas = {}
+        for fecha in fechas:
+            plan = plan_map.get((eid, fecha))
+            dia_cortado = plan and plan.get("horario_tipo") == "cortado"
+            if cortado or dia_cortado:
+                b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                celdas[fecha] = {"b1": b1, "b2": b2, "es_cortado_dia": bool(dia_cortado)}
+            else:
+                c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                celdas[fecha] = c
+
+        ctrl = _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str)
+        resultado[eid] = ctrl["estado"]
+
+    return resultado
+
+
 def _build_dias(fechas, feriados):
     return [
         {
@@ -223,7 +338,7 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
                 WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
             )
             SELECT e.id, e.user_id, e.nombre, e.apellido, c.nombre AS cargo,
-                   e.fecha_ingreso, e.fecha_egreso, e.en_dispositivo,
+                   e.fecha_ingreso, e.fecha_egreso, e.en_dispositivo, e.activo,
                    u.tipo AS hipo, u.turno_nombre
             FROM empleados e
             LEFT JOIN cargos c ON c.id = e.cargo_id
@@ -319,6 +434,8 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
         if cortado:
             grupo = "CO"
         elif not emp["turno_nombre"]:
+            if not emp["activo"]:
+                continue
             grupo = "ST"
         elif "noche" in turno or "madrugada" in turno:
             grupo = "TN"
@@ -388,6 +505,7 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
             "nombre":     emp["nombre"],
             "apellido":   emp["apellido"],
             "cargo":      emp["cargo"] or "",
+            "fecha_ingreso": f_ing or None,
             "fecha_egreso": f_egr or None,
             "celdas":     celdas,
             "control":    control,
@@ -426,6 +544,35 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
         raise HTTPException(400, f"Tipo inválido. Válidos: {sorted(LETRAS_VALIDAS)}")
     if data.tipo == "@" and data.bloque not in (1, 2):
         raise HTTPException(400, "La aliviada (@) requiere bloque 1 o 2")
+    if data.tipo == "CP" and not data.descripcion:
+        raise HTTPException(400, "La compensación de presencia requiere una descripción")
+    if data.tipo == "V":
+        from api.vacaciones import _calcular_dias_formula, _get_arrastre
+        anio_periodo = int(data.fecha[:4]) - 1
+        with db_session() as conn:
+            emp = conn.execute("SELECT fecha_ingreso FROM empleados WHERE id=?", (data.empleado_id,)).fetchone()
+            saldos = {(r["empleado_id"], r["anio"]): dict(r)
+                      for r in conn.execute("SELECT * FROM vacaciones_saldo_inicial").fetchall()}
+            dias_v_ya = conn.execute("""
+                SELECT SUM(CASE WHEN bloque=0 THEN 1.0 ELSE 0.5 END)
+                FROM novedades
+                WHERE tipo='V' AND empleado_id=? AND strftime('%Y',fecha)=?
+                  AND NOT (fecha=? AND bloque=?)
+            """, (data.empleado_id, str(int(data.fecha[:4])),
+                  data.fecha, data.bloque)).fetchone()[0] or 0.0
+        fi = emp["fecha_ingreso"] if emp else None
+        _, dias_formula = _calcular_dias_formula(fi, anio_periodo)
+        saldo = saldos.get((data.empleado_id, anio_periodo))
+        nueva = 0.5 if data.bloque > 0 else 1.0
+        if saldo:
+            dias_restan = saldo["dias_correspondian"] - saldo["dias_tomados"] - dias_v_ya
+        else:
+            arrastre = _get_arrastre(data.empleado_id, anio_periodo, fi, saldos,
+                                     {(data.empleado_id, int(data.fecha[:4])): {"01": dias_v_ya} if dias_v_ya else {}})
+            dias_restan = dias_formula + arrastre - dias_v_ya
+        dias_restan = round(dias_restan, 1)
+        if dias_restan < nueva:
+            raise HTTPException(400, f"Sin días de vacaciones disponibles. Quedan {dias_restan:.1f} día(s).")
     creado_por = user.get("email") or user.get("sub")
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
@@ -460,11 +607,23 @@ def eliminar_novedades_rango(data: NovedadRangoIn, _user=Depends(require_permiso
     from api.periodos_cerrados import check_rango_abierto
     with db_session() as conn:
         check_rango_abierto(conn, data.fecha_desde, data.fecha_hasta)
+        tipos_afectados = {
+            r["tipo"] for r in conn.execute(
+                "SELECT DISTINCT tipo FROM novedades WHERE empleado_id=? AND fecha>=? AND fecha<=? AND bloque=?",
+                (data.empleado_id, data.fecha_desde, data.fecha_hasta, data.bloque),
+            ).fetchall()
+        }
         conn.execute(
             """DELETE FROM novedades
                WHERE empleado_id=? AND fecha>=? AND fecha<=? AND bloque=?""",
             (data.empleado_id, data.fecha_desde, data.fecha_hasta, data.bloque),
         )
+    if tipos_afectados & {"CP", "NF"}:
+        try:
+            from sync.evaluador import evaluar_rango
+            evaluar_rango(data.fecha_desde, data.fecha_hasta, respetar_correcciones=False)
+        except Exception:
+            pass
     return {"ok": True}
 
 
@@ -472,11 +631,18 @@ def eliminar_novedades_rango(data: NovedadRangoIn, _user=Depends(require_permiso
 def eliminar_novedad(nov_id: int, _user=Depends(require_permiso("asistencia", "corregir"))):
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
-        row = conn.execute("SELECT id, fecha FROM novedades WHERE id=?", (nov_id,)).fetchone()
+        row = conn.execute("SELECT id, fecha, tipo, empleado_id FROM novedades WHERE id=?", (nov_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Novedad no encontrada")
         check_periodo_abierto(conn, row["fecha"])
         conn.execute("DELETE FROM novedades WHERE id=?", (nov_id,))
+        tipo, fecha, empleado_id = row["tipo"], row["fecha"], row["empleado_id"]
+    if tipo in ("CP", "NF"):
+        try:
+            from sync.evaluador import evaluar_fecha
+            evaluar_fecha(fecha, respetar_correcciones=False, solo_empleado_id=empleado_id)
+        except Exception:
+            pass
     return {"ok": True}
 
 

@@ -8,8 +8,9 @@
 <title>Premios — Sistema de Fichaje</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
-  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; display: flex; flex-direction: column; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
   nav a:hover { opacity: 1; }
   nav a.activo { opacity: 1; font-weight: bold; }
@@ -23,7 +24,7 @@
   .nav-dropdown a:hover { background: #f4f6f9; }
   [data-perm] { display: none !important; }
 
-  main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+  main { padding: 20px; max-width: 1400px; margin: 0 auto; width: 100%; flex: 1; overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
 
   .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
   .toolbar h1 { font-size: 1.1rem; flex: 1; }
@@ -54,16 +55,17 @@
   .tab-btn.activo .cnt { background: #eef2f5; }
 
   /* Tabla principal */
-  .section { background: white; border-radius: 0 8px 8px 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
+  .section { background: white; border-radius: 0 8px 8px 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); flex: 1; overflow-y: auto; min-height: 0; }
   table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-  th { text-align: left; padding: 9px 10px; background: #f8f9fa; border-bottom: 2px solid #dee2e6; font-size: .78rem; white-space: nowrap; }
+  th { text-align: left; padding: 9px 10px; background: #f8f9fa; border-bottom: 2px solid #dee2e6; font-size: .78rem; white-space: nowrap; position: sticky; top: 0; z-index: 2; }
   td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
   tr:hover td { background: #fafafa; }
 
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .75rem; font-weight: bold; }
-  .badge-ok      { background: #d4edda; color: #155724; }
-  .badge-parcial { background: #fff3cd; color: #856404; }
-  .badge-pierde  { background: #f8d7da; color: #721c24; }
+  .badge-ok        { background: #d4edda; color: #155724; }
+  .badge-parcial   { background: #fff3cd; color: #856404; }
+  .badge-pierde    { background: #f8d7da; color: #721c24; }
+  .badge-nocumple  { background: #fff3cd; color: #7d6608; }
   .badge-bpm-nc  { background: #f8d7da; color: #721c24; }
   .badge-bpm-ok  { background: #d4edda; color: #155724; }
 
@@ -100,6 +102,9 @@
              border-radius: 3px; padding: 0 3px; margin-left: 3px; vertical-align: middle; }
   .det-inline { margin-left: 5px; cursor: pointer; vertical-align: middle; width: 13px; height: 13px; }
   .falta-bpm { color: #e67e22; font-size: .75rem; font-style: italic; }
+  .cnt-cero { color: #ccc; }
+  .cnt-nz   { font-weight: bold; }
+  .asist-inc  { color: #c0392b; font-size: .75rem; font-style: italic; }
   .print-only { display: none; }
 
   #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 12px 20px; border-radius: 8px; display: none; z-index: 100; }
@@ -109,16 +114,18 @@
     @page { size: legal landscape; margin: 10mm 12mm; }
     header, .toolbar, .cards, #diag-bar, #toast, .btn-expand, .btn-save-row,
     [data-perm], button, .grupo-subtotal, #tabs-turnos { display: none !important; }
-    body { background: white; }
-    main { padding: 4px; max-width: none; }
-    .section { box-shadow: none; border: 1px solid #bbb; }
+    html, body { height: auto; overflow: visible; }
+    body { background: white; display: block; }
+    main { padding: 4px; max-width: none; overflow: visible; display: block; flex: none; }
+    .section { box-shadow: none; border: 1px solid #bbb; overflow: visible; flex: none; }
+    th { position: static; }
     table { font-size: .7rem; }
     th, td { padding: 4px 6px; }
     .desglose { display: none !important; }
     .field-bpm select { border: none; background: transparent; -webkit-appearance: none; appearance: none; font-size: .7rem; }
     .field-desempenio textarea { border: none; background: transparent; resize: none; font-size: .7rem; overflow: hidden; min-height: 0; }
     .firma-cell, .th-firma { display: table-cell !important; min-width: 120px; }
-    .det-col, .th-det { display: none !important; }
+    .det-col, .th-det, .det-inline { display: none !important; }
     .screen-only { display: none !important; }
     .print-only { display: inline !important; }
     .firma-linea { border-bottom: 1px solid #333; width: 110px; display: inline-block; }
@@ -231,9 +238,12 @@
 
 <div id="toast"></div>
 
+<script src="/static/js/session.js"></script>
+<script src="/static/js/user-menu.js"></script>
 <script>
 let _perms = new Set();
 let _evaluaciones = [];
+const _debounceTimers = {};
 let _nombreEmpresa = "";
 let _periodoAbierto = false;
 
@@ -281,11 +291,12 @@ function _fmtPesos(v) {
   return "$" + Number(v).toLocaleString("es-AR");
 }
 
-function _badgePuntualidad(status) {
-  if (!status) return "—";
+function _badgePuntualidad(status, descalificado) {
+  if (!status) return descalificado ? '<span class="badge badge-pierde">NO CALIFICA</span>' : "—";
   const cls = status === "PERFECTA" || status === "OK" ? "badge-ok"
             : status === "PARCIAL" ? "badge-parcial"
-            : status === "NO CUMPLE" ? "badge-pierde" : "badge-pierde";
+            : status === "NO CUMPLE" ? "badge-nocumple"
+            : "badge-pierde";
   return `<span class="badge ${cls}">${status}</span>`;
 }
 
@@ -346,16 +357,24 @@ function _mostrarTab() {
     _recalcularCards();
     return;
   }
-  tbody.innerHTML = data.map(ev => _filaHtml(ev, editar)).join("");
+  const corregir = canDo("premios", "corregir");
+  tbody.innerHTML = data.map(ev => _filaHtml(ev, editar, corregir)).join("");
   _recalcularCards();
 }
 
-function _filaHtml(ev, editar) {
+function _cnt(val, suffix = '') {
+  const esCero = !val || val === 0 || val === '0' || val === '0:00';
+  return `<span class="${esCero ? 'cnt-cero' : 'cnt-nz'}">${val}</span>${suffix}`;
+}
+
+function _filaHtml(ev, editar, corregir) {
   const d = ev.desglose || {};
   const vf = ev.valor_final ?? 0;
   const vfPantalla = ev.anular_premio ? 0 : vf;
   const clsValor = vfPantalla === 0 ? "valor-cero" : "valor-final";
-  const sinBpm = !ev.bpm;
+  const sinBpm       = !ev.bpm;
+  const sinAsistencia = !!ev.asistencia_incompleta;
+  const bloqueado    = sinBpm || sinAsistencia;
   const bpmBadge = ev.bpm === "NO CONFORME"
     ? `<span class="badge badge-bpm-nc">NO CONFORME</span>`
     : ev.bpm === "OK"
@@ -369,23 +388,29 @@ function _filaHtml(ev, editar) {
     <option value="NO APLICA"${ev.bpm === "NO APLICA" ? " selected" : ""}>NO APLICA</option>
     <option value="NO CONFORME"${ev.bpm === "NO CONFORME" ? " selected" : ""}>NO CONFORME</option>
   </select>`;
-  const chkAnula = editar
+  const chkAnula = corregir
     ? `<input type="checkbox" class="det-chk" title="Anular premio para este período"
          ${ev.anular_premio ? 'checked' : ''}
          onchange="guardarDeterminante(${ev.id}, 'anular_premio', this.checked)">`
     : '';
-  const chkTolNF = editar
+  const chkTolNF = corregir
     ? `<input type="checkbox" class="det-inline" title="Ignorar NF en el cálculo de este período"
          ${ev.tolerar_nf ? 'checked' : ''}
          onchange="guardarDeterminante(${ev.id}, 'tolerar_nf', this.checked)">`
     : '';
-  const chkTolE = editar
+  const chkTolE = corregir
     ? `<input type="checkbox" class="det-inline" title="Ignorar E en el cálculo de este período"
          ${ev.tolerar_e ? 'checked' : ''}
          onchange="guardarDeterminante(${ev.id}, 'tolerar_e', this.checked)">`
     : '';
-  const tolNFbadge = ev.tolerar_nf ? '<span class="det-tol">tol</span>' : '';
-  const tolEbadge  = ev.tolerar_e  ? '<span class="det-tol">tol</span>' : '';
+  const chkTolRet = corregir
+    ? `<input type="checkbox" class="det-inline" title="Ignorar retardo en el cálculo de este período"
+         ${ev.tolerar_retardo ? 'checked' : ''}
+         onchange="guardarDeterminante(${ev.id}, 'tolerar_retardo', this.checked)">`
+    : '';
+  const tolNFbadge  = ev.tolerar_nf      ? '<span class="det-tol">tol</span>' : '';
+  const tolEbadge   = ev.tolerar_e       ? '<span class="det-tol">tol</span>' : '';
+  const tolRetbadge = ev.tolerar_retardo ? '<span class="det-tol">tol</span>' : '';
   return `<tr data-id="${ev.id}">
     <td><button class="btn-expand" onclick="toggleDesglose(${ev.id})" title="Ver desglose">▶</button></td>
     <td>
@@ -393,25 +418,29 @@ function _filaHtml(ev, editar) {
       <div style="font-size:.72rem;color:#aaa">${ev.cargo||''}</div>
       ${_renderDesglose(d)}
     </td>
-    <td class="${sinBpm ? '' : (ev.anular_premio ? 'valor-cero' : clsValor)}">
-      <span class="screen-only">${sinBpm ? '<span class="falta-bpm">Falta BPM</span>' : _fmtPesos(vfPantalla)}</span>
+    <td class="${bloqueado ? '' : (ev.anular_premio ? 'valor-cero' : clsValor)}">
+      <span class="screen-only">
+        ${sinBpm        ? '<div class="falta-bpm">Falta BPM</div>'            : ''}
+        ${sinAsistencia ? '<div class="asist-inc">Asistencia incompleta</div>' : ''}
+        ${!bloqueado    ? _fmtPesos(vfPantalla)                               : ''}
+      </span>
       <span class="print-only">${_fmtPesos(vf)}</span>
-      ${_periodoAbierto && !sinBpm ? '<div style="font-size:.65rem;color:#b8860b;font-style:italic;line-height:1.1;margin-top:2px">a confirmar</div>' : ''}
+      ${_periodoAbierto && !bloqueado ? '<div style="font-size:.65rem;color:#b8860b;font-style:italic;line-height:1.1;margin-top:2px">a confirmar</div>' : ''}
     </td>
     <td class="det-col">${chkAnula}</td>
     <td class="field-desempenio" style="min-width:160px">
       ${editar
-        ? `<textarea onchange="guardarFila(${ev.id})">${ev.desempenio||""}</textarea>`
+        ? `<textarea oninput="guardarDesempenioDebounce(${ev.id})">${ev.desempenio||""}</textarea>`
         : `<span style="font-size:.8rem">${ev.desempenio||""}</span>`}
     </td>
     <td class="field-bpm">${editar ? bpmSelect : bpmBadge}</td>
-    <td class="cell-puntualidad">${_badgePuntualidad(d.puntualidad_status)}</td>
-    <td>${_fmtMin(ev.minutos_retardo)}</td>
-    <td>${ev.no_fichadas}${tolNFbadge}${chkTolNF}</td>
-    <td>${ev.dias_vacacion}</td>
-    <td>${ev.dias_enfermo}${tolEbadge}${chkTolE}</td>
-    <td>${ev.dias_suspension}</td>
-    <td>${ev.dias_ausente}</td>
+    <td class="cell-puntualidad">${_badgePuntualidad(d.puntualidad_status, d.descalificado)}</td>
+    <td>${_cnt(_fmtMin(ev.minutos_retardo), tolRetbadge + chkTolRet)}</td>
+    <td>${_cnt(ev.no_fichadas, tolNFbadge + chkTolNF)}</td>
+    <td>${_cnt(ev.dias_vacacion)}</td>
+    <td>${_cnt(ev.dias_enfermo, tolEbadge + chkTolE)}</td>
+    <td>${_cnt(ev.dias_suspension)}</td>
+    <td>${_cnt(ev.dias_ausente)}</td>
     <td class="firma-cell"><span class="firma-linea"></span></td>
   </tr>`;
 }
@@ -483,15 +512,20 @@ async function guardarDeterminante(id, campo, valor) {
     const idx = _evaluaciones.findIndex(e => e.id === id);
     if (idx !== -1) {
       _evaluaciones[idx] = {..._evaluaciones[idx], ...ev,
-        tolerar_nf: ev.tolerar_nf, tolerar_e: ev.tolerar_e, anular_premio: ev.anular_premio};
+        tolerar_nf: ev.tolerar_nf, tolerar_e: ev.tolerar_e, tolerar_retardo: ev.tolerar_retardo, anular_premio: ev.anular_premio};
       _sincGrupos(idx);
       const row = document.querySelector(`tr[data-id="${id}"]`);
-      if (row) row.outerHTML = _filaHtml(_evaluaciones[idx], canDo("premios","editar"));
+      if (row) row.outerHTML = _filaHtml(_evaluaciones[idx], canDo("premios","editar"), canDo("premios","corregir"));
     }
     _recalcularCards();
   } else {
     toast("Error al guardar determinante");
   }
+}
+
+function guardarDesempenioDebounce(id) {
+  clearTimeout(_debounceTimers[id]);
+  _debounceTimers[id] = setTimeout(() => guardarFila(id), 600);
 }
 
 async function guardarFila(id) {
@@ -514,7 +548,7 @@ async function guardarFila(id) {
       _evaluaciones[idx] = {..._evaluaciones[idx], ...ev};
       _sincGrupos(idx);
       const newRow = document.createElement("tbody");
-      newRow.innerHTML = _filaHtml(_evaluaciones[idx], canDo("premios", "editar"));
+      newRow.innerHTML = _filaHtml(_evaluaciones[idx], canDo("premios", "editar"), canDo("premios", "corregir"));
       row.outerHTML = newRow.querySelector("tr").outerHTML;
     }
     _recalcularCards();
@@ -571,7 +605,7 @@ function _renderDiagnostico(d) {
       ? `<span style="color:#e67e22">⚠ Excluidos: <b>${excluidos}</b> — ${partesExcl.join(' · ')}</span>`
       : ''}
     ${sinCargo > 0
-      ? `<a href="/empleados" style="font-size:.75rem;color:#888;margin-left:auto">→ Completar cargos en Empleados</a>`
+      ? `<a href="/empleados?cargo=__vacio__" style="font-size:.75rem;color:#888;margin-left:auto">→ Completar cargos en Empleados</a>`
       : ''}
   `;
   bar.style.display = "flex";

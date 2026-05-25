@@ -53,8 +53,12 @@ nav a.activo { opacity: 1; font-weight: bold; }
 .tab-btn { padding: 8px 22px; background: none; border: none; cursor: pointer;
            font-size: .9rem; color: #666; border-bottom: 3px solid transparent;
            margin-bottom: -2px; }
-.tab-btn.active { color: #2c3e50; border-bottom-color: #2c3e50; font-weight: bold; }
+.tab-btn.active { font-weight: bold; }
 .tab-btn:hover:not(.active) { color: #333; background: #f8f9fa; }
+.tab-btn[data-tab="TM"].active { background: #FDE68A; border-bottom-color: #D97706; color: #78350F; }
+.tab-btn[data-tab="TN"].active { background: #C7D2FE; border-bottom-color: #4338CA; color: #1E1B4B; }
+.tab-btn[data-tab="CO"].active { background: #BBF7D0; border-bottom-color: #15803D; color: #14532D; }
+.tab-btn[data-tab="ST"].active { background: #E5E7EB; border-bottom-color: #6B7280; color: #1F2937; }
 
 .tab-panel { display: none; }
 .tab-panel.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -77,7 +81,7 @@ table.planilla thead th {
   position: sticky; top: 0; z-index: 4;
 }
 table.planilla thead th.col-cod   { width: 44px; min-width: 44px; z-index: 6; left: 0; }
-table.planilla thead th.col-nombre{ width: 180px; min-width: 180px; z-index: 6; left: 44px; text-align: left; padding-left: 8px; }
+table.planilla thead th.col-nombre{ width: 220px; min-width: 220px; z-index: 6; left: 44px; text-align: left; padding-left: 8px; }
 table.planilla thead th.col-dia    { width: 28px; min-width: 28px; }
 table.planilla thead th.col-dia-co { width: 40px; min-width: 40px; }
 table.planilla thead th.col-sep   { width: 6px; min-width: 6px; background: #f4f6f9; border: none; }
@@ -142,13 +146,18 @@ table.planilla tbody td.col-nombre {
   position: sticky; left: 44px; z-index: 2;
   background: white; text-align: left; padding: 0 8px;
   font-size: .78rem; border-right: 2px solid #dee2e6;
-  max-width: 180px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
 }
 table.planilla tbody tr.fuera-dispositivo td { background: #fff3cd !important; }
 table.planilla tbody tr.fuera-dispositivo td.col-nombre { background: #fff3cd !important; }
 .badge-fuera { display:inline-block; background:#e74c3c; color:white;
   font-size:.6rem; font-weight:bold; padding:1px 4px; border-radius:3px;
   margin-left:4px; vertical-align:middle; letter-spacing:.03em; }
+table.planilla tbody tr.emp-nuevo td { background: #FFF8E1 !important; }
+table.planilla tbody tr.emp-nuevo td.col-nombre { background: #FFF8E1 !important; border-left: 3px solid #FB8C00 !important; }
+.badge-nuevo { display:inline-block; background:#FB8C00; color:white;
+  font-size:.6rem; font-weight:bold; padding:1px 5px; border-radius:3px;
+  margin-left:5px; vertical-align:middle; letter-spacing:.03em; }
 table.planilla tbody td.col-sep { background: #f4f6f9; border: none; }
 table.planilla tbody td.col-res { font-size: .72rem; color: #444; }
 table.planilla tbody td.col-res.res-nz { font-weight: bold; }
@@ -439,8 +448,8 @@ tr[draggable="true"]:active { cursor: grabbing; }
 <div class="leyenda" id="leyenda"></div>
 
 <div style="display:flex; border-bottom:2px solid #dee2e6; background:white; padding: 0 16px; gap:0">
-  <button class="tab-btn active" data-tab="TM" onclick="switchTab('TM')">Mañana</button>
-  <button class="tab-btn"        data-tab="TN" onclick="switchTab('TN')">Noche</button>
+  <button class="tab-btn" data-tab="TM" onclick="switchTab('TM')">Mañana</button>
+  <button class="tab-btn" data-tab="TN" onclick="switchTab('TN')">Noche</button>
   <button class="tab-btn"        data-tab="CO" onclick="switchTab('CO')">Cortado</button>
   <button class="tab-btn"        data-tab="ST" onclick="switchTab('ST')">Sin turno</button>
   <span id="conteos" style="margin-left:auto;font-size:.78rem;color:#888;align-self:center"></span>
@@ -457,6 +466,12 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <h3 id="modal-nombre"></h3>
   <div class="subtitulo" id="modal-subtitulo"></div>
 
+  <div id="bloque-sel-wrap" class="bloque-sel" style="display:none">
+    <button class="bloque-btn selected" data-b="1" onclick="selBloque(1)">Bloque 1</button>
+    <button class="bloque-btn"          data-b="2" onclick="selBloque(2)">Bloque 2</button>
+    <button class="bloque-btn"          data-b="0" onclick="selBloque(0)">Ambos</button>
+  </div>
+
   <div class="modal-tab-bar" id="modal-tab-bar">
     <button class="modal-tab-btn activo" id="mtab-nov"    onclick="modalTabPlani('nov')">Novedad</button>
     <button class="modal-tab-btn"        id="mtab-fm"     onclick="modalTabPlani('fm')">Fichaje manual</button>
@@ -467,12 +482,8 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <!-- Panel novedad -->
   <div id="mpanel-nov">
     <div id="modal-estado-actual"></div>
-    <div id="bloque-sel-wrap" class="bloque-sel" style="display:none">
-      <button class="bloque-btn selected" data-b="1" onclick="selBloque(1)">Bloque 1</button>
-      <button class="bloque-btn"          data-b="2" onclick="selBloque(2)">Bloque 2</button>
-      <button class="bloque-btn"          data-b="0" onclick="selBloque(0)">Ambos</button>
-    </div>
     <div class="tipos-grid" id="tipos-grid"></div>
+    <div id="vac-saldo-info" style="display:none;font-size:.82rem;padding:4px 8px;border-radius:4px;margin-bottom:4px"></div>
     <div class="nov-rango-wrap">
       <div class="nov-rango-grid">
         <div>
@@ -513,16 +524,24 @@ tr[draggable="true"]:active { cursor: grabbing; }
       Presencia registrada correctamente.<br>
       Para eliminarlo, usá la vista de <a id="link-fichajes-crudos" href="/asistencia#fichajes" target="_blank">Fichajes crudos</a>.
     </div>
+    <div id="mpanel-bloqueado-franco" style="display:none;margin-top:10px;font-size:.82rem;color:#555">
+      Excepción: este bloque tiene fichaje pero corresponde asignarle franco.
+    </div>
     <div class="modal-actions">
+      <button id="btn-bloqueado-franco" style="display:none" class="btn-guardar" onclick="abrirPanelFranco()">Asignar franco al bloque</button>
       <button class="btn-cancelar" onclick="cerrarModal()">Cerrar</button>
     </div>
   </div>
 
   <!-- Panel corrección de planificación: asignar franco -->
   <div id="mpanel-franco" style="display:none">
-    <div class="mpanel-franco-info">
+    <div id="mpanel-franco-info-dia" class="mpanel-franco-info">
       Corrige la planificación de este día a <strong>Franco</strong>.<br>
       Si el empleado fichó igualmente, quedará como <em>Franco Trabajado</em>.
+    </div>
+    <div id="mpanel-franco-info-bloque" class="mpanel-franco-info" style="display:none">
+      Asigna <strong>Franco</strong> solo al <span id="franco-bloque-label">Bloque</span>.<br>
+      El otro bloque no se modifica.
     </div>
     <div class="mpanel-franco-fichajes" id="franco-fichajes-info">Cargando fichajes...</div>
     <div class="modal-actions">
@@ -566,6 +585,8 @@ tr[draggable="true"]:active { cursor: grabbing; }
 <div id="cell-tooltip"></div>
 <div id="toast"></div>
 
+<script src="/static/js/session.js"></script>
+<script src="/static/js/user-menu.js"></script>
 <script>
 // ── Paleta de colores por letra ───────────────────────────────────────────────
 const C = {
@@ -584,18 +605,19 @@ const C = {
   S:     {bg:'#DA9694', txt:'#000000'},
   '@':   {bg:'#FFC7CE', txt:'#000000'},
   NF:    {bg:'#F4D03F', txt:'#7D4900'},
+  CP:    {bg:'#9CCC65', txt:'#1B5E20'},
   MT:    {bg:'#e67e22', txt:'#ffffff'},
   'X':   {bg:'#808080', txt:'#ffffff'},
   'O':   {bg:'#404040', txt:'#ffffff'},
   '!':   {bg:'#8e44ad', txt:'#ffffff'},
 };
-const TIPOS_NOVEDAD        = ['ILT','LSG','L','E','V','S','FT','FD','NF'];
-const TIPOS_NOVEDAD_CORTADO = ['ILT','LSG','L','E','V','S','FT','FD','@','NF'];
+const TIPOS_NOVEDAD        = ['ILT','LSG','L','E','V','S','FT','FD','NF','CP'];
+const TIPOS_NOVEDAD_CORTADO = ['ILT','LSG','L','E','V','S','FT','FD','@','NF','CP'];
 const NOMBRES_LETRA = {
   I:'Presente', T:'Tarde', F:'Franco', FT:'Franco Trabaj.', FD:'Franco Devuelto',
   A:'Ausente', 'A!!!':'Ausente sin confirmar', E:'Enfermedad', ILT:'Accidente',
   V:'Vacaciones', L:'Licencia', LSG:'Lic. sin sueldo', S:'Suspendido', '@':'Aliviada',
-  NF:'No fichó', MT:'Medio Turno', '!':'Presencia dudosa'
+  NF:'No fichó', CP:'Compensación de presencia', MT:'Medio Turno', '!':'Presencia dudosa'
 };
 const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio',
                   'julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -603,7 +625,8 @@ const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio',
 // ── Estado global ─────────────────────────────────────────────────────────────
 let mesActual = '';
 let datosActuales = null;
-let tabActiva = 'TM';
+const _h = new Date().getHours(), _m = new Date().getMinutes();
+let tabActiva = (_h < 7 || _h > 17 || (_h === 17 && _m >= 30)) ? 'TN' : 'TM';
 let modalCtx = null;
 let periodoCerrado = false;
 
@@ -619,7 +642,7 @@ async function init() {
   mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
   construirLeyenda();
   await cargarOrdenes();
-  await cargar();
+  switchTab(tabActiva);
 }
 
 function construirLeyenda() {
@@ -885,10 +908,10 @@ function renderGrupo(grupo, dias, empleados) {
   }
 
   const resCols = cortado
-    ? ['transporte','saldo_francos','T','ILT','LSG','L','@','E','V','S','NF','FM','A','feriados_trabajados','dias']
-    : ['transporte','saldo_francos','T','ILT','LSG','L','E','V','S','NF','FM','A','feriados_trabajados','dias'];
+    ? ['saldo_francos','T','ILT','LSG','L','@','E','V','S','NF','FM','A','feriados_trabajados','dias']
+    : ['saldo_francos','T','ILT','LSG','L','E','V','S','NF','FM','A','feriados_trabajados','dias'];
   const resLabels = {
-    transporte:'TRANS', saldo_francos:'SALDO', T:'T', ILT:'ILT', LSG:'LSG',
+    saldo_francos:'SALDO', T:'T', ILT:'ILT', LSG:'LSG',
     L:'L', '@':'@', E:'E', V:'V', S:'S', NF:'NF', FM:'FM', A:'A',
     feriados_trabajados:'FERI.', dias:'DÍAS'
   };
@@ -903,9 +926,11 @@ function renderGrupo(grupo, dias, empleados) {
     html += `<th class="${cls}"><div class="dow-num"><span class="dow">${dia.dow}</span><span class="num">${dia.num}</span></div></th>`;
   });
   html += '<th class="col-sep"></th>';
-  resCols.forEach(c =>
-    html += `<th class="col-res${c==='dias'?' col-dias':''}">${resLabels[c]}</th>`
-  );
+  resCols.forEach(c => {
+    const col = C[c];
+    const style = col ? ` style="background:${col.bg};color:${col.txt}"` : '';
+    html += `<th class="col-res${c==='dias'?' col-dias':''}"${style}>${resLabels[c]}</th>`;
+  });
   html += '<th class="col-ctrl">CONTROL</th>';
   html += '</tr></thead><tbody>';
 
@@ -1001,12 +1026,22 @@ function _badgeFuera(emp) {
     : '';
 }
 
+function _badgeNuevo(emp) {
+  if (!emp.fecha_ingreso) return '';
+  const dias = (Date.now() - new Date(emp.fecha_ingreso)) / 86400000;
+  if (dias >= 90) return '';
+  const [,mi,di] = emp.fecha_ingreso.split('-');
+  return ` <span class="badge-nuevo" title="Ingreso: ${emp.fecha_ingreso}">${di}-${mi}</span>`;
+}
+
 function filaHtmlSimple(emp, dias, resCols) {
   const nombreCompleto = `${emp.apellido}, ${emp.nombre}`;
   const clsFuera = emp.en_dispositivo === 0 ? ' fuera-dispositivo' : '';
-  let h = `<tr class="${clsFuera}">
+  const badgeNuevo = _badgeNuevo(emp);
+  const clsNuevo = badgeNuevo ? ' emp-nuevo' : '';
+  let h = `<tr class="${clsFuera}${clsNuevo}">
     <td class="col-cod">${emp.cod || ''}</td>
-    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}${_badgeFuera(emp)}</td>`;
+    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}</td>`;
   dias.forEach(dia => {
     const c = emp.celdas[dia.fecha] || {letra:null, tipo:'sin_plan'};
     const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
@@ -1032,9 +1067,11 @@ function filaHtmlSimple(emp, dias, resCols) {
 function filaHtmlCortado(emp, dias, resCols) {
   const nombreCompleto = `${emp.apellido}, ${emp.nombre}`;
   const clsFuera = emp.en_dispositivo === 0 ? ' fuera-dispositivo' : '';
-  let h = `<tr class="${clsFuera}">
+  const badgeNuevo = _badgeNuevo(emp);
+  const clsNuevo = badgeNuevo ? ' emp-nuevo' : '';
+  let h = `<tr class="${clsFuera}${clsNuevo}">
     <td class="col-cod">${emp.cod || ''}</td>
-    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}${_badgeFuera(emp)}</td>`;
+    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}</td>`;
   dias.forEach(dia => {
     const c = emp.celdas[dia.fecha] || {b1:{letra:null,tipo:'sin_plan'}, b2:{letra:null,tipo:'sin_plan'}};
     const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
@@ -1172,12 +1209,13 @@ function celdaSimpleHtml(celda, eid, fecha, mark='') {
   const novId = celda.nov_id ? `data-nov-id="${celda.nov_id}"` : '';
   const desc  = celda.descripcion ? `data-desc="${escHtml(celda.descripcion)}"` : '';
   const autor = celda.creado_por  ? `data-autor="${escHtml(celda.creado_por)}"` : '';
+  const cpAttr = celda.cp ? 'data-cp="1"' : '';
   const ftCls = celda.ft_pendiente ? 'ft-pendiente' : '';
   const ftDot = celda.ft_pendiente ? '<span class="ft-dot"></span>' : '';
   const inactiva = celda.tipo === 'antes_ingreso' || celda.tipo === 'fuera';
   const interaccion = inactiva ? '' : `onclick="abrirModal(${eid},'${fecha}',0,false)" data-eid="${eid}" data-fecha="${fecha}"`;
   return `<div class="celda-simple ${cls} ${ftCls} ${mark}" style="background:${bg};color:${txt}"
-    ${novId} ${desc} ${autor} ${interaccion}>${letra}${ftDot}</div>`;
+    ${novId} ${desc} ${autor} ${cpAttr} ${interaccion}>${letra}${ftDot}</div>`;
 }
 
 function celdaCortadoHtml(celda, eid, fecha, mark='') {
@@ -1190,10 +1228,19 @@ function celdaCortadoHtml(celda, eid, fecha, mark='') {
   const d2   = b2.descripcion ? `data-desc="${escHtml(b2.descripcion)}"` : '';
   const a1   = b1.creado_por  ? `data-autor="${escHtml(b1.creado_por)}"` : '';
   const a2   = b2.creado_por  ? `data-autor="${escHtml(b2.creado_por)}"` : '';
-  return `<div class="celda-cortado ${mark}" onclick="abrirModal(${eid},'${fecha}',1,true)"
-    data-eid="${eid}" data-fecha="${fecha}">
-    <div class="celda-bloque ${s1.cls}" style="background:${s1.bg};color:${s1.txt}" ${nid1} ${d1} ${a1}>${b1.letra||''}</div>
-    <div class="celda-bloque ${s2.cls}" style="background:${s2.bg};color:${s2.txt}" ${nid2} ${d2} ${a2}>${b2.letra||''}</div>
+  const cp1  = b1.cp ? 'data-cp="1"' : '';
+  const cp2  = b2.cp ? 'data-cp="1"' : '';
+  const inactiva1 = b1.tipo === 'antes_ingreso' || b1.tipo === 'fuera';
+  const inactiva2 = b2.tipo === 'antes_ingreso' || b2.tipo === 'fuera';
+  const click1 = inactiva1 ? '' : `onclick="event.stopPropagation();abrirModal(${eid},'${fecha}',1,true)"`;
+  const click2 = inactiva2 ? '' : `onclick="event.stopPropagation();abrirModal(${eid},'${fecha}',2,true)"`;
+  const ft1 = b1.ft_pendiente ? ' ft-pendiente' : '';
+  const ft2 = b2.ft_pendiente ? ' ft-pendiente' : '';
+  const dot1 = b1.ft_pendiente ? '<span class="ft-dot"></span>' : '';
+  const dot2 = b2.ft_pendiente ? '<span class="ft-dot"></span>' : '';
+  return `<div class="celda-cortado ${mark}" data-eid="${eid}" data-fecha="${fecha}">
+    <div class="celda-bloque ${s1.cls}${ft1}" style="background:${s1.bg};color:${s1.txt}" ${nid1} ${d1} ${a1} ${cp1} ${click1}>${b1.letra||''}${dot1}</div>
+    <div class="celda-bloque ${s2.cls}${ft2}" style="background:${s2.bg};color:${s2.txt}" ${nid2} ${d2} ${a2} ${cp2} ${click2}>${b2.letra||''}${dot2}</div>
   </div>`;
 }
 
@@ -1205,6 +1252,7 @@ function estiloBloque(celda) {
   if (celda.tipo === 'mt')             return {bg:'#C4D79B', txt:'#4F6228', cls:'tipo-mt'};
   if (celda.tipo === 'mt_trabajado')   return {bg: C.MT.bg, txt: C.MT.txt, cls:'tipo-mt-trabajado'};
   if (celda.tipo === 'no_iniciado')    return {bg:'#f0f3f5', txt:'#c0c8d0', cls:'tipo-pendiente'};
+  if (celda.cp)                        return {bg: C.CP.bg, txt: C.CP.txt, cls: 'tipo-cp'};
   if (!celda.letra)                    return {bg:'#ffffff', txt:'transparent', cls:'tipo-sin_plan'};
   const col = C[celda.letra] || {bg:'#eee', txt:'#333'};
   return {bg: col.bg, txt: col.txt, cls: ''};
@@ -1243,9 +1291,9 @@ function _esBloqueado(celda, esCortado, bloque) {
   if (!celda) return false;
   if (esCortado) {
     const b = bloque === 2 ? celda.b2 : celda.b1;
-    return b?.letra === 'I' && b?.tipo === 'normal';
+    return b?.letra === 'I' && b?.tipo === 'normal' && !b?.cp;
   }
-  return celda.letra === 'I' && celda.tipo === 'normal';
+  return celda.letra === 'I' && celda.tipo === 'normal' && !celda.cp;
 }
 
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }
@@ -1283,6 +1331,11 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
     modalTabPlani('bloqueado');
     const lnk = document.getElementById('link-fichajes-crudos');
     if (lnk) lnk.href = `/asistencia?tab=fichajes&empleado=${eid}&fecha=${fecha}`;
+    // Cortado + bloque específico: permitir asignar franco como excepción
+    const puedeExcepcionFranco = esCortado && bloqueInicial > 0 && !periodoCerrado
+      && canDo('planificacion','editar') && letraActual !== 'F';
+    document.getElementById('mpanel-bloqueado-franco').style.display = puedeExcepcionFranco ? '' : 'none';
+    document.getElementById('btn-bloqueado-franco').style.display    = puedeExcepcionFranco ? '' : 'none';
   } else if (letraActual === 'A!!!') {
     document.getElementById('asc-comentario').value = '';
     document.getElementById('asc-aviso-turno').style.display = fecha === _localDateStr() ? 'block' : 'none';
@@ -1298,6 +1351,8 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   document.getElementById('fm-salida').value     = '';
   document.getElementById('fm-motivo').value     = '';
   document.getElementById('nov-descripcion').value = '';
+  document.getElementById('nov-descripcion').placeholder = 'Descripción (opcional)';
+  document.getElementById('nov-descripcion').style.borderColor = '';
   document.getElementById('nov-desde').value  = fecha;
   document.getElementById('nov-hasta').value  = '';
   document.getElementById('nov-hasta').min    = fecha;
@@ -1314,9 +1369,11 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   if (celda) {
     if (esCortado) {
       const b = bloqueInicial === 2 ? celda.b2 : celda.b1;
-      if (b && b.letra) desc = `Estado actual: ${b.letra} (${NOMBRES_LETRA[b.letra]||b.letra})`;
+      if (b && b.cp) desc = 'Estado actual: I — Compensación de presencia';
+      else if (b && b.letra) desc = `Estado actual: ${b.letra} (${NOMBRES_LETRA[b.letra]||b.letra})`;
     } else {
-      if (celda.letra) desc = `Estado actual: ${celda.letra} (${NOMBRES_LETRA[celda.letra]||celda.letra})`;
+      if (celda.cp) desc = 'Estado actual: I — Compensación de presencia';
+      else if (celda.letra) desc = `Estado actual: ${celda.letra} (${NOMBRES_LETRA[celda.letra]||celda.letra})`;
     }
   }
   document.getElementById('modal-estado-actual').textContent = desc;
@@ -1328,6 +1385,7 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
     return `<button class="tipo-btn" data-tipo="${t}" onclick="selTipo('${t}')"
       style="background:${col.bg};color:${col.txt};border-color:${col.bg}">${t}</button>`;
   }).join('');
+  document.getElementById('vac-saldo-info').style.display = 'none';
 
   const novId = getNovId(celda, bloqueInicial, esCortado);
   document.getElementById('btn-borrar').style.display = novId ? 'block' : 'none';
@@ -1371,6 +1429,33 @@ function selTipo(t) {
   if (t === '@' && modalCtx?.esCortado && modalCtx.bloqueActivo === 0) {
     selBloque(1);
   }
+  // Compensación de presencia: descripción obligatoria
+  const descField = document.getElementById('nov-descripcion');
+  if (descField) {
+    descField.placeholder = t === 'CP' ? 'Descripción (obligatoria) — explicar motivo' : 'Descripción (opcional)';
+    descField.style.borderColor = t === 'CP' ? '#9CCC65' : '';
+  }
+  // Saldo vacaciones
+  const vacInfo = document.getElementById('vac-saldo-info');
+  if (t === 'V') {
+    const anio = parseInt(modalCtx.fecha.slice(0, 4)) - 1;
+    vacInfo.textContent = '…';
+    vacInfo.style.display = '';
+    vacInfo.style.background = '#f0f4f8';
+    vacInfo.style.color = '#555';
+    fetch(`/api/vacaciones/saldo-empleado?empleado_id=${modalCtx.eid}&anio=${anio}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) { vacInfo.style.display = 'none'; return; }
+        const ok = d.dias_restan > 0;
+        vacInfo.textContent = `Vacaciones disponibles: ${d.dias_restan} día(s)`;
+        vacInfo.style.background = ok ? '#eaf4ea' : '#fdecea';
+        vacInfo.style.color      = ok ? '#2d6a2d' : '#c0392b';
+      })
+      .catch(() => { vacInfo.style.display = 'none'; });
+  } else {
+    vacInfo.style.display = 'none';
+  }
 }
 
 async function guardarNovedad() {
@@ -1398,6 +1483,11 @@ async function guardarNovedad() {
   }
 
   const descripcion = document.getElementById('nov-descripcion').value.trim() || null;
+  if (tipo === 'CP' && !descripcion) {
+    toast('La compensación de presencia requiere una descripción');
+    document.getElementById('nov-descripcion').focus();
+    return;
+  }
   for (const f of fechas) {
     const res = await fetch('/api/asistencia/novedades', {
       method: 'POST',
@@ -1567,7 +1657,16 @@ async function _loadPerms() {
 // ── Corrección de planificación: asignar franco ───────────────────────────────
 async function abrirPanelFranco() {
   modalTabPlani('franco');
-  const { eid, fecha } = modalCtx;
+  const { eid, fecha, esCortado, bloqueActivo } = modalCtx;
+
+  // Mostrar descripción según contexto
+  const bloqueEspecifico = esCortado && bloqueActivo > 0;
+  document.getElementById('mpanel-franco-info-dia').style.display    = bloqueEspecifico ? 'none' : '';
+  document.getElementById('mpanel-franco-info-bloque').style.display  = bloqueEspecifico ? '' : 'none';
+  if (bloqueEspecifico) {
+    document.getElementById('franco-bloque-label').textContent = `Bloque ${bloqueActivo}`;
+  }
+
   const infoEl = document.getElementById('franco-fichajes-info');
   infoEl.textContent = 'Consultando fichajes...';
   try {
@@ -1585,16 +1684,32 @@ async function abrirPanelFranco() {
 }
 
 async function asignarFranco() {
-  const { eid, fecha } = modalCtx;
-  const res = await fetch('/api/planificacion', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({empleado_id: eid, fecha, es_franco: true, horario_id: null}),
-  });
-  if (!res.ok) {
-    const e = await res.json();
-    toast('Error: ' + (e.detail || res.status));
-    return;
+  const { eid, fecha, esCortado, bloqueActivo } = modalCtx;
+
+  if (esCortado && bloqueActivo > 0) {
+    // Franco solo para un bloque → novedad tipo='F' en ese bloque
+    const res = await fetch('/api/asistencia/novedades', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({empleado_id: eid, fecha, bloque: bloqueActivo, tipo: 'F'}),
+    });
+    if (!res.ok) {
+      const e = await res.json();
+      toast('Error: ' + (e.detail || res.status));
+      return;
+    }
+  } else {
+    // Franco día completo → cambia la planificación
+    const res = await fetch('/api/planificacion', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({empleado_id: eid, fecha, es_franco: true, horario_id: null}),
+    });
+    if (!res.ok) {
+      const e = await res.json();
+      toast('Error: ' + (e.detail || res.status));
+      return;
+    }
   }
   await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, {method:'POST'}).catch(()=>{});
   toast('Franco asignado');
@@ -1638,9 +1753,12 @@ function _tipShow(e) {
         (f.es_manual ? ` <span class="tip-manual">✎</span>` : '') + `</div>`
       ).join('');
     }
-    const desc  = cel.dataset.desc  || cel.closest('[data-desc]')?.dataset.desc;
-    const autor = cel.dataset.autor || cel.closest('[data-autor]')?.dataset.autor;
-    if (desc)  html += `<div class="tip-manual" style="margin-top:4px;white-space:normal;max-width:160px">${escHtml(desc)}</div>`;
+    const tipSrc = e.target.closest('[data-desc]') || cel;
+    const isCp  = e.target.closest('[data-cp]')?.dataset.cp === '1' || cel.dataset.cp === '1';
+    const desc  = tipSrc.dataset.desc;
+    const autor = tipSrc.dataset.autor;
+    if (isCp)  html += `<div class="tip-manual" style="margin-top:4px;font-weight:bold;text-transform:uppercase">COMPENSACIÓN DE PRESENCIA</div>`;
+    if (desc)  html += `<div class="tip-manual" style="margin-top:2px;white-space:normal;max-width:160px">${escHtml(desc)}</div>`;
     if (autor) html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:2px">${escHtml(autor)}</div>`;
     _tipEl.innerHTML = html;
     _tipEl.style.display = 'block';

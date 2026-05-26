@@ -128,17 +128,17 @@ if ($svcStatus) {
 $pythonExe = (Get-Command python).Source
 Write-Info "Registrando servicio $ServiceName en puerto $Port..."
 
-& $nssmExe install $ServiceName $pythonExe
-& $nssmExe set $ServiceName AppParameters "-m uvicorn main:app --host 0.0.0.0 --port $Port"
-& $nssmExe set $ServiceName AppDirectory  $InstallDir
-& $nssmExe set $ServiceName DisplayName   "SistemAlf - Asistencia"
-& $nssmExe set $ServiceName Description   "Sistema de fichaje y asistencia SistemAlf"
-& $nssmExe set $ServiceName Start         SERVICE_AUTO_START
+& $nssmExe install $ServiceName $pythonExe "`"$InstallDir\main.py`""
+& $nssmExe set $ServiceName AppDirectory        $InstallDir
+& $nssmExe set $ServiceName DisplayName         "SistemAlf - Asistencia"
+& $nssmExe set $ServiceName Description         "Sistema de fichaje y asistencia SistemAlf"
+& $nssmExe set $ServiceName Start               SERVICE_AUTO_START
 & $nssmExe set $ServiceName AppEnvironmentExtra "DB_PATH=$DataDir\fichajes.db" "API_PORT=$Port"
-& $nssmExe set $ServiceName AppStdout     "$DataDir\uvicorn.log"
-& $nssmExe set $ServiceName AppStderr     "$DataDir\uvicorn_err.log"
-& $nssmExe set $ServiceName AppRotateFiles     1
-& $nssmExe set $ServiceName AppRotateBytes     5242880
+& $nssmExe set $ServiceName AppStdout           "$DataDir\service.log"
+& $nssmExe set $ServiceName AppStderr           "$DataDir\service.log"
+& $nssmExe set $ServiceName AppRotateFiles      1
+& $nssmExe set $ServiceName AppRotateBytes      5242880
+& $nssmExe set $ServiceName AppRestartDelay     3000
 
 # ── Pausa para restaurar DB existente ────────────────────────────────────────
 $dbDest = "$DataDir\fichajes.db"
@@ -173,7 +173,8 @@ Write-Host "╠═════════════════════�
 Write-Host "║  URL:      http://localhost:$Port           ║" -ForegroundColor Green
 Write-Host "║  Usuario:  admin@sistema.local           ║" -ForegroundColor Green
 Write-Host "║  Clave:    admin1234                     ║" -ForegroundColor Green
-Write-Host "║  Datos:    $DataDir    ║" -ForegroundColor Green
+Write-Host "║  Datos:    $DataDir  ║" -ForegroundColor Green
+Write-Host "║  Logs:     $DataDir\service.log  ║" -ForegroundColor Green
 Write-Host "╚══════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
 Write-Host "IMPORTANTE: Cambia la clave del admin al primer ingreso." -ForegroundColor Yellow

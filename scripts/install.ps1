@@ -165,6 +165,19 @@ Start-Sleep -Seconds 4
 $finalStatus = & $nssmExe status $ServiceName 2>$null
 Write-OK "Estado: $finalStatus"
 
+# ── Tarea programada: backup nocturno a OneDrive ──────────────────────────────
+Write-Step "Configurando backup nocturno (3:00 AM → OneDrive)..."
+$backupScript = "$InstallDir\scripts\backup.ps1"
+$taskName     = "SistemAlf-Backup"
+Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+$action  = New-ScheduledTaskAction -Execute "powershell.exe" `
+               -Argument "-NonInteractive -ExecutionPolicy Bypass -File `"$backupScript`""
+$trigger = New-ScheduledTaskTrigger -Daily -At "03:00"
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfNetworkAvailable:$false
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
+    -Settings $settings -RunLevel Highest -Force | Out-Null
+Write-OK "Tarea '$taskName' registrada — corre diariamente a las 3:00 AM"
+
 # ── Resumen ───────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Green

@@ -83,7 +83,7 @@ table.planilla thead th {
 table.planilla thead th.col-cod   { width: 44px; min-width: 44px; z-index: 6; left: 0; }
 table.planilla thead th.col-nombre{ width: 220px; min-width: 220px; z-index: 6; left: 44px; text-align: left; padding-left: 8px; }
 table.planilla thead th.col-dia    { width: 28px; min-width: 28px; }
-table.planilla thead th.col-dia-co { width: 40px; min-width: 40px; }
+table.planilla thead th.col-dia-co { width: 50px; min-width: 50px; }
 table.planilla thead th.col-sep   { width: 6px; min-width: 6px; background: #f4f6f9; border: none; }
 table.planilla thead th.col-res   { width: 34px; min-width: 34px; font-size: .65rem; }
 table.planilla thead th.col-dias  { width: 40px; min-width: 40px; font-size: .65rem; background: #1a252f; }
@@ -131,7 +131,10 @@ th.feriado  { background: #7d3c27 !important; }
 
 /* Filas empleados */
 table.planilla tbody tr { border-bottom: 1px solid #f0f0f0; }
-table.planilla tbody tr:hover td { filter: brightness(.95); }
+table.planilla tbody tr:hover td { filter: brightness(.88); }
+table.planilla tbody tr:hover td.col-res,
+table.planilla tbody tr:hover td.col-dias,
+table.planilla tbody tr:hover td.col-ctrl { filter: none; background: rgba(44,62,80,.1) !important; }
 
 table.planilla tbody td {
   padding: 0; text-align: center; vertical-align: middle;
@@ -459,6 +462,17 @@ tr[draggable="true"]:active { cursor: grabbing; }
 <div class="tab-panel"        id="panel-TN"><div class="tabla-outer" id="tabla-TN"></div></div>
 <div class="tab-panel"        id="panel-CO"><div class="tabla-outer" id="tabla-CO"></div></div>
 <div class="tab-panel"        id="panel-ST"><div class="tabla-outer" id="tabla-ST"></div></div>
+
+<!-- Dialog de alerta bloqueante -->
+<div id="alert-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:none;align-items:center;justify-content:center"></div>
+<div id="alert-dialog" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:white;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);z-index:2001;
+  padding:28px 32px;max-width:380px;width:90%;text-align:center">
+  <div style="font-size:2rem;margin-bottom:10px">⚠️</div>
+  <p id="alert-msg" style="margin:0 0 20px;font-size:.95rem;line-height:1.5;color:#2c3e50"></p>
+  <button onclick="cerrarAlert()" style="background:#2c3e50;color:white;border:none;border-radius:6px;
+    padding:9px 28px;font-size:.9rem;cursor:pointer;font-weight:600">Aceptar</button>
+</div>
 
 <!-- Modal novedad / fichaje manual -->
 <div id="modal-overlay" onclick="cerrarModal()"></div>
@@ -1359,7 +1373,7 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
 
   document.getElementById('modal-nombre').textContent = modalCtx.nombre;
   document.getElementById('modal-subtitulo').textContent =
-    `${fecha}  —  ${['Día completo','Bloque 1','Bloque 2'][bloqueInicial]}`;
+    `${fecha.split('-').reverse().join('-')}  —  ${['Día completo','Bloque 1','Bloque 2'][bloqueInicial]}`;
 
   const bsel = document.getElementById('bloque-sel-wrap');
   bsel.style.display = esCortado ? 'flex' : 'none';
@@ -1419,7 +1433,7 @@ function selBloque(b, skipSubtitulo) {
     btn.classList.toggle('selected', parseInt(btn.dataset.b) === b));
   if (!skipSubtitulo)
     document.getElementById('modal-subtitulo').textContent =
-      `${modalCtx.fecha}  —  ${['Día completo','Bloque 1','Bloque 2'][b]}`;
+      `${modalCtx.fecha.split('-').reverse().join('-')}  —  ${['Día completo','Bloque 1','Bloque 2'][b]}`;
 }
 
 function selTipo(t) {
@@ -1496,7 +1510,9 @@ async function guardarNovedad() {
     });
     if (!res.ok) {
       const e = await res.json();
-      toast('Error en ' + f + ': ' + (e.detail || 'desconocido'));
+      const msg = e.detail || 'desconocido';
+      if (msg.includes('vacaciones')) alertModal(msg);
+      else toast('Error en ' + f + ': ' + msg);
       return;
     }
   }
@@ -1580,6 +1596,17 @@ function toast(msg) {
   el.textContent = msg;
   el.style.display = 'block';
   setTimeout(() => el.style.display = 'none', 2800);
+}
+
+function alertModal(msg) {
+  document.getElementById('alert-msg').textContent = msg;
+  document.getElementById('alert-overlay').style.display = 'flex';
+  document.getElementById('alert-dialog').style.display = 'block';
+}
+
+function cerrarAlert() {
+  document.getElementById('alert-overlay').style.display = 'none';
+  document.getElementById('alert-dialog').style.display = 'none';
 }
 
 async function importarFeriados() {

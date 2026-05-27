@@ -274,6 +274,8 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
   <a href="#columna-ctrl">Columna CONTROL</a>
   <a href="#fichaje-manual">Fichaje manual</a>
   <a href="#horarios-ref">Horarios y calendarios</a>
+  <a href="#premios">Premios</a>
+  <a href="#vacaciones">Vacaciones</a>
 </aside>
 
 <main>
@@ -746,6 +748,101 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <h3 class="sub">¿Qué hacer si el horario asignado es incorrecto?</h3>
 <p>Si un empleado fichó en un día que estaba planificado como franco y el sistema muestra "FT pendiente", podés asignarle el horario correcto haciendo clic en la celda y usando la opción que aparece en el panel de detalle. Eso recalcula el estado automáticamente.</p>
+</section>
+
+<!-- ══ 10. PREMIOS ══ -->
+<section id="premios">
+<h2>10. Premios</h2>
+<p>La pantalla de Premios (<strong>Personal → Premios</strong>) muestra la evaluación mensual de premios de presentismo y desempeño para cada empleado. Se selecciona el período (mes/año) en la barra superior.</p>
+
+<h3 class="sub">Qué muestra la tabla</h3>
+<p>Cada fila es un empleado con las siguientes columnas:</p>
+<ul>
+  <li><strong>Premio</strong> — Monto calculado automáticamente según la fórmula configurada. El badge indica el resultado:</li>
+</ul>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;margin-left:20px">
+  <span style="display:inline-block;padding:3px 10px;border-radius:10px;font-size:.8rem;font-weight:bold;background:#d4edda;color:#155724">COMPLETO</span>
+  <span style="display:inline-block;padding:3px 10px;border-radius:10px;font-size:.8rem;font-weight:bold;background:#fff3cd;color:#856404">CON DESCUENTO</span>
+  <span style="display:inline-block;padding:3px 10px;border-radius:10px;font-size:.8rem;font-weight:bold;background:#f8d7da;color:#721c24">SIN PREMIO</span>
+  <span style="display:inline-block;padding:3px 10px;border-radius:10px;font-size:.8rem;font-weight:bold;background:#fff3cd;color:#7d6608">NO CUMPLE</span>
+</div>
+<ul>
+  <li><strong>Desempeño</strong> — Campo de texto libre para que el encargado escriba una observación sobre el desempeño del empleado en ese período (se guarda automáticamente al escribir).</li>
+  <li><strong>BPM</strong> — Buenas Prácticas de Manufactura. El encargado marca si el empleado cumplió o no. Un BPM "No conforme" aplica un descuento porcentual al premio.</li>
+  <li><strong>Puntualidad</strong> — Estado calculado automáticamente según los minutos de retardo acumulados del mes.</li>
+  <li><strong>Retardo</strong> — Total de minutos de tardanza en el período. Se puede tildar la casilla para tolerar el retardo sin que afecte el premio.</li>
+  <li><strong>NF / E</strong> — Cantidad de "No fichó" y "Enfermedad" del mes. Hay casillas para indicar que se deben ignorar en el cálculo.</li>
+  <li><strong>V / S / A</strong> — Días de Vacaciones, Suspensión y Ausencia del período.</li>
+</ul>
+
+<h3 class="sub">Qué puede hacer el encargado</h3>
+<ol class="pasos">
+  <li><p>Seleccioná el <strong>período</strong> (mes y año) en la barra superior.</p></li>
+  <li><p>Hacé clic en la fila de un empleado para expandir el desglose detallado del cálculo.</p></li>
+  <li><p>Completá el campo <strong>Desempeño</strong> con tu observación. Se guarda automáticamente.</p></li>
+  <li><p>Marcá <strong>BPM</strong> como Conforme o No Conforme según corresponda.</p></li>
+  <li><p>Si querés ignorar un retardo puntual, tildá la casilla de <strong>Retardo</strong> en esa fila.</p></li>
+  <li><p>Para anular el premio de un empleado en ese período, usá la columna <strong>✕</strong> (anular).</p></li>
+</ol>
+
+<div class="tip"><strong>Ver fórmula:</strong> El botón "Ver fórmula" en la barra superior muestra los umbrales y porcentajes configurados para ese período (cuántos minutos toleran, qué porcentaje descuenta BPM, etc.).</div>
+<div class="aviso"><strong>Período abierto:</strong> Si el período de asistencia no está cerrado, aparece un aviso en amarillo. Los valores pueden cambiar si se modifican novedades o fichajes antes del cierre.</div>
+</section>
+
+<!-- ══ 11. VACACIONES ══ -->
+<section id="vacaciones">
+<h2>11. Vacaciones</h2>
+<p>La pantalla de Vacaciones (<strong>Personal → Vacaciones</strong>) muestra el saldo vacacional de todos los empleados para un año. Los días tomados se toman automáticamente de las novedades "V" cargadas en la planilla.</p>
+
+<h3 class="sub">Columnas principales</h3>
+<ul>
+  <li><strong>Antigüedad</strong> — Calculada al 31 de diciembre del año anterior al período.</li>
+  <li><strong>Fórmula</strong> — Días que le corresponden según la ley (tabla de escala abajo).</li>
+  <li><strong>Arrastre</strong> — Días sobrantes del año anterior que no tomó.</li>
+  <li><strong>Disponible</strong> — Fórmula + Arrastre.</li>
+  <li><strong>Tomadas</strong> — Suma de novedades "V" del año en la planilla.</li>
+  <li><strong>Restan</strong> — Disponible − Tomadas.</li>
+  <li><strong>ENE … DIC</strong> — Días tomados en cada mes del año.</li>
+</ul>
+
+<h3 class="sub">Colores de la columna Restan</h3>
+<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:80px;padding:5px 10px;border-radius:4px;background:#d4edda;color:#155724;font-weight:bold;font-size:.82rem;text-align:center">14</div>
+    <span style="font-size:.85rem">Verde — todavía tiene días disponibles</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:80px;padding:5px 10px;border-radius:4px;background:#fff3cd;color:#856404;font-weight:bold;font-size:.82rem;text-align:center">0</div>
+    <span style="font-size:.85rem">Amarillo — sin días restantes</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:80px;padding:5px 10px;border-radius:4px;background:#f8d7da;color:#721c24;font-weight:bold;font-size:.82rem;text-align:center">−3</div>
+    <span style="font-size:.85rem">Rojo — tomó más días de los disponibles</span>
+  </div>
+</div>
+
+<h3 class="sub">Escala de días según antigüedad (LCT)</h3>
+<div style="background:white;border:1px solid #dee2e6;border-radius:8px;overflow:hidden;margin-bottom:16px">
+<table style="width:100%;border-collapse:collapse;font-size:.85rem">
+  <thead>
+    <tr>
+      <th style="text-align:left;padding:8px 12px;background:#f8f9fa;border-bottom:2px solid #dee2e6">Antigüedad al 31/12 del año anterior</th>
+      <th style="text-align:center;padding:8px 12px;background:#f8f9fa;border-bottom:2px solid #dee2e6">Días</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">Menos de 1 año con 180 días o más empleado</td><td style="text-align:center;padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:bold">14</td></tr>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">Menos de 1 año con menos de 180 días empleado</td><td style="text-align:center;padding:8px 12px;border-bottom:1px solid #f0f0f0;font-style:italic">1 día c/ 20 días ⚑</td></tr>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">1 a 4 años</td><td style="text-align:center;padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:bold">14</td></tr>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">5 a 9 años</td><td style="text-align:center;padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:bold">21</td></tr>
+    <tr><td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">10 a 19 años</td><td style="text-align:center;padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:bold">28</td></tr>
+    <tr><td style="padding:8px 12px">20 años o más</td><td style="text-align:center;padding:8px 12px;font-weight:bold">35</td></tr>
+  </tbody>
+</table>
+</div>
+<p style="font-size:.82rem;color:#666">⚑ Los empleados con menos de 180 días aparecen con una bandera naranja o roja en la columna de nombre.</p>
+
+<div class="tip"><strong>Cómo se cargan los días tomados:</strong> No hay que ingresar nada en esta pantalla. Los días se toman automáticamente de las novedades "V" registradas en la planilla mensual. Si falta algún día, revisá que esté cargado como "V" en la planilla del empleado.</div>
 </section>
 
 <div style="margin-top:48px;padding:20px;background:white;border-radius:8px;border:1px solid #e0e0e0;font-size:.82rem;color:#888;text-align:center">

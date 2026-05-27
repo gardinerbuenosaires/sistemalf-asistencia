@@ -126,7 +126,7 @@ if ($svcStatus -and $svcStatus -notmatch "Can't open service") {
 }
 
 # Registrar servicio
-$pythonExe = (Get-Command python).Source
+$pythonExe = (python -c "import sys; print(sys.executable)").Trim()
 Write-Info "Registrando servicio $ServiceName en puerto $Port..."
 
 & $nssmExe install $ServiceName $pythonExe "`"$InstallDir\main.py`""

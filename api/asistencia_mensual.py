@@ -690,8 +690,23 @@ def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permi
             elif estado == "mixto":
                 ctrl_txt = f"Rev: {fmt_dias(dd)} · Falt: {fmt_dias(df)}{sc}"
 
+        CTRL_COLORES = {
+            "completado":  ("D4EDDA", "155724"),
+            "liquidacion": ("E74C3C", "FFFFFF"),
+            "revisar":     ("FFF3CD", "7D5A00"),
+            "faltan":      ("F8D7DA", "721C24"),
+            "mixto":       ("F8D7DA", "721C24"),
+            "ausentes_sc": ("7B0000", "FFFFFF"),
+        }
         c = ws.cell(row_i, ctrl_col, ctrl_txt)
         c.alignment = Alignment(horizontal="left"); c.font = Font(size=7)
+        if estado in CTRL_COLORES:
+            bg, fg = CTRL_COLORES[estado]
+            c.fill = PatternFill("solid", fgColor=bg)
+            c.font = Font(size=7, color=fg)
+        elif estado in ("en_curso",) and da:
+            c.fill = PatternFill("solid", fgColor="7B0000")
+            c.font = Font(size=7, color="FFFFFF")
         ws.row_dimensions[row_i].height = 14
 
     buf = BytesIO()

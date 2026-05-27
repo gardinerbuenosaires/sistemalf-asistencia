@@ -807,6 +807,14 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <h3 class="sub">¿Qué hacer si el horario asignado es incorrecto?</h3>
 <p>Si un empleado fichó en un día que estaba planificado como franco y el sistema muestra "FT pendiente", podés asignarle el horario correcto haciendo clic en la celda y usando la opción que aparece en el panel de detalle. Eso recalcula el estado automáticamente.</p>
+
+<h3 class="sub">Permisos necesarios para editar empleados</h3>
+<p>La pantalla <strong>Personal → Listado</strong> requiere dos permisos para poder editar completamente un empleado:</p>
+<ul>
+  <li><strong>empleados: editar</strong> — permite modificar los datos del formulario (nombre, cargo, domicilio, contacto, etc.).</li>
+  <li><strong>calendarios: editar</strong> — permite cambiar el calendario asignado al empleado. Sin este permiso, el calendario se muestra pero no se puede modificar.</li>
+</ul>
+<div class="aviso">Si podés editar los campos del formulario pero el calendario aparece bloqueado, es porque falta el permiso <strong>calendarios: editar</strong>. Solicitáselo al administrador.</div>
 </section>
 
 <!-- ══ 10. PREMIOS ══ -->

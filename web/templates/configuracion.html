@@ -398,6 +398,56 @@
       </div>
     </div>
 
+    <div class="section" data-perm="distribucion:editar">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Accesos a Distribución</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Define qué departamento y turno planifica cada usuario. Con un solo acceso asignado,
+            la grilla abre automáticamente sin que el responsable tenga que elegir.
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label style="font-size:.8rem;color:#666;display:block;margin-bottom:3px">Usuario</label>
+          <select id="dist-acc-usuario" style="padding:6px 10px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;min-width:180px">
+            <option value="">— Usuario —</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.8rem;color:#666;display:block;margin-bottom:3px">Departamento</label>
+          <select id="dist-acc-dept" style="padding:6px 10px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;min-width:160px">
+            <option value="">— Departamento —</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:.8rem;color:#666;display:block;margin-bottom:3px">Turno</label>
+          <select id="dist-acc-turno" style="padding:6px 10px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+            <option value="TM">Mañana (TM)</option>
+            <option value="TN">Noche (TN)</option>
+            <option value="CO">Corrido (CO)</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="agregarAccesoDist()">+ Agregar</button>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:.85rem">
+        <thead>
+          <tr style="background:#f8f9fa;text-align:left">
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Usuario</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Departamento</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Turno</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6"></th>
+          </tr>
+        </thead>
+        <tbody id="dist-acc-lista">
+          <tr><td colspan="4" style="padding:12px;color:#aaa">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
   </div>
 
   <!-- ── Panel: Premios ── -->
@@ -1497,6 +1547,71 @@ async function subirLogo() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+// ── Accesos a Distribución ─────────────────────────────────────────────────────
+let _distAccesos = [], _distDepts = [], _distUsuarios = [];
+
+async function cargarAccesosDist() {
+  const [rAcc, rDepts, rUsr] = await Promise.all([
+    fetch('/api/distribucion/usuarios-acceso'),
+    fetch('/api/distribucion/departamentos'),
+    fetch('/api/usuarios'),
+  ]);
+  _distAccesos  = rAcc.ok  ? await rAcc.json()  : [];
+  _distDepts    = rDepts.ok ? await rDepts.json() : [];
+  _distUsuarios = rUsr.ok  ? await rUsr.json()  : [];
+
+  // Poblar selects
+  const selU = document.getElementById('dist-acc-usuario');
+  const selD = document.getElementById('dist-acc-dept');
+  if (!selU || !selD) return;
+  selU.innerHTML = '<option value="">— Usuario —</option>' +
+    _distUsuarios.map(u => `<option value="${u.id}">${u.nombre} (${u.email})</option>`).join('');
+  selD.innerHTML = '<option value="">— Departamento —</option>' +
+    _distDepts.map(d => `<option value="${d.id}">${d.nombre}</option>`).join('');
+
+  // Renderizar tabla
+  const tbody = document.getElementById('dist-acc-lista');
+  if (!tbody) return;
+  if (!_distAccesos.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;color:#aaa">Sin accesos configurados.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _distAccesos.map(a => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">${a.usuario_nombre} <span style="color:#999;font-size:.78rem">(${a.email})</span></td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">${a.departamento_nombre}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">${a.turno === 'TM' ? 'Mañana' : a.turno === 'TN' ? 'Noche' : 'Corrido'} (${a.turno})</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right">
+        <button onclick="eliminarAccesoDist(${a.id})" style="background:none;border:none;color:#e74c3c;cursor:pointer;font-size:.85rem">✕ Quitar</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function agregarAccesoDist() {
+  const uid   = document.getElementById('dist-acc-usuario').value;
+  const deptId = document.getElementById('dist-acc-dept').value;
+  const turno = document.getElementById('dist-acc-turno').value;
+  if (!uid || !deptId) { toast('Seleccioná usuario y departamento'); return; }
+  const r = await fetch('/api/distribucion/usuarios-acceso', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usuario_id: Number(uid), departamento_id: Number(deptId), turno })
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    toast('Error: ' + (e.detail || 'ya existe ese acceso'));
+    return;
+  }
+  toast('Acceso agregado');
+  await cargarAccesosDist();
+}
+
+async function eliminarAccesoDist(id) {
+  if (!confirm('¿Quitar este acceso?')) return;
+  const r = await fetch(`/api/distribucion/usuarios-acceso/${id}`, { method: 'DELETE' });
+  if (r.ok) { toast('Acceso eliminado'); await cargarAccesosDist(); }
+}
+
 _loadPerms().then(() => {
   switchCfgTab('sistema');
   cargarParams();
@@ -1507,6 +1622,7 @@ _loadPerms().then(() => {
   cargarParametrosPremios();
   cargarLogo();
   cargarNombreEmpresa();
+  cargarAccesosDist();
 });
 </script>
 </body>

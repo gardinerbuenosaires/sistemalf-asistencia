@@ -180,15 +180,15 @@ Write-OK "Tarea '$taskName' registrada — corre diariamente a las 3:00 AM"
 
 # ── Resumen ───────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════╗" -ForegroundColor Green
-Write-Host "║        INSTALACION COMPLETADA            ║" -ForegroundColor Green
-Write-Host "╠══════════════════════════════════════════╣" -ForegroundColor Green
-Write-Host "║  URL:      http://localhost:$Port           ║" -ForegroundColor Green
-Write-Host "║  Usuario:  admin@sistema.local           ║" -ForegroundColor Green
-Write-Host "║  Clave:    admin1234                     ║" -ForegroundColor Green
-Write-Host "║  Datos:    $DataDir  ║" -ForegroundColor Green
-Write-Host "║  Logs:     $DataDir\service.log  ║" -ForegroundColor Green
-Write-Host "╚══════════════════════════════════════════╝" -ForegroundColor Green
+Write-Host "===========================================" -ForegroundColor Green
+Write-Host "        INSTALACION COMPLETADA             " -ForegroundColor Green
+Write-Host "===========================================" -ForegroundColor Green
+Write-Host "  URL:      http://localhost:$Port"          -ForegroundColor Green
+Write-Host "  Usuario:  admin@sistema.local"             -ForegroundColor Green
+Write-Host "  Clave:    admin1234"                       -ForegroundColor Green
+Write-Host "  Datos:    $DataDir"                        -ForegroundColor Green
+Write-Host "  Logs:     $DataDir\service.log"            -ForegroundColor Green
+Write-Host "===========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "IMPORTANTE: Cambia la clave del admin al primer ingreso." -ForegroundColor Yellow
 Write-Host ""

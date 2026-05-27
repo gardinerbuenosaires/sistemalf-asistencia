@@ -181,11 +181,6 @@
   <div id="empty-dept" class="empty-state">
     <p>Seleccioná un departamento y turno para ver la distribución semanal.</p>
   </div>
-  <div id="banner-sugerido" class="banner-sugerido" style="display:none">
-    📋 Pre-cargado de la semana anterior — revisá y ajustá los cambios, luego confirmá.
-    <button onclick="aplicarSugeridos()">Usar como borrador</button>
-    <button onclick="descartarSugeridos()" style="background:#6c757d">Ignorar</button>
-  </div>
   <div id="grilla-wrap" class="grilla-wrap" style="display:none">
     <table id="tabla-dist">
       <thead id="thead-dist"></thead>
@@ -233,8 +228,7 @@ let _lunes = new Date(); // lunes de la semana activa
 let _distribucion = null; // objeto de la semana cargada
 let _puestos = [];
 let _empleados = [];
-let _detalles = [];     // asignaciones guardadas
-let _sugeridos = [];    // sugeridos de semana anterior (no guardados aún)
+let _detalles = [];
 let _dias = [];
 let _misAccesos = { departamentos: [] };
 let _editando = null; // { puesto_id, fecha } — celda abierta
@@ -341,7 +335,6 @@ async function cargarGrilla() {
     _puestos      = data.puestos || [];
     _empleados    = data.empleados || [];
     _detalles     = data.detalles || [];
-    _sugeridos    = data.sugeridos || [];
     _dias         = data.dias || [];
     renderGrilla();
   } catch(e) {
@@ -371,12 +364,8 @@ function renderGrilla() {
   // Botón confirmar
   const btnConf = document.getElementById('btn-confirmar');
   const confirmado = _distribucion && _distribucion.estado === 'confirmado';
-  const haySugeridos = _sugeridos.length > 0 && !_distribucion;
-  btnConf.disabled = confirmado || (!_distribucion && !haySugeridos);
+  btnConf.disabled = confirmado || !_distribucion;
   btnConf.textContent = confirmado ? 'Ya confirmado' : 'Confirmar semana';
-
-  // Banner sugeridos
-  document.getElementById('banner-sugerido').style.display = haySugeridos ? '' : 'none';
 
   const hoyStr = hoy();
   const puedoEditar = canDo('distribucion', 'editar') && !confirmado;
@@ -401,15 +390,11 @@ function renderGrilla() {
       const celdas = _dias.map((d, i) => {
         const esHoy = d === hoyStr;
         const det = _detalles.find(x => x.puesto_id === p.id && x.fecha === d);
-        const sug = !det ? _sugeridos.find(x => x.puesto_id === p.id && x.fecha === d) : null;
         let cls = 'celda-dist', txt = '+';
         if (!puedoEditar) cls += ' readonly';
         if (det) {
           if (det.es_franco) { cls += ' franco'; txt = 'FRANCO'; }
           else { cls += ' asignado'; txt = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?'; }
-        } else if (sug) {
-          cls += ' sugerido';
-          txt = sug.es_franco ? 'FRANCO' : (sug.emp_apellido ? `${sug.emp_apellido}, ${sug.emp_nombre}` : '?');
         }
         if (esHoy) cls += ' hoy';
         const clickAttr = puedoEditar
@@ -556,37 +541,6 @@ async function quitarAsignacion(puestoId, fecha) {
   } catch(e) {
     toast('Error', true);
   }
-}
-
-// ── Sugeridos de semana anterior ──────────────────────────────────────────────
-async function aplicarSugeridos() {
-  if (!_sugeridos.length) return;
-  try {
-    const distId = await _asegurarDistribucion();
-    for (const s of _sugeridos) {
-      await fetch('/api/distribucion/detalle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          distribucion_id: distId,
-          empleado_id: s.empleado_id || 0,
-          puesto_id: s.puesto_id,
-          fecha: s.fecha,
-          es_franco: !!s.es_franco
-        })
-      });
-    }
-    await cargarGrilla();
-    toast('Semana anterior aplicada como borrador');
-  } catch(e) {
-    toast('Error al aplicar sugeridos', true);
-  }
-}
-
-function descartarSugeridos() {
-  _sugeridos = [];
-  document.getElementById('banner-sugerido').style.display = 'none';
-  renderGrilla();
 }
 
 // ── Confirmar distribución ────────────────────────────────────────────────────

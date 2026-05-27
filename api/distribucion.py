@@ -168,7 +168,6 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         ).fetchall()
 
         detalles = []
-        sugeridos = []
         if dist:
             detalles = conn.execute(
                 """SELECT dd.*, e.nombre AS emp_nombre, e.apellido AS emp_apellido,
@@ -180,38 +179,6 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    ORDER BY dd.fecha, p.orden""",
                 (dist["id"],)
             ).fetchall()
-        else:
-            # Sin distribución propia: buscar la semana anterior como sugerencia
-            lunes_ant = str(lunes - timedelta(days=7))
-            dist_ant = conn.execute(
-                """SELECT id FROM distribucion_semana
-                   WHERE departamento_id=? AND turno=? AND semana_inicio=?""",
-                (departamento_id, turno, lunes_ant)
-            ).fetchone()
-            if dist_ant:
-                rows_ant = conn.execute(
-                    """SELECT dd.empleado_id, dd.puesto_id, dd.es_franco,
-                              e.nombre AS emp_nombre, e.apellido AS emp_apellido,
-                              p.nombre AS puesto_nombre,
-                              dd.fecha AS fecha_original
-                       FROM distribucion_detalle dd
-                       LEFT JOIN empleados e ON e.id = dd.empleado_id
-                       LEFT JOIN puestos p ON p.id = dd.puesto_id
-                       WHERE dd.distribucion_id=?
-                       ORDER BY dd.fecha, p.orden""",
-                    (dist_ant["id"],)
-                ).fetchall()
-                # Mapear fechas de la semana anterior a la semana actual
-                for row in rows_ant:
-                    row_d = dict(row)
-                    try:
-                        fecha_orig = date.fromisoformat(row_d["fecha_original"])
-                        dow = fecha_orig.weekday()  # 0=lunes … 6=domingo
-                        fecha_nueva = str(lunes + timedelta(days=dow))
-                        row_d["fecha"] = fecha_nueva
-                        sugeridos.append(row_d)
-                    except Exception:
-                        pass
 
         # Filtrar empleados por cargo vinculado al departamento si corresponde
         dept_cargos = conn.execute(
@@ -233,7 +200,6 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         "puestos": [dict(r) for r in puestos],
         "empleados": [dict(r) for r in empleados],
         "detalles": [dict(r) for r in detalles],
-        "sugeridos": sugeridos,
         "dias": dias,
     }
 
@@ -404,6 +370,40 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             "UPDATE distribucion_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
             (uid, dist_id)
         )
+
+        # Replicar como borrador en las próximas 4 semanas (si no tienen distribución propia)
+        lunes_actual = date.fromisoformat(dist["semana_inicio"])
+        for semanas_adelante in range(1, 5):
+            lunes_fut = lunes_actual + timedelta(weeks=semanas_adelante)
+            lunes_fut_str = str(lunes_fut)
+
+            ya_existe = conn.execute(
+                "SELECT id FROM distribucion_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
+                (dist["departamento_id"], dist["turno"], lunes_fut_str)
+            ).fetchone()
+            if ya_existe:
+                continue  # El chef ya tiene algo ahí, no pisamos
+
+            cur_fut = conn.execute(
+                """INSERT INTO distribucion_semana
+                   (departamento_id, turno, semana_inicio, estado, creado_por, creado_en)
+                   VALUES (?,?,?,'borrador',?,datetime('now'))""",
+                (dist["departamento_id"], dist["turno"], lunes_fut_str, uid)
+            )
+            dist_fut_id = cur_fut.lastrowid
+
+            # Copiar detalles mapeando fechas al día de semana equivalente
+            for det in detalles:
+                fecha_orig = date.fromisoformat(det["fecha"])
+                dow = fecha_orig.weekday()
+                fecha_fut = str(lunes_fut + timedelta(days=dow))
+                conn.execute(
+                    """INSERT INTO distribucion_detalle
+                       (distribucion_id, empleado_id, puesto_id, fecha, es_franco, creado_por, creado_en)
+                       VALUES (?,?,?,?,?,?,datetime('now'))""",
+                    (dist_fut_id, det["empleado_id"], det["puesto_id"],
+                     fecha_fut, det["es_franco"], uid)
+                )
 
     return {"ok": True}
 

@@ -477,7 +477,15 @@ tr[draggable="true"]:active { cursor: grabbing; }
 <div class="tab-panel"        id="panel-TN"><div class="tabla-outer" id="tabla-TN"></div></div>
 <div class="tab-panel"        id="panel-CO"><div class="tabla-outer" id="tabla-CO"></div></div>
 <div class="tab-panel"        id="panel-ST"><div class="tabla-outer" id="tabla-ST"></div></div>
-<div class="tab-panel"        id="panel-TODOS"><div class="tabla-outer" id="tabla-TODOS"></div></div>
+<div class="tab-panel" id="panel-TODOS">
+  <div style="padding:8px 16px 0">
+    <button data-perm="asistencia:ver_todos" onclick="descargarExcel()"
+      style="background:#1a7a4a;color:white;border:none;border-radius:5px;padding:6px 14px;font-size:.8rem;cursor:pointer;font-weight:600">
+      ↓ Descargar Excel
+    </button>
+  </div>
+  <div class="tabla-outer" id="tabla-TODOS"></div>
+</div>
 
 <!-- Dialog de alerta bloqueante -->
 <div id="alert-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:none;align-items:center;justify-content:center"></div>
@@ -692,6 +700,10 @@ function construirLeyenda() {
       ${v}
     </span>`;
   }).join('');
+}
+
+function descargarExcel() {
+  window.location.href = `/api/asistencia/mensual/excel?mes=${mesActual}`;
 }
 
 function navegarMes(delta) {

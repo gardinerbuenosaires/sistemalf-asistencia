@@ -295,11 +295,8 @@ def _build_dias(fechas, feriados):
     ]
 
 
-# ── Endpoint principal ────────────────────────────────────────────────────────
-@router.get("/mensual")
-def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("asistencia", "ver"))):
-    if not mes:
-        mes = date.today().strftime("%Y-%m")
+# ── Lógica de datos del mes (compartida entre /mensual y /mensual/excel) ───────
+def _asistencia_datos(mes: str) -> dict:
     try:
         año, m = int(mes[:4]), int(mes[5:7])
         primer_dia = date(año, m, 1)
@@ -527,6 +524,185 @@ def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("as
         "CO":   grupos["CO"],
         "ST":   grupos["ST"],
     }
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+@router.get("/mensual")
+def asistencia_mensual(mes: str = Query(None), _user=Depends(require_permiso("asistencia", "ver"))):
+    if not mes:
+        mes = date.today().strftime("%Y-%m")
+    return _asistencia_datos(mes)
+
+
+@router.get("/mensual/excel")
+def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permiso("asistencia", "ver_todos"))):
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    import openpyxl
+    from openpyxl.styles import PatternFill, Font, Alignment
+
+    if not mes:
+        mes = date.today().strftime("%Y-%m")
+
+    datos = _asistencia_datos(mes)
+
+    todos = sorted(
+        [{"emp": e, "cortado": False} for e in datos["TM"]] +
+        [{"emp": e, "cortado": False} for e in datos["TN"]] +
+        [{"emp": e, "cortado": True}  for e in datos["CO"]],
+        key=lambda x: f"{x['emp']['apellido']} {x['emp']['nombre']}".lower()
+    )
+
+    COLORES = {
+        "I":    ("FFFFFF", "000000"), "T":    ("FF8C00", "000000"),
+        "F":    ("27AE60", "FFFFFF"), "FT":   ("27AE60", "FFFFFF"),
+        "FD":   ("27AE60", "FFFFFF"), "A":    ("E74C3C", "FFFFFF"),
+        "A!!!": ("7B0000", "FFFFFF"), "E":    ("FABF8F", "000000"),
+        "ILT":  ("C4D79B", "000000"), "V":    ("95B3D7", "000000"),
+        "L":    ("92CDDC", "000000"), "LSG":  ("B1A0C7", "000000"),
+        "S":    ("DA9694", "000000"), "@":    ("FFC7CE", "000000"),
+        "NF":   ("F4D03F", "7D4900"), "CP":   ("9CCC65", "1B5E20"),
+        "MT":   ("E67E22", "FFFFFF"), "X":    ("808080", "FFFFFF"),
+        "O":    ("404040", "FFFFFF"), "!":    ("8E44AD", "FFFFFF"),
+    }
+
+    RES_COLS   = ["saldo_francos","T","ILT","LSG","L","@","E","V","S","NF","FM","A","feriados_trabajados","dias"]
+    RES_LABELS = {
+        "saldo_francos":"SALDO","T":"T","ILT":"ILT","LSG":"LSG","L":"L",
+        "@":"@","E":"E","V":"V","S":"S","NF":"NF","FM":"FM","A":"A",
+        "feriados_trabajados":"FERI.","dias":"DÍAS",
+    }
+
+    dias = datos["dias"]
+    año_n, mes_n = int(mes[:4]), int(mes[5:7])
+    meses_es = ["enero","febrero","marzo","abril","mayo","junio",
+                "julio","agosto","septiembre","octubre","noviembre","diciembre"]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"{meses_es[mes_n-1].capitalize()} {año_n}"
+
+    hdr_fill  = PatternFill("solid", fgColor="1A252F")
+    dom_fill  = PatternFill("solid", fgColor="4A235A")
+    fer_fill  = PatternFill("solid", fgColor="1A5276")
+    hdr_font  = Font(bold=True, color="FFFFFF", size=8)
+
+    def hcell(col, text, fill=None, width=None, halign="center"):
+        c = ws.cell(1, col, text)
+        c.fill = fill or hdr_fill
+        c.font = hdr_font
+        c.alignment = Alignment(horizontal=halign, vertical="center", wrap_text=True)
+        if width:
+            ws.column_dimensions[c.column_letter].width = width
+        return c
+
+    col = 1
+    hcell(col, "COD",              width=6);  col += 1
+    hcell(col, "APELLIDO Y NOMBRE",width=30, halign="left"); col += 1
+
+    day_start = col
+    for dia in dias:
+        fill = fer_fill if dia["feriado"] else dom_fill if dia["domingo"] else hdr_fill
+        hcell(col, f"{dia['num']}\n{dia['dow']}", fill=fill, width=4.5)
+        col += 1
+
+    ws.column_dimensions[ws.cell(1, col).column_letter].width = 1
+    col += 1  # separador
+
+    for rc in RES_COLS:
+        hcell(col, RES_LABELS[rc], width=5.5); col += 1
+
+    ctrl_col = col
+    hcell(col, "CONTROL", width=20, halign="left")
+
+    ws.freeze_panes = "C2"
+    ws.row_dimensions[1].height = 30
+
+    def fmt_dias(arr):
+        return ", ".join(arr[:6]) + ("…" if len(arr) > 6 else "")
+
+    for row_i, item in enumerate(todos, start=2):
+        emp = item["emp"]
+        es_co = item["cortado"]
+
+        c = ws.cell(row_i, 1, emp.get("cod") or "")
+        c.alignment = Alignment(horizontal="center"); c.font = Font(size=8)
+
+        c = ws.cell(row_i, 2, f"{emp['apellido']}, {emp['nombre']}")
+        c.alignment = Alignment(horizontal="left"); c.font = Font(size=8)
+
+        col = day_start
+        for dia in dias:
+            fecha  = dia["fecha"]
+            celda  = emp["celdas"].get(fecha, {})
+            if es_co or celda.get("es_cortado_dia"):
+                b1 = celda.get("b1") or {"letra": None, "tipo": "sin_plan"}
+                b2 = celda.get("b2") or {"letra": None, "tipo": "sin_plan"}
+                l1, l2 = b1.get("letra") or "", b2.get("letra") or ""
+                text     = f"{l1}/{l2}" if (l1 or l2) else ""
+                bg_letra = l1 or l2
+                tipo     = b1.get("tipo", "sin_plan")
+            else:
+                l        = celda.get("letra") or ""
+                text     = l
+                bg_letra = l
+                tipo     = celda.get("tipo", "sin_plan")
+
+            c = ws.cell(row_i, col, text)
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            if tipo == "antes_ingreso":
+                c.fill = PatternFill("solid", fgColor="000000")
+                c.font = Font(size=7, bold=True, color="000000")
+            elif tipo == "liquidacion":
+                c.fill = PatternFill("solid", fgColor="5D6D7E")
+                c.font = Font(size=7, bold=True, color="FFFFFF")
+            elif bg_letra in COLORES:
+                bg, fg = COLORES[bg_letra]
+                c.fill = PatternFill("solid", fgColor=bg)
+                c.font = Font(size=7, bold=True, color=fg)
+            else:
+                c.font = Font(size=7)
+            col += 1
+
+        col += 1  # separador
+
+        for rc in RES_COLS:
+            v = (emp.get("totales") or {}).get(rc, 0) or 0
+            c = ws.cell(row_i, col, v if v != 0 else "")
+            c.alignment = Alignment(horizontal="center"); c.font = Font(size=8)
+            col += 1
+
+        ctrl = emp.get("control") or {}
+        estado = ctrl.get("estado", "")
+        dd, df, da = ctrl.get("dias_duda",[]), ctrl.get("dias_faltantes",[]), ctrl.get("dias_ausentes_sc",[])
+        sc = f" · A!!! ({fmt_dias(da)})" if da else ""
+        ctrl_txt = {
+            "completado":  "COMPLETADO",
+            "liquidacion": "LIQ. FINAL",
+        }.get(estado, "")
+        if not ctrl_txt:
+            if estado in ("ausentes_sc","en_curso") and da:
+                ctrl_txt = f"A!!! ({fmt_dias(da)})"
+            elif estado == "revisar":
+                ctrl_txt = f"Rev: {fmt_dias(dd)}{sc}"
+            elif estado == "faltan":
+                ctrl_txt = f"Falt: {fmt_dias(df)}{sc}"
+            elif estado == "mixto":
+                ctrl_txt = f"Rev: {fmt_dias(dd)} · Falt: {fmt_dias(df)}{sc}"
+
+        c = ws.cell(row_i, ctrl_col, ctrl_txt)
+        c.alignment = Alignment(horizontal="left"); c.font = Font(size=7)
+        ws.row_dimensions[row_i].height = 14
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"planilla_{mes}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ── Novedades CRUD ────────────────────────────────────────────────────────────

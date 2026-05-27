@@ -494,6 +494,8 @@ def _migrate(conn):
             ('nombre_empresa',  '',              'Nombre del restaurante o empresa (aparece en login y reportes'),
             ('inactividad_minutos', '10',        'Minutos sin actividad antes de cerrar la sesión automáticamente'),
             ('dia_cierre_periodo', '6',          'Día del mes en que se cierra automáticamente el período anterior'),
+            ('distribucion_reemplaza_planificacion', '0',
+             'Si está en 1, los empleados con cargo vinculado a un departamento no generan planificación automática por calendarios'),
         ]
     )
 
@@ -721,6 +723,9 @@ def _migrate(conn):
     if "aplica_premio" not in cols_cargos:
         conn.execute("ALTER TABLE cargos ADD COLUMN aplica_premio INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna aplica_premio agregada a cargos")
+    if "departamento_id" not in cols_cargos:
+        conn.execute("ALTER TABLE cargos ADD COLUMN departamento_id INTEGER REFERENCES departamentos(id)")
+        logger.info("Migración: columna departamento_id agregada a cargos")
     conn.execute("CREATE TABLE IF NOT EXISTS departamentos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)")
     conn.execute("CREATE TABLE IF NOT EXISTS categorias (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)")
     cols_emp_now = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}

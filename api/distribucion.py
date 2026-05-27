@@ -168,6 +168,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         ).fetchall()
 
         detalles = []
+        sugeridos = []
         if dist:
             detalles = conn.execute(
                 """SELECT dd.*, e.nombre AS emp_nombre, e.apellido AS emp_apellido,
@@ -179,12 +180,60 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    ORDER BY dd.fecha, p.orden""",
                 (dist["id"],)
             ).fetchall()
+        else:
+            # Sin distribución propia: buscar la semana anterior como sugerencia
+            lunes_ant = str(lunes - timedelta(days=7))
+            dist_ant = conn.execute(
+                """SELECT id FROM distribucion_semana
+                   WHERE departamento_id=? AND turno=? AND semana_inicio=?""",
+                (departamento_id, turno, lunes_ant)
+            ).fetchone()
+            if dist_ant:
+                rows_ant = conn.execute(
+                    """SELECT dd.empleado_id, dd.puesto_id, dd.es_franco,
+                              e.nombre AS emp_nombre, e.apellido AS emp_apellido,
+                              p.nombre AS puesto_nombre,
+                              dd.fecha AS fecha_original
+                       FROM distribucion_detalle dd
+                       LEFT JOIN empleados e ON e.id = dd.empleado_id
+                       LEFT JOIN puestos p ON p.id = dd.puesto_id
+                       WHERE dd.distribucion_id=?
+                       ORDER BY dd.fecha, p.orden""",
+                    (dist_ant["id"],)
+                ).fetchall()
+                # Mapear fechas de la semana anterior a la semana actual
+                for row in rows_ant:
+                    row_d = dict(row)
+                    try:
+                        fecha_orig = date.fromisoformat(row_d["fecha_original"])
+                        dow = fecha_orig.weekday()  # 0=lunes … 6=domingo
+                        fecha_nueva = str(lunes + timedelta(days=dow))
+                        row_d["fecha"] = fecha_nueva
+                        sugeridos.append(row_d)
+                    except Exception:
+                        pass
+
+        # Filtrar empleados por cargo vinculado al departamento si corresponde
+        dept_cargos = conn.execute(
+            "SELECT id FROM cargos WHERE departamento_id=?", (departamento_id,)
+        ).fetchall()
+        if dept_cargos:
+            cargo_ids = [c["id"] for c in dept_cargos]
+            placeholders = ",".join("?" * len(cargo_ids))
+            empleados = conn.execute(
+                f"""SELECT e.id, e.nombre, e.apellido, e.tipo
+                   FROM empleados e
+                   WHERE e.activo=1 AND e.cargo_id IN ({placeholders})
+                   ORDER BY e.apellido, e.nombre""",
+                cargo_ids
+            ).fetchall()
 
     return {
         "distribucion": dict(dist) if dist else None,
         "puestos": [dict(r) for r in puestos],
         "empleados": [dict(r) for r in empleados],
         "detalles": [dict(r) for r in detalles],
+        "sugeridos": sugeridos,
         "dias": dias,
     }
 

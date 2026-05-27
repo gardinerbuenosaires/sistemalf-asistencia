@@ -158,6 +158,18 @@ table.planilla tbody tr.fuera-dispositivo td.col-nombre { background: #fff3cd !i
   margin-left:4px; vertical-align:middle; letter-spacing:.03em; }
 table.planilla tbody tr.emp-nuevo td { background: #FFF8E1 !important; }
 table.planilla tbody tr.emp-nuevo td.col-nombre { background: #FFF8E1 !important; border-left: 3px solid #FB8C00 !important; }
+table.planilla tbody tr.emp-nuevo td.ctrl-liquidacion { background: #e74c3c !important; color: #ffffff !important; }
+/* Multi-selección */
+.celda-sel { outline: 3px solid #2980b9 !important; outline-offset: -2px; z-index: 1; position: relative; }
+#multi-chip { position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:#2c3e50; color:white; border-radius:8px; padding:10px 16px;
+  display:none; align-items:center; gap:12px; z-index:1500;
+  box-shadow:0 4px 20px rgba(0,0,0,.35); white-space:nowrap; }
+#multi-chip button { border:none; border-radius:5px; padding:6px 14px; font-size:.85rem; cursor:pointer; }
+#multi-chip .chip-aplicar { background:#2980b9; color:white; font-weight:600; }
+#multi-chip .chip-aplicar:hover { background:#1f6391; }
+#multi-chip .chip-cancelar { background:rgba(255,255,255,.15); color:white; }
+#multi-chip .chip-cancelar:hover { background:rgba(255,255,255,.28); }
 .badge-nuevo { display:inline-block; background:#FB8C00; color:white;
   font-size:.6rem; font-weight:bold; padding:1px 5px; border-radius:3px;
   margin-left:5px; vertical-align:middle; letter-spacing:.03em; }
@@ -472,6 +484,13 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <p id="alert-msg" style="margin:0 0 20px;font-size:.95rem;line-height:1.5;color:#2c3e50"></p>
   <button onclick="cerrarAlert()" style="background:#2c3e50;color:white;border:none;border-radius:6px;
     padding:9px 28px;font-size:.9rem;cursor:pointer;font-weight:600">Aceptar</button>
+</div>
+
+<!-- Chip multi-selección -->
+<div id="multi-chip">
+  <span id="multi-chip-label"></span>
+  <button class="chip-aplicar" onclick="abrirModalMulti()">Aplicar novedad</button>
+  <button class="chip-cancelar" onclick="limpiarSel()">✕</button>
 </div>
 
 <!-- Modal novedad / fichaje manual -->
@@ -1475,6 +1494,33 @@ function selTipo(t) {
 async function guardarNovedad() {
   const tipo = document.querySelector('.tipo-btn.selected')?.dataset.tipo;
   if (!tipo) { toast('Seleccioná un tipo'); return; }
+
+  // ── Modo multi-selección ──
+  if (modalCtx.multiSel) {
+    const descripcion = document.getElementById('nov-descripcion').value.trim() || null;
+    if (tipo === 'CP' && !descripcion) {
+      toast('La compensación de presencia requiere una descripción');
+      document.getElementById('nov-descripcion').focus();
+      return;
+    }
+    let errores = 0;
+    for (const {eid, fecha, bloque} of modalCtx.multiSel) {
+      const res = await fetch('/api/asistencia/novedades', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({empleado_id: eid, fecha, bloque, tipo, descripcion}),
+      });
+      if (!res.ok) errores++;
+    }
+    const n = modalCtx.multiSel.length;
+    if (errores > 0) toast(`${errores} error(es) al guardar`);
+    else toast(`Novedad guardada (${n} celda${n > 1 ? 's' : ''})`);
+    limpiarSel();
+    cerrarModal();
+    cargar();
+    return;
+  }
+
   const { eid, fecha, bloqueActivo, esCortado } = modalCtx;
 
   // Guard: no permitir sobreescribir un bloque con presencia correcta (letra I)
@@ -1588,6 +1634,7 @@ function cerrarModal() {
   document.getElementById('modal').style.display = 'none';
   document.getElementById('nov-desde').value = '';
   document.getElementById('nov-hasta').value = '';
+  document.querySelector('.nov-rango-wrap').style.display = '';
   modalCtx = null;
 }
 
@@ -1820,6 +1867,100 @@ document.addEventListener('mouseout', e => {
   if (!e.relatedTarget?.closest('[data-eid][data-fecha]')) _tipHide();
 });
 
+// ── Multi-selección con Ctrl+click ───────────────────────────────────────────
+const multiSel = new Map(); // key: "eid|fecha|bloque" → {eid, fecha, bloque, esCortado, el}
+
+document.addEventListener('click', function(e) {
+  if (!e.ctrlKey) return;
+  const cel = e.target.closest('.celda-simple[data-eid], .celda-bloque[onclick]');
+  if (!cel) return;
+  if (modoOrden || !canDo('asistencia','corregir') || periodoCerrado) return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+
+  let eid, fecha, bloque, esCortado;
+  if (cel.classList.contains('celda-simple')) {
+    eid      = parseInt(cel.dataset.eid);
+    fecha    = cel.dataset.fecha;
+    bloque   = 0;
+    esCortado = false;
+  } else {
+    const parent = cel.closest('.celda-cortado');
+    eid      = parseInt(parent.dataset.eid);
+    fecha    = parent.dataset.fecha;
+    const bloques = parent.querySelectorAll('.celda-bloque');
+    bloque   = cel === bloques[0] ? 1 : 2;
+    esCortado = true;
+  }
+  _toggleSelCelda(eid, fecha, bloque, esCortado, cel);
+}, true);
+
+function _toggleSelCelda(eid, fecha, bloque, esCortado, el) {
+  const key = `${eid}|${fecha}|${bloque}`;
+  if (multiSel.has(key)) {
+    multiSel.get(key).el.classList.remove('celda-sel');
+    multiSel.delete(key);
+  } else {
+    multiSel.set(key, {eid, fecha, bloque, esCortado, el});
+    el.classList.add('celda-sel');
+  }
+  _actualizarChip();
+}
+
+function _actualizarChip() {
+  const chip = document.getElementById('multi-chip');
+  const n = multiSel.size;
+  if (n === 0) { chip.style.display = 'none'; return; }
+  chip.style.display = 'flex';
+  document.getElementById('multi-chip-label').textContent =
+    `${n} celda${n > 1 ? 's' : ''} seleccionada${n > 1 ? 's' : ''}`;
+}
+
+function limpiarSel() {
+  multiSel.forEach(({el}) => el.classList.remove('celda-sel'));
+  multiSel.clear();
+  _actualizarChip();
+}
+
+function abrirModalMulti() {
+  if (multiSel.size === 0) return;
+  if (!canDo('asistencia','corregir')) return;
+  if (periodoCerrado) { toast('El período está cerrado — solo lectura'); return; }
+
+  const items = [...multiSel.values()];
+  const todosCortado = items.every(x => x.esCortado);
+  const tipos = todosCortado ? TIPOS_NOVEDAD_CORTADO : TIPOS_NOVEDAD;
+
+  modalCtx = { multiSel: items };
+
+  const n = multiSel.size;
+  document.getElementById('modal-nombre').textContent =
+    `${n} celda${n > 1 ? 's' : ''} seleccionada${n > 1 ? 's' : ''}`;
+  document.getElementById('modal-subtitulo').textContent = 'Novedad múltiple';
+  document.getElementById('modal-estado-actual').textContent = '';
+  document.getElementById('bloque-sel-wrap').style.display  = 'none';
+  document.getElementById('modal-tab-bar').style.display    = 'none';
+  document.getElementById('btn-borrar').style.display       = 'none';
+  document.getElementById('vac-saldo-info').style.display   = 'none';
+  document.querySelector('.nov-rango-wrap').style.display   = 'none';
+  document.getElementById('nov-descripcion').value          = '';
+  document.getElementById('nov-descripcion').placeholder   = 'Descripción (opcional)';
+  document.getElementById('nov-descripcion').style.borderColor = '';
+
+  const grid = document.getElementById('tipos-grid');
+  grid.innerHTML = tipos.map(t => {
+    const col = C[t] || {bg:'#eee',txt:'#333'};
+    return `<button class="tipo-btn" data-tipo="${t}" onclick="selTipo('${t}')"
+      style="background:${col.bg};color:${col.txt};border-color:${col.bg}">${t}</button>`;
+  }).join('');
+
+  modalTabPlani('nov');
+
+  document.getElementById('modal-overlay').style.display = 'block';
+  document.getElementById('modal').style.display = 'block';
+}
+
 _loadPerms();
 _loadHorarios();
 init();
@@ -1848,6 +1989,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.getElementById('ctx-menu').style.display = 'none';
     cerrarSaldoFrancos();
+    limpiarSel();
   }
 });
 

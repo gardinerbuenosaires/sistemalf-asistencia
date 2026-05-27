@@ -192,12 +192,22 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
         b1r           = _evaluar_bloque(bloques[0], fecha, slots.get("b1_entrada"), slots.get("b1_salida"))
         b2r           = None
         b2_entrada_id = b2_salida_id = None
+        b1_aplica = bool(bloques[0].get("aplica", 1))
+        b1_mt_val = not b1_aplica
+        b2_mt_val = False
         if len(bloques) > 1:
             b2_entrada_id = (slots.get("b2_entrada") or {}).get("id")
             b2_salida_id  = (slots.get("b2_salida")  or {}).get("id")
             b2r = _evaluar_bloque(bloques[1], fecha, slots.get("b2_entrada"), slots.get("b2_salida"))
+            b2_aplica = bool(bloques[1].get("aplica", 1))
+            b2_mt_val = not b2_aplica
 
-        estado = _calcular_estado(b1r, b2r)
+        if b1_mt_val and b2r is not None:
+            estado = _calcular_estado(b2r, None)
+        elif b2_mt_val and b2r is not None:
+            estado = _calcular_estado(b1r, None)
+        else:
+            estado = _calcular_estado(b1r, b2r)
 
         conn.execute(
             """INSERT INTO resultados_dia
@@ -205,8 +215,9 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
                 b1_entrada, b1_salida, b1_minutos_tarde, b1_salida_anticipada, b1_ausente, b1_sin_salida,
                 b2_entrada, b2_salida, b2_minutos_tarde, b2_salida_anticipada, b2_ausente, b2_sin_salida,
                 b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id,
+                b1_mt, b2_mt,
                 corregido_manualmente, corregido_por, corregido_en, procesado_en)
-               VALUES (?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, 0,NULL,NULL, datetime('now','localtime'))
+               VALUES (?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?,?, ?,?, 0,NULL,NULL, datetime('now','localtime'))
                ON CONFLICT(empleado_id, fecha) DO UPDATE SET
                horario_id=excluded.horario_id, estado=excluded.estado,
                b1_entrada=excluded.b1_entrada, b1_salida=excluded.b1_salida,
@@ -219,13 +230,15 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
                b2_sin_salida=excluded.b2_sin_salida,
                b1_entrada_id=excluded.b1_entrada_id, b1_salida_id=excluded.b1_salida_id,
                b2_entrada_id=excluded.b2_entrada_id, b2_salida_id=excluded.b2_salida_id,
+               b1_mt=excluded.b1_mt, b2_mt=excluded.b2_mt,
                procesado_en=datetime('now','localtime')""",
             (empleado_id, fecha_str, horario_id, es_franco, estado,
              b1r.get("entrada"), b1r.get("salida"), b1r.get("minutos_tarde"),
              int(b1r.get("salida_anticipada", False)), int(b1r.get("ausente", False)), int(b1r.get("sin_salida", False)),
              (b2r or {}).get("entrada"), (b2r or {}).get("salida"), (b2r or {}).get("minutos_tarde"),
              int((b2r or {}).get("salida_anticipada", False)), int((b2r or {}).get("ausente", False)), int((b2r or {}).get("sin_salida", False)),
-             b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id)
+             b1_entrada_id, b1_salida_id, b2_entrada_id, b2_salida_id,
+             int(b1_mt_val), int(b2_mt_val))
         )
     return {"ok": True}
 

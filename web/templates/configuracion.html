@@ -719,6 +719,21 @@ const ACCION_LABELS = {
   ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
   corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir", carga_inicial:"Carga inicial"
 };
+const MODULO_ACCIONES_VALIDAS = {
+  dashboard:     ["ver"],
+  empleados:     ["ver","editar","eliminar"],
+  horarios:      ["ver","editar","eliminar"],
+  planificacion: ["ver","editar"],
+  calendarios:   ["ver","editar","eliminar"],
+  asistencia:    ["ver","editar","corregir","carga_inicial"],
+  resultados:    ["ver","procesar"],
+  usuarios:      ["ver","editar","eliminar"],
+  roles:         ["ver","editar","eliminar"],
+  sync:          ["procesar"],
+  premios:       ["ver","editar"],
+  vacaciones:    ["ver","editar"],
+  periodos:      ["ver","cerrar","reabrir"],
+};
 
 let rolesList = [], modulos = [], acciones = [], rolEditandoId = null;
 
@@ -813,10 +828,14 @@ function renderRolEditor(rol={}) {
           const todosCheck = acciones.every(a => permsActuales.has(`${m}|${a}`));
           return `<tr>
             <td class="modulo-name">${MODULO_LABELS[m]||m}</td>
-            ${acciones.map(a => `
-              <td><input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
-                ${permsActuales.has(`${m}|${a}`) ? " checked" : ""}
-                ${editable ? `onchange="onPermChange(this)"` : "disabled"}></td>`).join("")}
+            ${acciones.map(a => {
+              const aplica = (MODULO_ACCIONES_VALIDAS[m] || acciones).includes(a);
+              return `<td style="${aplica ? '' : 'background:#f4f6f8'}">
+                <input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
+                  ${permsActuales.has(`${m}|${a}`) ? " checked" : ""}
+                  ${aplica && editable ? `onchange="onPermChange(this)"` : "disabled"}
+                  style="${aplica ? '' : 'opacity:.2;cursor:default'}"></td>`;
+            }).join("")}
             <td class="col-all">
               <input type="checkbox" class="chk-all" data-m="${m}"
                 ${todosCheck ? " checked" : ""}
@@ -836,12 +855,17 @@ function renderRolEditor(rol={}) {
 
 function onPermChange(chk) {
   const m = chk.dataset.m;
-  const todos = document.querySelectorAll(`.chk-perm[data-m="${m}"]`);
-  document.querySelector(`.chk-all[data-m="${m}"]`).checked = [...todos].every(c => c.checked);
+  const validas = MODULO_ACCIONES_VALIDAS[m] || acciones;
+  const aplicables = [...document.querySelectorAll(`.chk-perm[data-m="${m}"]`)]
+    .filter(c => validas.includes(c.dataset.a));
+  document.querySelector(`.chk-all[data-m="${m}"]`).checked = aplicables.every(c => c.checked);
 }
 
 function toggleModulo(chk, modulo) {
-  document.querySelectorAll(`.chk-perm[data-m="${modulo}"]`).forEach(c => c.checked = chk.checked);
+  const validas = MODULO_ACCIONES_VALIDAS[modulo] || acciones;
+  document.querySelectorAll(`.chk-perm[data-m="${modulo}"]`).forEach(c => {
+    if (validas.includes(c.dataset.a)) c.checked = chk.checked;
+  });
 }
 
 function cancelarRol() {

@@ -154,6 +154,7 @@
       <div class="nav-dropdown">
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/distribucion" data-perm="distribucion:ver">Distribución</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -719,7 +720,7 @@ const MODULO_LABELS = {
 const ACCION_LABELS = {
   ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
   corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir", carga_inicial:"Carga inicial",
-  ver_todos:"Ver todos"
+  ver_todos:"Ver todos", confirmar:"Confirmar"
 };
 const MODULO_ACCIONES_VALIDAS = {
   dashboard:     ["ver"],
@@ -735,6 +736,7 @@ const MODULO_ACCIONES_VALIDAS = {
   premios:       ["ver","editar"],
   vacaciones:    ["ver","editar"],
   periodos:      ["ver","cerrar","reabrir"],
+  distribucion:  ["ver","editar","confirmar"],
 };
 
 let rolesList = [], modulos = [], acciones = [], rolEditandoId = null;

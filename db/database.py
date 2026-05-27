@@ -913,3 +913,70 @@ def _migrate(conn):
     if not conn.execute("SELECT 1 FROM niveles_estudio LIMIT 1").fetchone():
         for n in [("Primario", 1), ("Secundario", 2), ("Terciario", 3), ("Universitario", 4)]:
             conn.execute("INSERT INTO niveles_estudio (nombre, orden) VALUES (?, ?)", n)
+
+    # ── Módulo distribución semanal ───────────────────────────────────────────
+    # sector_id en departamentos (qué sector de la empresa corresponde)
+    cols_dept = {r[1] for r in conn.execute("PRAGMA table_info(departamentos)").fetchall()}
+    if "sector_id" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN sector_id INTEGER REFERENCES sectores_legajo(id)")
+        logger.info("Migración: columna sector_id agregada a departamentos")
+
+    # puestos de trabajo dentro de cada departamento
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS puestos (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre          TEXT    NOT NULL,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id),
+            orden           INTEGER NOT NULL DEFAULT 0,
+            activo          INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+
+    # semana de distribución (una por departamento+turno+semana)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS distribucion_semana (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id),
+            turno           TEXT    NOT NULL,
+            semana_inicio   TEXT    NOT NULL,
+            estado          TEXT    NOT NULL DEFAULT 'borrador',
+            creado_por      TEXT,
+            creado_en       TEXT,
+            modificado_por  TEXT,
+            modificado_en   TEXT,
+            UNIQUE(departamento_id, turno, semana_inicio)
+        )
+    """)
+
+    # detalle: qué empleado va a qué puesto cada día
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS distribucion_detalle (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            distribucion_id INTEGER NOT NULL REFERENCES distribucion_semana(id) ON DELETE CASCADE,
+            empleado_id     INTEGER NOT NULL REFERENCES empleados(id),
+            puesto_id       INTEGER REFERENCES puestos(id),
+            fecha           TEXT    NOT NULL,
+            es_franco       INTEGER NOT NULL DEFAULT 0,
+            creado_por      TEXT,
+            creado_en       TEXT,
+            modificado_por  TEXT,
+            modificado_en   TEXT
+        )
+    """)
+
+    # qué usuarios pueden planificar qué departamento+turno
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS usuarios_distribucion (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id      INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id) ON DELETE CASCADE,
+            turno           TEXT    NOT NULL,
+            UNIQUE(usuario_id, departamento_id, turno)
+        )
+    """)
+
+    # origen en planificacion: NULL=manual, 'distribucion'=generado por grilla
+    cols_plan = {r[1] for r in conn.execute("PRAGMA table_info(planificacion)").fetchall()}
+    if "origen" not in cols_plan:
+        conn.execute("ALTER TABLE planificacion ADD COLUMN origen TEXT DEFAULT NULL")
+        logger.info("Migración: columna origen agregada a planificacion")

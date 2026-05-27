@@ -26,9 +26,9 @@ INACTIVITY_TTL  = 600  # segundos — 10 minutos sin actividad desloguea
 MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
-    "periodos",
+    "periodos", "distribucion",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar"]
 # corregir → asistencia:corregir (novedades en planilla)
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}
@@ -159,6 +159,7 @@ PERMISOS_DEFAULT = {
         "premios":       ["ver"],
         "vacaciones":    ["ver"],
         "periodos":      ["ver","cerrar","reabrir"],
+        "distribucion":  ["ver","editar","confirmar"],
     },
     "administracion": {
         "dashboard":     ["ver"],
@@ -177,6 +178,7 @@ PERMISOS_DEFAULT = {
         "dashboard":     ["ver"],
         "planificacion": ["ver","editar"],
         "asistencia":    ["ver"],
+        "distribucion":  ["ver","editar","confirmar"],
     },
 }
 

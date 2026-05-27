@@ -28,6 +28,7 @@ from api.premios import router as premios_router
 from api.vacaciones import router as vacaciones_router
 from api.francos import router as francos_router
 from api.periodos_cerrados import router as periodos_cerrados_router
+from api.distribucion import router as distribucion_router
 from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
 
 logging.basicConfig(
@@ -125,6 +126,7 @@ app.include_router(premios_router)
 app.include_router(vacaciones_router)
 app.include_router(francos_router)
 app.include_router(periodos_cerrados_router)
+app.include_router(distribucion_router)
 
 
 def _page(request: Request, template: str, modulo: str, accion: str = "ver"):
@@ -211,6 +213,10 @@ def page_empleados_listado(request: Request):
 @app.get("/empleados/{eid}/legajo", include_in_schema=False)
 def page_legajo_imprimible(eid: int, request: Request):
     return _page(request, "web/templates/legajo_imprimible.html", "empleados")
+
+@app.get("/distribucion", include_in_schema=False)
+def page_distribucion(request: Request):
+    return _page(request, "web/templates/distribucion.html", "distribucion")
 
 @app.get("/manual-encargado", include_in_schema=False)
 def page_manual_encargado(request: Request):

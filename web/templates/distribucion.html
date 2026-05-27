@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<title>Distribución Semanal — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+    background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none !important; }
+
+  .toolbar { background: white; border-bottom: 1px solid #e0e0e0; padding: 10px 16px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .toolbar select, .toolbar input {
+    padding: 5px 10px; border-radius: 4px; border: 1px solid #ced4da;
+    font-size: .85rem; outline: none; }
+  .btn { border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: .85rem; font-weight: bold; }
+  .btn-nav { background: #2c3e50; color: white; }
+  .btn-nav:hover { background: #3d5166; }
+  .btn-confirmar { background: #27ae60; color: white; }
+  .btn-confirmar:hover { background: #219a52; }
+  .btn-confirmar:disabled { background: #95a5a6; cursor: default; }
+  .nav-semana { display: flex; align-items: center; gap: 8px; }
+  .nav-semana span { font-size: .9rem; font-weight: bold; min-width: 200px; text-align: center; }
+
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: .75rem; font-weight: bold; }
+  .badge-borrador { background: #fff3cd; color: #856404; }
+  .badge-confirmado { background: #d4edda; color: #155724; }
+  .badge-nuevo { background: #e2e3e5; color: #383d41; }
+
+  main { padding: 16px; overflow-x: auto; }
+  .grilla-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1);
+    overflow: hidden; min-width: 700px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th { padding: 10px 8px; text-align: center; font-size: .8rem;
+    border-bottom: 2px solid #dee2e6; background: #f8f9fa; }
+  thead th.col-puesto { text-align: left; padding-left: 14px; min-width: 140px; width: 160px; }
+  thead th.col-dia { min-width: 110px; }
+  thead th.hoy { background: #e8f4fd; color: #004085; }
+
+  tbody tr:hover td { background: #fafafa; }
+  td { padding: 4px 4px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  td.col-puesto { padding: 6px 14px; font-weight: bold; font-size: .82rem; white-space: nowrap;
+    border-right: 2px solid #dee2e6; }
+  td.col-dia { text-align: center; }
+
+  .celda-dist {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 100px; padding: 5px 8px; border-radius: 5px; cursor: pointer;
+    font-size: .78rem; font-weight: bold; border: 1px dashed #ccc;
+    background: #f8f9fa; color: #aaa; min-height: 32px;
+    transition: filter .1s, box-shadow .1s; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .celda-dist:hover { filter: brightness(.93); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .celda-dist.asignado { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+  .celda-dist.franco { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+  .celda-dist.hoy { box-shadow: 0 0 0 2px #007bff; }
+  .celda-dist.readonly { cursor: default; }
+  .celda-dist.readonly:hover { filter: none; box-shadow: none; }
+
+  tfoot td { padding: 10px 14px; }
+  .btn-add-puesto { background: none; border: 1px dashed #aaa; padding: 4px 12px;
+    border-radius: 4px; cursor: pointer; font-size: .8rem; color: #666; }
+  .btn-add-puesto:hover { background: #f0f0f0; }
+
+  .empty-state { text-align: center; padding: 60px 20px; color: #888; }
+  .empty-state p { margin-bottom: 8px; font-size: .95rem; }
+
+  /* Modal */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; }
+  .overlay.active { display: flex; align-items: center; justify-content: center; }
+  .modal { background: white; border-radius: 10px; padding: 24px; width: 360px; max-height: 85vh;
+    display: flex; flex-direction: column; }
+  .modal h3 { font-size: 1rem; margin-bottom: 4px; }
+  .modal .subtitulo { font-size: .8rem; color: #888; margin-bottom: 12px; }
+  .modal-search { width: 100%; padding: 7px 10px; border: 1px solid #ced4da; border-radius: 5px;
+    font-size: .85rem; margin-bottom: 8px; outline: none; }
+  .opciones { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+  .opcion { padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: .85rem;
+    border: 1px solid #dee2e6; }
+  .opcion:hover { background: #f0f4f8; }
+  .opcion.franco-opt { background: #fff3cd; border-color: #ffc107; color: #856404; }
+  .opcion.vaciar-opt { color: #e74c3c; border-color: #e74c3c; }
+  .modal-footer { margin-top: 14px; text-align: right; }
+  .btn-cancel { background: #eee; border: none; padding: 7px 16px; border-radius: 5px; cursor: pointer; }
+
+  /* Modal puestos */
+  .modal-puesto { width: 300px; }
+  .modal-puesto input { width: 100%; padding: 7px 10px; border: 1px solid #ced4da;
+    border-radius: 5px; font-size: .9rem; margin-bottom: 12px; outline: none; }
+  .modal-puesto .btn-save { background: #2c3e50; color: white; border: none;
+    padding: 8px 18px; border-radius: 5px; cursor: pointer; font-size: .85rem; }
+
+  #toast { position: fixed; bottom: 20px; right: 20px; background: #2c3e50; color: white;
+    padding: 10px 18px; border-radius: 7px; display: none; z-index: 300; font-size: .85rem; }
+  #toast.error { background: #e74c3c; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group activo">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios" data-perm="horarios:ver">Horarios</a>
+        <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/distribucion" class="activo" data-perm="distribucion:ver">Distribución</a>
+        <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia" data-perm="asistencia:ver">Asistencia</a>
+        <a href="/fichajes" data-perm="asistencia:ver">Fichajes</a>
+        <a href="/asistencia-mensual" data-perm="asistencia:ver">Planilla</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados" data-perm="empleados:ver">Listado</a>
+        <a href="/premios" data-perm="premios:ver">Premios</a>
+        <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
+      </div>
+    </div>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <a href="/manual-encargado" data-perm="asistencia:ver" target="_blank">Ayuda</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
+</header>
+
+<div class="toolbar">
+  <div class="nav-semana">
+    <button class="btn btn-nav" onclick="cambiarSemana(-7)">&#8592;</button>
+    <span id="label-semana">Cargando...</span>
+    <button class="btn btn-nav" onclick="cambiarSemana(7)">&#8594;</button>
+    <button class="btn btn-nav" onclick="irHoy()">Hoy</button>
+  </div>
+  <select id="sel-departamento" onchange="onDeptChange()" style="min-width:160px">
+    <option value="">— Departamento —</option>
+  </select>
+  <select id="sel-turno" onchange="cargarGrilla()">
+    <option value="">— Turno —</option>
+  </select>
+  <span id="badge-estado" class="badge badge-nuevo" style="display:none"></span>
+  <button id="btn-confirmar" class="btn btn-confirmar" data-perm="distribucion:confirmar"
+    onclick="confirmarDistribucion()" style="margin-left:auto" disabled>Confirmar semana</button>
+</div>
+
+<main>
+  <div id="empty-dept" class="empty-state">
+    <p>Seleccioná un departamento y turno para ver la distribución semanal.</p>
+  </div>
+  <div id="grilla-wrap" class="grilla-wrap" style="display:none">
+    <table id="tabla-dist">
+      <thead id="thead-dist"></thead>
+      <tbody id="tbody-dist"></tbody>
+      <tfoot id="tfoot-dist"></tfoot>
+    </table>
+  </div>
+</main>
+
+<!-- Modal asignación empleado -->
+<div class="overlay" id="overlay-emp" onclick="cerrarModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="modal-titulo">Asignar empleado</h3>
+    <p class="subtitulo" id="modal-subtitulo"></p>
+    <input class="modal-search" id="modal-search" type="search" placeholder="Buscar..." oninput="filtrarOpciones()">
+    <div class="opciones" id="lista-opciones"></div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal agregar/editar puesto -->
+<div class="overlay" id="overlay-puesto" onclick="cerrarModalPuesto()">
+  <div class="modal modal-puesto" onclick="event.stopPropagation()">
+    <h3 id="modal-puesto-titulo">Nuevo puesto</h3>
+    <p class="subtitulo" style="margin-bottom:12px">Nombre del puesto en este departamento</p>
+    <input type="text" id="input-puesto-nombre" placeholder="Ej: Horno, Parrilla, Servicio..." maxlength="60">
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-cancel" onclick="cerrarModalPuesto()">Cancelar</button>
+      <button class="modal-puesto .btn-save btn" onclick="guardarPuesto()"
+        style="background:#2c3e50;color:white;border:none;padding:8px 18px;border-radius:5px;cursor:pointer">
+        Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Estado ────────────────────────────────────────────────────────────────────
+let _perms = new Set();
+let _lunes = new Date(); // lunes de la semana activa
+let _distribucion = null; // objeto de la semana cargada
+let _puestos = [];
+let _empleados = [];
+let _detalles = [];  // {empleado_id, puesto_id, fecha, es_franco}
+let _dias = [];
+let _misAccesos = { departamentos: [] };
+let _editando = null; // { puesto_id, fecha } — celda abierta
+let _puestoEditId = null; // para modal de puesto
+
+const DIAS_ES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+// ── Auth / permisos ───────────────────────────────────────────────────────────
+function canDo(mod, act) { return _perms.has(`${mod}:${act}`); }
+
+async function _loadPerms() {
+  try {
+    const r = await fetch('/api/auth/me');
+    if (!r.ok) { window.location.href = '/login'; return; }
+    const d = await r.json();
+    _perms = new Set(d.permisos || []);
+    document.querySelectorAll('[data-perm]').forEach(el => {
+      const [m, a] = el.dataset.perm.split(':');
+      if (canDo(m, a)) el.removeAttribute('data-perm');
+    });
+    const ui = document.getElementById('user-info');
+    if (ui) ui.textContent = d.nombre || '';
+  } catch { window.location.href = '/login'; }
+}
+
+function logout() {
+  fetch('/api/auth/logout', { method: 'POST' }).finally(() => { window.location.href = '/login'; });
+}
+
+// ── Fecha util ────────────────────────────────────────────────────────────────
+function getLunes(d) {
+  const dt = new Date(d);
+  const dow = dt.getDay() === 0 ? 6 : dt.getDay() - 1;
+  dt.setDate(dt.getDate() - dow);
+  return dt;
+}
+
+function fmtDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function fmtLabel(lunes) {
+  const dom = new Date(lunes); dom.setDate(dom.getDate() + 6);
+  const opts = { day: 'numeric', month: 'short' };
+  return `${lunes.toLocaleDateString('es-AR', opts)} — ${dom.toLocaleDateString('es-AR', opts)}`;
+}
+
+function hoy() { return fmtDate(new Date()); }
+
+// ── Semana ────────────────────────────────────────────────────────────────────
+function cambiarSemana(delta) {
+  _lunes.setDate(_lunes.getDate() + delta);
+  cargarGrilla();
+}
+
+function irHoy() {
+  _lunes = getLunes(new Date());
+  cargarGrilla();
+}
+
+// ── Selector departamento/turno ───────────────────────────────────────────────
+function onDeptChange() {
+  const deptId = document.getElementById('sel-departamento').value;
+  const selTurno = document.getElementById('sel-turno');
+  selTurno.innerHTML = '<option value="">— Turno —</option>';
+  if (!deptId) { mostrarVacio(); return; }
+  const dept = _misAccesos.departamentos.find(d => String(d.id) === deptId);
+  if (!dept) return;
+  (dept.turnos || []).forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t === 'TM' ? 'Mañana (TM)' : t === 'TN' ? 'Noche (TN)' : 'Corrido (CO)';
+    selTurno.appendChild(opt);
+  });
+  if (dept.turnos && dept.turnos.length === 1) {
+    selTurno.value = dept.turnos[0];
+    cargarGrilla();
+  } else {
+    mostrarVacio();
+  }
+}
+
+function mostrarVacio() {
+  document.getElementById('grilla-wrap').style.display = 'none';
+  document.getElementById('empty-dept').style.display = '';
+  document.getElementById('badge-estado').style.display = 'none';
+  document.getElementById('btn-confirmar').disabled = true;
+  _distribucion = null;
+}
+
+// ── Cargar grilla ─────────────────────────────────────────────────────────────
+async function cargarGrilla() {
+  const deptId = document.getElementById('sel-departamento').value;
+  const turno  = document.getElementById('sel-turno').value;
+  document.getElementById('label-semana').textContent = fmtLabel(_lunes);
+  if (!deptId || !turno) { mostrarVacio(); return; }
+
+  try {
+    const qs = `departamento_id=${deptId}&turno=${turno}&semana_inicio=${fmtDate(_lunes)}`;
+    const r = await fetch(`/api/distribucion/semana?${qs}`);
+    if (!r.ok) { toast('Error al cargar la distribución', true); return; }
+    const data = await r.json();
+    _distribucion = data.distribucion;
+    _puestos      = data.puestos || [];
+    _empleados    = data.empleados || [];
+    _detalles     = data.detalles || [];
+    _dias         = data.dias || [];
+    renderGrilla();
+  } catch(e) {
+    toast('Error de conexión', true);
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderGrilla() {
+  document.getElementById('empty-dept').style.display = 'none';
+  document.getElementById('grilla-wrap').style.display = '';
+
+  // Badge estado
+  const badge = document.getElementById('badge-estado');
+  badge.style.display = '';
+  if (!_distribucion) {
+    badge.className = 'badge badge-nuevo';
+    badge.textContent = 'Sin guardar';
+  } else if (_distribucion.estado === 'confirmado') {
+    badge.className = 'badge badge-confirmado';
+    badge.textContent = 'Confirmado';
+  } else {
+    badge.className = 'badge badge-borrador';
+    badge.textContent = 'Borrador';
+  }
+
+  // Botón confirmar
+  const btnConf = document.getElementById('btn-confirmar');
+  const confirmado = _distribucion && _distribucion.estado === 'confirmado';
+  btnConf.disabled = confirmado || !_distribucion;
+  btnConf.textContent = confirmado ? 'Ya confirmado' : 'Confirmar semana';
+
+  const hoyStr = hoy();
+  const puedoEditar = canDo('distribucion', 'editar') && !confirmado;
+
+  // Cabecera
+  const thead = document.getElementById('thead-dist');
+  let thDias = _dias.map((d, i) => {
+    const esHoy = d === hoyStr;
+    const label = DIAS_ES[i] + '<br><small>' + d.slice(8) + '/' + d.slice(5,7) + '</small>';
+    return `<th class="col-dia${esHoy ? ' hoy' : ''}">${label}</th>`;
+  }).join('');
+  thead.innerHTML = `<tr><th class="col-puesto">Puesto</th>${thDias}</tr>`;
+
+  // Cuerpo
+  const tbody = document.getElementById('tbody-dist');
+  if (_puestos.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${_dias.length + 1}" style="text-align:center;padding:30px;color:#888">
+      Sin puestos definidos. Agregá el primero abajo.
+    </td></tr>`;
+  } else {
+    tbody.innerHTML = _puestos.map(p => {
+      const celdas = _dias.map((d, i) => {
+        const esHoy = d === hoyStr;
+        const det = _detalles.find(x => x.puesto_id === p.id && x.fecha === d);
+        let cls = 'celda-dist', txt = '+';
+        if (!puedoEditar) cls += ' readonly';
+        if (det) {
+          if (det.es_franco) { cls += ' franco'; txt = 'FRANCO'; }
+          else { cls += ' asignado'; txt = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?'; }
+        }
+        if (esHoy) cls += ' hoy';
+        const clickAttr = puedoEditar
+          ? `onclick="abrirModal(${p.id}, '${d}')"`
+          : '';
+        return `<td class="col-dia"><span class="${cls}" title="${txt}" ${clickAttr}>${txt}</span></td>`;
+      }).join('');
+      return `<tr>
+        <td class="col-puesto">${p.nombre}</td>
+        ${celdas}
+      </tr>`;
+    }).join('');
+  }
+
+  // Pie
+  const tfoot = document.getElementById('tfoot-dist');
+  if (puedoEditar) {
+    tfoot.innerHTML = `<tr><td colspan="${_dias.length + 1}">
+      <button class="btn-add-puesto" onclick="abrirModalPuesto()">+ Agregar puesto</button>
+    </td></tr>`;
+  } else {
+    tfoot.innerHTML = '';
+  }
+}
+
+// ── Asignar empleado ──────────────────────────────────────────────────────────
+async function abrirModal(puestoId, fecha) {
+  _editando = { puestoId, fecha };
+  const puesto = _puestos.find(p => p.id === puestoId);
+  const d = new Date(fecha + 'T12:00:00');
+  const labelDia = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  document.getElementById('modal-titulo').textContent = puesto ? puesto.nombre : 'Asignar';
+  document.getElementById('modal-subtitulo').textContent = labelDia;
+  document.getElementById('modal-search').value = '';
+
+  const det = _detalles.find(x => x.puesto_id === puestoId && x.fecha === fecha);
+
+  const lista = document.getElementById('lista-opciones');
+  lista.innerHTML = '';
+
+  // Opción Franco
+  const oFranco = document.createElement('div');
+  oFranco.className = 'opcion franco-opt';
+  oFranco.textContent = 'FRANCO';
+  oFranco.onclick = () => asignar(puestoId, fecha, null, true);
+  lista.appendChild(oFranco);
+
+  // Opción Vaciar
+  if (det) {
+    const oVac = document.createElement('div');
+    oVac.className = 'opcion vaciar-opt';
+    oVac.textContent = '✕ Quitar asignación';
+    oVac.onclick = () => quitarAsignacion(puestoId, fecha);
+    lista.appendChild(oVac);
+  }
+
+  // Empleados
+  _empleados.forEach(e => {
+    const opt = document.createElement('div');
+    opt.className = 'opcion';
+    opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
+    opt.textContent = `${e.apellido}, ${e.nombre}`;
+    if (det && !det.es_franco && det.empleado_id === e.id) {
+      opt.style.background = '#d4edda';
+      opt.style.fontWeight = 'bold';
+    }
+    opt.onclick = () => asignar(puestoId, fecha, e.id, false);
+    lista.appendChild(opt);
+  });
+
+  if (_empleados.length === 0) {
+    const p = document.createElement('p');
+    p.style.cssText = 'color:#888;font-size:.82rem;padding:8px 0';
+    p.textContent = 'Sin empleados en este departamento/turno. Verificá la configuración.';
+    lista.appendChild(p);
+  }
+
+  document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('modal-search').focus();
+}
+
+function filtrarOpciones() {
+  const q = document.getElementById('modal-search').value.toLowerCase();
+  document.querySelectorAll('#lista-opciones .opcion').forEach(el => {
+    const n = (el.dataset.nombre || el.textContent).toLowerCase();
+    el.style.display = n.includes(q) ? '' : 'none';
+  });
+}
+
+function cerrarModal() {
+  document.getElementById('overlay-emp').classList.remove('active');
+  _editando = null;
+}
+
+async function _asegurarDistribucion() {
+  if (_distribucion) return _distribucion.id;
+  const deptId = document.getElementById('sel-departamento').value;
+  const turno  = document.getElementById('sel-turno').value;
+  const r = await fetch('/api/distribucion/semana', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ departamento_id: Number(deptId), turno, semana_inicio: fmtDate(_lunes) })
+  });
+  if (!r.ok) throw new Error('No se pudo crear la distribución');
+  const d = await r.json();
+  // Recargar para obtener el objeto completo
+  await cargarGrilla();
+  return d.id;
+}
+
+async function asignar(puestoId, fecha, empleadoId, esFranco) {
+  cerrarModal();
+  try {
+    const distId = await _asegurarDistribucion();
+    const r = await fetch('/api/distribucion/detalle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        distribucion_id: distId,
+        empleado_id: empleadoId || 0,
+        puesto_id: puestoId,
+        fecha,
+        es_franco: esFranco
+      })
+    });
+    if (!r.ok) { toast('Error al guardar', true); return; }
+    await cargarGrilla();
+    toast('Guardado');
+  } catch(e) {
+    toast('Error: ' + e.message, true);
+  }
+}
+
+async function quitarAsignacion(puestoId, fecha) {
+  cerrarModal();
+  if (!_distribucion) return;
+  try {
+    const qs = `distribucion_id=${_distribucion.id}&puesto_id=${puestoId}&fecha=${fecha}`;
+    const r = await fetch(`/api/distribucion/detalle?${qs}`, { method: 'DELETE' });
+    if (!r.ok) { toast('Error al quitar', true); return; }
+    await cargarGrilla();
+    toast('Quitado');
+  } catch(e) {
+    toast('Error', true);
+  }
+}
+
+// ── Confirmar distribución ────────────────────────────────────────────────────
+async function confirmarDistribucion() {
+  if (!_distribucion) { toast('Primero guardá alguna asignación', true); return; }
+  if (!confirm('¿Confirmás la distribución? Esto escribirá la planificación semanal para este departamento/turno.')) return;
+  try {
+    const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/confirmar`, { method: 'POST' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      toast(err.detail || 'Error al confirmar', true);
+      return;
+    }
+    await cargarGrilla();
+    toast('Distribución confirmada y planificación actualizada');
+  } catch(e) {
+    toast('Error de conexión', true);
+  }
+}
+
+// ── Modal puesto ──────────────────────────────────────────────────────────────
+function abrirModalPuesto(puestoId = null) {
+  _puestoEditId = puestoId;
+  const puesto = puestoId ? _puestos.find(p => p.id === puestoId) : null;
+  document.getElementById('modal-puesto-titulo').textContent = puesto ? 'Editar puesto' : 'Nuevo puesto';
+  document.getElementById('input-puesto-nombre').value = puesto ? puesto.nombre : '';
+  document.getElementById('overlay-puesto').classList.add('active');
+  document.getElementById('input-puesto-nombre').focus();
+}
+
+function cerrarModalPuesto() {
+  document.getElementById('overlay-puesto').classList.remove('active');
+  _puestoEditId = null;
+}
+
+async function guardarPuesto() {
+  const nombre = document.getElementById('input-puesto-nombre').value.trim();
+  if (!nombre) { toast('Ingresá un nombre', true); return; }
+  const deptId = Number(document.getElementById('sel-departamento').value);
+  const orden = _puestos.length;
+  try {
+    let r;
+    if (_puestoEditId) {
+      const p = _puestos.find(x => x.id === _puestoEditId);
+      r = await fetch(`/api/distribucion/puestos/${_puestoEditId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, departamento_id: deptId, orden: p?.orden ?? orden, activo: true })
+      });
+    } else {
+      r = await fetch('/api/distribucion/puestos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, departamento_id: deptId, orden, activo: true })
+      });
+    }
+    if (!r.ok) { toast('Error al guardar puesto', true); return; }
+    cerrarModalPuesto();
+    await cargarGrilla();
+    toast('Puesto guardado');
+  } catch(e) {
+    toast('Error', true);
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let _toastTimer;
+function toast(msg, err = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = err ? 'error' : '';
+  el.style.display = 'block';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  _lunes = getLunes(new Date());
+  document.getElementById('label-semana').textContent = fmtLabel(_lunes);
+
+  try {
+    const r = await fetch('/api/distribucion/mis-accesos');
+    if (!r.ok) { mostrarVacio(); return; }
+    _misAccesos = await r.json();
+  } catch { mostrarVacio(); return; }
+
+  const sel = document.getElementById('sel-departamento');
+  _misAccesos.departamentos.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d.id;
+    opt.textContent = d.nombre + (d.sector_nombre ? ` (${d.sector_nombre})` : '');
+    sel.appendChild(opt);
+  });
+
+  if (_misAccesos.departamentos.length === 1) {
+    sel.value = _misAccesos.departamentos[0].id;
+    onDeptChange();
+  }
+}
+
+_loadPerms().then(() => init());
+</script>
+</body>
+</html>

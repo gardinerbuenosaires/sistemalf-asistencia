@@ -5,9 +5,12 @@ $DB_SOURCE   = "C:\ProgramData\SistemAlf\fichajes.db"
 $RETENER_DIAS = 30
 
 # Carpeta de destino dentro de OneDrive
-$oneDrive = $env:OneDrive
+$oneDrive = $env:OneDriveConsumer
 if (-not $oneDrive -or -not (Test-Path $oneDrive)) {
-    Write-Error "OneDrive no encontrado. Verificar que este instalado y con sesion iniciada."
+    $oneDrive = $env:OneDrive
+}
+if (-not $oneDrive -or -not (Test-Path $oneDrive)) {
+    Write-Error "OneDrive personal no encontrado. Verificar que este instalado y con sesion iniciada."
     exit 1
 }
 $BACKUP_DIR = "$oneDrive\SistemAlf\Backups"

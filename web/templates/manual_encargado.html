@@ -243,6 +243,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 <aside>
   <h3>Contenidos</h3>
   <a href="#acceso">Acceso al sistema</a>
+  <a href="#planificacion">Planificación</a>
   <a href="#planilla">La planilla mensual</a>
   <a href="#colores">Guía de colores</a>
   <a href="#novedad">Cargar una novedad</a>
@@ -269,9 +270,31 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 <p>Para acceder a la planilla mensual, usá el menú <strong>Registro → Planilla</strong>.</p>
 </section>
 
-<!-- ══ 2. LA PLANILLA ══ -->
+<!-- ══ 2. PLANIFICACIÓN ══ -->
+<section id="planificacion">
+<h2>2. Planificación</h2>
+<p>La <strong>planificación</strong> es la asignación de horario que le corresponde a cada empleado en cada día. Es el punto de partida de todo el sistema: sin planificación, el sistema no sabe qué esperar de un empleado y no puede calcular si llegó tarde, si faltó, o si cumplió su jornada.</p>
+
+<p>Cada día un empleado puede tener una de estas situaciones:</p>
+<ul>
+  <li><strong>Horario asignado</strong> — el sistema sabe a qué hora debe entrar y salir, y evalúa los fichajes contra ese horario.</li>
+  <li><strong>Franco</strong> — día libre. Si el empleado ficha igual, aparece como <strong>FT</strong> (franco trabajado).</li>
+  <li><strong>Sin planificación</strong> — la celda aparece blanca. El sistema no puede evaluar ese día.</li>
+</ul>
+
+<div class="aviso">
+  <strong>¿Celda blanca en la planilla?</strong> Significa que ese empleado no tiene horario asignado para ese día. Hay que ir a <strong>Programación → Planificación</strong> y asignarle el horario que corresponde antes de que el sistema pueda calcular su asistencia.
+</div>
+
+<h3 class="sub">¿Quién carga la planificación?</h3>
+<p>La planificación la carga el encargado o el administrador desde <strong>Programación → Planificación</strong>. Se organiza semana a semana: para cada empleado se asigna el horario de cada día (o se marca como franco). Una vez cargada, el sistema la usa automáticamente para evaluar los fichajes de todo el mes.</p>
+
+<div class="tip"><strong>Tip:</strong> Si la planificación de un empleado es siempre la misma (mismo horario todos los días laborales), se puede configurar para que se genere automáticamente. Consultá al administrador.</div>
+</section>
+
+<!-- ══ 3. LA PLANILLA ══ -->
 <section id="planilla">
-<h2>2. La planilla mensual</h2>
+<h2>3. La planilla mensual</h2>
 <p>La planilla muestra todos los empleados del mes con su estado día a día. Cada fila es un empleado; cada columna es un día del mes.</p>
 
 <h3 class="sub">Pestañas de turno</h3>
@@ -441,7 +464,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <!-- ══ 3. COLORES ══ -->
 <section id="colores">
-<h2>3. Guía de colores de celdas</h2>
+<h2>4. Guía de colores de celdas</h2>
 <p>Cada color de celda representa un estado. Aprendé a reconocerlos de un vistazo:</p>
 
 <div class="colores-grid">
@@ -530,7 +553,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <!-- ══ 4. CARGAR UNA NOVEDAD ══ -->
 <section id="novedad">
-<h2>4. Cargar una novedad</h2>
+<h2>5. Cargar una novedad</h2>
 <div class="danger">
   <strong>Las ausencias no se confirman solas.</strong> Cuando un empleado falta, el sistema lo marca automáticamente como <strong>A!!!</strong> (ausente sin confirmar) y queda pendiente hasta que el encargado cargue la novedad que corresponda (E, ILT, L, LSG, S, o simplemente A para confirmar la ausencia sin justificación). Mientras no se cargue, la columna CONTROL lo seguirá señalando como problema.
 </div>
@@ -589,7 +612,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <!-- ══ 5. RANGO DE FECHAS ══ -->
 <section id="rango">
-<h2>5. Novedad en rango de fechas</h2>
+<h2>6. Novedad en rango de fechas</h2>
 <p>Cuando un empleado estuvo ausente varios días seguidos (por ejemplo una ILT o unas vacaciones), podés cargar la novedad de una sola vez para todo el período.</p>
 
 <ol class="pasos">
@@ -645,7 +668,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <!-- ══ 6. SELECCIÓN MÚLTIPLE ══ -->
 <section id="multisel">
-<h2>6. Selección múltiple con Ctrl+clic</h2>
+<h2>7. Selección múltiple con Ctrl+clic</h2>
 <p>Cuando varios empleados (o el mismo empleado en distintos días no consecutivos) tienen la misma novedad, podés cargarla en todos a la vez.</p>
 
 <ol class="pasos">
@@ -678,7 +701,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <!-- ══ 7. COLUMNA CONTROL ══ -->
 <section id="columna-ctrl">
-<h2>7. La columna CONTROL</h2>
+<h2>8. La columna CONTROL</h2>
 <p>Al final de cada fila de empleado hay una columna <strong>CONTROL</strong> que resume el estado de liquidación del mes. Te indica rápidamente si hay algo que revisar.</p>
 
 <div class="ctrl-grid">
@@ -724,7 +747,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <!-- ══ 8. FICHAJE MANUAL ══ -->
 <section id="fichaje-manual">
-<h2>8. Fichaje manual</h2>
+<h2>9. Fichaje manual</h2>
 <p>Si un empleado olvidó fichar o el reloj no registró el fichaje, podés cargarlo manualmente desde la planilla.</p>
 
 <ol class="pasos">
@@ -773,7 +796,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <!-- ══ 9. HORARIOS Y CALENDARIOS ══ -->
 <section id="horarios-ref">
-<h2>9. Horarios y calendarios (consulta)</h2>
+<h2>10. Horarios y calendarios (consulta)</h2>
 <p>Desde el menú <strong>Programación → Horarios</strong> podés consultar los horarios definidos en el sistema: nombre, turnos, bloques de entrada y salida, y tolerancias. Esta información es de solo lectura para los encargados.</p>
 <p>Desde <strong>Programación → Calendarios</strong> podés ver los calendarios de feriados y otras excepciones de días configuradas por el administrador.</p>
 <p>Desde <strong>Programación → Planificación</strong> podés consultar (y en algunos casos modificar, según tu permiso) la planificación semanal de cada empleado: qué horario tiene asignado cada día de la semana.</p>
@@ -786,7 +809,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <!-- ══ 10. PREMIOS ══ -->
 <section id="premios">
-<h2>10. Premios</h2>
+<h2>11. Premios</h2>
 <p>La pantalla de Premios (<strong>Personal → Premios</strong>) muestra la evaluación mensual de premios de presentismo y desempeño para cada empleado. Se selecciona el período (mes/año) en la barra superior.</p>
 
 <h3 class="sub">Qué muestra la tabla</h3>
@@ -825,7 +848,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 
 <!-- ══ 11. VACACIONES ══ -->
 <section id="vacaciones">
-<h2>11. Vacaciones</h2>
+<h2>12. Vacaciones</h2>
 <p>La pantalla de Vacaciones (<strong>Personal → Vacaciones</strong>) muestra el saldo vacacional de todos los empleados para un año. Los días tomados se toman automáticamente de las novedades "V" cargadas en la planilla.</p>
 
 <h3 class="sub">Columnas principales</h3>

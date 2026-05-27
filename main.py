@@ -212,6 +212,10 @@ def page_empleados_listado(request: Request):
 def page_legajo_imprimible(eid: int, request: Request):
     return _page(request, "web/templates/legajo_imprimible.html", "empleados")
 
+@app.get("/manual-encargado", include_in_schema=False)
+def page_manual_encargado(request: Request):
+    return _page(request, "web/templates/manual_encargado.html", "asistencia")
+
 @app.get("/upload-foto", include_in_schema=False)
 def page_upload_foto():
     return FileResponse("web/templates/upload_foto.html")

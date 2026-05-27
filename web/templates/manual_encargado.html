@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<title>Manual de Encargados — SistemAlf</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[data-perm] { display: none !important; }
+body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+
+header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px;
+         display: flex; align-items: center; justify-content: space-between;
+         position: sticky; top: 0; z-index: 100; }
+nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+nav a:hover { opacity: 1; }
+nav a.activo { opacity: 1; font-weight: bold; }
+.nav-group { position: relative; display: inline-flex; align-items: center; }
+.nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+.nav-group:hover .nav-trigger { opacity: 1; }
+.nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+  background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+.nav-group:hover .nav-dropdown { display: block; }
+.nav-dropdown a { display: block; padding: 8px 16px; margin-left: 0; }
+.nav-dropdown a:hover { background: #f4f6f9; }
+
+/* ── Layout ─── */
+.layout { display: flex; min-height: calc(100vh - 70px); }
+
+aside {
+  width: 240px; min-width: 240px; background: white;
+  border-right: 1px solid #e0e0e0;
+  padding: 20px 0;
+  position: sticky; top: 70px;
+  height: calc(100vh - 70px);
+  overflow-y: auto;
+}
+aside h3 { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
+           color: #aaa; padding: 0 20px; margin-bottom: 8px; margin-top: 16px; }
+aside h3:first-child { margin-top: 0; }
+aside a { display: block; padding: 6px 20px; font-size: .85rem; color: #444;
+          text-decoration: none; border-left: 3px solid transparent; }
+aside a:hover { background: #f4f6f9; color: #2c3e50; }
+aside a.activo { border-left-color: #2c3e50; color: #2c3e50; font-weight: 600; background: #f0f4f8; }
+
+main { flex: 1; padding: 32px 40px; max-width: 900px; }
+
+/* ── Tipografía ─── */
+h1 { font-size: 1.6rem; font-weight: 700; color: #1a2633; margin-bottom: 6px; }
+.subtitulo-pag { font-size: .95rem; color: #888; margin-bottom: 32px; }
+h2 { font-size: 1.15rem; font-weight: 700; color: #2c3e50; margin: 40px 0 16px;
+     padding-bottom: 8px; border-bottom: 2px solid #e8ecf0; }
+h2:first-of-type { margin-top: 0; }
+h3.sub { font-size: .9rem; font-weight: 700; color: #444; margin: 20px 0 10px; }
+p { font-size: .9rem; line-height: 1.65; color: #444; margin-bottom: 12px; }
+ul, ol { padding-left: 20px; font-size: .9rem; line-height: 1.8; color: #444; margin-bottom: 12px; }
+
+.tip { background: #eaf4fb; border-left: 4px solid #2980b9; border-radius: 4px;
+       padding: 10px 14px; font-size: .85rem; color: #1a4a6b; margin-bottom: 16px; }
+.tip strong { color: #1a4a6b; }
+.aviso { background: #fef9e7; border-left: 4px solid #f1c40f; border-radius: 4px;
+         padding: 10px 14px; font-size: .85rem; color: #7d6200; margin-bottom: 16px; }
+.danger { background: #fdf2f2; border-left: 4px solid #e74c3c; border-radius: 4px;
+          padding: 10px 14px; font-size: .85rem; color: #7b1a1a; margin-bottom: 16px; }
+
+/* ── Secciones ─── */
+section { margin-bottom: 48px; }
+
+/* ── Mockup: Planilla ─── */
+.mock-planilla {
+  border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden;
+  font-size: .72rem; white-space: nowrap; margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.mock-planilla table { border-collapse: collapse; width: 100%; }
+.mock-planilla th {
+  background: #2c3e50; color: white; padding: 0 6px; height: 34px;
+  text-align: center; font-weight: normal; border-right: 1px solid #3d5166;
+}
+.mock-planilla th.nm { background: #2c3e50; text-align: left; width: 170px; }
+.mock-planilla th.ctrl { background: #1a252f; text-align: left; width: 130px; }
+.mock-planilla th.res { background: #2c3e50; font-size: .62rem; width: 32px; }
+.mock-planilla th.sep { background: #f4f6f9; border: none; width: 6px; }
+.mock-planilla th.dom { background: #1a3a5c; }
+.mock-planilla td {
+  padding: 0; text-align: center; border-right: 1px solid #e8e8e8;
+  height: 28px; vertical-align: middle;
+}
+.mock-planilla td.nm { text-align: left; padding: 0 8px; background: white; font-size: .78rem; }
+.mock-planilla td.sep { background: #f4f6f9; border: none; }
+.mock-planilla td.res { font-size: .7rem; color: #444; }
+.mock-planilla td.ctrl { font-size: .68rem; font-weight: bold; padding: 0 6px; text-align: left; white-space: normal; line-height: 1.3; }
+.mock-planilla tr { border-bottom: 1px solid #f0f0f0; }
+
+.celda { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; font-size: .65rem; font-weight: bold; }
+.celda-cort { height: 28px; display: flex; }
+.celda-cort .blq { flex:1; display:flex; align-items:center; justify-content:center; font-size:.58rem; font-weight:bold; }
+.celda-cort .blq:first-child { border-right: 1px solid rgba(0,0,0,.15); }
+
+/* Estado colores */
+.c-I   { background:#ffffff; color:#000; }
+.c-T   { background:#FF8C00; color:#000; }
+.c-F   { background:#27ae60; color:#fff; }
+.c-FT  { background:#27ae60; color:#fff; }
+.c-FD  { background:#27ae60; color:#fff; }
+.c-A   { background:#e74c3c; color:#fff; }
+.c-A3  { background:#7b0000; color:#fff; }
+.c-E   { background:#FABF8F; color:#000; }
+.c-ILT { background:#C4D79B; color:#000; }
+.c-V   { background:#95B3D7; color:#000; }
+.c-L   { background:#92CDDC; color:#000; }
+.c-LSG { background:#B1A0C7; color:#000; }
+.c-S   { background:#DA9694; color:#000; }
+.c-ali { background:#FFC7CE; color:#000; }
+.c-NF  { background:#F4D03F; color:#7D4900; }
+.c-MT  { background:#C4D79B; color:#4F6228; }
+.c-MTt { background:#e67e22; color:#fff; }
+.c-CP  { background:#9CCC65; color:#1B5E20; }
+.c-pen { background:#f0f3f5; color:#c0c8d0; }
+.c-sp  { background:#ffffff; color:transparent; border: 1px dashed #e0e0e0; }
+.c-dom { box-shadow: inset 0 3px 0 #A6A6A6; }
+.c-fer { box-shadow: inset 0 3px 0 #FFAA00; }
+
+/* Columna ctrl */
+.ctrl-completado  { background: #d4edda; color: #155724; }
+.ctrl-liquidacion { background: #e74c3c; color: #ffffff; }
+.ctrl-revisar     { background: #fff3cd; color: #7d5a00; }
+.ctrl-faltan      { background: #f8d7da; color: #721c24; }
+.ctrl-ausentes-sc { background: #7b0000; color: #ffffff; }
+.ctrl-vacio       { color: #bbb; }
+
+/* ── Grilla de colores ─── */
+.colores-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-bottom: 20px; }
+.color-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+              border: 1px solid #e8e8e8; border-radius: 6px; background: white; }
+.color-chip { width: 32px; height: 32px; border-radius: 4px; display: flex; align-items: center;
+              justify-content: center; font-size: .68rem; font-weight: bold;
+              flex-shrink: 0; border: 1px solid rgba(0,0,0,.08); }
+.color-info .letra { font-size: .75rem; font-weight: 700; color: #222; }
+.color-info .nombre { font-size: .75rem; color: #666; }
+
+/* ── Mock modal ─── */
+.mock-modal-wrap { display: flex; justify-content: center; margin-bottom: 20px; }
+.mock-modal {
+  background: white; border-radius: 12px; padding: 20px 24px 24px; width: 340px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.18); border: 1px solid #e0e0e0;
+}
+.mock-modal h3 { font-size: 1rem; font-weight: 700; color: #1a2633; margin-bottom: 2px; }
+.mock-modal .sub { font-size: .78rem; color: #999; margin-bottom: 14px; }
+.mock-tab-bar { display: flex; border-bottom: 2px solid #e8ecf0; margin: 0 -24px 16px; padding: 0 24px; }
+.mock-tab { padding: 7px 14px; border: none; border-bottom: 3px solid transparent;
+            margin-bottom: -2px; font-size: .78rem; font-weight: 500; color: #aaa;
+            background: transparent; }
+.mock-tab.act { border-bottom-color: #2c3e50; color: #2c3e50; font-weight: 700; }
+.tipos-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-bottom: 14px; }
+.tipo-btn { padding: 8px 4px; border: 2px solid #dee2e6; border-radius: 6px;
+            font-size: .7rem; font-weight: bold; text-align: center; }
+.tipo-btn.sel { outline: 3px solid #2c3e50; outline-offset: 2px; }
+.bloque-wrap { display: flex; gap: 8px; margin-bottom: 14px; }
+.bloque-btn { flex: 1; padding: 6px; border: 2px solid #dee2e6; border-radius: 6px;
+              font-size: .8rem; text-align: center; background: white; }
+.bloque-btn.sel { border-color: #2c3e50; background: #2c3e50; color: white; }
+.input-sim { width: 100%; padding: 6px 8px; border: 1px solid #ced4da; border-radius: 4px;
+             font-size: .85rem; margin-bottom: 12px; color: #999; background: #fafafa; }
+.btn-row { display: flex; gap: 8px; }
+.btn-grd { flex:1; padding: 8px; border: none; border-radius: 6px; font-size: .85rem; font-weight: 600; text-align:center; }
+.btn-grd.prim { background: #2c3e50; color: white; }
+.btn-grd.sec  { background: #eee; color: #333; }
+.btn-grd.del  { background: #e74c3c; color: white; }
+.rango-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.rango-label { font-size: .72rem; color: #666; font-weight: bold; margin-bottom: 4px; }
+.rango-input { width: 100%; padding: 6px 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: .85rem; }
+
+/* ── Mock chip multiselect ─── */
+.mock-chip { background:#2c3e50; color:white; border-radius:8px; padding:10px 16px;
+             display:inline-flex; align-items:center; gap:12px;
+             box-shadow:0 4px 20px rgba(0,0,0,.35); font-size:.85rem; }
+.mock-chip button { border:none; border-radius:5px; padding:6px 14px; font-size:.85rem; cursor:pointer; }
+.mock-chip .c-apl { background:#2980b9; color:white; font-weight:600; }
+.mock-chip .c-can { background:rgba(255,255,255,.15); color:white; }
+
+/* ── Columna ctrl mockup ─── */
+.ctrl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin-bottom: 20px; }
+.ctrl-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+             border-radius: 6px; border: 1px solid rgba(0,0,0,.08); }
+.ctrl-item .icono { width: 36px; height: 36px; border-radius: 5px; display:flex; align-items:center; justify-content:center; font-size:.75rem; font-weight:bold; flex-shrink:0; }
+.ctrl-item .desc .tit { font-size:.82rem; font-weight:700; }
+.ctrl-item .desc .sub { font-size:.75rem; color:#666; margin-top:2px; }
+
+/* ── Mock fichar ─── */
+.mock-fm { width: 340px; background: white; border-radius: 12px; padding: 20px 24px 24px;
+           box-shadow: 0 4px 24px rgba(0,0,0,.18); border: 1px solid #e0e0e0; margin: 0 auto 20px; }
+.fm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.fm-label { font-size: .72rem; color: #666; font-weight: bold; margin-bottom: 3px; }
+.fm-input { width: 100%; padding: 6px 8px; border: 1px solid #ced4da; border-radius: 4px;
+            font-size: .85rem; background: #fafafa; color: #999; }
+.fm-tipo { display: flex; gap: 8px; margin-bottom: 12px; }
+.fm-tipo span { flex:1; padding: 8px; border: 2px solid #dee2e6; border-radius: 6px;
+                text-align: center; font-size:.8rem; }
+.fm-tipo span.sel { border-color: #27ae60; background: #eafaf1; font-weight:700; color: #1a5c2a; }
+
+/* scroll suave */
+html { scroll-behavior: smooth; }
+
+/* Pasos numerados */
+.pasos { counter-reset: paso; list-style: none; padding: 0; margin-bottom: 16px; }
+.pasos li { counter-increment: paso; display: flex; gap: 14px; margin-bottom: 14px; align-items: flex-start; }
+.pasos li::before { content: counter(paso); background: #2c3e50; color: white;
+  width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-size: .8rem; font-weight: bold; flex-shrink: 0; margin-top: 2px; }
+.pasos li p { margin: 0; }
+
+kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
+      border-radius: 4px; padding: 2px 7px; font-family: monospace; font-size: .82rem;
+      box-shadow: 0 1px 0 #bbb; vertical-align: baseline; }
+
+/* Indicador de tab activa */
+.nav-tab-mock { display: inline-block; padding: 6px 18px; border-radius: 4px 4px 0 0;
+                font-size: .85rem; font-weight: bold; margin-right: 4px; }
+.nav-tab-mock.TM { background: #FDE68A; color: #78350F; border: 2px solid #D97706; border-bottom: none; }
+.nav-tab-mock.TN { background: #C7D2FE; color: #1E1B4B; border: 2px solid #4338CA; border-bottom: none; }
+.nav-tab-mock.CO { background: #BBF7D0; color: #14532D; border: 2px solid #15803D; border-bottom: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf Check" style="height:44px"></a>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios" data-perm="horarios:ver">Horarios</a>
+        <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia" data-perm="asistencia:ver">Asistencia</a>
+        <a href="/fichajes" data-perm="asistencia:ver">Fichajes</a>
+        <a href="/asistencia-mensual" data-perm="asistencia:ver">Planilla</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados" data-perm="empleados:ver">Listado</a>
+        <a href="/premios" data-perm="premios:ver">Premios</a>
+        <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
+      </div>
+    </div>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <a href="/manual-encargado" class="activo">Manual</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
+</header>
+
+<div class="layout">
+
+<!-- ── Índice lateral ── -->
+<aside>
+  <h3>Contenidos</h3>
+  <a href="#acceso">Acceso al sistema</a>
+  <a href="#planilla">La planilla mensual</a>
+  <a href="#colores">Guía de colores</a>
+  <a href="#novedad">Cargar una novedad</a>
+  <a href="#rango">Novedad en rango de fechas</a>
+  <a href="#multisel">Selección múltiple</a>
+  <a href="#columna-ctrl">Columna CONTROL</a>
+  <a href="#fichaje-manual">Fichaje manual</a>
+  <a href="#horarios-ref">Horarios y calendarios</a>
+</aside>
+
+<main>
+
+<h1>Manual de Encargados</h1>
+<p class="subtitulo-pag">Guía de uso del sistema de asistencia — Registro, planilla y novedades</p>
+
+<!-- ══ 1. ACCESO ══ -->
+<section id="acceso">
+<h2>1. Acceso al sistema</h2>
+<p>Ingresá desde cualquier navegador web a la dirección que te indicó el administrador (por ejemplo <strong>http://192.168.1.50:8000</strong>). Vas a ver la pantalla de inicio de sesión. Ingresá tu usuario y contraseña.</p>
+<div class="tip"><strong>Tip:</strong> Podés guardar la dirección como favorito en el navegador para acceder más rápido.</div>
+<p>Una vez dentro, la pantalla de inicio muestra los fichajes del día, quién está presente ahora mismo, y alertas importantes (francos trabajando, ausentes sin confirmar, empleados sin planificación).</p>
+<p>Para acceder a la planilla mensual, usá el menú <strong>Registro → Planilla</strong>.</p>
+</section>
+
+<!-- ══ 2. LA PLANILLA ══ -->
+<section id="planilla">
+<h2>2. La planilla mensual</h2>
+<p>La planilla muestra todos los empleados del mes con su estado día a día. Cada fila es un empleado; cada columna es un día del mes.</p>
+
+<h3 class="sub">Pestañas de turno</h3>
+<p>Los empleados se organizan por turno. Hacé clic en la pestaña del turno que querés ver:</p>
+<div style="margin-bottom:16px">
+  <span class="nav-tab-mock TM">TM — Turno Mañana</span>
+  <span class="nav-tab-mock TN">TN — Turno Noche</span>
+  <span class="nav-tab-mock CO" style="margin-top:6px;display:inline-block">CO — Cortados</span>
+</div>
+<p>Los <strong>Cortados</strong> son empleados que tienen dos bloques de horario en el mismo día (por ejemplo mañana y tarde).</p>
+
+<h3 class="sub">Ejemplo de planilla</h3>
+<div class="mock-planilla">
+<table>
+  <thead>
+    <tr>
+      <th style="width:44px">#</th>
+      <th class="nm">Empleado</th>
+      <th>1<br><span style="font-size:.6rem;opacity:.7">Lun</span></th>
+      <th>2<br><span style="font-size:.6rem;opacity:.7">Mar</span></th>
+      <th>3<br><span style="font-size:.6rem;opacity:.7">Mié</span></th>
+      <th>4<br><span style="font-size:.6rem;opacity:.7">Jue</span></th>
+      <th>5<br><span style="font-size:.6rem;opacity:.7">Vie</span></th>
+      <th>6<br><span style="font-size:.6rem;opacity:.7">Sáb</span></th>
+      <th class="dom">7<br><span style="font-size:.6rem;opacity:.7">Dom</span></th>
+      <th class="sep"></th>
+      <th class="res">T</th>
+      <th class="res">A</th>
+      <th class="res">NF</th>
+      <th class="ctrl">CONTROL</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="background:#f8f9fa;font-size:.7rem;color:#666">42</td>
+      <td class="nm">García, María</td>
+      <td><div class="celda c-I">I</div></td>
+      <td><div class="celda c-I">I</div></td>
+      <td><div class="celda c-T">T</div></td>
+      <td><div class="celda c-A">A</div></td>
+      <td><div class="celda c-I">I</div></td>
+      <td><div class="celda c-F">F</div></td>
+      <td><div class="celda c-I c-dom">I</div></td>
+      <td class="sep"></td>
+      <td class="res">12</td>
+      <td class="res" style="color:#e74c3c;font-weight:bold">1</td>
+      <td class="res">0</td>
+      <td class="ctrl ctrl-revisar">1 Ausente · 1 Tarde</td>
+    </tr>
+    <tr>
+      <td style="background:#f8f9fa;font-size:.7rem;color:#666">18</td>
+      <td class="nm">López, Juan</td>
+      <td><div class="celda c-I">I</div></td>
+      <td><div class="celda c-ILT">ILT</div></td>
+      <td><div class="celda c-ILT">ILT</div></td>
+      <td><div class="celda c-ILT">ILT</div></td>
+      <td><div class="celda c-ILT">ILT</div></td>
+      <td><div class="celda c-F">F</div></td>
+      <td><div class="celda c-pen">·</div></td>
+      <td class="sep"></td>
+      <td class="res">8</td>
+      <td class="res">0</td>
+      <td class="res">0</td>
+      <td class="ctrl ctrl-completado">Liq. completa</td>
+    </tr>
+    <tr>
+      <td style="background:#f8f9fa;font-size:.7rem;color:#666">07</td>
+      <td class="nm">Rodríguez, Carlos</td>
+      <td><div class="celda c-I">I</div></td>
+      <td><div class="celda c-I">I</div></td>
+      <td><div class="celda c-NF">NF</div></td>
+      <td><div class="celda c-A3">A!</div></td>
+      <td><div class="celda c-pen">·</div></td>
+      <td><div class="celda c-F">F</div></td>
+      <td><div class="celda c-pen c-dom">·</div></td>
+      <td class="sep"></td>
+      <td class="res">8</td>
+      <td class="res" style="color:#e74c3c;font-weight:bold">1</td>
+      <td class="res" style="color:#e67e22;font-weight:bold">1</td>
+      <td class="ctrl ctrl-ausentes-sc">1 Aus. sin conf.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3 class="sub">Columnas de resumen</h3>
+<p>Al final de cada fila aparecen tres columnas de resumen:</p>
+<ul>
+  <li><strong>T</strong> — Total de tardanzas en el mes.</li>
+  <li><strong>A</strong> — Total de ausencias en el mes.</li>
+  <li><strong>NF</strong> — Días que no fichó salida (o que el fichaje quedó sin clasificar).</li>
+</ul>
+
+<h3 class="sub">Días especiales</h3>
+<p>Los domingos tienen una franja gris en la parte superior de la celda. Los feriados tienen una franja dorada.</p>
+<div style="display:flex;gap:12px;margin-bottom:12px;align-items:center">
+  <div style="display:flex;align-items:center;gap:6px">
+    <div class="celda c-I c-dom">I</div><span style="font-size:.82rem">Domingo (franja gris)</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px">
+    <div class="celda c-I c-fer">I</div><span style="font-size:.82rem">Feriado (franja dorada)</span>
+  </div>
+</div>
+
+<h3 class="sub">Celdas de empleados Cortados (2 bloques)</h3>
+<p>En la pestaña <strong>CO</strong>, cada celda está dividida en dos mitades: bloque 1 (izquierda) y bloque 2 (derecha).</p>
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+  <div class="celda-cort" style="width:50px;height:28px;border:1px solid #e0e0e0">
+    <div class="blq c-I">I</div>
+    <div class="blq c-T">T</div>
+  </div>
+  <span style="font-size:.82rem">Presente en bloque 1, Tarde en bloque 2</span>
+</div>
+<div class="tip"><strong>Tip:</strong> Hacé clic sobre la celda dividida para ver el detalle de cada bloque y poder cargar novedades.</div>
+</section>
+
+<!-- ══ 3. COLORES ══ -->
+<section id="colores">
+<h2>3. Guía de colores de celdas</h2>
+<p>Cada color de celda representa un estado. Aprendé a reconocerlos de un vistazo:</p>
+
+<div class="colores-grid">
+  <div class="color-item">
+    <div class="color-chip c-I">I</div>
+    <div class="color-info"><div class="letra">I — Presente</div><div class="nombre">Fichó entrada y salida correctamente</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-T">T</div>
+    <div class="color-info"><div class="letra">T — Tarde</div><div class="nombre">Llegó fuera del margen permitido</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-F">F</div>
+    <div class="color-info"><div class="letra">F — Franco</div><div class="nombre">Día libre planificado</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-FT">FT</div>
+    <div class="color-info"><div class="letra">FT — Franco Trabaj.</div><div class="nombre">Franco pero fichó presencia</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-FD">FD</div>
+    <div class="color-info"><div class="letra">FD — Franco Devuelto</div><div class="nombre">Compensación de franco trabajado</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-A">A</div>
+    <div class="color-info"><div class="letra">A — Ausente</div><div class="nombre">No concurrió y tiene novedad registrada</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-A3">A!</div>
+    <div class="color-info"><div class="letra">A!!! — Ausente sin confirmar</div><div class="nombre">Falta sin novedad. Requiere atención</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-NF">NF</div>
+    <div class="color-info"><div class="letra">NF — No fichó salida</div><div class="nombre">Entró pero no se registró la salida</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-E">E</div>
+    <div class="color-info"><div class="letra">E — Enfermedad</div><div class="nombre">Licencia médica (con certificado)</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-ILT">ILT</div>
+    <div class="color-info"><div class="letra">ILT — Accidente laboral</div><div class="nombre">Baja por accidente / ART</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-V">V</div>
+    <div class="color-info"><div class="letra">V — Vacaciones</div><div class="nombre">En período vacacional</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-L">L</div>
+    <div class="color-info"><div class="letra">L — Licencia</div><div class="nombre">Licencia especial (casamiento, etc.)</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-LSG">LSG</div>
+    <div class="color-info"><div class="letra">LSG — Lic. sin goce</div><div class="nombre">Licencia sin sueldo</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-S">S</div>
+    <div class="color-info"><div class="letra">S — Suspendido</div><div class="nombre">Sanción disciplinaria</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-ali">@</div>
+    <div class="color-info"><div class="letra">@ — Aliviada</div><div class="nombre">Jornada reducida autorizada</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-MT">MT</div>
+    <div class="color-info"><div class="letra">MT — Medio turno</div><div class="nombre">Horario de medio turno (presente)</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-MTt">MT</div>
+    <div class="color-info"><div class="letra">MT naranja — Tardanza MT</div><div class="nombre">Medio turno con tardanza</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-CP">CP</div>
+    <div class="color-info"><div class="letra">CP — Compensación</div><div class="nombre">Compensación de presencia extra</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-pen">·</div>
+    <div class="color-info"><div class="letra">Gris claro</div><div class="nombre">Día futuro / pendiente de procesar</div></div>
+  </div>
+  <div class="color-item">
+    <div class="color-chip c-sp">—</div>
+    <div class="color-info"><div class="letra">Blanco</div><div class="nombre">Sin planificación asignada</div></div>
+  </div>
+</div>
+</section>
+
+<!-- ══ 4. CARGAR UNA NOVEDAD ══ -->
+<section id="novedad">
+<h2>4. Cargar una novedad</h2>
+<p>Una <strong>novedad</strong> es cualquier modificación al estado de un día: registrar una ausencia, una licencia, vacaciones, etc.</p>
+
+<ol class="pasos">
+  <li><p>Hacé <strong>clic en la celda</strong> del día del empleado que querés modificar. Se abre el panel de la celda.</p></li>
+  <li><p>En el panel, hacé clic en la pestaña <strong>"Novedad"</strong>.</p></li>
+  <li><p>Seleccioná el tipo de novedad que corresponde.</p></li>
+  <li><p>Si el empleado es <em>Cortado</em>, elegí también qué bloque afecta: <strong>Bloque 1</strong> o <strong>Bloque 2</strong>.</p></li>
+  <li><p>Agregá una descripción si querés dejar una aclaración (opcional).</p></li>
+  <li><p>Hacé clic en <strong>Guardar</strong>. La celda se actualiza inmediatamente.</p></li>
+</ol>
+
+<div class="mock-modal-wrap">
+<div class="mock-modal">
+  <h3>García, María</h3>
+  <div class="sub">Jueves 4 de mayo · Bloque único</div>
+  <div class="mock-tab-bar">
+    <div class="mock-tab">Detalle</div>
+    <div class="mock-tab act">Novedad</div>
+    <div class="mock-tab">Fichar</div>
+  </div>
+  <div style="font-size:.78rem;color:#888;margin-bottom:12px">Estado actual: <strong style="color:#e74c3c">A — Ausente sin confirmar</strong></div>
+  <div class="tipos-grid">
+    <div class="tipo-btn" style="background:#FABF8F">E</div>
+    <div class="tipo-btn" style="background:#C4D79B">ILT</div>
+    <div class="tipo-btn" style="background:#95B3D7">V</div>
+    <div class="tipo-btn" style="background:#92CDDC">L</div>
+    <div class="tipo-btn" style="background:#B1A0C7">LSG</div>
+    <div class="tipo-btn" style="background:#DA9694">S</div>
+    <div class="tipo-btn sel" style="background:#FFC7CE">@</div>
+    <div class="tipo-btn" style="background:#F4D03F;color:#7D4900">NF</div>
+    <div class="tipo-btn" style="background:#9CCC65;color:#1B5E20">CP</div>
+    <div class="tipo-btn" style="background:#27ae60;color:white">FT</div>
+  </div>
+  <input class="input-sim" type="text" placeholder="Descripción (opcional)..." value="">
+  <div class="btn-row">
+    <div class="btn-grd prim">Guardar</div>
+    <div class="btn-grd del">Borrar</div>
+    <div class="btn-grd sec">Cancelar</div>
+  </div>
+</div>
+</div>
+
+<div class="tip">
+  <strong>Borrar novedad:</strong> Si ya había una novedad cargada, el botón <strong>Borrar</strong> la elimina y vuelve al estado automático calculado por el sistema (según los fichajes).
+</div>
+<div class="aviso">
+  <strong>Período cerrado:</strong> Si el mes ya fue cerrado, no podrás modificar novedades. Aparecerá un aviso verde con un candado en la celda.
+</div>
+</section>
+
+<!-- ══ 5. RANGO DE FECHAS ══ -->
+<section id="rango">
+<h2>5. Novedad en rango de fechas</h2>
+<p>Cuando un empleado estuvo ausente varios días seguidos (por ejemplo una ILT o unas vacaciones), podés cargar la novedad de una sola vez para todo el período.</p>
+
+<ol class="pasos">
+  <li><p>Hacé clic en cualquier celda del empleado y abrí la pestaña <strong>Novedad</strong>.</p></li>
+  <li><p>Seleccioná el tipo de novedad (por ejemplo <strong>ILT</strong>).</p></li>
+  <li><p>Completá los campos <strong>Desde</strong> y <strong>Hasta</strong> con las fechas del período.</p></li>
+  <li><p>Hacé clic en <strong>Guardar</strong>. El sistema aplica la novedad a todos los días del rango.</p></li>
+</ol>
+
+<div class="mock-modal-wrap">
+<div class="mock-modal">
+  <h3>López, Juan</h3>
+  <div class="sub">Martes 2 de mayo · Bloque único</div>
+  <div class="mock-tab-bar">
+    <div class="mock-tab">Detalle</div>
+    <div class="mock-tab act">Novedad</div>
+    <div class="mock-tab">Fichar</div>
+  </div>
+  <div style="font-size:.78rem;color:#888;margin-bottom:12px">Estado actual: <strong style="color:#e74c3c">A!!! — Ausente sin confirmar</strong></div>
+  <div class="tipos-grid">
+    <div class="tipo-btn sel" style="background:#C4D79B">ILT</div>
+    <div class="tipo-btn" style="background:#FABF8F">E</div>
+    <div class="tipo-btn" style="background:#95B3D7">V</div>
+    <div class="tipo-btn" style="background:#92CDDC">L</div>
+    <div class="tipo-btn" style="background:#B1A0C7">LSG</div>
+    <div class="tipo-btn" style="background:#DA9694">S</div>
+    <div class="tipo-btn" style="background:#FFC7CE">@</div>
+    <div class="tipo-btn" style="background:#F4D03F;color:#7D4900">NF</div>
+    <div class="tipo-btn" style="background:#9CCC65;color:#1B5E20">CP</div>
+    <div class="tipo-btn" style="background:#27ae60;color:white">FT</div>
+  </div>
+  <div class="rango-grid">
+    <div>
+      <div class="rango-label">Desde</div>
+      <input class="rango-input" type="date" value="2025-05-02" style="background:#fafafa;color:#444">
+    </div>
+    <div>
+      <div class="rango-label">Hasta</div>
+      <input class="rango-input" type="date" value="2025-05-09" style="background:#fafafa;color:#444">
+    </div>
+  </div>
+  <input class="input-sim" type="text" placeholder="Descripción (opcional)..." value="Accidente en planta">
+  <div class="btn-row">
+    <div class="btn-grd prim">Guardar</div>
+    <div class="btn-grd del">Borrar</div>
+    <div class="btn-grd sec">Cancelar</div>
+  </div>
+</div>
+</div>
+
+<div class="tip"><strong>Tip:</strong> El sistema aplica la novedad solo a los días que el empleado tenía planificado trabajar en ese rango. Los francos no se modifican.</div>
+</section>
+
+<!-- ══ 6. SELECCIÓN MÚLTIPLE ══ -->
+<section id="multisel">
+<h2>6. Selección múltiple con Ctrl+clic</h2>
+<p>Cuando varios empleados (o el mismo empleado en distintos días no consecutivos) tienen la misma novedad, podés cargarla en todos a la vez.</p>
+
+<ol class="pasos">
+  <li><p>Mantenés presionada la tecla <kbd>Ctrl</kbd> y hacés clic en todas las celdas que querés incluir. Cada celda seleccionada se resalta con un borde azul.</p></li>
+  <li><p>Al seleccionar 2 o más celdas, aparece un chip en la parte inferior de la pantalla con el recuento de celdas seleccionadas.</p></li>
+  <li><p>Hacés clic en <strong>Aplicar novedad</strong> dentro del chip.</p></li>
+  <li><p>Elegís el tipo de novedad en el modal y hacés clic en <strong>Guardar</strong>. El sistema aplica la novedad a todas las celdas seleccionadas.</p></li>
+</ol>
+
+<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+  <div class="celda c-A celda-sel" style="outline:3px solid #2980b9;outline-offset:-2px;position:relative;z-index:1">A!</div>
+  <div class="celda c-A">A!</div>
+  <div class="celda c-A celda-sel" style="outline:3px solid #2980b9;outline-offset:-2px;position:relative;z-index:1">A!</div>
+  <div class="celda c-pen">·</div>
+  <div class="celda c-A celda-sel" style="outline:3px solid #2980b9;outline-offset:-2px;position:relative;z-index:1">A!</div>
+  <span style="font-size:.82rem;color:#666">← Las celdas con borde azul están seleccionadas</span>
+</div>
+
+<div style="display:flex;justify-content:center;margin-bottom:20px">
+  <div class="mock-chip">
+    <span>3 celdas seleccionadas</span>
+    <button class="c-apl">Aplicar novedad</button>
+    <button class="c-can">✕ Cancelar</button>
+  </div>
+</div>
+
+<div class="aviso"><strong>Importante:</strong> Solo podés seleccionar celdas del mismo módulo que admite novedades. Días pasados de francos o celdas bloqueadas no se pueden seleccionar.</div>
+<p>Para cancelar la selección sin aplicar nada, hacé clic en <strong>✕ Cancelar</strong> en el chip, o presioná <kbd>Esc</kbd>.</p>
+</section>
+
+<!-- ══ 7. COLUMNA CONTROL ══ -->
+<section id="columna-ctrl">
+<h2>7. La columna CONTROL</h2>
+<p>Al final de cada fila de empleado hay una columna <strong>CONTROL</strong> que resume el estado de liquidación del mes. Te indica rápidamente si hay algo que revisar.</p>
+
+<div class="ctrl-grid">
+  <div class="ctrl-item" style="background:#d4edda;border-color:#a3cfbb">
+    <div class="icono" style="background:#155724;color:white">OK</div>
+    <div class="desc">
+      <div class="tit" style="color:#155724">Liq. completa</div>
+      <div class="sub">Todos los días del mes tienen estado resuelto. Listo para liquidar.</div>
+    </div>
+  </div>
+  <div class="ctrl-item" style="background:#fde8e8;border-color:#f5c6cb">
+    <div class="icono" style="background:#e74c3c;color:white">LIQ</div>
+    <div class="desc">
+      <div class="tit" style="color:#c0392b">LIQ. FINAL</div>
+      <div class="sub">El mes está cerrado y procesado. No se puede editar más.</div>
+    </div>
+  </div>
+  <div class="ctrl-item" style="background:#fff3cd;border-color:#ffeeba">
+    <div class="icono" style="background:#856404;color:white">!</div>
+    <div class="desc">
+      <div class="tit" style="color:#7d5a00">Revisar</div>
+      <div class="sub">Hay tardanzas, NF u otras situaciones que conviene verificar.</div>
+    </div>
+  </div>
+  <div class="ctrl-item" style="background:#f8d7da;border-color:#f5c6cb">
+    <div class="icono" style="background:#721c24;color:white">—</div>
+    <div class="desc">
+      <div class="tit" style="color:#721c24">Faltan días</div>
+      <div class="sub">Quedan días sin estado definido. Necesita novedades para completar.</div>
+    </div>
+  </div>
+  <div class="ctrl-item" style="background:#3d0000;border-color:#1a0000">
+    <div class="icono" style="background:#7b0000;color:white">A!</div>
+    <div class="desc">
+      <div class="tit" style="color:#ffaaaa">Ausente sin confirmar</div>
+      <div class="sub">Tiene ausencias sin ninguna novedad cargada. Requiere acción urgente.</div>
+    </div>
+  </div>
+</div>
+
+<div class="danger"><strong>Ausente sin confirmar</strong> es la alerta más importante. Si un empleado aparece con este estado, significa que faltó y el sistema no tiene ninguna novedad que lo justifique. Hay que cargar la novedad correspondiente (E, ILT, LSG, S, etc.) o confirmar la ausencia.</div>
+</section>
+
+<!-- ══ 8. FICHAJE MANUAL ══ -->
+<section id="fichaje-manual">
+<h2>8. Fichaje manual</h2>
+<p>Si un empleado olvidó fichar o el reloj no registró el fichaje, podés cargarlo manualmente desde la planilla.</p>
+
+<ol class="pasos">
+  <li><p>Hacé clic en la celda del empleado en el día correspondiente.</p></li>
+  <li><p>En el panel, seleccioná la pestaña <strong>"Fichar"</strong>.</p></li>
+  <li><p>Elegí el tipo: <strong>Entrada</strong> o <strong>Salida</strong>.</p></li>
+  <li><p>Seleccioná la <strong>fecha</strong> y escribí la <strong>hora</strong> del fichaje.</p></li>
+  <li><p>Escribí un <strong>motivo</strong> (obligatorio para tener trazabilidad).</p></li>
+  <li><p>Hacé clic en <strong>Guardar fichaje</strong>. El sistema recalcula el estado de la celda automáticamente.</p></li>
+</ol>
+
+<div class="mock-fm">
+  <h3 style="font-size:1rem;font-weight:700;color:#1a2633;margin-bottom:2px">García, María</h3>
+  <div style="font-size:.78rem;color:#999;margin-bottom:14px">Jueves 4 de mayo</div>
+  <div class="mock-tab-bar" style="margin:0 -24px 16px;padding:0 24px;display:flex;border-bottom:2px solid #e8ecf0">
+    <div class="mock-tab">Detalle</div>
+    <div class="mock-tab">Novedad</div>
+    <div class="mock-tab act">Fichar</div>
+  </div>
+  <div class="fm-tipo">
+    <span class="sel">Entrada</span>
+    <span>Salida</span>
+  </div>
+  <div class="fm-grid">
+    <div>
+      <div class="fm-label">Fecha</div>
+      <div class="fm-input">2025-05-04</div>
+    </div>
+    <div>
+      <div class="fm-label">Hora</div>
+      <div class="fm-input">07:52</div>
+    </div>
+  </div>
+  <div style="margin-bottom:12px">
+    <div class="fm-label" style="margin-bottom:4px">Motivo</div>
+    <div class="fm-input" style="color:#444">Olvidó fichar en el reloj</div>
+  </div>
+  <div class="btn-row">
+    <div class="btn-grd prim">Guardar fichaje</div>
+    <div class="btn-grd sec">Cancelar</div>
+  </div>
+</div>
+
+<div class="aviso"><strong>Importante:</strong> El fichaje manual queda registrado con tu usuario y la hora en que lo cargaste. No podés cargar una entrada si ya existe una para ese día y bloque.</div>
+</section>
+
+<!-- ══ 9. HORARIOS Y CALENDARIOS ══ -->
+<section id="horarios-ref">
+<h2>9. Horarios y calendarios (consulta)</h2>
+<p>Desde el menú <strong>Programación → Horarios</strong> podés consultar los horarios definidos en el sistema: nombre, turnos, bloques de entrada y salida, y tolerancias. Esta información es de solo lectura para los encargados.</p>
+<p>Desde <strong>Programación → Calendarios</strong> podés ver los calendarios de feriados y otras excepciones de días configuradas por el administrador.</p>
+<p>Desde <strong>Programación → Planificación</strong> podés consultar (y en algunos casos modificar, según tu permiso) la planificación semanal de cada empleado: qué horario tiene asignado cada día de la semana.</p>
+
+<div class="tip"><strong>Consulta rápida de planificación:</strong> Si en la planilla una celda aparece sin color (blanca) o con un punto gris, puede significar que ese empleado no tiene horario asignado para ese día. Revisá la planificación semanal para confirmar.</div>
+
+<h3 class="sub">¿Qué hacer si el horario asignado es incorrecto?</h3>
+<p>Si un empleado fichó en un día que estaba planificado como franco y el sistema muestra "FT pendiente", podés asignarle el horario correcto haciendo clic en la celda y usando la opción que aparece en el panel de detalle. Eso recalcula el estado automáticamente.</p>
+</section>
+
+<div style="margin-top:48px;padding:20px;background:white;border-radius:8px;border:1px solid #e0e0e0;font-size:.82rem;color:#888;text-align:center">
+  Manual de encargados — SistemAlf &nbsp;·&nbsp; Para soporte, contactar al administrador del sistema.
+</div>
+
+</main>
+</div>
+
+<script>
+function logout() {
+  document.cookie = 'session=; Max-Age=0; path=/';
+  window.location.href = '/login';
+}
+
+// Marcar enlace activo en sidebar según scroll
+const links = document.querySelectorAll('aside a');
+const sections = document.querySelectorAll('section[id]');
+
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.remove('activo'));
+      const link = document.querySelector(`aside a[href="#${e.target.id}"]`);
+      if (link) link.classList.add('activo');
+    }
+  });
+}, { rootMargin: '-30% 0px -60% 0px' });
+
+sections.forEach(s => observer.observe(s));
+
+// Cargar permisos para nav (igual que el resto de páginas)
+(async () => {
+  try {
+    const r = await fetch('/api/me');
+    if (!r.ok) return;
+    const me = await r.json();
+    document.getElementById('user-info').textContent = me.nombre || me.email || '';
+    const ps = me.permisos || {};
+    document.querySelectorAll('[data-perm]').forEach(el => {
+      const [mod, acc] = el.dataset.perm.split(':');
+      const v = ps[mod];
+      if (v && (acc === 'ver' ? v.ver : v[acc])) el.style.display = '';
+    });
+  } catch {}
+})();
+</script>
+</body>
+</html>

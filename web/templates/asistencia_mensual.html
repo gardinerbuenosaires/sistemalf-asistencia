@@ -208,6 +208,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
   font-size: .65rem; font-weight: bold; cursor: pointer;
 }
 .celda-simple:hover { outline: 2px solid #2c3e50; outline-offset: -2px; }
+.tabla-todos .celda-simple { width: 100%; }
 
 /* Celda de día - cortado (2 bloques lado a lado) */
 .celda-cortado {
@@ -940,7 +941,7 @@ function renderGrupoTodos() {
     feriados_trabajados:'FERI.', dias:'DÍAS'
   };
 
-  let html = '<table class="planilla"><thead><tr>';
+  let html = '<table class="planilla tabla-todos"><thead><tr>';
   html += '<th class="col-cod">COD</th>';
   html += '<th class="col-nombre">APELLIDO Y NOMBRE</th>';
   d.dias.forEach(dia => {

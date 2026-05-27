@@ -730,7 +730,8 @@ def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permi
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
-    filename = f"planilla_{meses_es[mes_n-1]}_{año_n}.xlsx"
+    prefix = f"{nombre_empresa.replace(' ', '_')}_" if nombre_empresa else ""
+    filename = f"{prefix}planilla_{meses_es[mes_n-1]}_{año_n}.xlsx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

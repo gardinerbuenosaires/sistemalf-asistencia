@@ -284,7 +284,7 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
 <p>Los <strong>Cortados</strong> son empleados que tienen dos bloques de horario en el mismo día (por ejemplo mañana y tarde).</p>
 
 <h3 class="sub">Ejemplo de planilla</h3>
-<div class="mock-planilla">
+<div class="mock-planilla" style="overflow-x:auto">
 <table>
   <thead>
     <tr>
@@ -298,9 +298,19 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
       <th>6<br><span style="font-size:.6rem;opacity:.7">Sáb</span></th>
       <th class="dom">7<br><span style="font-size:.6rem;opacity:.7">Dom</span></th>
       <th class="sep"></th>
+      <th class="res" style="background:#1a252f">SALDO</th>
       <th class="res">T</th>
-      <th class="res">A</th>
+      <th class="res">ILT</th>
+      <th class="res">LSG</th>
+      <th class="res">L</th>
+      <th class="res">E</th>
+      <th class="res">V</th>
+      <th class="res">S</th>
       <th class="res">NF</th>
+      <th class="res">FM</th>
+      <th class="res">A</th>
+      <th class="res">FERI.</th>
+      <th class="res" style="background:#1a252f">DÍAS</th>
       <th class="ctrl">CONTROL</th>
     </tr>
   </thead>
@@ -316,9 +326,19 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
       <td><div class="celda c-F">F</div></td>
       <td><div class="celda c-I c-dom">I</div></td>
       <td class="sep"></td>
-      <td class="res">12</td>
+      <td class="res" style="color:#27ae60;font-weight:bold">+1</td>
+      <td class="res" style="font-weight:bold">1</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
       <td class="res" style="color:#e74c3c;font-weight:bold">1</td>
-      <td class="res">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res" style="font-weight:bold">12</td>
       <td class="ctrl ctrl-revisar">1 Ausente · 1 Tarde</td>
     </tr>
     <tr>
@@ -332,9 +352,19 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
       <td><div class="celda c-F">F</div></td>
       <td><div class="celda c-pen">·</div></td>
       <td class="sep"></td>
-      <td class="res">8</td>
-      <td class="res">0</td>
-      <td class="res">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res" style="font-weight:bold">4</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res" style="font-weight:bold">8</td>
       <td class="ctrl ctrl-completado">Liq. completa</td>
     </tr>
     <tr>
@@ -348,9 +378,19 @@ kbd { display: inline-block; background: #f4f6f9; border: 1px solid #ccc;
       <td><div class="celda c-F">F</div></td>
       <td><div class="celda c-pen c-dom">·</div></td>
       <td class="sep"></td>
-      <td class="res">8</td>
-      <td class="res" style="color:#e74c3c;font-weight:bold">1</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
+      <td class="res res-cero">0</td>
       <td class="res" style="color:#e67e22;font-weight:bold">1</td>
+      <td class="res res-cero">0</td>
+      <td class="res" style="color:#e74c3c;font-weight:bold">1</td>
+      <td class="res res-cero">0</td>
+      <td class="res" style="font-weight:bold">8</td>
       <td class="ctrl ctrl-ausentes-sc">1 Aus. sin conf.</td>
     </tr>
   </tbody>

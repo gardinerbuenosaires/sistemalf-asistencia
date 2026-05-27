@@ -915,11 +915,14 @@ def _migrate(conn):
             conn.execute("INSERT INTO niveles_estudio (nombre, orden) VALUES (?, ?)", n)
 
     # ── Módulo distribución semanal ───────────────────────────────────────────
-    # sector_id en departamentos (qué sector de la empresa corresponde)
+    # sector_id y activo en departamentos
     cols_dept = {r[1] for r in conn.execute("PRAGMA table_info(departamentos)").fetchall()}
     if "sector_id" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN sector_id INTEGER REFERENCES sectores_legajo(id)")
         logger.info("Migración: columna sector_id agregada a departamentos")
+    if "activo" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN activo INTEGER NOT NULL DEFAULT 1")
+        logger.info("Migración: columna activo agregada a departamentos")
 
     # puestos de trabajo dentro de cada departamento
     conn.execute("""
@@ -980,3 +983,21 @@ def _migrate(conn):
     if "origen" not in cols_plan:
         conn.execute("ALTER TABLE planificacion ADD COLUMN origen TEXT DEFAULT NULL")
         logger.info("Migración: columna origen agregada a planificacion")
+
+    # Departamentos operativos por defecto (se agregan si no existen)
+    _depts_default = [
+        ("Cocineros",         "COCINA"),
+        ("Peones de limpieza","COCINA"),
+        ("Mozos",             "SALÓN"),
+        ("Mozos de barra",    "SALÓN"),
+    ]
+    for dept_nombre, sector_nombre in _depts_default:
+        exists = conn.execute("SELECT id FROM departamentos WHERE nombre=?", (dept_nombre,)).fetchone()
+        if not exists:
+            sector = conn.execute("SELECT id FROM sectores_legajo WHERE nombre=?", (sector_nombre,)).fetchone()
+            sector_id = sector["id"] if sector else None
+            conn.execute(
+                "INSERT INTO departamentos (nombre, sector_id, activo) VALUES (?,?,1)",
+                (dept_nombre, sector_id)
+            )
+            logger.info("Departamento creado: %s (sector %s)", dept_nombre, sector_nombre)

@@ -468,6 +468,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <button class="tab-btn" data-tab="TN" onclick="switchTab('TN')">Noche</button>
   <button class="tab-btn"        data-tab="CO" onclick="switchTab('CO')">Cortado</button>
   <button class="tab-btn"        data-tab="ST" onclick="switchTab('ST')">Sin turno</button>
+  <button class="tab-btn"        data-tab="TODOS" data-perm="asistencia:ver_todos" onclick="switchTab('TODOS')">Todos</button>
   <span id="conteos" style="margin-left:auto;font-size:.78rem;color:#888;align-self:center"></span>
 </div>
 
@@ -475,6 +476,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
 <div class="tab-panel"        id="panel-TN"><div class="tabla-outer" id="tabla-TN"></div></div>
 <div class="tab-panel"        id="panel-CO"><div class="tabla-outer" id="tabla-CO"></div></div>
 <div class="tab-panel"        id="panel-ST"><div class="tabla-outer" id="tabla-ST"></div></div>
+<div class="tab-panel"        id="panel-TODOS"><div class="tabla-outer" id="tabla-TODOS"></div></div>
 
 <!-- Dialog de alerta bloqueante -->
 <div id="alert-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:none;align-items:center;justify-content:center"></div>
@@ -676,6 +678,7 @@ async function init() {
   mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
   construirLeyenda();
   await cargarOrdenes();
+  if (canDo('asistencia', 'ver_todos')) tabActiva = 'TODOS';
   switchTab(tabActiva);
 }
 
@@ -896,6 +899,7 @@ function renderTodo() {
     }
   });
   renderGrupo('ST', d.dias, d.ST || []);
+  if (canDo('asistencia', 'ver_todos')) renderGrupoTodos();
   const st = (d.ST || []).length;
   const mesStr = mesActual.slice(0, 7); // "YYYY-MM"
   const esBaja = e => e.fecha_egreso && e.fecha_egreso.slice(0, 7) === mesStr;
@@ -906,6 +910,89 @@ function renderTodo() {
   if (bajas) txt += `  Bajas: ${bajas}`;
   txt += `  Total: ${total}`;
   document.getElementById('conteos').textContent = txt;
+}
+
+function renderGrupoTodos() {
+  const d = datosActuales;
+  if (!d) return;
+  const contenedor = document.getElementById('tabla-TODOS');
+  if (!contenedor) return;
+
+  const todos = [
+    ...d.TM.map(e => ({ emp: e, esCortado: false })),
+    ...d.TN.map(e => ({ emp: e, esCortado: false })),
+    ...d.CO.map(e => ({ emp: e, esCortado: true })),
+  ].sort((a, b) => {
+    const na = `${a.emp.apellido} ${a.emp.nombre}`.toLowerCase();
+    const nb = `${b.emp.apellido} ${b.emp.nombre}`.toLowerCase();
+    return na.localeCompare(nb, 'es');
+  });
+
+  if (!todos.length) {
+    contenedor.innerHTML = '<p style="padding:24px;color:#aaa">Sin empleados para este mes.</p>';
+    return;
+  }
+
+  const resCols = ['saldo_francos','T','ILT','LSG','L','@','E','V','S','NF','FM','A','feriados_trabajados','dias'];
+  const resLabels = {
+    saldo_francos:'SALDO', T:'T', ILT:'ILT', LSG:'LSG',
+    L:'L', '@':'@', E:'E', V:'V', S:'S', NF:'NF', FM:'FM', A:'A',
+    feriados_trabajados:'FERI.', dias:'DÍAS'
+  };
+
+  let html = '<table class="planilla"><thead><tr>';
+  html += '<th class="col-cod">COD</th>';
+  html += '<th class="col-nombre">APELLIDO Y NOMBRE</th>';
+  d.dias.forEach(dia => {
+    const cls = ['col-dia-co', dia.domingo ? 'domingo' : '', dia.feriado ? 'feriado' : ''].filter(Boolean).join(' ');
+    html += `<th class="${cls}"><div class="dow-num"><span class="dow">${dia.dow}</span><span class="num">${dia.num}</span></div></th>`;
+  });
+  html += '<th class="col-sep"></th>';
+  resCols.forEach(c => {
+    const col = C[c];
+    const style = col ? ` style="background:${col.bg};color:${col.txt}"` : '';
+    html += `<th class="col-res${c==='dias'?' col-dias':''}"${style}>${resLabels[c]}</th>`;
+  });
+  html += '<th class="col-ctrl">CONTROL</th>';
+  html += '</tr></thead><tbody>';
+
+  todos.forEach(({ emp, esCortado }) => {
+    const nombreCompleto = `${emp.apellido}, ${emp.nombre}`;
+    const clsFuera = emp.en_dispositivo === 0 ? ' fuera-dispositivo' : '';
+    const badgeNuevo = _badgeNuevo(emp);
+    const clsNuevo = badgeNuevo ? ' emp-nuevo' : '';
+    html += `<tr class="${clsFuera}${clsNuevo}">
+      <td class="col-cod">${emp.cod || ''}</td>
+      <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}</td>`;
+    d.dias.forEach(dia => {
+      const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
+      if (esCortado) {
+        const c = emp.celdas[dia.fecha] || {b1:{letra:null,tipo:'sin_plan'}, b2:{letra:null,tipo:'sin_plan'}};
+        html += `<td style="padding:0">${celdaCortadoHtml(c, emp.id, dia.fecha, mark)}</td>`;
+      } else {
+        const c = emp.celdas[dia.fecha] || {letra:null, tipo:'sin_plan'};
+        if (c.es_cortado_dia) {
+          html += `<td style="padding:0">${celdaCortadoHtml(c, emp.id, dia.fecha, mark)}</td>`;
+        } else {
+          html += `<td style="padding:0">${celdaSimpleHtml(c, emp.id, dia.fecha, mark)}</td>`;
+        }
+      }
+    });
+    html += '<td class="col-sep"></td>';
+    resCols.forEach(col => {
+      const v = emp.totales[col] ?? 0;
+      const esCero = v === 0 || v === '0';
+      const cls = col === 'saldo_francos'
+        ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : 'res-cero')
+        : (esCero ? 'res-cero' : 'res-nz');
+      html += `<td class="col-res${col==='dias'?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
+    });
+    html += controlHtml(emp.control);
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  contenedor.innerHTML = html;
 }
 
 // ── Render planilla normal ────────────────────────────────────────────────────
@@ -1962,9 +2049,8 @@ function abrirModalMulti() {
   document.getElementById('modal').style.display = 'block';
 }
 
-_loadPerms();
 _loadHorarios();
-init();
+_loadPerms().then(() => init());
 
 // ── Menú contextual sobre nombre de empleado ──────────────────────────────────
 document.addEventListener('contextmenu', e => {

@@ -116,11 +116,12 @@ if (-not (Test-Path $nssmExe)) {
 Write-OK "NSSM disponible"
 
 # Eliminar servicio anterior si existe
-$svcStatus = & $nssmExe status $ServiceName 2>$null
-if ($svcStatus) {
+$svcStatus = $null
+try { $svcStatus = & $nssmExe status $ServiceName 2>&1 } catch {}
+if ($svcStatus -and $svcStatus -notmatch "Can't open service") {
     Write-Info "Eliminando servicio anterior..."
-    & $nssmExe stop $ServiceName 2>$null
-    & $nssmExe remove $ServiceName confirm 2>$null
+    try { & $nssmExe stop   $ServiceName 2>&1 | Out-Null } catch {}
+    try { & $nssmExe remove $ServiceName confirm 2>&1 | Out-Null } catch {}
     Start-Sleep -Seconds 2
 }
 

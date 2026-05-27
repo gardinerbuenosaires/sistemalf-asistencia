@@ -236,7 +236,7 @@ async function _loadPerms() {
     const r = await fetch('/api/auth/me');
     if (!r.ok) { window.location.href = '/login'; return; }
     const d = await r.json();
-    _perms = new Set(d.permisos || []);
+    _perms = new Set((d.permisos || []).map(p => `${p.modulo}:${p.accion}`));
     document.querySelectorAll('[data-perm]').forEach(el => {
       const [m, a] = el.dataset.perm.split(':');
       if (canDo(m, a)) el.removeAttribute('data-perm');

@@ -1001,3 +1001,49 @@ def _migrate(conn):
                 (dept_nombre, sector_id)
             )
             logger.info("Departamento creado: %s (sector %s)", dept_nombre, sector_nombre)
+
+    # Puestos de trabajo por departamento (se agregan si no existen)
+    # Cada entrada es (nombre_puesto, nombre_departamento).
+    # Los puestos repetidos representan slots: PARRILLA ×3 = hasta 3 personas ese día.
+    _puestos_default = [
+        ("HORNO",          "Cocineros"),
+        ("JOSPER",         "Cocineros"),
+        ("PARRILLA",       "Cocineros"),
+        ("PARRILLA",       "Cocineros"),
+        ("PARRILLA",       "Cocineros"),
+        ("ENSALADAS",      "Cocineros"),
+        ("ENSALADAS",      "Cocineros"),
+        ("PLANCHA",        "Cocineros"),
+        ("COCINA",         "Cocineros"),
+        ("COCINA",         "Cocineros"),
+        ("PASTAS",         "Cocineros"),
+        ("PASTAS",         "Cocineros"),
+        ("MINUTA",         "Cocineros"),
+        ("MINUTA",         "Cocineros"),
+        ("POSTRES",        "Cocineros"),
+        ("POSTRES",        "Cocineros"),
+        ("PREPARACIONES",  "Cocineros"),
+        ("PANADERIA",      "Cocineros"),
+        ("PANADERIA",      "Cocineros"),
+        ("PANADERIA",      "Cocineros"),
+        ("PANADERIA",      "Cocineros"),
+        ("PROD PASTAS",    "Cocineros"),
+        ("PROD PASTAS",    "Cocineros"),
+    ]
+    for orden, (puesto_nombre, dept_nombre) in enumerate(_puestos_default):
+        dept = conn.execute("SELECT id FROM departamentos WHERE nombre=?", (dept_nombre,)).fetchone()
+        if not dept:
+            continue
+        # Cuenta cuántos puestos con ese nombre ya existen para evitar duplicar en reinicios
+        ya_existen = conn.execute(
+            "SELECT COUNT(*) FROM puestos WHERE nombre=? AND departamento_id=?",
+            (puesto_nombre, dept["id"])
+        ).fetchone()[0]
+        # Calcula cuántas veces aparece este nombre en la lista hasta este índice (inclusive)
+        slot_num = sum(1 for i, (n, d) in enumerate(_puestos_default) if i <= orden and n == puesto_nombre and d == dept_nombre)
+        if ya_existen < slot_num:
+            conn.execute(
+                "INSERT INTO puestos (nombre, departamento_id, orden, activo) VALUES (?,?,?,1)",
+                (puesto_nombre, dept["id"], orden)
+            )
+            logger.info("Puesto creado: %s (%s)", puesto_nombre, dept_nombre)

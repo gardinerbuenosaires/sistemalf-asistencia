@@ -619,7 +619,7 @@ def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permi
     ws.row_dimensions[1].height = 30
 
     def fmt_dias(arr):
-        return ", ".join(arr[:6]) + ("…" if len(arr) > 6 else "")
+        return ", ".join(str(x) for x in arr[:6]) + ("…" if len(arr) > 6 else "")
 
     for row_i, item in enumerate(todos, start=2):
         emp = item["emp"]

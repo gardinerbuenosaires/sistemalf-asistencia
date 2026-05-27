@@ -546,6 +546,10 @@ def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permi
 
     datos = _asistencia_datos(mes)
 
+    with db_session() as conn:
+        row = conn.execute("SELECT valor FROM configuracion WHERE clave='nombre_empresa'").fetchone()
+        nombre_empresa = row["valor"].strip() if row and row["valor"] else ""
+
     todos = sorted(
         [{"emp": e, "cortado": False} for e in datos["TM"]] +
         [{"emp": e, "cortado": False} for e in datos["TN"]] +
@@ -582,13 +586,27 @@ def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permi
     ws = wb.active
     ws.title = f"{meses_es[mes_n-1].capitalize()} {año_n}"
 
+    # Fila de título con nombre de empresa y período
+    titulo = f"{nombre_empresa}  —  Planilla {meses_es[mes_n-1].capitalize()} {año_n}" if nombre_empresa else f"Planilla {meses_es[mes_n-1].capitalize()} {año_n}"
+    ws.append([titulo])
+    ws.append([])  # fila vacía de separación
+    # Los encabezados y datos empiezan en fila 3
+    HDR_ROW = 3
+
     hdr_fill  = PatternFill("solid", fgColor="1A252F")
     dom_fill  = PatternFill("solid", fgColor="4A235A")
     fer_fill  = PatternFill("solid", fgColor="1A5276")
     hdr_font  = Font(bold=True, color="FFFFFF", size=8)
 
+    # Estilo título
+    tc = ws.cell(1, 1)
+    tc.value = titulo
+    tc.font = Font(bold=True, size=11, color="1A252F")
+    tc.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 20
+
     def hcell(col, text, fill=None, width=None, halign="center"):
-        c = ws.cell(1, col, text)
+        c = ws.cell(HDR_ROW, col, text)
         c.fill = fill or hdr_fill
         c.font = hdr_font
         c.alignment = Alignment(horizontal=halign, vertical="center", wrap_text=True)
@@ -606,7 +624,7 @@ def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permi
         hcell(col, f"{dia['num']}\n{dia['dow']}", fill=fill, width=4.5)
         col += 1
 
-    ws.column_dimensions[ws.cell(1, col).column_letter].width = 1
+    ws.column_dimensions[ws.cell(HDR_ROW, col).column_letter].width = 1
     col += 1  # separador
 
     for rc in RES_COLS:
@@ -615,13 +633,13 @@ def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permi
     ctrl_col = col
     hcell(col, "CONTROL", width=20, halign="left")
 
-    ws.freeze_panes = "C2"
-    ws.row_dimensions[1].height = 30
+    ws.freeze_panes = f"C{HDR_ROW + 1}"
+    ws.row_dimensions[HDR_ROW].height = 30
 
     def fmt_dias(arr):
         return ", ".join(str(x) for x in arr[:6]) + ("…" if len(arr) > 6 else "")
 
-    for row_i, item in enumerate(todos, start=2):
+    for row_i, item in enumerate(todos, start=HDR_ROW + 1):
         emp = item["emp"]
         es_co = item["cortado"]
 

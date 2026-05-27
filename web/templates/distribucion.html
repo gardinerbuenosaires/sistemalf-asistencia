@@ -72,8 +72,15 @@
   .celda-dist:hover { filter: brightness(.93); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
   .celda-dist.asignado { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
   .celda-dist.franco { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
-  .celda-dist.sugerido { background: #e8f4fd; color: #004085; border: 1px dashed #90c4e8; opacity: .85; }
   .celda-dist.hoy { box-shadow: 0 0 0 2px #007bff; }
+  .celda-dist.novedad-V   { background: #95B3D7; color: #000; border-color: #7a9bbf; }
+  .celda-dist.novedad-L   { background: #92CDDC; color: #000; border-color: #6ab5c8; }
+  .celda-dist.novedad-LSG { background: #B1A0C7; color: #000; border-color: #9a88b5; }
+  .celda-dist.novedad-S   { background: #DA9694; color: #000; border-color: #c07a78; }
+  .celda-dist.novedad-E   { background: #FABF8F; color: #000; border-color: #e8a870; }
+  .celda-dist.novedad-ILT { background: #C4D79B; color: #000; border-color: #a8c07a; }
+  .celda-dist.novedad-NF  { background: #F4D03F; color: #7D4900; border-color: #d4b030; }
+  .celda-dist.novedad-CP  { background: #d0d0d0; color: #333; border-color: #aaa; }
 
   .banner-sugerido { background: #e8f4fd; border: 1px solid #b8daff; border-radius: 6px;
     padding: 8px 14px; margin: 12px 0 0; font-size: .82rem; color: #004085;
@@ -229,12 +236,21 @@ let _distribucion = null; // objeto de la semana cargada
 let _puestos = [];
 let _empleados = [];
 let _detalles = [];
+let _novedades = []; // [{empleado_id, fecha, tipo, descripcion}]
 let _dias = [];
 let _misAccesos = { departamentos: [] };
 let _editando = null; // { puesto_id, fecha } — celda abierta
 let _puestoEditId = null; // para modal de puesto
 
 const DIAS_ES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const NOV_LABEL = {
+  V:'Vacaciones', L:'Licencia', LSG:'Lic. sin sueldo',
+  S:'Suspendido', E:'Enfermedad', ILT:'Accidente', NF:'No fichó', CP:'Compensación'
+};
+
+function _novedad(empleadoId, fecha) {
+  return _novedades.find(n => n.empleado_id === empleadoId && n.fecha === fecha) || null;
+}
 
 // ── Auth / permisos ───────────────────────────────────────────────────────────
 function canDo(mod, act) { return _perms.has(`${mod}:${act}`); }
@@ -335,6 +351,7 @@ async function cargarGrilla() {
     _puestos      = data.puestos || [];
     _empleados    = data.empleados || [];
     _detalles     = data.detalles || [];
+    _novedades    = data.novedades || [];
     _dias         = data.dias || [];
     renderGrilla();
   } catch(e) {
@@ -390,17 +407,28 @@ function renderGrilla() {
       const celdas = _dias.map((d, i) => {
         const esHoy = d === hoyStr;
         const det = _detalles.find(x => x.puesto_id === p.id && x.fecha === d);
-        let cls = 'celda-dist', txt = '+';
+        let cls = 'celda-dist', txt = '+', title = '';
         if (!puedoEditar) cls += ' readonly';
         if (det) {
-          if (det.es_franco) { cls += ' franco'; txt = 'FRANCO'; }
-          else { cls += ' asignado'; txt = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?'; }
+          if (det.es_franco) {
+            cls += ' franco'; txt = 'FRANCO';
+          } else {
+            const nombre = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?';
+            const nov = det.empleado_id ? _novedad(det.empleado_id, d) : null;
+            if (nov) {
+              cls += ` novedad-${nov.tipo}`;
+              txt = `${nombre} · ${nov.tipo}`;
+              title = `${nombre} — ${NOV_LABEL[nov.tipo] || nov.tipo}${nov.descripcion ? ': ' + nov.descripcion : ''}`;
+            } else {
+              cls += ' asignado'; txt = nombre;
+            }
+          }
         }
         if (esHoy) cls += ' hoy';
         const clickAttr = puedoEditar
           ? `onclick="abrirModal(${p.id}, '${d}')"`
           : '';
-        return `<td class="col-dia"><span class="${cls}" title="${txt}" ${clickAttr}>${txt}</span></td>`;
+        return `<td class="col-dia"><span class="${cls}" title="${title||txt}" ${clickAttr}>${txt}</span></td>`;
       }).join('');
       return `<tr>
         <td class="col-puesto">${p.nombre}</td>
@@ -457,12 +485,19 @@ async function abrirModal(puestoId, fecha) {
     const opt = document.createElement('div');
     opt.className = 'opcion';
     opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
-    opt.textContent = `${e.apellido}, ${e.nombre}`;
-    if (det && !det.es_franco && det.empleado_id === e.id) {
-      opt.style.background = '#d4edda';
-      opt.style.fontWeight = 'bold';
+    const nov = _novedad(e.id, fecha);
+    if (nov) {
+      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ${NOV_LABEL[nov.tipo] || nov.tipo}`;
+      opt.style.cssText = 'opacity:.55;font-style:italic;cursor:default;pointer-events:none;border-color:#ccc';
+      opt.title = nov.descripcion || NOV_LABEL[nov.tipo] || nov.tipo;
+    } else {
+      opt.textContent = `${e.apellido}, ${e.nombre}`;
+      if (det && !det.es_franco && det.empleado_id === e.id) {
+        opt.style.background = '#d4edda';
+        opt.style.fontWeight = 'bold';
+      }
+      opt.onclick = () => asignar(puestoId, fecha, e.id, false);
     }
-    opt.onclick = () => asignar(puestoId, fecha, e.id, false);
     lista.appendChild(opt);
   });
 

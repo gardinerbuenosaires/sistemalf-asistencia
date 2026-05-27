@@ -195,11 +195,22 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                 cargo_ids
             ).fetchall()
 
+        # Novedades de la semana — fuente: asistencia mensual
+        novedades_rows = conn.execute(
+            """SELECT n.empleado_id, n.fecha, n.tipo, n.descripcion
+               FROM novedades n
+               WHERE n.fecha >= ? AND n.fecha <= ?
+               AND n.tipo IN ('V','L','LSG','S','E','ILT','NF','CP')""",
+            (dias[0], dias[6])
+        ).fetchall()
+        novedades = [dict(r) for r in novedades_rows]
+
     return {
         "distribucion": dict(dist) if dist else None,
         "puestos": [dict(r) for r in puestos],
         "empleados": [dict(r) for r in empleados],
         "detalles": [dict(r) for r in detalles],
+        "novedades": novedades,
         "dias": dias,
     }
 

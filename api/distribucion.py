@@ -159,13 +159,12 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             (departamento_id,)
         ).fetchall()
 
-        # Empleados activos del turno (se filtra por tipo=turno)
+        # Empleados activos (excluye registros de acceso biométrico)
         empleados = conn.execute(
             """SELECT e.id, e.nombre, e.apellido, e.tipo
                FROM empleados e
-               WHERE e.activo=1 AND e.tipo=?
+               WHERE e.activo=1 AND e.tipo != 'acceso'
                ORDER BY e.apellido, e.nombre""",
-            (turno,)
         ).fetchall()
 
         detalles = []
@@ -400,9 +399,8 @@ def get_empleados_dept(departamento_id: int, turno: str,
         rows = conn.execute(
             """SELECT e.id, e.nombre, e.apellido, e.tipo
                FROM empleados e
-               WHERE e.activo=1 AND e.tipo=?
-               ORDER BY e.apellido, e.nombre""",
-            (turno,)
+               WHERE e.activo=1 AND e.tipo != 'acceso'
+               ORDER BY e.apellido, e.nombre"""
         ).fetchall()
     return [dict(r) for r in rows]
 

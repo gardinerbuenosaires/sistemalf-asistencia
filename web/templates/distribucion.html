@@ -678,6 +678,30 @@ async function init() {
 }
 
 _loadPerms().then(() => init());
+
+// Recargar novedades al recuperar el foco o cada 3 minutos
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _recargarNovedades();
+});
+setInterval(_recargarNovedades, 3 * 60 * 1000);
+
+async function _recargarNovedades() {
+  const deptId = document.getElementById('sel-departamento').value;
+  const turno  = document.getElementById('sel-turno').value;
+  if (!deptId || !turno) return;
+  try {
+    const qs = `departamento_id=${deptId}&turno=${turno}&semana_inicio=${fmtDate(_lunes)}`;
+    const r = await fetch(`/api/distribucion/semana?${qs}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    const nuevasNovedades = data.novedades || [];
+    // Solo re-renderiza si cambiaron las novedades
+    if (JSON.stringify(nuevasNovedades) !== JSON.stringify(_novedades)) {
+      _novedades = nuevasNovedades;
+      renderGrilla();
+    }
+  } catch { /* silencioso */ }
+}
 </script>
 </body>
 </html>

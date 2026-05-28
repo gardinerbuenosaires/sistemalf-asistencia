@@ -76,7 +76,8 @@
     overflow: hidden; text-overflow: ellipsis;
   }
   .celda-dist:hover { filter: brightness(.93); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
-  .celda-dist.asignado { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+  .celda-dist.asignado { background: #d4edda; color: #155724; border: 1px solid #c3e6cb;
+    white-space: normal; flex-direction: column; gap: 1px; text-overflow: clip; }
   .celda-dist.franco { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
   .celda-dist.hoy { box-shadow: 0 0 0 2px #007bff; }
   .celda-dist.novedad-V   { background: #95B3D7; color: #000; border-color: #7a9bbf; }
@@ -489,9 +490,9 @@ function renderGrilla() {
             } else {
               cls += ' asignado';
               const horLabel = det.horario_nombre
-                ? `<br><small style="font-weight:normal;opacity:.75">${det.horario_nombre}</small>`
+                ? `<small style="font-weight:normal;font-size:.7rem;opacity:.85;display:block">${det.horario_nombre}</small>`
                 : '';
-              txt = nombre + horLabel;
+              txt = `<span>${nombre}</span>${horLabel}`;
               title = det.horario_nombre ? `${nombre} — ${det.horario_nombre}` : nombre;
             }
           }

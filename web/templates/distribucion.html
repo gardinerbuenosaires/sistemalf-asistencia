@@ -436,14 +436,15 @@ function renderGrilla() {
 
   const contadores = _dias.map((d, i) => {
     const esHoy = d === hoyStr;
+    const novedades = new Set(_novedades.filter(n => n.fecha === d).map(n => n.empleado_id));
+    // Base: empleados presentes (excluye ausentes por novedad)
+    const presentes = _empleados.filter(e => !novedades.has(e.id));
     const asignados = new Set(
       _detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id)
     );
-    const francos   = new Set(_francos.filter(f => f.fecha === d).map(f => f.empleado_id));
-    const novedades = new Set(_novedades.filter(n => n.fecha === d).map(n => n.empleado_id));
-    const contabilizados = new Set([...asignados, ...francos, ...novedades]);
-    const sinAsignar = total - contabilizados.size;
-    const tag = (total === 0 || sinAsignar > 0)
+    const francos = new Set(_francos.filter(f => f.fecha === d).map(f => f.empleado_id));
+    const sinAsignar = presentes.filter(e => !asignados.has(e.id) && !francos.has(e.id)).length;
+    const tag = (presentes.length === 0 || sinAsignar > 0)
       ? `<span class="tag-pendiente">${sinAsignar} sin asignar</span>`
       : `<span class="tag-completo">✓ Completo</span>`;
     return `<th class="col-dia contador-cell${esHoy ? ' hoy' : ''}">${tag}</th>`;

@@ -7,10 +7,12 @@
 <title>Configuración — SistemAlf</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333;
+    display: flex; flex-direction: column; }
 
   header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px;
-           display: flex; align-items: center; justify-content: space-between; }
+           display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
   nav a:hover { opacity: 1; }
   nav a.activo { opacity: 1; font-weight: bold; }
@@ -26,7 +28,7 @@
   .nav-dropdown a:hover { background: #f4f6f9; }
   [data-perm] { display: none !important; }
 
-  main { padding: 24px; max-width: 900px; margin: 0 auto; }
+  main { padding: 24px; max-width: 900px; margin: 0 auto; flex: 1; overflow-y: auto; }
 
   .section { background: white; border-radius: 8px; padding: 24px;
              box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 24px; }
@@ -134,7 +136,8 @@
   .rol-nivel-tag { font-size: .7rem; color: #aaa; flex-shrink: 0; }
 
   /* Tabs de configuración */
-  .cfg-tabs { display: flex; gap: 2px; margin-bottom: 20px; border-bottom: 2px solid #dee2e6; }
+  .cfg-tabs { display: flex; gap: 2px; margin-bottom: 20px; border-bottom: 2px solid #dee2e6;
+    position: sticky; top: 0; background: #f4f6f9; z-index: 10; padding-bottom: 0; }
   .cfg-tab { padding: 8px 20px; border: none; background: none; cursor: pointer;
              font-size: .88rem; color: #666; border-bottom: 2px solid transparent;
              margin-bottom: -2px; border-radius: 4px 4px 0 0; transition: color .15s; }

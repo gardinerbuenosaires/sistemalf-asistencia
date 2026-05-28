@@ -57,9 +57,9 @@ def list_empleados(todos: bool = False, sin_acceso: bool = False,
     with db_session() as conn:
         conds = []
         if not todos:
-            conds.append("activo = 1")
+            conds.append("e.activo = 1")
         if sin_acceso:
-            conds.append("tipo != 'acceso'")
+            conds.append("e.tipo != 'acceso'")
         where = ("WHERE " + " AND ".join(conds)) if conds else ""
         rows = conn.execute(f"""
             SELECT c.departamento_id AS departamento_id,

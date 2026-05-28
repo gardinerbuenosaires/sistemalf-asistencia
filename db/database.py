@@ -899,6 +899,10 @@ def _migrate(conn):
     if "pagina_inicio" not in cols_roles:
         conn.execute("ALTER TABLE roles ADD COLUMN pagina_inicio TEXT NOT NULL DEFAULT '/'")
         logger.info("Migración: columna pagina_inicio agregada a roles")
+    cols_usuarios = {r[1] for r in conn.execute("PRAGMA table_info(usuarios)").fetchall()}
+    if "pagina_inicio" not in cols_usuarios:
+        conn.execute("ALTER TABLE usuarios ADD COLUMN pagina_inicio TEXT")
+        logger.info("Migración: columna pagina_inicio agregada a usuarios")
 
     # Catálogos configurables del legajo (turno y sector)
     conn.execute("""

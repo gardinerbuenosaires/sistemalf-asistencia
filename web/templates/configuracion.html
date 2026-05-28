@@ -719,6 +719,27 @@ function buildForm(u={}) {
       </select>
       <div class="hint" id="rol-hint">${descRol}</div>
     </div>
+    <div class="form-group">
+      <label>Página de inicio</label>
+      <select id="f-pagina-inicio" ${dis}>
+        <option value="">— Usar la del rol —</option>
+        ${[
+          ['/', 'Dashboard'],
+          ['/premios', 'Premios'],
+          ['/asistencia', 'Asistencia'],
+          ['/asistencia-mensual', 'Planilla mensual'],
+          ['/fichajes', 'Fichajes'],
+          ['/planificacion', 'Planificación'],
+          ['/horarios', 'Horarios'],
+          ['/calendarios', 'Calendarios'],
+          ['/empleados', 'Personal'],
+          ['/vacaciones', 'Vacaciones'],
+          ['/distribucion', 'Distribución'],
+          ['/configuracion', 'Configuración'],
+        ].map(([v,l]) => `<option value="${v}"${(u.pagina_inicio||'')===v?' selected':''}>${l}</option>`).join('')}
+      </select>
+      <div class="hint">Si se deja en "Usar la del rol", se aplica la configuración del rol asignado.</div>
+    </div>
     ${u.id ? `
     <div class="form-group">
       <label>Estado</label>
@@ -757,19 +778,20 @@ function cancelarUsuario() {
 }
 
 async function guardarUsuario() {
-  const nombre   = document.getElementById("f-nombre")?.value.trim();
-  const email    = document.getElementById("f-email")?.value.trim();
-  const rol_id   = parseInt(document.getElementById("f-rol")?.value);
-  const password = document.getElementById("f-password")?.value || "";
-  const activo   = parseInt(document.getElementById("f-activo")?.value ?? "1");
+  const nombre        = document.getElementById("f-nombre")?.value.trim();
+  const email         = document.getElementById("f-email")?.value.trim();
+  const rol_id        = parseInt(document.getElementById("f-rol")?.value);
+  const password      = document.getElementById("f-password")?.value || "";
+  const activo        = parseInt(document.getElementById("f-activo")?.value ?? "1");
+  const pagina_inicio = document.getElementById("f-pagina-inicio")?.value || "";
 
   if (!nombre || !email || !rol_id) { toast("Completá todos los campos"); return; }
 
   const url    = usrEditandoId ? `/api/usuarios/${usrEditandoId}` : "/api/usuarios";
   const method = usrEditandoId ? "PUT" : "POST";
   const body   = usrEditandoId
-    ? { nombre, email, rol_id, activo, password }
-    : { nombre, email, rol_id, password };
+    ? { nombre, email, rol_id, activo, password, pagina_inicio }
+    : { nombre, email, rol_id, password, pagina_inicio };
 
   const res = await fetch(url, { method, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
   if (res.ok) {

@@ -24,6 +24,7 @@ class UsuarioIn(BaseModel):
     rol_id: int
     password: str = ""
     activo: int = 1
+    pagina_inicio: str = ""
 
 
 class RolIn(BaseModel):
@@ -43,7 +44,8 @@ class PermisosIn(BaseModel):
 def login(data: LoginIn, response: Response):
     with db_session() as conn:
         row = conn.execute(
-            """SELECT u.*, r.nombre as rol_nombre, r.pagina_inicio
+            """SELECT u.*, r.nombre as rol_nombre,
+                      COALESCE(u.pagina_inicio, r.pagina_inicio, '/') AS pagina_inicio
                FROM usuarios u LEFT JOIN roles r ON r.id=u.rol_id
                WHERE u.email=? AND u.activo=1""",
             (data.email.strip(),)
@@ -98,7 +100,7 @@ def list_usuarios(user=Depends(require_permiso("usuarios", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
             """SELECT u.id, u.nombre, u.email, u.rol_id, u.activo, u.creado_en,
-                      r.nombre as rol_nombre
+                      u.pagina_inicio, r.nombre as rol_nombre
                FROM usuarios u LEFT JOIN roles r ON r.id=u.rol_id
                ORDER BY u.nombre"""
         ).fetchall()
@@ -125,18 +127,19 @@ def update_usuario(uid: int, data: UsuarioIn, user=Depends(require_permiso("usua
     with db_session() as conn:
         if not conn.execute("SELECT id FROM usuarios WHERE id=?", (uid,)).fetchone():
             raise HTTPException(404)
+        pagina = data.pagina_inicio.strip() or None
         if data.password:
             if len(data.password) < 6:
                 raise HTTPException(400, "Mínimo 6 caracteres")
             conn.execute(
-                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,password_hash=? WHERE id=?",
+                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,password_hash=?,pagina_inicio=? WHERE id=?",
                 (data.nombre.strip(), data.email.strip(), data.rol_id,
-                 data.activo, hash_password(data.password), uid)
+                 data.activo, hash_password(data.password), pagina, uid)
             )
         else:
             conn.execute(
-                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=? WHERE id=?",
-                (data.nombre.strip(), data.email.strip(), data.rol_id, data.activo, uid)
+                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,pagina_inicio=? WHERE id=?",
+                (data.nombre.strip(), data.email.strip(), data.rol_id, data.activo, pagina, uid)
             )
     return {"ok": True}
 

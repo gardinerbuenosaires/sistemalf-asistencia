@@ -99,8 +99,9 @@
   /* Fila FRANCO */
   .fila-franco td { background: #fffbf0; border-top: 2px solid #ffc107; }
   .fila-franco td.col-puesto { color: #856404; }
-  .celda-franco-wrap { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
-    min-height: 34px; align-items: center; padding: 4px 2px; }
+  .celda-franco-wrap { display: flex; flex-direction: column; align-items: center;
+    gap: 4px; min-height: 34px; padding: 4px 2px; }
+  .celda-franco-badges { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
   .badge-franco { display: inline-flex; align-items: center; gap: 3px;
     background: #fff3cd; color: #856404; border: 1px solid #ffc107;
     border-radius: 12px; padding: 3px 8px; font-size: .72rem; font-weight: bold; }
@@ -467,8 +468,9 @@ function renderGrilla() {
       const addBtn = puedoEditar
         ? `<button class="btn-add-franco" onclick="abrirModalFranco('${d}')">+ Franco</button>`
         : '';
+      const badgesWrap = badges ? `<div class="celda-franco-badges">${badges}</div>` : '';
       return `<td class="col-dia${esHoy ? ' hoy' : ''}">
-        <div class="celda-franco-wrap">${badges}${addBtn}</div>
+        <div class="celda-franco-wrap">${badgesWrap}${addBtn}</div>
       </td>`;
     }).join('');
     const francoRow = `<tr class="fila-franco">

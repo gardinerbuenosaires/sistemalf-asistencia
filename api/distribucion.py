@@ -506,23 +506,51 @@ def delete_usuario_acceso(uid: int, _user=Depends(require_permiso("distribucion"
     return {"ok": True}
 
 
+# ── Config de avisos por turno ────────────────────────────────────────────────
+
+class AvisoConfigIn(BaseModel):
+    dia_semana: int
+    hora: str
+
+@router.get("/aviso-config")
+def get_aviso_config(_user=Depends(require_permiso("distribucion", "ver"))):
+    with db_session() as conn:
+        rows = conn.execute(
+            "SELECT turno, dia_semana, hora FROM distribucion_aviso_config ORDER BY turno"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+@router.put("/aviso-config/{turno}")
+def update_aviso_config(turno: str, data: AvisoConfigIn,
+                        _user=Depends(require_permiso("distribucion", "editar"))):
+    if turno not in ("TM", "TN", "CO"):
+        raise HTTPException(400, "Turno inválido")
+    try:
+        datetime.strptime(data.hora, "%H:%M")
+    except ValueError:
+        raise HTTPException(400, "Hora inválida, usar formato HH:MM")
+    if not 1 <= data.dia_semana <= 7:
+        raise HTTPException(400, "Día inválido, usar 1=lunes … 7=domingo")
+    with db_session() as conn:
+        conn.execute(
+            "INSERT INTO distribucion_aviso_config (turno, dia_semana, hora) VALUES (?,?,?) "
+            "ON CONFLICT(turno) DO UPDATE SET dia_semana=excluded.dia_semana, hora=excluded.hora",
+            (turno, data.dia_semana, data.hora)
+        )
+    return {"ok": True}
+
+
 # ── Avisos de borradores pendientes ───────────────────────────────────────────
 
 @router.get("/avisos")
 def get_avisos(_user=Depends(require_permiso("distribucion", "ver"))):
     with db_session() as conn:
-        cfg = {r["clave"]: r["valor"] for r in conn.execute(
-            "SELECT clave, valor FROM configuracion WHERE clave IN "
-            "('distribucion_aviso_dia','distribucion_aviso_hora')"
-        ).fetchall()}
-
-        aviso_dia  = int(cfg.get("distribucion_aviso_dia", "4"))   # 1=lun … 7=dom
-        aviso_hora = cfg.get("distribucion_aviso_hora", "18:00")
+        cfg_rows = conn.execute(
+            "SELECT turno, dia_semana, hora FROM distribucion_aviso_config"
+        ).fetchall()
+        cfg = {r["turno"]: {"dia": r["dia_semana"], "hora": r["hora"]} for r in cfg_rows}
 
         ahora = datetime.now()
-        dia_semana_hoy = ahora.isoweekday()  # 1=lunes … 7=domingo
-
-        # Busca borradores de las próximas 5 semanas
         lunes_esta_semana = date.today() - timedelta(days=date.today().weekday())
         borradores = conn.execute(
             """SELECT ds.id, ds.semana_inicio, ds.turno,
@@ -537,10 +565,13 @@ def get_avisos(_user=Depends(require_permiso("distribucion", "ver"))):
 
         avisos = []
         for b in borradores:
+            turno_cfg = cfg.get(b["turno"], {"dia": 4, "hora": "18:00"})
+            aviso_dia  = turno_cfg["dia"]
+            aviso_hora = turno_cfg["hora"]
+
             lunes_semana = date.fromisoformat(b["semana_inicio"])
-            # Día de aviso = lunes de esa semana - (7 - aviso_dia) días
-            # p.ej. aviso_dia=4 (jueves): lunes - 3 días = jueves anterior
-            dias_antes = (7 - aviso_dia) % 7  # días desde el aviso hasta el lunes
+            # Retroceder al día de aviso de la semana anterior al lunes del borrador
+            dias_antes = (7 - aviso_dia) % 7
             fecha_aviso = lunes_semana - timedelta(days=dias_antes)
             dt_aviso = datetime.combine(fecha_aviso, datetime.strptime(aviso_hora, "%H:%M").time())
 

@@ -496,12 +496,18 @@ def _migrate(conn):
             ('dia_cierre_periodo', '6',          'Día del mes en que se cierra automáticamente el período anterior'),
             ('distribucion_reemplaza_planificacion', '0',
              'Si está en 1, los empleados con cargo vinculado a un departamento no generan planificación automática por calendarios'),
-            ('distribucion_aviso_dia', '4',
-             'Día de la semana en que se activa el aviso de borradores pendientes (1=lunes … 7=domingo)'),
-            ('distribucion_aviso_hora', '18:00',
-             'Hora del día en que se activa el aviso de borradores pendientes (formato HH:MM)'),
         ]
     )
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS distribucion_aviso_config (
+        turno       TEXT PRIMARY KEY,
+        dia_semana  INTEGER NOT NULL DEFAULT 4,
+        hora        TEXT NOT NULL DEFAULT '18:00'
+    )""")
+    for turno in ('TM', 'TN', 'CO'):
+        conn.execute(
+            "INSERT OR IGNORE INTO distribucion_aviso_config (turno) VALUES (?)", (turno,)
+        )
 
     # Tabla turnos (puede no existir en instalaciones anteriores al CREATE TABLE IF NOT EXISTS)
     conn.execute("""

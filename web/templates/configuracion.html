@@ -448,6 +448,31 @@
       </table>
     </div>
 
+    <div class="section" data-perm="distribucion:editar">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Aviso de borradores pendientes — por turno</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Día y hora a partir de los cuales se muestra el aviso a los usuarios con acceso a distribución.
+            Se aplica a la semana anterior al borrador pendiente.
+          </div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:.85rem">
+        <thead>
+          <tr style="background:#f8f9fa;text-align:left">
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Turno</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Día de aviso</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Hora</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6"></th>
+          </tr>
+        </thead>
+        <tbody id="dist-aviso-lista">
+          <tr><td colspan="4" style="padding:12px;color:#aaa">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
   </div>
 
   <!-- ── Panel: Premios ── -->
@@ -565,16 +590,6 @@ const PARAMS_META = {
     label: "Distribución reemplaza planificación",
     tipo: "number", min: 0, max: 1, width: "60px",
     descripcion: "1 = al confirmar una semana de distribución, sobreescribe la planificación de esos empleados. 0 = la distribución es independiente y no toca la planificación."
-  },
-  distribucion_aviso_dia: {
-    label: "Aviso distribución — día de la semana",
-    tipo: "number", min: 1, max: 7, width: "60px",
-    descripcion: "Día en que aparece el aviso de borradores pendientes (1=lunes, 2=martes, … 7=domingo). Por defecto 4 (jueves)."
-  },
-  distribucion_aviso_hora: {
-    label: "Aviso distribución — hora",
-    tipo: "text", width: "90px",
-    descripcion: "Hora a partir de la cual aparece el aviso ese día (formato HH:MM, ej: 18:00)."
   }
 };
 
@@ -1642,6 +1657,61 @@ async function eliminarAccesoDist(id) {
   if (r.ok) { toast('Acceso eliminado'); await cargarAccesosDist(); }
 }
 
+const _DIAS_SEMANA = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+const _TURNOS_LABELS = { TM: 'Mañana (TM)', TN: 'Noche (TN)', CO: 'Corrido (CO)' };
+
+async function cargarAvisoDist() {
+  const r = await fetch('/api/distribucion/aviso-config');
+  if (!r.ok) return;
+  const lista = await r.json();
+  const tbody = document.getElementById('dist-aviso-lista');
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:12px;color:#aaa">Sin configuración</td></tr>';
+    return;
+  }
+  const editable = canDo('distribucion', 'editar');
+  tbody.innerHTML = lista.map(c => `
+    <tr id="dist-aviso-row-${c.turno}">
+      <td style="padding:8px 12px"><strong>${_TURNOS_LABELS[c.turno] || c.turno}</strong></td>
+      <td style="padding:8px 12px">${_DIAS_SEMANA[c.dia_semana] || c.dia_semana}</td>
+      <td style="padding:8px 12px">${c.hora}</td>
+      <td style="padding:8px 12px">
+        ${editable ? `<button class="btn btn-sm btn-secondary" onclick="editarAvisoDist('${c.turno}',${c.dia_semana},'${c.hora}')">Editar</button>` : ''}
+      </td>
+    </tr>`).join('');
+}
+
+function editarAvisoDist(turno, diaActual, horaActual) {
+  const tr = document.getElementById(`dist-aviso-row-${turno}`);
+  tr.className = 'fila-edit';
+  const opsDia = _DIAS_SEMANA.slice(1).map((n, i) =>
+    `<option value="${i+1}"${diaActual===i+1?' selected':''}>${n}</option>`).join('');
+  tr.innerHTML = `
+    <td style="padding:8px 12px"><strong>${_TURNOS_LABELS[turno] || turno}</strong></td>
+    <td style="padding:8px 12px">
+      <select id="aviso-dia-${turno}" style="padding:4px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">${opsDia}</select>
+    </td>
+    <td style="padding:8px 12px">
+      <input type="time" id="aviso-hora-${turno}" value="${horaActual}" style="padding:4px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+    </td>
+    <td style="padding:8px 12px">
+      <button class="btn btn-sm btn-primary" onclick="guardarAvisoDist('${turno}')">Guardar</button>
+      <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="cargarAvisoDist()">Cancelar</button>
+    </td>`;
+}
+
+async function guardarAvisoDist(turno) {
+  const dia_semana = parseInt(document.getElementById(`aviso-dia-${turno}`).value);
+  const hora = document.getElementById(`aviso-hora-${turno}`).value;
+  if (!hora) { toast('Ingresá la hora'); return; }
+  const r = await fetch(`/api/distribucion/aviso-config/${turno}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ dia_semana, hora })
+  });
+  if (r.ok) { toast('Aviso actualizado'); await cargarAvisoDist(); }
+  else { const e = await r.json().catch(()=>({})); toast('Error: ' + (e.detail||'desconocido')); }
+}
+
 _loadPerms().then(() => {
   switchCfgTab('sistema');
   cargarParams();
@@ -1653,6 +1723,7 @@ _loadPerms().then(() => {
   cargarLogo();
   cargarNombreEmpresa();
   cargarAccesosDist();
+  cargarAvisoDist();
 });
 </script>
 </body>

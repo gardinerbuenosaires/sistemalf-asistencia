@@ -215,10 +215,10 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             empleados = conn.execute(
                 f"""SELECT e.id, e.nombre, e.apellido, e.tipo
                    FROM empleados e
-                   JOIN turnos_legajo tl ON tl.id = e.turno_id
+                   LEFT JOIN turnos_legajo tl ON tl.id = e.turno_id
                    WHERE e.activo=1 AND e.tipo != 'acceso'
                      AND e.cargo_id IN ({placeholders})
-                     AND tl.nombre = ?
+                     AND (tl.nombre = ? OR e.turno_id IS NULL)
                    ORDER BY e.apellido, e.nombre""",
                 cargo_ids + [turno_legajo]
             ).fetchall()
@@ -226,9 +226,9 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             empleados = conn.execute(
                 """SELECT e.id, e.nombre, e.apellido, e.tipo
                    FROM empleados e
-                   JOIN turnos_legajo tl ON tl.id = e.turno_id
+                   LEFT JOIN turnos_legajo tl ON tl.id = e.turno_id
                    WHERE e.activo=1 AND e.tipo != 'acceso'
-                     AND tl.nombre = ?
+                     AND (tl.nombre = ? OR e.turno_id IS NULL)
                    ORDER BY e.apellido, e.nombre""",
                 (turno_legajo,)
             ).fetchall()

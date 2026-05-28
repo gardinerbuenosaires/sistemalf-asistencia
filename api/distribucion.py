@@ -37,6 +37,11 @@ class UsuarioDistribucionIn(BaseModel):
     turno: str
 
 
+class FrancoIn(BaseModel):
+    empleado_id: int
+    fecha: str
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _lunes(fecha_str: str) -> date:
@@ -168,6 +173,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         ).fetchall()
 
         detalles = []
+        francos = []
         if dist:
             detalles = conn.execute(
                 """SELECT dd.*, e.nombre AS emp_nombre, e.apellido AS emp_apellido,
@@ -177,6 +183,15 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    LEFT JOIN puestos p ON p.id = dd.puesto_id
                    WHERE dd.distribucion_id=?
                    ORDER BY dd.fecha, p.orden""",
+                (dist["id"],)
+            ).fetchall()
+            francos = conn.execute(
+                """SELECT df.id, df.empleado_id, df.fecha,
+                          e.nombre AS emp_nombre, e.apellido AS emp_apellido
+                   FROM distribucion_franco df
+                   LEFT JOIN empleados e ON e.id = df.empleado_id
+                   WHERE df.distribucion_id=?
+                   ORDER BY df.fecha, e.apellido, e.nombre""",
                 (dist["id"],)
             ).fetchall()
 
@@ -210,6 +225,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         "puestos": [dict(r) for r in puestos],
         "empleados": [dict(r) for r in empleados],
         "detalles": [dict(r) for r in detalles],
+        "francos": [dict(r) for r in francos],
         "novedades": novedades,
         "dias": dias,
     }
@@ -305,6 +321,52 @@ def delete_detalle(distribucion_id: int, puesto_id: int, fecha: str,
     return {"ok": True}
 
 
+# ── Franco por empleado (fila inferior de la grilla) ──────────────────────────
+
+@router.post("/semana/{dist_id}/franco")
+def add_franco(dist_id: int, body: FrancoIn, user=Depends(require_permiso("distribucion", "editar"))):
+    uid = int(user["sub"])
+    with db_session() as conn:
+        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        if not dist:
+            raise HTTPException(404, "Distribución no encontrada")
+        if dist["estado"] == "confirmado":
+            raise HTTPException(409, "La distribución ya está confirmada")
+        turnos_ok = _scope_turnos(conn, user, dist["departamento_id"])
+        if dist["turno"] not in turnos_ok:
+            raise HTTPException(403, "Sin acceso")
+        try:
+            cur = conn.execute(
+                """INSERT INTO distribucion_franco (distribucion_id, empleado_id, fecha, creado_por, creado_en)
+                   VALUES (?,?,?,?,datetime('now'))""",
+                (dist_id, body.empleado_id, body.fecha, uid)
+            )
+            conn.execute(
+                "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+                (uid, dist_id)
+            )
+            return {"id": cur.lastrowid}
+        except Exception:
+            raise HTTPException(409, "El empleado ya tiene franco asignado ese día")
+
+
+@router.delete("/semana/{dist_id}/franco/{fid}")
+def delete_franco(dist_id: int, fid: int, user=Depends(require_permiso("distribucion", "editar"))):
+    uid = int(user["sub"])
+    with db_session() as conn:
+        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        if not dist or dist["estado"] == "confirmado":
+            raise HTTPException(409, "No se puede modificar una distribución confirmada")
+        conn.execute(
+            "DELETE FROM distribucion_franco WHERE id=? AND distribucion_id=?", (fid, dist_id)
+        )
+        conn.execute(
+            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            (uid, dist_id)
+        )
+    return {"ok": True}
+
+
 # ── Confirmar distribución → escribe en planificacion ─────────────────────────
 
 @router.post("/semana/{dist_id}/confirmar")
@@ -325,6 +387,9 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
         detalles = conn.execute(
             "SELECT * FROM distribucion_detalle WHERE distribucion_id=?", (dist_id,)
         ).fetchall()
+        francos = conn.execute(
+            "SELECT * FROM distribucion_franco WHERE distribucion_id=?", (dist_id,)
+        ).fetchall()
 
         reemplaza = conn.execute(
             "SELECT valor FROM configuracion WHERE clave='distribucion_reemplaza_planificacion'"
@@ -332,6 +397,27 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
         escribe_planificacion = reemplaza and reemplaza["valor"] == "1"
 
         if escribe_planificacion:
+            for fr in francos:
+                existing_plan = conn.execute(
+                    "SELECT id FROM planificacion WHERE empleado_id=? AND fecha=?",
+                    (fr["empleado_id"], fr["fecha"])
+                ).fetchone()
+                if existing_plan:
+                    conn.execute(
+                        """UPDATE planificacion
+                           SET es_franco=1, horario_id=NULL, origen='distribucion',
+                               modificado_por=?, modificado_en=datetime('now')
+                           WHERE id=?""",
+                        (uid, existing_plan["id"])
+                    )
+                else:
+                    conn.execute(
+                        """INSERT INTO planificacion
+                           (empleado_id, fecha, es_franco, origen, modificado_por, modificado_en)
+                           VALUES (?,?,1,'distribucion',?,datetime('now'))""",
+                        (fr["empleado_id"], fr["fecha"], uid)
+                    )
+
             for det in detalles:
                 existing_plan = conn.execute(
                     "SELECT id, origen FROM planificacion WHERE empleado_id=? AND fecha=?",
@@ -406,7 +492,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             )
             dist_fut_id = cur_fut.lastrowid
 
-            # Copiar detalles mapeando fechas al día de semana equivalente
+            # Copiar detalles y francos mapeando fechas al día de semana equivalente
             for det in detalles:
                 fecha_orig = date.fromisoformat(det["fecha"])
                 dow = fecha_orig.weekday()
@@ -417,6 +503,16 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                        VALUES (?,?,?,?,?,?,datetime('now'))""",
                     (dist_fut_id, det["empleado_id"], det["puesto_id"],
                      fecha_fut, det["es_franco"], uid)
+                )
+            for fr in francos:
+                fecha_orig = date.fromisoformat(fr["fecha"])
+                dow = fecha_orig.weekday()
+                fecha_fut = str(lunes_fut + timedelta(days=dow))
+                conn.execute(
+                    """INSERT OR IGNORE INTO distribucion_franco
+                       (distribucion_id, empleado_id, fecha, creado_por, creado_en)
+                       VALUES (?,?,?,?,datetime('now'))""",
+                    (dist_fut_id, fr["empleado_id"], fecha_fut, uid)
                 )
 
     return {"ok": True}

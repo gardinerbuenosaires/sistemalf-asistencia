@@ -990,6 +990,19 @@ def _migrate(conn):
         )
     """)
 
+    # francos explícitos por empleado (fila FRANCO al pie de la grilla)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS distribucion_franco (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            distribucion_id INTEGER NOT NULL REFERENCES distribucion_semana(id) ON DELETE CASCADE,
+            empleado_id     INTEGER NOT NULL REFERENCES empleados(id),
+            fecha           TEXT    NOT NULL,
+            creado_por      INTEGER REFERENCES usuarios(id),
+            creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(distribucion_id, empleado_id, fecha)
+        )
+    """)
+
     # qué usuarios pueden planificar qué departamento+turno
     conn.execute("""
         CREATE TABLE IF NOT EXISTS usuarios_distribucion (

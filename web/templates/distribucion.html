@@ -96,6 +96,20 @@
     border-radius: 4px; cursor: pointer; font-size: .8rem; color: #666; }
   .btn-add-puesto:hover { background: #f0f0f0; }
 
+  /* Fila FRANCO */
+  .fila-franco td { background: #fffbf0; border-top: 2px solid #ffc107; }
+  .fila-franco td.col-puesto { color: #856404; }
+  .celda-franco-wrap { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
+    min-height: 34px; align-items: center; padding: 4px 2px; }
+  .badge-franco { display: inline-flex; align-items: center; gap: 3px;
+    background: #fff3cd; color: #856404; border: 1px solid #ffc107;
+    border-radius: 12px; padding: 3px 8px; font-size: .72rem; font-weight: bold; }
+  .badge-franco.removable { cursor: pointer; }
+  .badge-franco.removable:hover { background: #ffeaa7; }
+  .btn-add-franco { background: none; border: 1px dashed #ffc107; color: #856404;
+    border-radius: 12px; padding: 3px 10px; font-size: .72rem; cursor: pointer; white-space: nowrap; }
+  .btn-add-franco:hover { background: #fff3cd; }
+
   .empty-state { text-align: center; padding: 60px 20px; color: #888; }
   .empty-state p { margin-bottom: 8px; font-size: .95rem; }
 
@@ -239,6 +253,8 @@ let _detalles = [];
 let _novedades = []; // [{empleado_id, fecha, tipo, descripcion}]
 let _dias = [];
 let _misAccesos = { departamentos: [] };
+let _francos = [];   // [{id, empleado_id, fecha, emp_nombre, emp_apellido}]
+let _francoMode = false; // true cuando el modal de empleado es para la fila FRANCO
 let _editando = null; // { puesto_id, fecha } — celda abierta
 let _puestoEditId = null; // para modal de puesto
 
@@ -316,7 +332,7 @@ function onDeptChange() {
   (dept.turnos || []).forEach(t => {
     const opt = document.createElement('option');
     opt.value = t;
-    opt.textContent = t === 'TM' ? 'Mañana (TM)' : t === 'TN' ? 'Noche (TN)' : 'Corrido (CO)';
+    opt.textContent = t === 'TM' ? 'Mañana (TM)' : t === 'TN' ? 'Noche (TN)' : 'Cortado (CO)';
     selTurno.appendChild(opt);
   });
   if (dept.turnos && dept.turnos.length === 1) {
@@ -351,6 +367,7 @@ async function cargarGrilla() {
     _puestos      = data.puestos || [];
     _empleados    = data.empleados || [];
     _detalles     = data.detalles || [];
+    _francos      = data.francos || [];
     _novedades    = data.novedades || [];
     _dias         = data.dias || [];
     renderGrilla();
@@ -403,7 +420,7 @@ function renderGrilla() {
       Sin puestos definidos. Agregá el primero abajo.
     </td></tr>`;
   } else {
-    tbody.innerHTML = _puestos.map(p => {
+    const puestosHtml = _puestos.map(p => {
       const celdas = _dias.map((d, i) => {
         const esHoy = d === hoyStr;
         const det = _detalles.find(x => x.puesto_id === p.id && x.fecha === d);
@@ -435,6 +452,31 @@ function renderGrilla() {
         ${celdas}
       </tr>`;
     }).join('');
+
+    // Fila FRANCO (empleados de franco ese día)
+    const francoCeldas = _dias.map(d => {
+      const esHoy = d === hoyStr;
+      const enFranco = _francos.filter(f => f.fecha === d);
+      const badges = enFranco.map(f => {
+        const nombre = f.emp_apellido ? `${f.emp_apellido}, ${f.emp_nombre}` : '?';
+        if (puedoEditar) {
+          return `<span class="badge-franco removable" title="Quitar franco" onclick="quitarFranco(${f.id})">${nombre} ✕</span>`;
+        }
+        return `<span class="badge-franco">${nombre}</span>`;
+      }).join('');
+      const addBtn = puedoEditar
+        ? `<button class="btn-add-franco" onclick="abrirModalFranco('${d}')">+ Franco</button>`
+        : '';
+      return `<td class="col-dia${esHoy ? ' hoy' : ''}">
+        <div class="celda-franco-wrap">${badges}${addBtn}</div>
+      </td>`;
+    }).join('');
+    const francoRow = `<tr class="fila-franco">
+      <td class="col-puesto">FRANCO</td>
+      ${francoCeldas}
+    </tr>`;
+
+    tbody.innerHTML = puestosHtml + francoRow;
   }
 
   // Pie
@@ -486,6 +528,7 @@ async function abrirModal(puestoId, fecha) {
       .filter(x => x.fecha === fecha && x.puesto_id !== puestoId && !x.es_franco && x.empleado_id)
       .map(x => x.empleado_id)
   );
+  const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
 
   // Empleados
   _empleados.forEach(e => {
@@ -498,6 +541,9 @@ async function abrirModal(puestoId, fecha) {
       opt.textContent = `${e.apellido}, ${e.nombre}  ·  ${NOV_LABEL[nov.tipo] || nov.tipo}`;
       opt.style.cssText = 'opacity:.55;font-style:italic;cursor:default;pointer-events:none;border-color:#ccc';
       opt.title = nov.descripcion || NOV_LABEL[nov.tipo] || nov.tipo;
+    } else if (francoHoy.has(e.id)) {
+      opt.textContent = `${e.apellido}, ${e.nombre}  ·  FRANCO`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ffc107;color:#856404';
     } else if (yaAsignado) {
       opt.textContent = `${e.apellido}, ${e.nombre}  ·  ya asignado`;
       opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
@@ -534,6 +580,81 @@ function filtrarOpciones() {
 function cerrarModal() {
   document.getElementById('overlay-emp').classList.remove('active');
   _editando = null;
+  _francoMode = false;
+}
+
+// ── Fila FRANCO ───────────────────────────────────────────────────────────────
+async function abrirModalFranco(fecha) {
+  _francoMode = true;
+  _editando = null;
+  const d = new Date(fecha + 'T12:00:00');
+  const labelDia = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('modal-titulo').textContent = 'Asignar Franco';
+  document.getElementById('modal-subtitulo').textContent = labelDia;
+  document.getElementById('modal-search').value = '';
+
+  const asignadosHoy = new Set(
+    _detalles.filter(x => x.fecha === fecha && !x.es_franco && x.empleado_id).map(x => x.empleado_id)
+  );
+  const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
+
+  const lista = document.getElementById('lista-opciones');
+  lista.innerHTML = '';
+
+  _empleados.forEach(e => {
+    const opt = document.createElement('div');
+    opt.className = 'opcion';
+    opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
+    const nov = _novedad(e.id, fecha);
+    if (francoHoy.has(e.id)) {
+      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ya en franco`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ffc107;color:#856404';
+    } else if (nov) {
+      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ${NOV_LABEL[nov.tipo] || nov.tipo}`;
+      opt.style.cssText = 'opacity:.55;font-style:italic;cursor:default;pointer-events:none;border-color:#ccc';
+      opt.title = nov.descripcion || NOV_LABEL[nov.tipo] || nov.tipo;
+    } else if (asignadosHoy.has(e.id)) {
+      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ya asignado`;
+      opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
+    } else {
+      opt.textContent = `${e.apellido}, ${e.nombre}`;
+      opt.onclick = () => agregarFranco(fecha, e.id);
+    }
+    lista.appendChild(opt);
+  });
+
+  document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('modal-search').focus();
+}
+
+async function agregarFranco(fecha, empleadoId) {
+  cerrarModal();
+  try {
+    const distId = await _asegurarDistribucion();
+    const r = await fetch(`/api/distribucion/semana/${distId}/franco`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ empleado_id: empleadoId, fecha })
+    });
+    if (!r.ok) { toast('Error al asignar franco', true); return; }
+    await cargarGrilla();
+    toast('Franco asignado');
+  } catch(e) {
+    toast('Error: ' + e.message, true);
+  }
+}
+
+async function quitarFranco(francoId) {
+  if (!_distribucion) return;
+  if (_distribucion.estado === 'confirmado') { toast('No se puede modificar una distribución confirmada', true); return; }
+  try {
+    const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/franco/${francoId}`, { method: 'DELETE' });
+    if (!r.ok) { toast('Error al quitar franco', true); return; }
+    await cargarGrilla();
+    toast('Franco quitado');
+  } catch(e) {
+    toast('Error', true);
+  }
 }
 
 async function _asegurarDistribucion() {
@@ -706,9 +827,11 @@ async function _recargarNovedades() {
     if (!r.ok) return;
     const data = await r.json();
     const nuevasNovedades = data.novedades || [];
-    // Solo re-renderiza si cambiaron las novedades
-    if (JSON.stringify(nuevasNovedades) !== JSON.stringify(_novedades)) {
+    const nuevosFrancos = data.francos || [];
+    if (JSON.stringify(nuevasNovedades) !== JSON.stringify(_novedades) ||
+        JSON.stringify(nuevosFrancos) !== JSON.stringify(_francos)) {
       _novedades = nuevasNovedades;
+      _francos = nuevosFrancos;
       renderGrilla();
     }
   } catch { /* silencioso */ }

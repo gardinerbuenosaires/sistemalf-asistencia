@@ -101,6 +101,10 @@
   .btn-add-puesto { background: none; border: 1px dashed #aaa; padding: 4px 12px;
     border-radius: 4px; cursor: pointer; font-size: .8rem; color: #666; }
   .btn-add-puesto:hover { background: #f0f0f0; }
+  .btn-edit-puestos { background: none; border: 1px solid #adb5bd; padding: 4px 12px;
+    border-radius: 4px; cursor: pointer; font-size: .8rem; color: #495057; }
+  .btn-edit-puestos:hover { background: #f0f0f0; }
+  .btn-edit-puestos.activo { background: #2c3e50; color: white; border-color: #2c3e50; }
 
   /* Drag-and-drop puestos */
   tr[draggable] td.col-puesto { cursor: grab; }
@@ -276,6 +280,7 @@ let _dias = [];
 let _misAccesos = { departamentos: [] };
 let _francos = [];   // [{id, empleado_id, fecha, emp_nombre, emp_apellido}]
 let _francoMode = false; // true cuando el modal de empleado es para la fila FRANCO
+let _editandoPuestos = false; // modo edición estructural de puestos
 let _editando = null; // { puesto_id, fecha } — celda abierta
 let _puestoEditId = null; // para modal de puesto
 
@@ -370,6 +375,7 @@ function mostrarVacio() {
   document.getElementById('badge-estado').style.display = 'none';
   document.getElementById('btn-confirmar').disabled = true;
   _distribucion = null;
+  _editandoPuestos = false;
 }
 
 // ── Cargar grilla ─────────────────────────────────────────────────────────────
@@ -424,6 +430,7 @@ function renderGrilla() {
 
   const hoyStr = hoy();
   const puedoEditar = canDo('distribucion', 'editar') && !confirmado;
+  const puedeEditarPuestos = puedoEditar && _editandoPuestos;
 
   // Cabecera
   const thead = document.getElementById('thead-dist');
@@ -489,13 +496,13 @@ function renderGrilla() {
         return `<td class="col-dia"><span class="${cls}" title="${title||txt}" ${clickAttr}>${txt}</span></td>`;
       }).join('');
 
-      const accionesPuesto = puedoEditar ? `
+      const accionesPuesto = puedeEditarPuestos ? `
         <span class="puesto-acciones">
           <button class="btn-p" onclick="event.stopPropagation();abrirModalPuesto(${p.id})" title="Editar nombre">✎</button>
           <button class="btn-p del" onclick="event.stopPropagation();eliminarPuesto(${p.id},'${p.nombre.replace(/'/g,"&#39;")}')" title="Desactivar">✕</button>
         </span>` : '';
 
-      const dragAttrs = puedoEditar
+      const dragAttrs = puedeEditarPuestos
         ? `draggable="true" data-pid="${p.id}"
            ondragstart="dragStart(event,${p.id})"
            ondragover="dragOver(event,${p.id})"
@@ -505,7 +512,7 @@ function renderGrilla() {
 
       return `<tr ${dragAttrs}>
         <td class="col-puesto">
-          ${puedoEditar ? '<span class="drag-handle">⠿</span>' : ''}${p.nombre}${accionesPuesto}
+          ${puedeEditarPuestos ? '<span class="drag-handle">⠿</span>' : ''}${p.nombre}${accionesPuesto}
         </td>
         ${celdas}
       </tr>`;
@@ -541,8 +548,13 @@ function renderGrilla() {
   // Pie
   const tfoot = document.getElementById('tfoot-dist');
   if (puedoEditar) {
-    tfoot.innerHTML = `<tr><td colspan="${_dias.length + 1}">
-      <button class="btn-add-puesto" onclick="abrirModalPuesto()">+ Agregar puesto</button>
+    const addBtn = puedeEditarPuestos
+      ? `<button class="btn-add-puesto" onclick="abrirModalPuesto()" style="margin-right:8px">+ Agregar puesto</button>`
+      : '';
+    const toggleLabel = puedeEditarPuestos ? '✓ Listo' : '✎ Editar puestos';
+    const toggleCls = puedeEditarPuestos ? 'btn-edit-puestos activo' : 'btn-edit-puestos';
+    tfoot.innerHTML = `<tr><td colspan="${_dias.length + 1}" style="padding:10px 14px">
+      ${addBtn}<button class="${toggleCls}" onclick="toggleEditPuestos()">${toggleLabel}</button>
     </td></tr>`;
   } else {
     tfoot.innerHTML = '';
@@ -767,6 +779,11 @@ async function quitarAsignacion(puestoId, fecha) {
   } catch(e) {
     toast('Error', true);
   }
+}
+
+function toggleEditPuestos() {
+  _editandoPuestos = !_editandoPuestos;
+  renderGrilla();
 }
 
 // ── Drag-and-drop puestos ─────────────────────────────────────────────────────

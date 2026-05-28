@@ -54,6 +54,12 @@
   thead th.col-puesto { text-align: left; padding-left: 14px; min-width: 140px; width: 160px; }
   thead th.col-dia { min-width: 110px; }
   thead th.hoy { background: #e8f4fd; color: #004085; }
+  .contador-cell { padding: 5px 6px; font-size: .75rem; border-bottom: 2px solid #dee2e6; }
+  .contador-label { padding: 5px 14px; font-size: .72rem; color: #999; font-weight: normal; border-bottom: 2px solid #dee2e6; }
+  .tag-pendiente { display: inline-block; background: #f8f9fa; color: #666;
+    border: 1px solid #dee2e6; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
+  .tag-completo { display: inline-block; background: #d4edda; color: #155724;
+    border: 1px solid #c3e6cb; border-radius: 10px; padding: 2px 8px; font-weight: bold; white-space: nowrap; }
 
   tbody tr:hover td { background: #fafafa; }
   td { padding: 4px 4px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
@@ -421,12 +427,31 @@ function renderGrilla() {
 
   // Cabecera
   const thead = document.getElementById('thead-dist');
+  const total = _empleados.length;
   let thDias = _dias.map((d, i) => {
     const esHoy = d === hoyStr;
     const label = DIAS_ES[i] + '<br><small>' + d.slice(8) + '/' + d.slice(5,7) + '</small>';
     return `<th class="col-dia${esHoy ? ' hoy' : ''}">${label}</th>`;
   }).join('');
-  thead.innerHTML = `<tr><th class="col-puesto">Puesto</th>${thDias}</tr>`;
+
+  const contadores = _dias.map((d, i) => {
+    const esHoy = d === hoyStr;
+    const asignados = new Set(
+      _detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id)
+    );
+    const francos   = new Set(_francos.filter(f => f.fecha === d).map(f => f.empleado_id));
+    const novedades = new Set(_novedades.filter(n => n.fecha === d).map(n => n.empleado_id));
+    const contabilizados = new Set([...asignados, ...francos, ...novedades]);
+    const sinAsignar = total - contabilizados.size;
+    const tag = (total === 0 || sinAsignar > 0)
+      ? `<span class="tag-pendiente">${sinAsignar} sin asignar</span>`
+      : `<span class="tag-completo">✓ Completo</span>`;
+    return `<th class="col-dia contador-cell${esHoy ? ' hoy' : ''}">${tag}</th>`;
+  }).join('');
+
+  thead.innerHTML = `
+    <tr><th class="col-puesto">Puesto</th>${thDias}</tr>
+    <tr><th class="col-puesto contador-label">Disponibles</th>${contadores}</tr>`;
 
   // Cuerpo
   const tbody = document.getElementById('tbody-dist');

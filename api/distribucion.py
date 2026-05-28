@@ -326,56 +326,59 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             "SELECT * FROM distribucion_detalle WHERE distribucion_id=?", (dist_id,)
         ).fetchall()
 
-        # Obtener horario tipo turno para cada empleado
-        for det in detalles:
-            # Buscar en planificacion si ya existe entrada para esa fecha+empleado
-            existing_plan = conn.execute(
-                "SELECT id, origen FROM planificacion WHERE empleado_id=? AND fecha=?",
-                (det["empleado_id"], det["fecha"])
-            ).fetchone()
+        reemplaza = conn.execute(
+            "SELECT valor FROM configuracion WHERE clave='distribucion_reemplaza_planificacion'"
+        ).fetchone()
+        escribe_planificacion = reemplaza and reemplaza["valor"] == "1"
 
-            if det["es_franco"]:
-                if existing_plan:
-                    conn.execute(
-                        """UPDATE planificacion
-                           SET es_franco=1, horario_id=NULL, origen='distribucion',
-                               modificado_por=?, modificado_en=datetime('now')
-                           WHERE id=?""",
-                        (uid, existing_plan["id"])
-                    )
-                else:
-                    conn.execute(
-                        """INSERT INTO planificacion
-                           (empleado_id, fecha, es_franco, origen, modificado_por, modificado_en)
-                           VALUES (?,?,1,'distribucion',?,datetime('now'))""",
-                        (det["empleado_id"], det["fecha"], uid)
-                    )
-            else:
-                # Buscar un horario del turno correcto para el empleado
-                horario = conn.execute(
-                    """SELECT h.id FROM horarios h
-                       JOIN turnos t ON t.id = h.turno_id
-                       WHERE h.activo=1 AND t.nombre=?
-                       LIMIT 1""",
-                    (dist["turno"],)
+        if escribe_planificacion:
+            for det in detalles:
+                existing_plan = conn.execute(
+                    "SELECT id, origen FROM planificacion WHERE empleado_id=? AND fecha=?",
+                    (det["empleado_id"], det["fecha"])
                 ).fetchone()
-                horario_id = horario["id"] if horario else None
 
-                if existing_plan:
-                    conn.execute(
-                        """UPDATE planificacion
-                           SET es_franco=0, horario_id=?, origen='distribucion',
-                               modificado_por=?, modificado_en=datetime('now')
-                           WHERE id=?""",
-                        (horario_id, uid, existing_plan["id"])
-                    )
+                if det["es_franco"]:
+                    if existing_plan:
+                        conn.execute(
+                            """UPDATE planificacion
+                               SET es_franco=1, horario_id=NULL, origen='distribucion',
+                                   modificado_por=?, modificado_en=datetime('now')
+                               WHERE id=?""",
+                            (uid, existing_plan["id"])
+                        )
+                    else:
+                        conn.execute(
+                            """INSERT INTO planificacion
+                               (empleado_id, fecha, es_franco, origen, modificado_por, modificado_en)
+                               VALUES (?,?,1,'distribucion',?,datetime('now'))""",
+                            (det["empleado_id"], det["fecha"], uid)
+                        )
                 else:
-                    conn.execute(
-                        """INSERT INTO planificacion
-                           (empleado_id, fecha, es_franco, horario_id, origen, modificado_por, modificado_en)
-                           VALUES (?,?,0,?,'distribucion',?,datetime('now'))""",
-                        (det["empleado_id"], det["fecha"], horario_id, uid)
-                    )
+                    horario = conn.execute(
+                        """SELECT h.id FROM horarios h
+                           JOIN turnos t ON t.id = h.turno_id
+                           WHERE h.activo=1 AND t.nombre=?
+                           LIMIT 1""",
+                        (dist["turno"],)
+                    ).fetchone()
+                    horario_id = horario["id"] if horario else None
+
+                    if existing_plan:
+                        conn.execute(
+                            """UPDATE planificacion
+                               SET es_franco=0, horario_id=?, origen='distribucion',
+                                   modificado_por=?, modificado_en=datetime('now')
+                               WHERE id=?""",
+                            (horario_id, uid, existing_plan["id"])
+                        )
+                    else:
+                        conn.execute(
+                            """INSERT INTO planificacion
+                               (empleado_id, fecha, es_franco, horario_id, origen, modificado_por, modificado_en)
+                               VALUES (?,?,0,?,'distribucion',?,datetime('now'))""",
+                            (det["empleado_id"], det["fecha"], horario_id, uid)
+                        )
 
         conn.execute(
             "UPDATE distribucion_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now') WHERE id=?",

@@ -666,12 +666,13 @@ def delete_usuario_acceso(uid: int, _user=Depends(require_permiso("distribucion"
 class AvisoConfigIn(BaseModel):
     dia_semana: int
     hora: str
+    activo: bool = True
 
 @router.get("/aviso-config")
 def get_aviso_config(_user=Depends(require_permiso("distribucion", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
-            "SELECT turno, dia_semana, hora FROM distribucion_aviso_config ORDER BY turno"
+            "SELECT turno, dia_semana, hora, activo FROM distribucion_aviso_config ORDER BY turno"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -688,9 +689,9 @@ def update_aviso_config(turno: str, data: AvisoConfigIn,
         raise HTTPException(400, "Día inválido, usar 1=lunes … 7=domingo")
     with db_session() as conn:
         conn.execute(
-            "INSERT INTO distribucion_aviso_config (turno, dia_semana, hora) VALUES (?,?,?) "
-            "ON CONFLICT(turno) DO UPDATE SET dia_semana=excluded.dia_semana, hora=excluded.hora",
-            (turno, data.dia_semana, data.hora)
+            "INSERT INTO distribucion_aviso_config (turno, dia_semana, hora, activo) VALUES (?,?,?,?) "
+            "ON CONFLICT(turno) DO UPDATE SET dia_semana=excluded.dia_semana, hora=excluded.hora, activo=excluded.activo",
+            (turno, data.dia_semana, data.hora, int(data.activo))
         )
     return {"ok": True}
 
@@ -701,9 +702,10 @@ def update_aviso_config(turno: str, data: AvisoConfigIn,
 def get_avisos(_user=Depends(require_permiso("distribucion", "ver"))):
     with db_session() as conn:
         cfg_rows = conn.execute(
-            "SELECT turno, dia_semana, hora FROM distribucion_aviso_config"
+            "SELECT turno, dia_semana, hora, activo FROM distribucion_aviso_config"
         ).fetchall()
-        cfg = {r["turno"]: {"dia": r["dia_semana"], "hora": r["hora"]} for r in cfg_rows}
+        cfg = {r["turno"]: {"dia": r["dia_semana"], "hora": r["hora"], "activo": r["activo"]}
+               for r in cfg_rows}
 
         ahora = datetime.now()
         lunes_esta_semana = date.today() - timedelta(days=date.today().weekday())
@@ -720,7 +722,9 @@ def get_avisos(_user=Depends(require_permiso("distribucion", "ver"))):
 
         avisos = []
         for b in borradores:
-            turno_cfg = cfg.get(b["turno"], {"dia": 4, "hora": "18:00"})
+            turno_cfg = cfg.get(b["turno"], {"dia": 4, "hora": "18:00", "activo": 1})
+            if not turno_cfg.get("activo", 1):
+                continue
             aviso_dia  = turno_cfg["dia"]
             aviso_hora = turno_cfg["hora"]
 

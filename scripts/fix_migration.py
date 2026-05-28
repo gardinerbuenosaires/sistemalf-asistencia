@@ -126,6 +126,8 @@ add_col("roles", "pagina_inicio", "TEXT DEFAULT '/'")
 print("\n[Distribución]")
 if tabla_existe("distribucion_detalle"):
     add_col("distribucion_detalle", "horario_id", "INTEGER REFERENCES horarios(id)")
+if tabla_existe("distribucion_aviso_config"):
+    add_col("distribucion_aviso_config", "activo", "INTEGER NOT NULL DEFAULT 1")
 create_table("distribucion_franco", """
     CREATE TABLE distribucion_franco (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,

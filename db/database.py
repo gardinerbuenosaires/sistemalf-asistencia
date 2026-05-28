@@ -502,7 +502,8 @@ def _migrate(conn):
     conn.execute("""CREATE TABLE IF NOT EXISTS distribucion_aviso_config (
         turno       TEXT PRIMARY KEY,
         dia_semana  INTEGER NOT NULL DEFAULT 4,
-        hora        TEXT NOT NULL DEFAULT '18:00'
+        hora        TEXT NOT NULL DEFAULT '18:00',
+        activo      INTEGER NOT NULL DEFAULT 1
     )""")
     for turno in ('TM', 'TN', 'CO'):
         conn.execute(

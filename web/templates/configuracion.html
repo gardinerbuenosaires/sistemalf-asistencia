@@ -464,6 +464,7 @@
             <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Turno</th>
             <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Día de aviso</th>
             <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Hora</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Estado</th>
             <th style="padding:8px 12px;border-bottom:2px solid #dee2e6"></th>
           </tr>
         </thead>
@@ -1693,19 +1694,23 @@ async function cargarAvisoDist() {
   }
   const editable = canDo('distribucion', 'editar');
   tbody.innerHTML = lista.map(c => `
-    <tr id="dist-aviso-row-${c.turno}">
+    <tr id="dist-aviso-row-${c.turno}" style="${c.activo ? '' : 'opacity:.5'}">
       <td style="padding:8px 12px"><strong>${_TURNOS_LABELS[c.turno] || c.turno}</strong></td>
       <td style="padding:8px 12px">${_DIAS_SEMANA[c.dia_semana] || c.dia_semana}</td>
       <td style="padding:8px 12px">${c.hora}</td>
       <td style="padding:8px 12px">
-        ${editable ? `<button class="btn btn-sm btn-secondary" onclick="editarAvisoDist('${c.turno}',${c.dia_semana},'${c.hora}')">Editar</button>` : ''}
+        <span style="font-size:.78rem;padding:2px 8px;border-radius:10px;background:${c.activo ? '#d1e7dd' : '#f8d7da'};color:${c.activo ? '#0a3622' : '#58151c'}">${c.activo ? 'Activo' : 'Desactivado'}</span>
+      </td>
+      <td style="padding:8px 12px">
+        ${editable ? `<button class="btn btn-sm btn-secondary" onclick="editarAvisoDist('${c.turno}',${c.dia_semana},'${c.hora}',${c.activo})">Editar</button>` : ''}
       </td>
     </tr>`).join('');
 }
 
-function editarAvisoDist(turno, diaActual, horaActual) {
+function editarAvisoDist(turno, diaActual, horaActual, activoActual) {
   const tr = document.getElementById(`dist-aviso-row-${turno}`);
   tr.className = 'fila-edit';
+  tr.style.opacity = '1';
   const opsDia = _DIAS_SEMANA.slice(1).map((n, i) =>
     `<option value="${i+1}"${diaActual===i+1?' selected':''}>${n}</option>`).join('');
   tr.innerHTML = `
@@ -1717,6 +1722,12 @@ function editarAvisoDist(turno, diaActual, horaActual) {
       <input type="time" id="aviso-hora-${turno}" value="${horaActual}" style="padding:4px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
     </td>
     <td style="padding:8px 12px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer">
+        <input type="checkbox" id="aviso-activo-${turno}" ${activoActual ? 'checked' : ''}>
+        Activado
+      </label>
+    </td>
+    <td style="padding:8px 12px">
       <button class="btn btn-sm btn-primary" onclick="guardarAvisoDist('${turno}')">Guardar</button>
       <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="cargarAvisoDist()">Cancelar</button>
     </td>`;
@@ -1725,10 +1736,11 @@ function editarAvisoDist(turno, diaActual, horaActual) {
 async function guardarAvisoDist(turno) {
   const dia_semana = parseInt(document.getElementById(`aviso-dia-${turno}`).value);
   const hora = document.getElementById(`aviso-hora-${turno}`).value;
+  const activo = document.getElementById(`aviso-activo-${turno}`).checked;
   if (!hora) { toast('Ingresá la hora'); return; }
   const r = await fetch(`/api/distribucion/aviso-config/${turno}`, {
     method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ dia_semana, hora })
+    body: JSON.stringify({ dia_semana, hora, activo })
   });
   if (r.ok) { toast('Aviso actualizado'); await cargarAvisoDist(); }
   else { const e = await r.json().catch(()=>({})); toast('Error: ' + (e.detail||'desconocido')); }

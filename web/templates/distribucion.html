@@ -96,6 +96,20 @@
     border-radius: 4px; cursor: pointer; font-size: .8rem; color: #666; }
   .btn-add-puesto:hover { background: #f0f0f0; }
 
+  /* Drag-and-drop puestos */
+  tr[draggable] td.col-puesto { cursor: grab; }
+  tr[draggable]:active td.col-puesto { cursor: grabbing; }
+  tr.drag-over-top td    { border-top: 2px solid #007bff !important; }
+  tr.drag-over-bottom td { border-bottom: 2px solid #007bff !important; }
+  tr.dragging { opacity: .4; }
+  .drag-handle { color: #ccc; margin-right: 6px; font-size: .95rem; pointer-events: none; }
+  .puesto-acciones { display: none; gap: 3px; margin-left: 6px; }
+  tr:hover .puesto-acciones { display: inline-flex; }
+  .btn-p { background: none; border: none; cursor: pointer; font-size: .8rem;
+    padding: 2px 5px; border-radius: 3px; color: #666; line-height: 1; }
+  .btn-p:hover { background: #e9ecef; }
+  .btn-p.del:hover { background: #fde8e8; color: #e74c3c; }
+
   /* Fila FRANCO */
   .fila-franco td { background: #fffbf0; border-top: 2px solid #ffc107; }
   .fila-franco td.col-puesto { color: #856404; }
@@ -448,8 +462,25 @@ function renderGrilla() {
           : '';
         return `<td class="col-dia"><span class="${cls}" title="${title||txt}" ${clickAttr}>${txt}</span></td>`;
       }).join('');
-      return `<tr>
-        <td class="col-puesto">${p.nombre}</td>
+
+      const accionesPuesto = puedoEditar ? `
+        <span class="puesto-acciones">
+          <button class="btn-p" onclick="event.stopPropagation();abrirModalPuesto(${p.id})" title="Editar nombre">✎</button>
+          <button class="btn-p del" onclick="event.stopPropagation();eliminarPuesto(${p.id},'${p.nombre.replace(/'/g,"&#39;")}')" title="Desactivar">✕</button>
+        </span>` : '';
+
+      const dragAttrs = puedoEditar
+        ? `draggable="true" data-pid="${p.id}"
+           ondragstart="dragStart(event,${p.id})"
+           ondragover="dragOver(event,${p.id})"
+           ondrop="dragDrop(event,${p.id})"
+           ondragend="dragEnd()"`
+        : '';
+
+      return `<tr ${dragAttrs}>
+        <td class="col-puesto">
+          ${puedoEditar ? '<span class="drag-handle">⠿</span>' : ''}${p.nombre}${accionesPuesto}
+        </td>
         ${celdas}
       </tr>`;
     }).join('');
@@ -710,6 +741,72 @@ async function quitarAsignacion(puestoId, fecha) {
   } catch(e) {
     toast('Error', true);
   }
+}
+
+// ── Drag-and-drop puestos ─────────────────────────────────────────────────────
+let _dragPid = null;
+
+function dragStart(e, pid) {
+  _dragPid = pid;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.classList.add('dragging');
+}
+
+function dragOver(e, pid) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('#tbody-dist tr').forEach(r => {
+    r.classList.remove('drag-over-top', 'drag-over-bottom');
+  });
+  if (pid === _dragPid) return;
+  const row = document.querySelector(`#tbody-dist tr[data-pid="${pid}"]`);
+  if (!row) return;
+  const fromIdx = _puestos.findIndex(p => p.id === _dragPid);
+  const toIdx   = _puestos.findIndex(p => p.id === pid);
+  row.classList.add(fromIdx < toIdx ? 'drag-over-bottom' : 'drag-over-top');
+}
+
+function dragDrop(e, targetPid) {
+  e.preventDefault();
+  document.querySelectorAll('#tbody-dist tr').forEach(r => {
+    r.classList.remove('drag-over-top', 'drag-over-bottom', 'dragging');
+  });
+  if (_dragPid === null || _dragPid === targetPid) return;
+  const fromIdx = _puestos.findIndex(p => p.id === _dragPid);
+  const toIdx   = _puestos.findIndex(p => p.id === targetPid);
+  if (fromIdx === -1 || toIdx === -1) return;
+  const [moved] = _puestos.splice(fromIdx, 1);
+  _puestos.splice(toIdx, 0, moved);
+  renderGrilla();
+  _guardarOrdenPuestos();
+}
+
+function dragEnd() {
+  document.querySelectorAll('#tbody-dist tr').forEach(r => {
+    r.classList.remove('drag-over-top', 'drag-over-bottom', 'dragging');
+  });
+  _dragPid = null;
+}
+
+async function _guardarOrdenPuestos() {
+  const deptId = Number(document.getElementById('sel-departamento').value);
+  try {
+    await fetch(`/api/distribucion/puestos/reordenar?departamento_id=${deptId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: _puestos.map(p => p.id) })
+    });
+  } catch { /* silencioso */ }
+}
+
+async function eliminarPuesto(pid, nombre) {
+  if (!confirm(`¿Desactivar el puesto "${nombre}"?\n\nNo aparecerá en nuevas distribuciones, pero el historial existente queda intacto.`)) return;
+  try {
+    const r = await fetch(`/api/distribucion/puestos/${pid}`, { method: 'DELETE' });
+    if (!r.ok) { toast('Error al desactivar', true); return; }
+    await cargarGrilla();
+    toast('Puesto desactivado');
+  } catch { toast('Error', true); }
 }
 
 // ── Confirmar distribución ────────────────────────────────────────────────────

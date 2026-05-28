@@ -120,6 +120,22 @@ def create_puesto(body: PuestoIn, user=Depends(require_permiso("distribucion", "
         return {"id": cur.lastrowid}
 
 
+class ReordenarPuestosIn(BaseModel):
+    ids: list[int]
+
+
+@router.put("/puestos/reordenar")
+def reordenar_puestos(departamento_id: int, body: ReordenarPuestosIn,
+                       user=Depends(require_permiso("distribucion", "editar"))):
+    with db_session() as conn:
+        for i, pid in enumerate(body.ids):
+            conn.execute(
+                "UPDATE puestos SET orden=? WHERE id=? AND departamento_id=?",
+                (i * 10, pid, departamento_id)
+            )
+    return {"ok": True}
+
+
 @router.put("/puestos/{pid}")
 def update_puesto(pid: int, body: PuestoIn, user=Depends(require_permiso("distribucion", "editar"))):
     with db_session() as conn:

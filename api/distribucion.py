@@ -29,6 +29,7 @@ class DetalleIn(BaseModel):
     puesto_id: Optional[int] = None
     fecha: str
     es_franco: bool = False
+    horario_id: Optional[int] = None
 
 
 class UsuarioDistribucionIn(BaseModel):
@@ -185,10 +186,11 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         if dist:
             detalles = conn.execute(
                 """SELECT dd.*, e.nombre AS emp_nombre, e.apellido AS emp_apellido,
-                          p.nombre AS puesto_nombre
+                          p.nombre AS puesto_nombre, h.nombre AS horario_nombre
                    FROM distribucion_detalle dd
                    LEFT JOIN empleados e ON e.id = dd.empleado_id
                    LEFT JOIN puestos p ON p.id = dd.puesto_id
+                   LEFT JOIN horarios h ON h.id = dd.horario_id
                    WHERE dd.distribucion_id=?
                    ORDER BY dd.fecha, p.orden""",
                 (dist["id"],)
@@ -209,27 +211,44 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         dept_cargos = conn.execute(
             "SELECT id FROM cargos WHERE departamento_id=?", (departamento_id,)
         ).fetchall()
+        lunes_str = str(lunes)
         if dept_cargos:
             cargo_ids = [c["id"] for c in dept_cargos]
             placeholders = ",".join("?" * len(cargo_ids))
             empleados = conn.execute(
-                f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo
+                f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
+                       (SELECT a.horario_id FROM asignaciones a
+                        WHERE a.empleado_id = e.id
+                          AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
+                        ORDER BY a.fecha_desde DESC LIMIT 1) AS horario_actual_id
                    FROM empleados e
                    JOIN planilla_orden po ON po.empleado_id = e.id AND po.grupo = ?
                    WHERE e.activo=1 AND e.tipo != 'acceso'
                      AND e.cargo_id IN ({placeholders})
                    ORDER BY e.apellido, e.nombre""",
-                [turno] + cargo_ids
+                [lunes_str, lunes_str, turno] + cargo_ids
             ).fetchall()
         else:
             empleados = conn.execute(
-                """SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo
+                """SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
+                       (SELECT a.horario_id FROM asignaciones a
+                        WHERE a.empleado_id = e.id
+                          AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
+                        ORDER BY a.fecha_desde DESC LIMIT 1) AS horario_actual_id
                    FROM empleados e
                    JOIN planilla_orden po ON po.empleado_id = e.id AND po.grupo = ?
                    WHERE e.activo=1 AND e.tipo != 'acceso'
                    ORDER BY e.apellido, e.nombre""",
-                (turno,)
+                (lunes_str, lunes_str, turno)
             ).fetchall()
+
+        horarios = conn.execute(
+            """SELECT h.id, h.nombre, h.tipo, t.nombre AS turno_nombre, t.hora_desde
+               FROM horarios h
+               LEFT JOIN turnos t ON t.id = h.turno_id
+               WHERE h.activo=1
+               ORDER BY COALESCE(t.hora_desde,'00:00'), h.nombre"""
+        ).fetchall()
 
         # Novedades de la semana — fuente: asistencia mensual
         novedades_rows = conn.execute(
@@ -247,6 +266,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         "empleados": [dict(r) for r in empleados],
         "detalles": [dict(r) for r in detalles],
         "francos": [dict(r) for r in francos],
+        "horarios": [dict(r) for r in horarios],
         "novedades": novedades,
         "dias": dias,
     }
@@ -304,18 +324,19 @@ def upsert_detalle(body: DetalleIn, user=Depends(require_permiso("distribucion",
         if existing:
             conn.execute(
                 """UPDATE distribucion_detalle
-                   SET empleado_id=?, es_franco=?, modificado_por=?, modificado_en=datetime('now')
+                   SET empleado_id=?, es_franco=?, horario_id=?,
+                       modificado_por=?, modificado_en=datetime('now')
                    WHERE id=?""",
-                (emp_id, 1 if body.es_franco else 0, uid, existing["id"])
+                (emp_id, 1 if body.es_franco else 0, body.horario_id, uid, existing["id"])
             )
             det_id = existing["id"]
         else:
             cur = conn.execute(
                 """INSERT INTO distribucion_detalle
-                   (distribucion_id, empleado_id, puesto_id, fecha, es_franco, creado_por, creado_en)
-                   VALUES (?,?,?,?,?,?,datetime('now'))""",
+                   (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
+                   VALUES (?,?,?,?,?,?,?,datetime('now'))""",
                 (body.distribucion_id, emp_id, body.puesto_id,
-                 body.fecha, 1 if body.es_franco else 0, uid)
+                 body.fecha, 1 if body.es_franco else 0, body.horario_id, uid)
             )
             det_id = cur.lastrowid
 
@@ -462,14 +483,16 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                             (det["empleado_id"], det["fecha"], uid)
                         )
                 else:
-                    horario = conn.execute(
-                        """SELECT h.id FROM horarios h
-                           JOIN turnos t ON t.id = h.turno_id
-                           WHERE h.activo=1 AND t.nombre=?
-                           LIMIT 1""",
-                        (dist["turno"],)
-                    ).fetchone()
-                    horario_id = horario["id"] if horario else None
+                    horario_id = det["horario_id"]
+                    if not horario_id:
+                        asig = conn.execute(
+                            """SELECT a.horario_id FROM asignaciones a
+                               WHERE a.empleado_id = ? AND a.fecha_desde <= ?
+                                 AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
+                               ORDER BY a.fecha_desde DESC LIMIT 1""",
+                            (det["empleado_id"], det["fecha"], det["fecha"])
+                        ).fetchone()
+                        horario_id = asig["horario_id"] if asig else None
 
                     if existing_plan:
                         conn.execute(
@@ -520,10 +543,10 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                 fecha_fut = str(lunes_fut + timedelta(days=dow))
                 conn.execute(
                     """INSERT INTO distribucion_detalle
-                       (distribucion_id, empleado_id, puesto_id, fecha, es_franco, creado_por, creado_en)
-                       VALUES (?,?,?,?,?,?,datetime('now'))""",
+                       (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
+                       VALUES (?,?,?,?,?,?,?,datetime('now'))""",
                     (dist_fut_id, det["empleado_id"], det["puesto_id"],
-                     fecha_fut, det["es_franco"], uid)
+                     fecha_fut, det["es_franco"], det["horario_id"], uid)
                 )
             for fr in francos:
                 fecha_orig = date.fromisoformat(fr["fecha"])

@@ -279,6 +279,7 @@ let _novedades = []; // [{empleado_id, fecha, tipo, descripcion}]
 let _dias = [];
 let _misAccesos = { departamentos: [] };
 let _francos = [];   // [{id, empleado_id, fecha, emp_nombre, emp_apellido}]
+let _horarios = [];  // [{id, nombre, tipo, turno_nombre}]
 let _francoMode = false; // true cuando el modal de empleado es para la fila FRANCO
 let _editandoPuestos = false; // modo edición estructural de puestos
 let _editando = null; // { puesto_id, fecha } — celda abierta
@@ -395,6 +396,7 @@ async function cargarGrilla() {
     _empleados    = data.empleados || [];
     _detalles     = data.detalles || [];
     _francos      = data.francos || [];
+    _horarios     = data.horarios || [];
     _novedades    = data.novedades || [];
     _dias         = data.dias || [];
     renderGrilla();
@@ -485,7 +487,12 @@ function renderGrilla() {
               txt = `${nombre} · ${nov.tipo}`;
               title = `${nombre} — ${NOV_LABEL[nov.tipo] || nov.tipo}${nov.descripcion ? ': ' + nov.descripcion : ''}`;
             } else {
-              cls += ' asignado'; txt = nombre;
+              cls += ' asignado';
+              const horLabel = det.horario_nombre
+                ? `<br><small style="font-weight:normal;opacity:.75">${det.horario_nombre}</small>`
+                : '';
+              txt = nombre + horLabel;
+              title = det.horario_nombre ? `${nombre} — ${det.horario_nombre}` : nombre;
             }
           }
         }
@@ -624,7 +631,7 @@ async function abrirModal(puestoId, fecha) {
         opt.style.background = '#d4edda';
         opt.style.fontWeight = 'bold';
       }
-      opt.onclick = () => asignar(puestoId, fecha, e.id, false);
+      opt.onclick = () => seleccionarHorario(puestoId, fecha, e.id);
     }
     lista.appendChild(opt);
   });
@@ -650,6 +657,7 @@ function filtrarOpciones() {
 
 function cerrarModal() {
   document.getElementById('overlay-emp').classList.remove('active');
+  document.getElementById('modal-search').placeholder = 'Buscar...';
   _editando = null;
   _francoMode = false;
 }
@@ -744,7 +752,49 @@ async function _asegurarDistribucion() {
   return d.id;
 }
 
-async function asignar(puestoId, fecha, empleadoId, esFranco) {
+function seleccionarHorario(puestoId, fecha, empleadoId) {
+  const emp = _empleados.find(e => e.id === empleadoId);
+  const empNombre = emp ? `${emp.apellido}, ${emp.nombre}` : '';
+
+  document.getElementById('modal-titulo').textContent = 'Seleccioná el horario';
+  document.getElementById('modal-subtitulo').textContent = empNombre;
+  document.getElementById('modal-search').value = '';
+  document.getElementById('modal-search').placeholder = 'Buscar horario...';
+
+  const lista = document.getElementById('lista-opciones');
+  lista.innerHTML = '';
+
+  const back = document.createElement('div');
+  back.className = 'opcion';
+  back.style.cssText = 'color:#2563eb;font-size:.82rem';
+  back.textContent = '← Cambiar empleado';
+  back.onclick = () => abrirModal(puestoId, fecha);
+  lista.appendChild(back);
+
+  if (_horarios.length === 0) {
+    const p = document.createElement('p');
+    p.style.cssText = 'color:#888;font-size:.82rem;padding:8px 0';
+    p.textContent = 'Sin horarios configurados.';
+    lista.appendChild(p);
+    return;
+  }
+
+  _horarios.forEach(h => {
+    const opt = document.createElement('div');
+    opt.className = 'opcion';
+    opt.dataset.nombre = h.nombre.toLowerCase();
+    const turnoLabel = h.turno_nombre
+      ? `<small style="color:#888;margin-left:6px">${h.turno_nombre}</small>`
+      : '';
+    const esActual = emp && h.id === emp.horario_actual_id;
+    opt.innerHTML = `${h.nombre}${turnoLabel}${esActual ? ' <small style="color:#155724">(habitual)</small>' : ''}`;
+    if (esActual) { opt.style.background = '#d4edda'; opt.style.fontWeight = 'bold'; }
+    opt.onclick = () => asignar(puestoId, fecha, empleadoId, false, h.id);
+    lista.appendChild(opt);
+  });
+}
+
+async function asignar(puestoId, fecha, empleadoId, esFranco, horarioId = null) {
   cerrarModal();
   try {
     const distId = await _asegurarDistribucion();
@@ -756,7 +806,8 @@ async function asignar(puestoId, fecha, empleadoId, esFranco) {
         empleado_id: empleadoId || 0,
         puesto_id: puestoId,
         fecha,
-        es_franco: esFranco
+        es_franco: esFranco,
+        horario_id: horarioId
       })
     });
     if (!r.ok) { toast('Error al guardar', true); return; }

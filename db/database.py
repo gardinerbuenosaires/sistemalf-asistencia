@@ -990,6 +990,12 @@ def _migrate(conn):
         )
     """)
 
+    # horario elegido por el chef para cada asignación en la grilla
+    cols_dd = {r[1] for r in conn.execute("PRAGMA table_info(distribucion_detalle)").fetchall()}
+    if "horario_id" not in cols_dd:
+        conn.execute("ALTER TABLE distribucion_detalle ADD COLUMN horario_id INTEGER REFERENCES horarios(id)")
+        logger.info("Migración: columna horario_id agregada a distribucion_detalle")
+
     # francos explícitos por empleado (fila FRANCO al pie de la grilla)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS distribucion_franco (

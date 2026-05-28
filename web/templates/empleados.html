@@ -846,13 +846,6 @@ function buildForm(e = {}, asignaciones = []) {
             </select>
           </div>
           <div class="form-group">
-            <label>Departamento</label>
-            <select id="f-departamento">
-              <option value="">—</option>
-              ${deptosOpts.map(o => `<option value="${o.id}"${e.departamento_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
-            </select>
-          </div>
-          <div class="form-group">
             <label>Categoría</label>
             <select id="f-categoria">
               <option value="">—</option>
@@ -1066,7 +1059,6 @@ function getFormData() {
     fecha_ingreso:    _val("f-ingreso"),
     fecha_egreso:     _val("f-egreso"),
     cargo_id:        parseInt(_val("f-cargo"))        || null,
-    departamento_id: parseInt(_val("f-departamento")) || null,
     categoria_id:    parseInt(_val("f-categoria"))    || null,
     telefono:     _val("f-telefono"),
     email:        _val("f-email"),

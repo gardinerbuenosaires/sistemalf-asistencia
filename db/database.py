@@ -726,6 +726,10 @@ def _migrate(conn):
     if "departamento_id" not in cols_cargos:
         conn.execute("ALTER TABLE cargos ADD COLUMN departamento_id INTEGER REFERENCES departamentos(id)")
         logger.info("Migración: columna departamento_id agregada a cargos")
+    cols_emp_check = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
+    if "departamento_id" in cols_emp_check:
+        conn.execute("ALTER TABLE empleados DROP COLUMN departamento_id")
+        logger.info("Migración: columna departamento_id eliminada de empleados (se deriva de cargos)")
     conn.execute("CREATE TABLE IF NOT EXISTS departamentos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)")
     conn.execute("CREATE TABLE IF NOT EXISTS categorias (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE)")
     cols_emp_now = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}

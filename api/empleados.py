@@ -22,7 +22,6 @@ class EmpleadoIn(BaseModel):
     fecha_ingreso: Optional[str] = None
     fecha_egreso: Optional[str] = None
     cargo_id: Optional[int] = None
-    departamento_id: Optional[int] = None
     categoria_id: Optional[int] = None
     telefono: Optional[str] = None
     email: Optional[str] = None
@@ -65,6 +64,7 @@ def list_empleados(todos: bool = False, sin_acceso: bool = False,
         rows = conn.execute(f"""
             SELECT e.*,
                    c.nombre   AS cargo,
+                   c.departamento_id AS departamento_id,
                    d.nombre   AS departamento,
                    cat.nombre AS categoria,
                    tl.nombre  AS turno,
@@ -72,7 +72,7 @@ def list_empleados(todos: bool = False, sin_acceso: bool = False,
                    ne.nombre  AS nivel_estudio
             FROM empleados e
             LEFT JOIN cargos c           ON c.id  = e.cargo_id
-            LEFT JOIN departamentos d    ON d.id  = e.departamento_id
+            LEFT JOIN departamentos d    ON d.id  = c.departamento_id
             LEFT JOIN categorias cat     ON cat.id = e.categoria_id
             LEFT JOIN turnos_legajo tl   ON tl.id = e.turno_id
             LEFT JOIN sectores_legajo sl ON sl.id = e.sector_id
@@ -116,6 +116,7 @@ def get_empleado(eid: int, _user=Depends(require_permiso("empleados", "ver"))):
         row = conn.execute("""
             SELECT e.*,
                    c.nombre   AS cargo,
+                   c.departamento_id AS departamento_id,
                    d.nombre   AS departamento,
                    cat.nombre AS categoria,
                    tl.nombre  AS turno,
@@ -123,7 +124,7 @@ def get_empleado(eid: int, _user=Depends(require_permiso("empleados", "ver"))):
                    ne.nombre  AS nivel_estudio
             FROM empleados e
             LEFT JOIN cargos c           ON c.id  = e.cargo_id
-            LEFT JOIN departamentos d    ON d.id  = e.departamento_id
+            LEFT JOIN departamentos d    ON d.id  = c.departamento_id
             LEFT JOIN categorias cat     ON cat.id = e.categoria_id
             LEFT JOIN turnos_legajo tl   ON tl.id = e.turno_id
             LEFT JOIN sectores_legajo sl ON sl.id = e.sector_id
@@ -147,7 +148,7 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
         conn.execute(
             """UPDATE empleados SET
                nombre=?, apellido=?, dni=?, cuil=?, fecha_nacimiento=?, fecha_ingreso=?,
-               fecha_egreso=?, cargo_id=?, departamento_id=?, categoria_id=?, telefono=?, email=?,
+               fecha_egreso=?, cargo_id=?, categoria_id=?, telefono=?, email=?,
                domicilio=?, observaciones=?, activo=?, tipo=?,
                nacionalidad=?, estado_civil=?, turno_id=?, sector_id=?,
                contacto_emergencia_nombre=?, contacto_emergencia_telefono=?,
@@ -159,7 +160,7 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
                WHERE id=?""",
             (data.nombre.strip(), data.apellido.strip(), data.dni, data.cuil,
              data.fecha_nacimiento, data.fecha_ingreso, data.fecha_egreso,
-             data.cargo_id, data.departamento_id, data.categoria_id,
+             data.cargo_id, data.categoria_id,
              data.telefono, data.email, data.domicilio, data.observaciones, data.activo, data.tipo,
              data.nacionalidad, data.estado_civil, data.turno_id, data.sector_id,
              data.contacto_emergencia_nombre, data.contacto_emergencia_telefono,
@@ -188,6 +189,7 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
         return dict(conn.execute("""
             SELECT e.*,
                    c.nombre   AS cargo,
+                   c.departamento_id AS departamento_id,
                    d.nombre   AS departamento,
                    cat.nombre AS categoria,
                    tl.nombre  AS turno,
@@ -195,7 +197,7 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
                    ne.nombre  AS nivel_estudio
             FROM empleados e
             LEFT JOIN cargos c           ON c.id  = e.cargo_id
-            LEFT JOIN departamentos d    ON d.id  = e.departamento_id
+            LEFT JOIN departamentos d    ON d.id  = c.departamento_id
             LEFT JOIN categorias cat     ON cat.id = e.categoria_id
             LEFT JOIN turnos_legajo tl   ON tl.id = e.turno_id
             LEFT JOIN sectores_legajo sl ON sl.id = e.sector_id

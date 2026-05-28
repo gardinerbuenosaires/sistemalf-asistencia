@@ -835,6 +835,10 @@ function buildForm(e = {}, asignaciones = []) {
                 `<option value="${o.id}"${e.nivel_estudio_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
             </select>
           </div>
+          <div class="form-group">
+            <label>Código dispositivo</label>
+            <input type="text" id="f-userid" value="${e.user_id||""}" ${e.user_id ? "readonly style='background:#f8f9fa;color:#888'" : ""}>
+          </div>
           <div class="form-group span-2">
             <label>Email</label>
             <input type="email" id="f-email" value="${e.email||""}">
@@ -858,10 +862,6 @@ function buildForm(e = {}, asignaciones = []) {
               <option value="">—</option>
               ${categoriasOpts.map(o => `<option value="${o.id}"${e.categoria_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
             </select>
-          </div>
-          <div class="form-group span-2">
-            <label>Código dispositivo</label>
-            <input type="text" id="f-userid" value="${e.user_id||""}" ${e.user_id ? "readonly style='background:#f8f9fa;color:#888'" : ""}>
           </div>
           <div class="form-group">
             <label>Fecha de ingreso</label>

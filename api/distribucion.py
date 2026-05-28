@@ -217,7 +217,12 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             placeholders = ",".join("?" * len(cargo_ids))
             empleados = conn.execute(
                 f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
-                       (SELECT a.horario_id FROM asignaciones a
+                       (SELECT COALESCE(a.horario_id,
+                            (SELECT cd.horario_id FROM calendarios_dias cd
+                             WHERE cd.calendario_id = a.calendario_id
+                               AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
+                             LIMIT 1))
+                        FROM asignaciones a
                         WHERE a.empleado_id = e.id
                           AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
                         ORDER BY a.fecha_desde DESC LIMIT 1) AS horario_actual_id
@@ -231,7 +236,12 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         else:
             empleados = conn.execute(
                 """SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
-                       (SELECT a.horario_id FROM asignaciones a
+                       (SELECT COALESCE(a.horario_id,
+                            (SELECT cd.horario_id FROM calendarios_dias cd
+                             WHERE cd.calendario_id = a.calendario_id
+                               AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
+                             LIMIT 1))
+                        FROM asignaciones a
                         WHERE a.empleado_id = e.id
                           AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
                         ORDER BY a.fecha_desde DESC LIMIT 1) AS horario_actual_id
@@ -486,7 +496,12 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                     horario_id = det["horario_id"]
                     if not horario_id:
                         asig = conn.execute(
-                            """SELECT a.horario_id FROM asignaciones a
+                            """SELECT COALESCE(a.horario_id,
+                                   (SELECT cd.horario_id FROM calendarios_dias cd
+                                    WHERE cd.calendario_id = a.calendario_id
+                                      AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
+                                    LIMIT 1)) AS horario_id
+                               FROM asignaciones a
                                WHERE a.empleado_id = ? AND a.fecha_desde <= ?
                                  AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
                                ORDER BY a.fecha_desde DESC LIMIT 1""",

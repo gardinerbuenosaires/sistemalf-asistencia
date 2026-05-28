@@ -560,6 +560,11 @@ const PARAMS_META = {
     label: "Día de cierre automático de período",
     tipo: "number", min: 1, max: 28,
     descripcion: "Día del mes en que el sistema cierra automáticamente el período del mes anterior (entre 1 y 28)."
+  },
+  distribucion_reemplaza_planificacion: {
+    label: "Distribución reemplaza planificación",
+    tipo: "number", min: 0, max: 1, width: "60px",
+    descripcion: "1 = al confirmar una semana de distribución, sobreescribe la planificación de esos empleados. 0 = la distribución es independiente y no toca la planificación."
   }
 };
 

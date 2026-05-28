@@ -180,14 +180,6 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             (departamento_id,)
         ).fetchall()
 
-        # Empleados activos (excluye registros de acceso biométrico)
-        empleados = conn.execute(
-            """SELECT e.id, e.nombre, e.apellido, e.tipo
-               FROM empleados e
-               WHERE e.activo=1 AND e.tipo != 'acceso'
-               ORDER BY e.apellido, e.nombre""",
-        ).fetchall()
-
         detalles = []
         francos = []
         if dist:
@@ -211,7 +203,9 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                 (dist["id"],)
             ).fetchall()
 
-        # Filtrar empleados por cargo vinculado al departamento si corresponde
+        # Empleados: filtrar por departamento (vía cargo) y turno del legajo
+        # "CO" en distribución → "CORTADO" en turnos_legajo
+        turno_legajo = {"TM": "TM", "TN": "TN", "CO": "CORTADO"}.get(turno, turno)
         dept_cargos = conn.execute(
             "SELECT id FROM cargos WHERE departamento_id=?", (departamento_id,)
         ).fetchall()
@@ -221,9 +215,22 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             empleados = conn.execute(
                 f"""SELECT e.id, e.nombre, e.apellido, e.tipo
                    FROM empleados e
-                   WHERE e.activo=1 AND e.cargo_id IN ({placeholders})
+                   JOIN turnos_legajo tl ON tl.id = e.turno_id
+                   WHERE e.activo=1 AND e.tipo != 'acceso'
+                     AND e.cargo_id IN ({placeholders})
+                     AND tl.nombre = ?
                    ORDER BY e.apellido, e.nombre""",
-                cargo_ids
+                cargo_ids + [turno_legajo]
+            ).fetchall()
+        else:
+            empleados = conn.execute(
+                """SELECT e.id, e.nombre, e.apellido, e.tipo
+                   FROM empleados e
+                   JOIN turnos_legajo tl ON tl.id = e.turno_id
+                   WHERE e.activo=1 AND e.tipo != 'acceso'
+                     AND tl.nombre = ?
+                   ORDER BY e.apellido, e.nombre""",
+                (turno_legajo,)
             ).fetchall()
 
         # Novedades de la semana — fuente: asistencia mensual

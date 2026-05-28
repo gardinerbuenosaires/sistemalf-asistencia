@@ -266,8 +266,8 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCargo()">+ Nuevo cargo</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th style="width:160px">Acciones</th></tr></thead>
-        <tbody id="tabla-cargos"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
+        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th>Departamento</th><th style="width:160px">Acciones</th></tr></thead>
+        <tbody id="tabla-cargos"><tr><td colspan="4" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
 
@@ -1052,7 +1052,7 @@ async function _guardarItemCatalogo(tbodyId, id) {
 function _renderCargos() {
   const tbody = document.getElementById("tabla-cargos");
   if (!cargos.length) {
-    tbody.innerHTML = `<tr><td colspan="3" style="color:#aaa">Sin registros</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="color:#aaa">Sin registros</td></tr>`;
     return;
   }
   tbody.innerHTML = cargos.map(item => `
@@ -1063,6 +1063,7 @@ function _renderCargos() {
           ${canDo('empleados','editar') ? `onchange="toggleApremio(${item.id}, this.checked)"` : "disabled"}
           style="width:16px;height:16px;cursor:pointer;accent-color:#2c3e50">
       </td>
+      <td style="color:${item.departamento_nombre ? '#333' : '#bbb'};font-size:.85rem">${item.departamento_nombre || '—'}</td>
       <td>
         ${canDo('empleados','editar') ? `
           <button class="btn btn-sm btn-secondary" onclick="editarCargo(${item.id})">Editar</button>
@@ -1076,12 +1077,19 @@ function editarCargo(id) {
   if (!item) return;
   const tr = document.getElementById(`tabla-cargos-${id}`);
   tr.className = "fila-edit";
+  const optsDepto = `<option value="">— Sin departamento —</option>` +
+    deptos.map(d => `<option value="${d.id}"${item.departamento_id === d.id ? ' selected' : ''}>${d.nombre}</option>`).join('');
   tr.innerHTML = `
     <td><input type="text" id="cargo-edit-nombre-${id}" value="${item.nombre.replace(/"/g,'&quot;')}" style="width:100%"
       onkeydown="if(event.key==='Enter')guardarCargo(${id});if(event.key==='Escape')_renderCargos()"></td>
     <td style="text-align:center">
       <input type="checkbox" ${item.aplica_premio ? "checked" : ""} id="cargo-edit-premio-${id}"
         style="width:16px;height:16px;cursor:pointer;accent-color:#2c3e50">
+    </td>
+    <td>
+      <select id="cargo-edit-dept-${id}" style="width:100%;padding:4px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+        ${optsDepto}
+      </select>
     </td>
     <td>
       <button class="btn btn-sm btn-primary" onclick="guardarCargo(${id})">Guardar</button>
@@ -1093,15 +1101,22 @@ function editarCargo(id) {
 async function guardarCargo(id) {
   const nombre = document.getElementById(`cargo-edit-nombre-${id}`).value.trim();
   const aplica_premio = document.getElementById(`cargo-edit-premio-${id}`).checked;
+  const deptVal = document.getElementById(`cargo-edit-dept-${id}`)?.value;
+  const departamento_id = deptVal ? parseInt(deptVal) : null;
   if (!nombre) { toast("Ingresá el nombre"); return; }
   const res = await fetch(`/api/cargos/${id}`, {
     method: "PATCH", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ nombre, aplica_premio })
+    body: JSON.stringify({ nombre, aplica_premio, departamento_id })
   });
   if (res.ok) {
     const updated = await res.json();
     const cargo = cargos.find(c => c.id === id);
-    if (cargo) { cargo.nombre = updated.nombre; cargo.aplica_premio = updated.aplica_premio; }
+    if (cargo) {
+      cargo.nombre = updated.nombre;
+      cargo.aplica_premio = updated.aplica_premio;
+      cargo.departamento_id = updated.departamento_id;
+      cargo.departamento_nombre = updated.departamento_nombre;
+    }
     _renderCargos();
     toast("Cargo actualizado");
   } else {

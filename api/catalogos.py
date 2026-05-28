@@ -14,6 +14,7 @@ class ItemIn(BaseModel):
 class CargoUpdate(BaseModel):
     aplica_premio: bool | None = None
     nombre: str | None = None
+    departamento_id: int | None = None
 
 
 # ── Cargos ────────────────────────────────────────────────────────────────────
@@ -21,7 +22,11 @@ class CargoUpdate(BaseModel):
 @router.get("/api/cargos")
 def list_cargos(_user=Depends(get_current_user)):
     with db_session() as conn:
-        rows = conn.execute("SELECT id, nombre, aplica_premio FROM cargos ORDER BY nombre").fetchall()
+        rows = conn.execute(
+            """SELECT c.id, c.nombre, c.aplica_premio, c.departamento_id, d.nombre AS departamento_nombre
+               FROM cargos c LEFT JOIN departamentos d ON d.id = c.departamento_id
+               ORDER BY c.nombre"""
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -54,7 +59,13 @@ def update_cargo(cid: int, data: CargoUpdate, _user=Depends(require_permiso("emp
                 raise HTTPException(409, "Ya existe un cargo con ese nombre")
         if data.aplica_premio is not None:
             conn.execute("UPDATE cargos SET aplica_premio=? WHERE id=?", (int(data.aplica_premio), cid))
-        row = conn.execute("SELECT id, nombre, aplica_premio FROM cargos WHERE id=?", (cid,)).fetchone()
+        if "departamento_id" in data.model_fields_set:
+            conn.execute("UPDATE cargos SET departamento_id=? WHERE id=?", (data.departamento_id, cid))
+        row = conn.execute(
+            """SELECT c.id, c.nombre, c.aplica_premio, c.departamento_id, d.nombre AS departamento_nombre
+               FROM cargos c LEFT JOIN departamentos d ON d.id = c.departamento_id
+               WHERE c.id=?""", (cid,)
+        ).fetchone()
     return dict(row)
 
 

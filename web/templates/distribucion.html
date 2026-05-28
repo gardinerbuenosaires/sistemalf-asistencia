@@ -56,8 +56,11 @@
   thead th.col-puesto { text-align: left; padding-left: 14px; min-width: 140px; width: 160px; }
   thead th.col-dia { min-width: 130px; }
   thead th.hoy { background: #e8f4fd; color: #004085; }
-  .contador-cell { padding: 5px 6px; font-size: .75rem; border-bottom: 2px solid #dee2e6; }
-  .contador-label { padding: 5px 14px; font-size: .72rem; color: #999; font-weight: normal; border-bottom: 2px solid #dee2e6; }
+  .contador-cell { padding: 5px 6px; font-size: .75rem; border-bottom: 2px solid #dee2e6; background: #f8f9fa; }
+  .contador-cell.hoy { background: #e8f4fd; }
+  .contador-label { padding: 5px 14px; font-size: .72rem; color: #999; font-weight: normal; border-bottom: 2px solid #dee2e6; background: #f8f9fa; }
+  thead tr:first-child th { position: sticky; top: 0; z-index: 5; }
+  thead tr:last-child th  { position: sticky; z-index: 4; }
   .tag-pendiente { display: inline-block; background: #f8f9fa; color: #666;
     border: 1px solid #dee2e6; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
   .tag-completo { display: inline-block; background: #d4edda; color: #155724;
@@ -465,6 +468,12 @@ function renderGrilla() {
   thead.innerHTML = `
     <tr><th class="col-puesto">Puesto</th>${thDias}</tr>
     <tr><th class="col-puesto contador-label">Disponibles</th>${contadores}</tr>`;
+
+  // Sticky: segunda fila del thead justo debajo de la primera
+  requestAnimationFrame(() => {
+    const h = thead.querySelector('tr:first-child')?.offsetHeight ?? 0;
+    thead.querySelectorAll('tr:last-child th').forEach(th => th.style.top = h + 'px');
+  });
 
   // Cuerpo
   const tbody = document.getElementById('tbody-dist');

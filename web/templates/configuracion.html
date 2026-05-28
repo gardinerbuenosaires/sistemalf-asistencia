@@ -1658,7 +1658,7 @@ async function eliminarAccesoDist(id) {
 }
 
 const _DIAS_SEMANA = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-const _TURNOS_LABELS = { TM: 'Mañana (TM)', TN: 'Noche (TN)', CO: 'Corrido (CO)' };
+const _TURNOS_LABELS = { TM: 'Mañana (TM)', TN: 'Noche (TN)', CO: 'Cortado (CO)' };
 
 async function cargarAvisoDist() {
   const r = await fetch('/api/distribucion/aviso-config');

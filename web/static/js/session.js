@@ -32,4 +32,40 @@
     }, 50);
     setTimeout(function () { location.href = '/login'; }, 3000);
   }
+  // ── Aviso de borradores de distribución pendientes ──────────────────────────
+  async function _checkAvisosDistribucion() {
+    try {
+      const res = await _fetch('/api/distribucion/avisos');
+      if (!res.ok) return;
+      const avisos = await res.json();
+      if (!avisos.length) return;
+
+      if (document.getElementById('_dist-aviso-banner')) return;
+
+      const semanas = avisos.map(a => {
+        const [y, m, d] = a.semana_inicio.split('-').map(Number);
+        const lunes = new Date(y, m - 1, d);
+        const domingo = new Date(y, m - 1, d + 6);
+        const fmt = dt => dt.toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
+        return `<strong>${a.departamento_nombre} (${a.turno})</strong>: semana del ${fmt(lunes)} al ${fmt(domingo)}`;
+      }).join('<br>');
+
+      const banner = document.createElement('div');
+      banner.id = '_dist-aviso-banner';
+      banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9000;'
+        + 'background:#856404;color:#fff;padding:12px 20px;font-family:sans-serif;'
+        + 'font-size:.88rem;display:flex;align-items:flex-start;gap:16px;'
+        + 'box-shadow:0 -2px 8px rgba(0,0,0,.2)';
+      banner.innerHTML =
+        '<div style="flex:1"><strong>⚠ Distribución pendiente de confirmar:</strong><br>' + semanas + '</div>'
+        + '<a href="/distribucion" style="color:#fff;font-weight:bold;text-decoration:underline;white-space:nowrap">Ir a Distribución</a>'
+        + '<button onclick="this.parentElement.remove()" style="background:none;border:none;color:#fff;'
+        + 'font-size:1.2rem;cursor:pointer;padding:0 4px;line-height:1" title="Cerrar">×</button>';
+      document.body.appendChild(banner);
+    } catch (_) {}
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    setTimeout(_checkAvisosDistribucion, 1500);
+  });
 })();

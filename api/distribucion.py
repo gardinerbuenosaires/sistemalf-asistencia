@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from db.database import db_session
 from auth.core import require_permiso, get_current_user
 
@@ -504,3 +504,52 @@ def delete_usuario_acceso(uid: int, _user=Depends(require_permiso("distribucion"
     with db_session() as conn:
         conn.execute("DELETE FROM usuarios_distribucion WHERE id=?", (uid,))
     return {"ok": True}
+
+
+# ── Avisos de borradores pendientes ───────────────────────────────────────────
+
+@router.get("/avisos")
+def get_avisos(_user=Depends(require_permiso("distribucion", "ver"))):
+    with db_session() as conn:
+        cfg = {r["clave"]: r["valor"] for r in conn.execute(
+            "SELECT clave, valor FROM configuracion WHERE clave IN "
+            "('distribucion_aviso_dia','distribucion_aviso_hora')"
+        ).fetchall()}
+
+        aviso_dia  = int(cfg.get("distribucion_aviso_dia", "4"))   # 1=lun … 7=dom
+        aviso_hora = cfg.get("distribucion_aviso_hora", "18:00")
+
+        ahora = datetime.now()
+        dia_semana_hoy = ahora.isoweekday()  # 1=lunes … 7=domingo
+
+        # Busca borradores de las próximas 5 semanas
+        lunes_esta_semana = date.today() - timedelta(days=date.today().weekday())
+        borradores = conn.execute(
+            """SELECT ds.id, ds.semana_inicio, ds.turno,
+                      d.nombre AS departamento_nombre
+               FROM distribucion_semana ds
+               JOIN departamentos d ON d.id = ds.departamento_id
+               WHERE ds.estado = 'borrador'
+                 AND ds.semana_inicio >= ?
+               ORDER BY ds.semana_inicio""",
+            (str(lunes_esta_semana),)
+        ).fetchall()
+
+        avisos = []
+        for b in borradores:
+            lunes_semana = date.fromisoformat(b["semana_inicio"])
+            # Día de aviso = lunes de esa semana - (7 - aviso_dia) días
+            # p.ej. aviso_dia=4 (jueves): lunes - 3 días = jueves anterior
+            dias_antes = (7 - aviso_dia) % 7  # días desde el aviso hasta el lunes
+            fecha_aviso = lunes_semana - timedelta(days=dias_antes)
+            dt_aviso = datetime.combine(fecha_aviso, datetime.strptime(aviso_hora, "%H:%M").time())
+
+            if ahora >= dt_aviso:
+                avisos.append({
+                    "id": b["id"],
+                    "semana_inicio": b["semana_inicio"],
+                    "turno": b["turno"],
+                    "departamento_nombre": b["departamento_nombre"],
+                })
+
+    return avisos

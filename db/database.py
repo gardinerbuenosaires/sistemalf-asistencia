@@ -496,6 +496,10 @@ def _migrate(conn):
             ('dia_cierre_periodo', '6',          'Día del mes en que se cierra automáticamente el período anterior'),
             ('distribucion_reemplaza_planificacion', '0',
              'Si está en 1, los empleados con cargo vinculado a un departamento no generan planificación automática por calendarios'),
+            ('distribucion_aviso_dia', '4',
+             'Día de la semana en que se activa el aviso de borradores pendientes (1=lunes … 7=domingo)'),
+            ('distribucion_aviso_hora', '18:00',
+             'Hora del día en que se activa el aviso de borradores pendientes (formato HH:MM)'),
         ]
     )
 

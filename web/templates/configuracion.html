@@ -565,6 +565,16 @@ const PARAMS_META = {
     label: "Distribución reemplaza planificación",
     tipo: "number", min: 0, max: 1, width: "60px",
     descripcion: "1 = al confirmar una semana de distribución, sobreescribe la planificación de esos empleados. 0 = la distribución es independiente y no toca la planificación."
+  },
+  distribucion_aviso_dia: {
+    label: "Aviso distribución — día de la semana",
+    tipo: "number", min: 1, max: 7, width: "60px",
+    descripcion: "Día en que aparece el aviso de borradores pendientes (1=lunes, 2=martes, … 7=domingo). Por defecto 4 (jueves)."
+  },
+  distribucion_aviso_hora: {
+    label: "Aviso distribución — hora",
+    tipo: "text", width: "90px",
+    descripcion: "Hora a partir de la cual aparece el aviso ese día (formato HH:MM, ej: 18:00)."
   }
 };
 

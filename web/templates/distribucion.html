@@ -631,7 +631,7 @@ async function abrirModal(puestoId, fecha) {
         opt.style.background = '#d4edda';
         opt.style.fontWeight = 'bold';
       }
-      opt.onclick = () => seleccionarHorario(puestoId, fecha, e.id);
+      opt.onclick = () => asignar(puestoId, fecha, e.id, false, e.horario_actual_id || null);
     }
     lista.appendChild(opt);
   });
@@ -641,6 +641,12 @@ async function abrirModal(puestoId, fecha) {
     p.style.cssText = 'color:#888;font-size:.82rem;padding:8px 0';
     p.textContent = 'Sin empleados en este departamento/turno. Verificá la configuración.';
     lista.appendChild(p);
+  }
+
+  // Si ya hay un empleado asignado, ir directo al picker de horario
+  if (det && !det.es_franco && det.empleado_id) {
+    seleccionarHorario(puestoId, fecha, det.empleado_id, det.horario_id);
+    return;
   }
 
   document.getElementById('overlay-emp').classList.add('active');
@@ -752,11 +758,13 @@ async function _asegurarDistribucion() {
   return d.id;
 }
 
-function seleccionarHorario(puestoId, fecha, empleadoId) {
+function seleccionarHorario(puestoId, fecha, empleadoId, horarioActualId = null) {
   const emp = _empleados.find(e => e.id === empleadoId);
   const empNombre = emp ? `${emp.apellido}, ${emp.nombre}` : '';
+  const selectedId = horarioActualId ?? emp?.horario_actual_id ?? null;
+  const det = _detalles.find(x => x.puesto_id === puestoId && x.fecha === fecha);
 
-  document.getElementById('modal-titulo').textContent = 'Seleccioná el horario';
+  document.getElementById('modal-titulo').textContent = 'Horario';
   document.getElementById('modal-subtitulo').textContent = empNombre;
   document.getElementById('modal-search').value = '';
   document.getElementById('modal-search').placeholder = 'Buscar horario...';
@@ -771,27 +779,37 @@ function seleccionarHorario(puestoId, fecha, empleadoId) {
   back.onclick = () => abrirModal(puestoId, fecha);
   lista.appendChild(back);
 
+  if (det) {
+    const vac = document.createElement('div');
+    vac.className = 'opcion vaciar-opt';
+    vac.textContent = '✕ Quitar asignación';
+    vac.onclick = () => quitarAsignacion(puestoId, fecha);
+    lista.appendChild(vac);
+  }
+
   if (_horarios.length === 0) {
     const p = document.createElement('p');
     p.style.cssText = 'color:#888;font-size:.82rem;padding:8px 0';
     p.textContent = 'Sin horarios configurados.';
     lista.appendChild(p);
-    return;
+  } else {
+    _horarios.forEach(h => {
+      const opt = document.createElement('div');
+      opt.className = 'opcion';
+      opt.dataset.nombre = h.nombre.toLowerCase();
+      const turnoLabel = h.turno_nombre
+        ? `<small style="color:#888;margin-left:6px">${h.turno_nombre}</small>`
+        : '';
+      const esSel = h.id === selectedId;
+      opt.innerHTML = `${h.nombre}${turnoLabel}`;
+      if (esSel) { opt.style.background = '#d4edda'; opt.style.fontWeight = 'bold'; }
+      opt.onclick = () => asignar(puestoId, fecha, empleadoId, false, h.id);
+      lista.appendChild(opt);
+    });
   }
 
-  _horarios.forEach(h => {
-    const opt = document.createElement('div');
-    opt.className = 'opcion';
-    opt.dataset.nombre = h.nombre.toLowerCase();
-    const turnoLabel = h.turno_nombre
-      ? `<small style="color:#888;margin-left:6px">${h.turno_nombre}</small>`
-      : '';
-    const esActual = emp && h.id === emp.horario_actual_id;
-    opt.innerHTML = `${h.nombre}${turnoLabel}${esActual ? ' <small style="color:#155724">(habitual)</small>' : ''}`;
-    if (esActual) { opt.style.background = '#d4edda'; opt.style.fontWeight = 'bold'; }
-    opt.onclick = () => asignar(puestoId, fecha, empleadoId, false, h.id);
-    lista.appendChild(opt);
-  });
+  document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('modal-search').focus();
 }
 
 async function asignar(puestoId, fecha, empleadoId, esFranco, horarioId = null) {

@@ -62,9 +62,9 @@ def list_empleados(todos: bool = False, sin_acceso: bool = False,
             conds.append("tipo != 'acceso'")
         where = ("WHERE " + " AND ".join(conds)) if conds else ""
         rows = conn.execute(f"""
-            SELECT e.*,
+            SELECT c.departamento_id AS departamento_id,
+                   e.*,
                    c.nombre   AS cargo,
-                   c.departamento_id AS departamento_id,
                    d.nombre   AS departamento,
                    cat.nombre AS categoria,
                    tl.nombre  AS turno,
@@ -114,9 +114,9 @@ def list_fotos_pendientes(_user=Depends(require_permiso("empleados", "editar")))
 def get_empleado(eid: int, _user=Depends(require_permiso("empleados", "ver"))):
     with db_session() as conn:
         row = conn.execute("""
-            SELECT e.*,
+            SELECT c.departamento_id AS departamento_id,
+                   e.*,
                    c.nombre   AS cargo,
-                   c.departamento_id AS departamento_id,
                    d.nombre   AS departamento,
                    cat.nombre AS categoria,
                    tl.nombre  AS turno,
@@ -187,9 +187,9 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
                 (eid, corte)
             )
         return dict(conn.execute("""
-            SELECT e.*,
+            SELECT c.departamento_id AS departamento_id,
+                   e.*,
                    c.nombre   AS cargo,
-                   c.departamento_id AS departamento_id,
                    d.nombre   AS departamento,
                    cat.nombre AS categoria,
                    tl.nombre  AS turno,

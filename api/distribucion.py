@@ -203,9 +203,9 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                 (dist["id"],)
             ).fetchall()
 
-        # Empleados: filtrar por departamento vía cargo.
-        # El turno de cada empleado lo decide el chef en la grilla;
-        # no se filtra por turno porque se define por horario (no es un campo estático).
+        # Empleados: filtrar por turno usando planilla_orden (grupo TM/TN/CO)
+        # que es la misma agrupación que usa la planilla mensual,
+        # y opcionalmente por departamento vía cargo.
         dept_cargos = conn.execute(
             "SELECT id FROM cargos WHERE departamento_id=?", (departamento_id,)
         ).fetchall()
@@ -213,19 +213,22 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             cargo_ids = [c["id"] for c in dept_cargos]
             placeholders = ",".join("?" * len(cargo_ids))
             empleados = conn.execute(
-                f"""SELECT e.id, e.nombre, e.apellido, e.tipo
+                f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo
                    FROM empleados e
+                   JOIN planilla_orden po ON po.empleado_id = e.id AND po.grupo = ?
                    WHERE e.activo=1 AND e.tipo != 'acceso'
                      AND e.cargo_id IN ({placeholders})
                    ORDER BY e.apellido, e.nombre""",
-                cargo_ids
+                [turno] + cargo_ids
             ).fetchall()
         else:
             empleados = conn.execute(
-                """SELECT e.id, e.nombre, e.apellido, e.tipo
+                """SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo
                    FROM empleados e
+                   JOIN planilla_orden po ON po.empleado_id = e.id AND po.grupo = ?
                    WHERE e.activo=1 AND e.tipo != 'acceso'
                    ORDER BY e.apellido, e.nombre""",
+                (turno,)
             ).fetchall()
 
         # Novedades de la semana — fuente: asistencia mensual

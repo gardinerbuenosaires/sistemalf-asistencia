@@ -727,10 +727,17 @@ function _buildPremioAviso(e) {
       </div>
     </div>`;
   } else {
-    const faltan = _diasMinAntiguedad - diasDesdeIngreso;
+    const qualifying = new Date(ingreso);
+    qualifying.setDate(qualifying.getDate() + _diasMinAntiguedad);
+    const primerPeriodo = qualifying.getDate() === 1
+      ? qualifying
+      : new Date(qualifying.getFullYear(), qualifying.getMonth() + 1, 1);
+    const diasHasta = Math.ceil((primerPeriodo - new Date()) / 86400000);
+    const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const labelMes = `${MESES[primerPeriodo.getMonth()]} ${primerPeriodo.getFullYear()}`;
     return `<div class="form-group span-2">
       <div style="padding:8px 12px;border-radius:6px;font-size:.82rem;background:#fff3cd;color:#856404;border:1px solid #ffeaa7">
-        ⏳ Faltan ${faltan} día${faltan !== 1 ? "s" : ""} para cumplir la antigüedad mínima del premio (requiere ${_diasMinAntiguedad} días desde el 1° del mes)
+        ⏳ Primer período elegible: <strong>${labelMes}</strong> — faltan ${diasHasta} día${diasHasta !== 1 ? "s" : ""} (requiere ${_diasMinAntiguedad} días de antigüedad al inicio de cada período)
       </div>
     </div>`;
   }

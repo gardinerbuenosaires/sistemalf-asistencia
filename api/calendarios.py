@@ -339,6 +339,19 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
                     "franco_dia_semana": a["franco_dia_semana"],
                 }
 
+        # Excluir empleados en departamentos gestionados por distribución
+        depts_dist = {r[0] for r in conn.execute(
+            "SELECT id FROM departamentos WHERE usa_distribucion = 1"
+        ).fetchall()}
+        if depts_dist:
+            ph = ",".join("?" * len(depts_dist))
+            eids_dist = {r[0] for r in conn.execute(
+                f"SELECT e.id FROM empleados e JOIN cargos c ON c.id = e.cargo_id"
+                f" WHERE c.departamento_id IN ({ph})",
+                list(depts_dist)
+            ).fetchall()}
+            asig_map = {eid: asig for eid, asig in asig_map.items() if eid not in eids_dist}
+
         # Cargar días de cada calendario (incluye es_franco) y flag feriado
         cal_cache: dict[int, dict] = {}
         cal_feriado: dict[int, int] = {}

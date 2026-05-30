@@ -152,7 +152,7 @@
       <div class="nav-dropdown">
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
-        <a href="/distribucion" data-perm="distribucion:ver">Distribución</a>
+        <a href="/distribucion" data-perm="distribucion:ver">Horarios Cocina</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -613,7 +613,100 @@ async function liberarId(eid, userId) {
   }
 }
 
-function buildCalendarioSection(asignaciones = []) {
+function _getCargoUsaDistribucion(cargoId) {
+  const cargo = cargosOpts.find(c => c.id === parseInt(cargoId));
+  if (!cargo || !cargo.departamento_id) return false;
+  const dept = deptosOpts.find(d => d.id === cargo.departamento_id);
+  return !!(dept && dept.usa_distribucion);
+}
+
+async function onCargoChange() {
+  if (!editandoId) return;
+  const cargoId = document.getElementById("f-cargo")?.value;
+  const sec = document.getElementById("calendario-section");
+  if (!sec) return;
+  const usaDist = _getCargoUsaDistribucion(cargoId);
+  if (usaDist) {
+    const habitual = document.getElementById("sel-horario-habitual");
+    const horarioHabitualId = habitual ? (Number(habitual.value) || null) : null;
+    let asignaciones = [];
+    try {
+      const r = await fetch(`/api/calendarios/asignaciones/empleado/${editandoId}`);
+      if (r.ok) asignaciones = await r.json();
+    } catch {}
+    sec.innerHTML = buildCalendarioSection(asignaciones, true, horarioHabitualId);
+  } else {
+    refrescarCalendarioSection();
+  }
+}
+
+function buildCalendarioSection(asignaciones = [], usaDistribucion = false, horarioHabitualId = null) {
+  if (usaDistribucion) {
+    const puedeEditar = canDo('empleados', 'editar');
+
+    // Detectar calendario activo que va a quedar huérfano
+    const hoyStr = _localDateStr();
+    const calActivo = asignaciones.find(a =>
+      a.fecha_desde <= hoyStr && (a.fecha_hasta === null || a.fecha_hasta > hoyStr)
+    ) || null;
+    const avisoCalendario = calActivo
+      ? `<div style="margin-top:10px;padding:10px 12px;background:#f8d7da;
+            border:1px solid #f5c6cb;border-radius:4px;font-size:.82rem;color:#721c24;line-height:1.5">
+          <strong>Atención:</strong> este empleado tiene el calendario
+          <strong>"${calActivo.calendario_nombre}"</strong> activo.
+          Al guardar se desvinculará desde hoy.
+        </div>`
+      : '';
+
+    const horOpts = `<option value="">— Sin horario habitual —</option>` +
+      horarios.map(h => `<option value="${h.id}" ${h.id === horarioHabitualId ? 'selected' : ''}>${h.nombre}</option>`).join('');
+    const hoy = _localDateStr();
+    const selector = puedeEditar
+      ? `<div style="margin-top:12px">
+          <label style="font-size:.82rem;color:#555;display:block;margin-bottom:4px;font-weight:bold">Horario habitual</label>
+          <select id="sel-horario-habitual"
+            data-original="${horarioHabitualId ?? ''}"
+            onchange="onHorarioHabitualChange()"
+            style="padding:6px 10px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem;min-width:220px">
+            ${horOpts}
+          </select>
+          <small style="color:#888;display:block;margin-top:4px">
+            Se usa como valor por defecto al asignar en horarios de cocina.
+          </small>
+          <div id="horario-habitual-desde" style="display:none;margin-top:10px;padding:10px 14px;
+            background:#fff3cd;border:1px solid #ffc107;border-radius:6px">
+            <div style="font-size:.82rem;font-weight:bold;margin-bottom:6px;color:#856404">
+              Aplicar cambio desde:
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <input type="date" id="input-horario-desde" value="${hoy}"
+                style="padding:5px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.84rem">
+              <button type="button" class="btn btn-primary btn-sm" onclick="guardarHorarioHabitual()">Aplicar</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="cancelarCambioHorario()">Cancelar</button>
+            </div>
+            <small style="color:#856404;display:block;margin-top:6px">
+              La planificación de horarios de cocina se borrará desde esa fecha para este empleado.
+            </small>
+            <div id="horario-habitual-error" style="display:none;margin-top:8px;padding:8px 10px;
+              background:#f8d7da;border:1px solid #f5c6cb;border-radius:4px;
+              color:#721c24;font-size:.82rem;line-height:1.4"></div>
+          </div>
+        </div>`
+      : horarioHabitualId
+        ? `<div style="margin-top:10px;font-size:.83rem;color:#555">Horario habitual: <strong>${horarios.find(h=>h.id===horarioHabitualId)?.nombre || '—'}</strong></div>`
+        : '';
+    return `<div class="form-section">
+      <div class="form-section-title">Planificación</div>
+      <div style="padding:14px 16px;background:#f0f4ff;border:1px solid #c7d7f5;border-radius:6px;color:#4a5a8a;font-size:.86rem">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:1.2rem">📋</span>
+          <span>Departamento gestionado por <strong>horarios de cocina</strong>. El calendario automático está deshabilitado.</span>
+        </div>
+        ${avisoCalendario}
+        ${selector}
+      </div>
+    </div>`;
+  }
   const hoy = _localDateStr();
   const vigente = asignaciones.find(a =>
     a.fecha_desde <= hoy && (a.fecha_hasta === null || a.fecha_hasta > hoy)
@@ -851,7 +944,7 @@ function buildForm(e = {}, asignaciones = []) {
         <div class="form-grid">
           <div class="form-group">
             <label>Cargo</label>
-            <select id="f-cargo">
+            <select id="f-cargo" onchange="onCargoChange()">
               <option value="">—</option>
               ${cargosOpts.map(o => `<option value="${o.id}"${e.cargo_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
             </select>
@@ -997,7 +1090,7 @@ function buildForm(e = {}, asignaciones = []) {
         </div>
       </div>
 
-      <div id="calendario-section">${editandoId ? buildCalendarioSection(asignaciones) : ""}</div>
+      <div id="calendario-section">${editandoId ? buildCalendarioSection(asignaciones, _getCargoUsaDistribucion(e.cargo_id), e.horario_habitual_id ?? null) : ""}</div>
 
       <div class="form-section">
         <div class="form-section-title">Observaciones</div>
@@ -1155,7 +1248,50 @@ async function toggleActivo() {
 async function refrescarCalendarioSection() {
   const r = await fetch(`/api/calendarios/asignaciones/empleado/${editandoId}`);
   const asignaciones = await r.json();
-  document.getElementById("calendario-section").innerHTML = buildCalendarioSection(asignaciones);
+  const cargoId = document.getElementById("f-cargo")?.value;
+  const empR = await fetch(`/api/empleados/${editandoId}`);
+  const empData = empR.ok ? await empR.json() : {};
+  document.getElementById("calendario-section").innerHTML =
+    buildCalendarioSection(asignaciones, _getCargoUsaDistribucion(cargoId), empData.horario_habitual_id ?? null);
+}
+
+function onHorarioHabitualChange() {
+  document.getElementById("horario-habitual-desde").style.display = "";
+}
+
+function cancelarCambioHorario() {
+  const sel = document.getElementById("sel-horario-habitual");
+  sel.value = sel.dataset.original ?? "";
+  document.getElementById("horario-habitual-desde").style.display = "none";
+}
+
+async function guardarHorarioHabitual() {
+  const sel = document.getElementById("sel-horario-habitual");
+  const valor = sel.value;
+  const desde = document.getElementById("input-horario-desde")?.value || null;
+  const horarioId = valor ? Number(valor) : null;
+  const errEl = document.getElementById("horario-habitual-error");
+  errEl.style.display = "none";
+
+  const r = await fetch(`/api/empleados/${editandoId}/horario-habitual`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ horario_id: horarioId, fecha_desde: desde })
+  });
+  if (r.ok) {
+    sel.dataset.original = valor;
+    document.getElementById("horario-habitual-desde").style.display = "none";
+    const msg = desde
+      ? `Horario habitual actualizado · planificación limpiada desde ${desde}`
+      : (horarioId ? "Horario habitual guardado" : "Horario habitual quitado");
+    toast(msg);
+  } else if (r.status === 409) {
+    const err = await r.json().catch(() => ({}));
+    errEl.textContent = err.detail || "Conflicto con planificación confirmada.";
+    errEl.style.display = "block";
+  } else {
+    toast("Error al guardar", true);
+  }
 }
 
 async function quitarCalendario(asignacionId) {

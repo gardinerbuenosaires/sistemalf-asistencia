@@ -146,7 +146,7 @@ def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
             dias_ausentes_sc.append(dia_num)
             continue  # ausente sin confirmar ≠ faltante
 
-        if any(b["tipo"] in ("pendiente", "sin_plan") for b in bloques):
+        if any(b["tipo"] in ("pendiente", "sin_plan", "no_iniciado") for b in bloques):
             dias_faltantes.append(dia_num)
 
     f1_mas1 = (date.fromisoformat(f1) + timedelta(days=1)).isoformat()

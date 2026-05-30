@@ -86,7 +86,9 @@ def delete_cargo(cid: int, _user=Depends(require_permiso("empleados", "editar"))
 @router.get("/api/departamentos")
 def list_departamentos(_user=Depends(get_current_user)):
     with db_session() as conn:
-        rows = conn.execute("SELECT id, nombre FROM departamentos ORDER BY nombre").fetchall()
+        rows = conn.execute(
+            "SELECT id, nombre, usa_distribucion FROM departamentos ORDER BY nombre"
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

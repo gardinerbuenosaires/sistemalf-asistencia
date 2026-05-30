@@ -1,9 +1,12 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta
 from db.database import db_session
 from auth.core import require_permiso
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/planificacion", tags=["planificacion"])
 
@@ -133,8 +136,9 @@ def set_dia(data: PlanDiaIn, _user=Depends(require_permiso("planificacion", "edi
         try:
             from sync.evaluador import evaluar_fecha
             evaluar_fecha(data.fecha, respetar_correcciones=False, solo_empleado_id=data.empleado_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("evaluar_fecha falló al actualizar planificación %s emp %s: %s",
+                         data.fecha, data.empleado_id, e, exc_info=True)
 
     return dict(row)
 

@@ -407,8 +407,9 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS departamentos (
-                id     INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre TEXT NOT NULL UNIQUE
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre           TEXT    NOT NULL UNIQUE,
+                usa_distribucion INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS categorias (
@@ -864,6 +865,7 @@ def _migrate(conn):
         "dom_lng":                        "REAL",
         "dom_mapa":                       "TEXT",
         "foto_path":                      "TEXT",
+        "horario_habitual_id":            "INTEGER REFERENCES horarios(id)",
     }
     # Migrar dom_entre_calles existente a los nuevos campos separados
     cols_after = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
@@ -947,6 +949,9 @@ def _migrate(conn):
     if "activo" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN activo INTEGER NOT NULL DEFAULT 1")
         logger.info("Migración: columna activo agregada a departamentos")
+    if "usa_distribucion" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN usa_distribucion INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna usa_distribucion agregada a departamentos")
 
     # puestos de trabajo dentro de cada departamento
     conn.execute("""
@@ -996,6 +1001,9 @@ def _migrate(conn):
     if "horario_id" not in cols_dd:
         conn.execute("ALTER TABLE distribucion_detalle ADD COLUMN horario_id INTEGER REFERENCES horarios(id)")
         logger.info("Migración: columna horario_id agregada a distribucion_detalle")
+    if "es_comida_personal" not in cols_dd:
+        conn.execute("ALTER TABLE distribucion_detalle ADD COLUMN es_comida_personal INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna es_comida_personal agregada a distribucion_detalle")
 
     # francos explícitos por empleado (fila FRANCO al pie de la grilla)
     conn.execute("""

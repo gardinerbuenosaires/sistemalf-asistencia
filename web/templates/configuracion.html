@@ -158,7 +158,7 @@
       <div class="nav-dropdown">
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
-        <a href="/distribucion" data-perm="distribucion:ver">Distribución</a>
+        <a href="/distribucion" data-perm="distribucion:ver">Horarios Cocina</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -284,8 +284,8 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarDepto()">+ Nuevo departamento</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:160px">Acciones</th></tr></thead>
-        <tbody id="tabla-deptos"><tr><td colspan="2" style="color:#aaa">Cargando...</td></tr></tbody>
+        <thead><tr><th>Nombre</th><th style="width:140px;text-align:center">Distribución</th><th style="width:160px">Acciones</th></tr></thead>
+        <tbody id="tabla-deptos"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
 
@@ -457,7 +457,7 @@
         <div>
           <div class="section-title">Aviso de borradores pendientes — por turno</div>
           <div class="section-desc" style="margin-bottom:0">
-            Día y hora a partir de los cuales se muestra el aviso a los usuarios con acceso a distribución.
+            Día y hora a partir de los cuales se muestra el aviso a los usuarios con acceso a horarios de cocina.
             Se aplica a la semana anterior al borrador pendiente.
           </div>
         </div>
@@ -592,9 +592,9 @@ const PARAMS_META = {
     descripcion: "Día del mes en que el sistema cierra automáticamente el período del mes anterior (entre 1 y 28)."
   },
   distribucion_reemplaza_planificacion: {
-    label: "Distribución reemplaza planificación",
+    label: "Horarios Cocina reemplaza planificación",
     tipo: "number", min: 0, max: 1, width: "60px",
-    descripcion: "1 = al confirmar una semana de distribución, sobreescribe la planificación de esos empleados. 0 = la distribución es independiente y no toca la planificación."
+    descripcion: "1 = al confirmar una semana de horarios de cocina, sobreescribe la planificación de esos empleados. 0 = los horarios de cocina son independientes y no tocan la planificación."
   }
 };
 
@@ -739,7 +739,7 @@ function buildForm(u={}) {
           ['/calendarios', 'Calendarios'],
           ['/empleados', 'Personal'],
           ['/vacaciones', 'Vacaciones'],
-          ['/distribucion', 'Distribución'],
+          ['/distribucion', 'Horarios Cocina'],
           ['/configuracion', 'Configuración'],
         ].map(([v,l]) => `<option value="${v}"${(u.pagina_inicio||'')===v?' selected':''}>${l}</option>`).join('')}
       </select>
@@ -1199,6 +1199,65 @@ async function toggleApremio(id, value) {
   }
 }
 
+function _renderDeptos(lista) {
+  _catStore["tabla-deptos"] = { lista, eliminarFn: "eliminarDepto" };
+  const tbody = document.getElementById("tabla-deptos");
+  if (!lista.length) {
+    tbody.innerHTML = `<tr><td colspan="3" style="color:#aaa">Sin registros</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = lista.map(item => {
+    const activo = item.usa_distribucion;
+    const badge = activo
+      ? `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:.78rem;background:#d1e7dd;color:#0a5c36;font-weight:bold">Activo</span>`
+      : `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:.78rem;background:#f0f0f0;color:#888">Inactivo</span>`;
+    const btn = canDo('distribucion','editar')
+      ? `<button class="btn btn-sm ${activo ? 'btn-secondary' : 'btn-primary'}" style="margin-top:4px"
+           onclick="toggleUsaDistribucion(${item.id})">${activo ? 'Desactivar' : 'Activar'}</button>`
+      : '';
+    return `<tr id="tabla-deptos-${item.id}">
+      <td><strong>${item.nombre}</strong></td>
+      <td style="text-align:center">${badge}${btn}</td>
+      <td>
+        ${canDo('empleados','editar') ? `
+          <button class="btn btn-sm btn-secondary" onclick="_editarItemCatalogo('tabla-deptos',${item.id})">Editar</button>
+          <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="eliminarDepto(${item.id},'${item.nombre.replace(/'/g,"\\'")}')">Eliminar</button>` : ''}
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+async function toggleUsaDistribucion(deptId) {
+  const dept = deptos.find(d => d.id === deptId);
+  if (!dept) return;
+  const activando = !dept.usa_distribucion;
+  if (activando) {
+    const prev = await fetch(`/api/distribucion/departamentos/${deptId}/usa-distribucion-preview`).then(r => r.json());
+    let msg = `¿Activar Horarios Cocina para "${prev.nombre}"?`;
+    if (prev.plan_auto_futuras > 0) {
+      msg += `\n\nSe eliminarán ${prev.plan_auto_futuras} entradas de planificación automática futura de ${prev.emp_afectados} empleado${prev.emp_afectados !== 1 ? 's' : ''}.`;
+    } else {
+      msg += `\n\nNo hay planificación automática futura afectada (${prev.empleados_en_dept} empleado${prev.empleados_en_dept !== 1 ? 's' : ''} en el departamento).`;
+    }
+    if (!confirm(msg)) return;
+  } else {
+    if (!confirm(`¿Desactivar Horarios Cocina para "${dept.nombre}"?\n\nEl calendario automático volverá a gestionar la planificación.`)) return;
+  }
+  const res = await fetch(`/api/distribucion/departamentos/${deptId}/usa-distribucion`, {
+    method: "PUT",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ value: activando })
+  });
+  if (res.ok) {
+    dept.usa_distribucion = activando ? 1 : 0;
+    _renderDeptos(deptos);
+    toast(activando ? "Horarios Cocina activado" : "Horarios Cocina desactivado");
+  } else {
+    const e = await res.json().catch(()=>({}));
+    toast("Error: " + (e.detail || "desconocido"));
+  }
+}
+
 async function cargarCatalogos() {
   const [cRes, dRes, catRes, tlRes, slRes, nlRes] = await Promise.all([
     fetch("/api/cargos"), fetch("/api/departamentos"), fetch("/api/categorias"),
@@ -1208,7 +1267,7 @@ async function cargarCatalogos() {
   deptos = await dRes.json();
   categorias = await catRes.json();
   _renderCargos();
-  _renderCatalogo(deptos, "tabla-deptos", "eliminarDepto");
+  _renderDeptos(deptos);
   _renderCatalogo(categorias, "tabla-categorias", "eliminarCategoria");
   _renderCatalogo(await tlRes.json(), "tabla-turnos-legajo",   "eliminarTurnoLegajo");
   _renderCatalogo(await slRes.json(), "tabla-sectores-legajo", "eliminarSectorLegajo");
@@ -1249,7 +1308,23 @@ function agregarCargo() {
   tbody.appendChild(tr);
   document.getElementById("tabla-cargos-nuevo-nombre").focus();
 }
-function agregarDepto()  { _agregarFilaCatalogo("tabla-deptos", "Ej: Cocina", "crearDepto"); }
+function agregarDepto() {
+  const prev = document.getElementById("tabla-deptos-nueva");
+  if (prev) prev.remove();
+  const tbody = document.getElementById("tabla-deptos");
+  const tr = document.createElement("tr");
+  tr.id = "tabla-deptos-nueva";
+  tr.className = "fila-edit";
+  tr.innerHTML = `
+    <td><input type="text" id="tabla-deptos-nuevo-nombre" placeholder="Ej: Cocina"></td>
+    <td></td>
+    <td>
+      <button class="btn btn-sm btn-primary" onclick="crearDepto()">Guardar</button>
+      <button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="document.getElementById('tabla-deptos-nueva').remove()">Cancelar</button>
+    </td>`;
+  tbody.appendChild(tr);
+  document.getElementById("tabla-deptos-nuevo-nombre").focus();
+}
 
 async function crearCargo() {
   const nombre = document.getElementById("tabla-cargos-nuevo-nombre").value.trim();

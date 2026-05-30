@@ -154,7 +154,7 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
     r = conn.execute("""
         SELECT
             COALESCE(SUM(CASE
-                WHEN rd.estado IN ('ok','tarde','nf','sin_salida')
+                WHEN rd.estado IN ('ok','tarde','tarde_y_sin_salida','tarde_y_salida_anticipada','nf','sin_salida')
                  AND NOT EXISTS (
                      SELECT 1 FROM novedades n
                      WHERE n.empleado_id = rd.empleado_id

@@ -140,6 +140,26 @@
     border-radius: 12px; padding: 3px 10px; font-size: .72rem; cursor: pointer; white-space: nowrap; }
   .btn-add-franco:hover { background: #fff3cd; }
 
+  /* Badges por puesto (multi-empleado) */
+  .celda-puesto-wrap { display: flex; flex-direction: column; align-items: center;
+    gap: 4px; min-height: 34px; padding: 4px 2px; }
+  .celda-puesto-badges { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .badge-emp { display: inline-flex; align-items: center; gap: 3px;
+    background: #d4edda; color: #155724; border: 1px solid #c3e6cb;
+    border-radius: 12px; padding: 3px 8px; font-size: .72rem; font-weight: bold; }
+  .badge-emp.removable { cursor: pointer; }
+  .badge-emp.removable:hover { background: #b7ddc8; }
+  .badge-emp.novedad-V   { background: #95B3D7; color: #000; border-color: #7a9bbf; }
+  .badge-emp.novedad-L   { background: #92CDDC; color: #000; border-color: #6ab5c8; }
+  .badge-emp.novedad-LSG { background: #B1A0C7; color: #000; border-color: #9a88b5; }
+  .badge-emp.novedad-S   { background: #DA9694; color: #000; border-color: #c07a78; }
+  .badge-emp.novedad-E   { background: #FABF8F; color: #000; border-color: #e8a870; }
+  .badge-emp.novedad-ILT { background: #C4D79B; color: #000; border-color: #a8c07a; }
+  .badge-emp.novedad-NF  { background: #F4D03F; color: #7D4900; border-color: #d4b030; }
+  .btn-add-emp { background: none; border: 1px dashed #28a745; color: #155724;
+    border-radius: 12px; padding: 3px 10px; font-size: .72rem; cursor: pointer; white-space: nowrap; }
+  .btn-add-emp:hover { background: #d4edda; }
+
   .empty-state { text-align: center; padding: 60px 20px; color: #888; }
   .empty-state p { margin-bottom: 8px; font-size: .95rem; }
 
@@ -183,7 +203,7 @@
       <div class="nav-dropdown">
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
-        <a href="/distribucion" class="activo" data-perm="distribucion:ver">Distribución</a>
+        <a href="/distribucion" class="activo" data-perm="distribucion:ver">Horarios Cocina</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -224,13 +244,16 @@
     <option value="">— Turno —</option>
   </select>
   <span id="badge-estado" class="badge badge-nuevo" style="display:none"></span>
+  <button id="btn-editar" class="btn btn-secondary" data-perm="distribucion:confirmar"
+    onclick="desconfirmarDistribucion()" style="display:none">Editar</button>
+  <button id="btn-imprimir" class="btn btn-secondary" onclick="imprimirGrilla()" style="display:none">🖨 Imprimir</button>
   <button id="btn-confirmar" class="btn btn-confirmar" data-perm="distribucion:confirmar"
     onclick="confirmarDistribucion()" style="margin-left:auto" disabled>Confirmar semana</button>
 </div>
 
 <main>
   <div id="empty-dept" class="empty-state">
-    <p>Seleccioná un departamento y turno para ver la distribución semanal.</p>
+    <p>Seleccioná un departamento y turno para ver los horarios de cocina.</p>
   </div>
   <div id="grilla-wrap" class="grilla-wrap" style="display:none">
     <table id="tabla-dist">
@@ -283,12 +306,14 @@ let _detalles = [];
 let _novedades = []; // [{empleado_id, fecha, tipo, descripcion}]
 let _dias = [];
 let _misAccesos = { departamentos: [] };
-let _francos = [];   // [{id, empleado_id, fecha, emp_nombre, emp_apellido}]
+let _francos = [];         // [{id, empleado_id, fecha, emp_nombre, emp_apellido}]
+let _comidaPersonal = [];  // [{id, empleado_id, fecha, emp_apellido, emp_nombre}]
 let _horarios = [];  // [{id, nombre, tipo, turno_nombre}]
 let _francoMode = false; // true cuando el modal de empleado es para la fila FRANCO
 let _editandoPuestos = false; // modo edición estructural de puestos
 let _editando = null; // { puesto_id, fecha } — celda abierta
 let _puestoEditId = null; // para modal de puesto
+let _reemplazandoDetId = null; // cuando se cambia horario: det a borrar antes de insertar
 
 const DIAS_ES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const NOV_LABEL = {
@@ -380,6 +405,7 @@ function mostrarVacio() {
   document.getElementById('empty-dept').style.display = '';
   document.getElementById('badge-estado').style.display = 'none';
   document.getElementById('btn-confirmar').disabled = true;
+  document.getElementById('btn-imprimir').style.display = 'none';
   _distribucion = null;
   _editandoPuestos = false;
 }
@@ -394,16 +420,17 @@ async function cargarGrilla() {
   try {
     const qs = `departamento_id=${deptId}&turno=${turno}&semana_inicio=${fmtDate(_lunes)}`;
     const r = await fetch(`/api/distribucion/semana?${qs}`);
-    if (!r.ok) { toast('Error al cargar la distribución', true); return; }
+    if (!r.ok) { toast('Error al cargar los horarios de cocina', true); return; }
     const data = await r.json();
     _distribucion = data.distribucion;
     _puestos      = data.puestos || [];
     _empleados    = data.empleados || [];
-    _detalles     = data.detalles || [];
-    _francos      = data.francos || [];
-    _horarios     = data.horarios || [];
-    _novedades    = data.novedades || [];
-    _dias         = data.dias || [];
+    _detalles       = data.detalles || [];
+    _francos        = data.francos || [];
+    _comidaPersonal = data.comida_personal || [];
+    _horarios       = data.horarios || [];
+    _novedades      = data.novedades || [];
+    _dias           = data.dias || [];
     renderGrilla();
   } catch(e) {
     toast('Error de conexión', true);
@@ -414,6 +441,7 @@ async function cargarGrilla() {
 function renderGrilla() {
   document.getElementById('empty-dept').style.display = 'none';
   document.getElementById('grilla-wrap').style.display = '';
+  document.getElementById('btn-imprimir').style.display = _distribucion ? '' : 'none';
 
   // Badge estado
   const badge = document.getElementById('badge-estado');
@@ -423,17 +451,24 @@ function renderGrilla() {
     badge.textContent = 'Sin guardar';
   } else if (_distribucion.estado === 'confirmado') {
     badge.className = 'badge badge-confirmado';
-    badge.textContent = 'Confirmado';
+    let badgeText = 'Confirmado';
+    if (_distribucion.modificado_por_nombre) {
+      const fecha = _distribucion.modificado_en ? _distribucion.modificado_en.slice(0,16).replace('T',' ') : '';
+      badgeText += ` · ${_distribucion.modificado_por_nombre}${fecha ? ' · ' + fecha : ''}`;
+    }
+    badge.textContent = badgeText;
   } else {
     badge.className = 'badge badge-borrador';
     badge.textContent = 'Borrador';
   }
 
-  // Botón confirmar
-  const btnConf = document.getElementById('btn-confirmar');
+  // Botones confirmar / editar
+  const btnConf  = document.getElementById('btn-confirmar');
+  const btnEditar = document.getElementById('btn-editar');
   const confirmado = _distribucion && _distribucion.estado === 'confirmado';
   btnConf.disabled = confirmado || !_distribucion;
-  btnConf.textContent = confirmado ? 'Ya confirmado' : 'Confirmar semana';
+  btnConf.textContent = 'Confirmar semana';
+  btnEditar.style.display = confirmado && canDo('distribucion', 'confirmar') ? '' : 'none';
 
   const hoyStr = hoy();
   const puedoEditar = canDo('distribucion', 'editar') && !confirmado;
@@ -482,36 +517,37 @@ function renderGrilla() {
     </td></tr>`;
   } else {
     const puestosHtml = _puestos.map(p => {
-      const celdas = _dias.map((d, i) => {
+      const celdas = _dias.map(d => {
         const esHoy = d === hoyStr;
-        const det = _detalles.find(x => x.puesto_id === p.id && x.fecha === d);
-        let cls = 'celda-dist', txt = '+', title = '';
-        if (!puedoEditar) cls += ' readonly';
-        if (det) {
-          if (det.es_franco) {
-            cls += ' franco'; txt = 'FRANCO';
-          } else {
-            const nombre = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?';
-            const nov = det.empleado_id ? _novedad(det.empleado_id, d) : null;
-            if (nov) {
-              cls += ` novedad-${nov.tipo}`;
-              txt = `${nombre} · ${nov.tipo}`;
-              title = `${nombre} — ${NOV_LABEL[nov.tipo] || nov.tipo}${nov.descripcion ? ': ' + nov.descripcion : ''}`;
-            } else {
-              cls += ' asignado';
-              const horLabel = det.horario_nombre
-                ? `<small style="font-weight:normal;font-size:.7rem;opacity:.85;display:block">${det.horario_nombre}</small>`
-                : '';
-              txt = `<span>${nombre}</span>${horLabel}`;
-              title = det.horario_nombre ? `${nombre} — ${det.horario_nombre}` : nombre;
-            }
+        const detsDelDia = _detalles.filter(x => x.puesto_id === p.id && x.fecha === d && !x.es_franco);
+        const badges = detsDelDia.map(det => {
+          const nombre = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?';
+          const nov = det.empleado_id ? _novedad(det.empleado_id, d) : null;
+          let cls = 'badge-emp';
+          let labelTxt = nombre;
+          if (nov) { cls += ` novedad-${nov.tipo}`; labelTxt = `${nombre} · ${nov.tipo}`; }
+          if (puedoEditar) {
+            const horLabel = det.horario_nombre
+              ? `<small style="opacity:.7;font-weight:normal;font-size:.65rem;display:block;line-height:1.2">${det.horario_nombre}</small>` : '';
+            return `<span class="${cls}" style="padding:0;gap:0;align-items:stretch">
+              <span style="padding:4px 5px 4px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start"
+                onclick="editarHorarioDet(${det.id},${p.id},'${d}',${det.empleado_id})"
+                title="Cambiar horario">${labelTxt}${horLabel}</span>
+              <span style="padding:4px 8px 4px 5px;cursor:pointer;color:#c0392b;font-weight:bold;border-left:1px solid rgba(0,0,0,.12);display:flex;align-items:center"
+                onclick="event.stopPropagation();quitarDetalle(${det.id})" title="Quitar">✕</span>
+            </span>`;
           }
-        }
-        if (esHoy) cls += ' hoy';
-        const clickAttr = puedoEditar
-          ? `onclick="abrirModal(${p.id}, '${d}')"`
+          const horLabel = det.horario_nombre
+            ? `<small style="opacity:.7;font-weight:normal;font-size:.65rem;display:block;line-height:1.2">${det.horario_nombre}</small>` : '';
+          return `<span class="${cls}" style="flex-direction:column;align-items:flex-start">${labelTxt}${horLabel}</span>`;
+        }).join('');
+        const addBtn = puedoEditar
+          ? `<button class="btn-add-emp" onclick="abrirModal(${p.id}, '${d}')">+ Agregar</button>`
           : '';
-        return `<td class="col-dia"><span class="${cls}" title="${title||txt}" ${clickAttr}>${txt}</span></td>`;
+        const badgesWrap = badges ? `<div class="celda-puesto-badges">${badges}</div>` : '';
+        return `<td class="col-dia${esHoy ? ' hoy' : ''}">
+          <div class="celda-puesto-wrap">${badgesWrap}${addBtn}</div>
+        </td>`;
       }).join('');
 
       const accionesPuesto = puedeEditarPuestos ? `
@@ -560,7 +596,61 @@ function renderGrilla() {
       ${francoCeldas}
     </tr>`;
 
-    tbody.innerHTML = puestosHtml + francoRow;
+    // Filas de novedades
+    const NOV_LABELS_GRID = { V:'VACACIONES', ILT:'ILT', E:'ENFERMEDAD', L:'LICENCIA',
+                               LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
+                               FD:'FRANCO DÍA', A:'AUSENTE', NF:'NO FICHÓ', CP:'COMIDA PERSO' };
+    const NOV_COLORS = { V:'#cfe2f3', ILT:'#fff2cc', E:'#fff2cc', L:'#d9ead3',
+                         LSG:'#d9ead3', S:'#f4cccc', FT:'#ead1dc', FD:'#ead1dc',
+                         A:'#f4cccc', NF:'#f4cccc', CP:'#fce5cd' };
+
+    const novByTipo = {};
+    for (const n of _novedades) {
+      if (!NOV_LABELS_GRID[n.tipo]) continue;
+      const emp = _empleados.find(e => e.id === n.empleado_id);
+      if (!emp) continue;
+      if (!novByTipo[n.tipo]) novByTipo[n.tipo] = {};
+      if (!novByTipo[n.tipo][n.empleado_id]) novByTipo[n.tipo][n.empleado_id] = { emp, dias: new Set() };
+      novByTipo[n.tipo][n.empleado_id].dias.add(n.fecha);
+    }
+
+    let novedadesHtml = '';
+    for (const [tipo, emps] of Object.entries(novByTipo)) {
+      const color = NOV_COLORS[tipo] || '#f3f3f3';
+      const label = NOV_LABELS_GRID[tipo];
+      const empList = Object.values(emps);
+      // Una fila por empleado con novedad
+      for (const { emp, dias } of empList) {
+        const celdas = _dias.map(d => {
+          const esHoy = d === hoyStr;
+          const tiene = dias.has(d);
+          const nombre = tiene ? (emp.apellido || emp.nombre) : '';
+          return `<td class="col-dia${esHoy ? ' hoy' : ''}" style="background:${tiene ? color : ''};font-size:.78rem">${nombre}</td>`;
+        }).join('');
+        novedadesHtml += `<tr>
+          <td class="col-puesto" style="background:${color};font-size:.78rem;font-weight:bold">${label}</td>
+          ${celdas}
+        </tr>`;
+      }
+    }
+
+    // Fila COMIDA DE PERSONAL
+    const comidaCeldas = _dias.map(d => {
+      const esHoy = d === hoyStr;
+      const asig = _comidaPersonal.find(c => c.fecha === d);
+      const nombre = asig ? (asig.emp_apellido || asig.emp_nombre) : '';
+      if (puedoEditar) {
+        return `<td class="col-dia${esHoy ? ' hoy' : ''}" style="cursor:pointer;background:#fce5cd"
+          onclick="abrirModalComida('${d}')">${nombre ? `<span class="badge-franco removable" title="Cambiar" onclick="event.stopPropagation();abrirModalComida('${d}')">${nombre}</span>` : '<span style="color:#aaa;font-size:.75rem">+ Asignar</span>'}</td>`;
+      }
+      return `<td class="col-dia${esHoy ? ' hoy' : ''}" style="background:#fce5cd">${nombre}</td>`;
+    }).join('');
+    const comidaRow = `<tr>
+      <td class="col-puesto" style="background:#f6b26b;font-weight:bold;font-size:.78rem">COMIDA DE PERSONAL</td>
+      ${comidaCeldas}
+    </tr>`;
+
+    tbody.innerHTML = puestosHtml + francoRow + novedadesHtml + comidaRow;
   }
 
   // Pie
@@ -580,7 +670,7 @@ function renderGrilla() {
 }
 
 // ── Asignar empleado ──────────────────────────────────────────────────────────
-async function abrirModal(puestoId, fecha) {
+function abrirModal(puestoId, fecha) {
   _editando = { puestoId, fecha };
   const puesto = _puestos.find(p => p.id === puestoId);
   const d = new Date(fecha + 'T12:00:00');
@@ -589,43 +679,51 @@ async function abrirModal(puestoId, fecha) {
   document.getElementById('modal-titulo').textContent = puesto ? puesto.nombre : 'Asignar';
   document.getElementById('modal-subtitulo').textContent = labelDia;
   document.getElementById('modal-search').value = '';
+  document.getElementById('modal-search').placeholder = 'Buscar empleado...';
 
-  const det = _detalles.find(x => x.puesto_id === puestoId && x.fecha === fecha);
-
-  const lista = document.getElementById('lista-opciones');
-  lista.innerHTML = '';
-
-  // Opción Franco
-  const oFranco = document.createElement('div');
-  oFranco.className = 'opcion franco-opt';
-  oFranco.textContent = 'FRANCO';
-  oFranco.onclick = () => asignar(puestoId, fecha, null, true);
-  lista.appendChild(oFranco);
-
-  // Opción Vaciar
-  if (det) {
-    const oVac = document.createElement('div');
-    oVac.className = 'opcion vaciar-opt';
-    oVac.textContent = '✕ Quitar asignación';
-    oVac.onclick = () => quitarAsignacion(puestoId, fecha);
-    lista.appendChild(oVac);
-  }
-
-  // Empleados ya asignados a otro puesto este día
-  const asignadosHoy = new Set(
+  const detsEnPuesto = _detalles.filter(x => x.puesto_id === puestoId && x.fecha === fecha && !x.es_franco);
+  const asignadosEnEste = new Set(detsEnPuesto.map(x => x.empleado_id));
+  const activePuestoIds = new Set(_puestos.map(p => p.id));
+  const asignadosEnOtro = new Set(
     _detalles
-      .filter(x => x.fecha === fecha && x.puesto_id !== puestoId && !x.es_franco && x.empleado_id)
+      .filter(x => x.fecha === fecha && x.puesto_id !== puestoId && !x.es_franco && x.empleado_id && activePuestoIds.has(x.puesto_id))
       .map(x => x.empleado_id)
   );
   const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
 
-  // Empleados
+  const lista = document.getElementById('lista-opciones');
+  lista.innerHTML = '';
+
+  // Sección: ya asignados a este puesto (con opción de quitar)
+  if (detsEnPuesto.length > 0) {
+    const sep1 = document.createElement('div');
+    sep1.style.cssText = 'font-size:.75rem;color:#888;padding:4px 0 4px;font-weight:bold';
+    sep1.textContent = 'Ya asignados';
+    lista.appendChild(sep1);
+    detsEnPuesto.forEach(det => {
+      const nombre = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?';
+      const opt = document.createElement('div');
+      opt.className = 'opcion';
+      opt.style.cssText = 'background:#d4edda;border-color:#c3e6cb;display:flex;justify-content:space-between;align-items:center;cursor:pointer';
+      opt.innerHTML = `<span>${nombre}</span><span style="color:#e74c3c;font-weight:bold;font-size:1rem" title="Quitar">✕</span>`;
+      opt.onclick = () => quitarDetalle(det.id);
+      lista.appendChild(opt);
+    });
+    const sep2 = document.createElement('div');
+    sep2.style.cssText = 'font-size:.75rem;color:#888;padding:8px 0 4px;font-weight:bold;border-top:1px solid #eee;margin-top:4px';
+    sep2.textContent = 'Agregar';
+    lista.appendChild(sep2);
+  }
+
+  // Empleados disponibles para agregar
+  let hayDisponibles = false;
   _empleados.forEach(e => {
+    if (asignadosEnEste.has(e.id)) return;
+    hayDisponibles = true;
     const opt = document.createElement('div');
     opt.className = 'opcion';
     opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
     const nov = _novedad(e.id, fecha);
-    const yaAsignado = asignadosHoy.has(e.id);
     if (nov) {
       opt.textContent = `${e.apellido}, ${e.nombre}  ·  ${NOV_LABEL[nov.tipo] || nov.tipo}`;
       opt.style.cssText = 'opacity:.55;font-style:italic;cursor:default;pointer-events:none;border-color:#ccc';
@@ -633,31 +731,21 @@ async function abrirModal(puestoId, fecha) {
     } else if (francoHoy.has(e.id)) {
       opt.textContent = `${e.apellido}, ${e.nombre}  ·  FRANCO`;
       opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ffc107;color:#856404';
-    } else if (yaAsignado) {
-      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ya asignado`;
+    } else if (asignadosEnOtro.has(e.id)) {
+      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ya en otro puesto`;
       opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
     } else {
       opt.textContent = `${e.apellido}, ${e.nombre}`;
-      if (det && !det.es_franco && det.empleado_id === e.id) {
-        opt.style.background = '#d4edda';
-        opt.style.fontWeight = 'bold';
-      }
       opt.onclick = () => asignar(puestoId, fecha, e.id, false, e.horario_actual_id || null);
     }
     lista.appendChild(opt);
   });
 
-  if (_empleados.length === 0) {
+  if (!hayDisponibles && detsEnPuesto.length === 0) {
     const p = document.createElement('p');
     p.style.cssText = 'color:#888;font-size:.82rem;padding:8px 0';
-    p.textContent = 'Sin empleados en este departamento/turno. Verificá la configuración.';
+    p.textContent = 'Sin empleados disponibles en este departamento/turno.';
     lista.appendChild(p);
-  }
-
-  // Si ya hay un empleado asignado, ir directo al picker de horario
-  if (det && !det.es_franco && det.empleado_id) {
-    seleccionarHorario(puestoId, fecha, det.empleado_id, det.horario_id);
-    return;
   }
 
   document.getElementById('overlay-emp').classList.add('active');
@@ -723,6 +811,79 @@ async function abrirModalFranco(fecha) {
   document.getElementById('modal-search').focus();
 }
 
+// ── Comida de personal ────────────────────────────────────────────────────────
+function abrirModalComida(fecha) {
+  const d = new Date(fecha + 'T12:00:00');
+  const labelDia = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('modal-titulo').textContent = 'Comida de personal';
+  document.getElementById('modal-subtitulo').textContent = labelDia;
+  document.getElementById('modal-search').value = '';
+
+  const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
+  const actual = _comidaPersonal.find(c => c.fecha === fecha);
+
+  const lista = document.getElementById('lista-opciones');
+  lista.innerHTML = '';
+
+  // Opción quitar si ya hay asignado
+  if (actual) {
+    const oQuit = document.createElement('div');
+    oQuit.className = 'opcion vaciar-opt';
+    oQuit.textContent = '✕ Quitar asignación';
+    oQuit.onclick = () => quitarComida(fecha);
+    lista.appendChild(oQuit);
+  }
+
+  _empleados.forEach(e => {
+    const opt = document.createElement('div');
+    opt.className = 'opcion';
+    opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
+    const nov = _novedad(e.id, fecha);
+    if (nov) {
+      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ${NOV_LABEL[nov.tipo] || nov.tipo}`;
+      opt.style.cssText = 'opacity:.55;font-style:italic;cursor:default;pointer-events:none;border-color:#ccc';
+    } else if (francoHoy.has(e.id)) {
+      opt.textContent = `${e.apellido}, ${e.nombre}  ·  franco`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ffc107;color:#856404';
+    } else {
+      opt.textContent = `${e.apellido}, ${e.nombre}`;
+      if (actual && actual.empleado_id === e.id) {
+        opt.style.background = '#fce5cd';
+        opt.style.fontWeight = 'bold';
+      }
+      opt.onclick = () => asignarComida(fecha, e.id);
+    }
+    lista.appendChild(opt);
+  });
+
+  document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('modal-search').focus();
+}
+
+async function asignarComida(fecha, empleadoId) {
+  cerrarModal();
+  const distId = await _asegurarDistribucion();
+  const r = await fetch(`/api/distribucion/semana/${distId}/comida-personal`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fecha, empleado_id: empleadoId })
+  });
+  if (!r.ok) { toast('Error al asignar comida de personal', true); return; }
+  const nuevo = await r.json();
+  _comidaPersonal = _comidaPersonal.filter(c => c.fecha !== fecha);
+  _comidaPersonal.push(nuevo);
+  renderGrilla();
+}
+
+async function quitarComida(fecha) {
+  cerrarModal();
+  if (!_distribucion) return;
+  const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/comida-personal/${fecha}`, { method: 'DELETE' });
+  if (!r.ok) { toast('Error al quitar comida de personal', true); return; }
+  _comidaPersonal = _comidaPersonal.filter(c => c.fecha !== fecha);
+  renderGrilla();
+}
+
 async function agregarFranco(fecha, empleadoId) {
   cerrarModal();
   try {
@@ -742,7 +903,7 @@ async function agregarFranco(fecha, empleadoId) {
 
 async function quitarFranco(francoId) {
   if (!_distribucion) return;
-  if (_distribucion.estado === 'confirmado') { toast('No se puede modificar una distribución confirmada', true); return; }
+  if (_distribucion.estado === 'confirmado') { toast('No se puede modificar horarios confirmados', true); return; }
   try {
     const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/franco/${francoId}`, { method: 'DELETE' });
     if (!r.ok) { toast('Error al quitar franco', true); return; }
@@ -762,18 +923,16 @@ async function _asegurarDistribucion() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ departamento_id: Number(deptId), turno, semana_inicio: fmtDate(_lunes) })
   });
-  if (!r.ok) throw new Error('No se pudo crear la distribución');
+  if (!r.ok) throw new Error('No se pudo crear el registro');
   const d = await r.json();
   // Recargar para obtener el objeto completo
   await cargarGrilla();
   return d.id;
 }
 
-function seleccionarHorario(puestoId, fecha, empleadoId, horarioActualId = null) {
+function abrirHorarioPicker(puestoId, fecha, empleadoId) {
   const emp = _empleados.find(e => e.id === empleadoId);
   const empNombre = emp ? `${emp.apellido}, ${emp.nombre}` : '';
-  const selectedId = horarioActualId ?? emp?.horario_actual_id ?? null;
-  const det = _detalles.find(x => x.puesto_id === puestoId && x.fecha === fecha);
 
   document.getElementById('modal-titulo').textContent = 'Horario';
   document.getElementById('modal-subtitulo').textContent = empNombre;
@@ -786,23 +945,16 @@ function seleccionarHorario(puestoId, fecha, empleadoId, horarioActualId = null)
   const back = document.createElement('div');
   back.className = 'opcion';
   back.style.cssText = 'color:#2563eb;font-size:.82rem';
-  back.textContent = '← Cambiar empleado';
+  back.textContent = '← Volver';
   back.onclick = () => abrirModal(puestoId, fecha);
   lista.appendChild(back);
 
-  if (det) {
-    const vac = document.createElement('div');
-    vac.className = 'opcion vaciar-opt';
-    vac.textContent = '✕ Quitar asignación';
-    vac.onclick = () => quitarAsignacion(puestoId, fecha);
-    lista.appendChild(vac);
-  }
-
   if (_horarios.length === 0) {
-    const p = document.createElement('p');
-    p.style.cssText = 'color:#888;font-size:.82rem;padding:8px 0';
-    p.textContent = 'Sin horarios configurados.';
-    lista.appendChild(p);
+    const sin = document.createElement('div');
+    sin.className = 'opcion';
+    sin.textContent = 'Sin horario asignado';
+    sin.onclick = () => asignar(puestoId, fecha, empleadoId, false, null);
+    lista.appendChild(sin);
   } else {
     _horarios.forEach(h => {
       const opt = document.createElement('div');
@@ -811,7 +963,7 @@ function seleccionarHorario(puestoId, fecha, empleadoId, horarioActualId = null)
       const turnoLabel = h.turno_nombre
         ? `<small style="color:#888;margin-left:6px">${h.turno_nombre}</small>`
         : '';
-      const esSel = h.id === selectedId;
+      const esSel = h.id === (emp?.horario_actual_id ?? null);
       opt.innerHTML = `${h.nombre}${turnoLabel}`;
       if (esSel) { opt.style.background = '#d4edda'; opt.style.fontWeight = 'bold'; }
       opt.onclick = () => asignar(puestoId, fecha, empleadoId, false, h.id);
@@ -823,10 +975,20 @@ function seleccionarHorario(puestoId, fecha, empleadoId, horarioActualId = null)
   document.getElementById('modal-search').focus();
 }
 
+function editarHorarioDet(detId, puestoId, fecha, empleadoId) {
+  _reemplazandoDetId = detId;
+  abrirHorarioPicker(puestoId, fecha, empleadoId);
+}
+
 async function asignar(puestoId, fecha, empleadoId, esFranco, horarioId = null) {
+  const detAReemplazar = _reemplazandoDetId;
+  _reemplazandoDetId = null;
   cerrarModal();
   try {
     const distId = await _asegurarDistribucion();
+    if (detAReemplazar) {
+      await fetch(`/api/distribucion/detalle/${detAReemplazar}`, { method: 'DELETE' });
+    }
     const r = await fetch('/api/distribucion/detalle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -847,12 +1009,11 @@ async function asignar(puestoId, fecha, empleadoId, esFranco, horarioId = null) 
   }
 }
 
-async function quitarAsignacion(puestoId, fecha) {
+async function quitarDetalle(detId) {
   cerrarModal();
   if (!_distribucion) return;
   try {
-    const qs = `distribucion_id=${_distribucion.id}&puesto_id=${puestoId}&fecha=${fecha}`;
-    const r = await fetch(`/api/distribucion/detalle?${qs}`, { method: 'DELETE' });
+    const r = await fetch(`/api/distribucion/detalle/${detId}`, { method: 'DELETE' });
     if (!r.ok) { toast('Error al quitar', true); return; }
     await cargarGrilla();
     toast('Quitado');
@@ -923,7 +1084,7 @@ async function _guardarOrdenPuestos() {
 }
 
 async function eliminarPuesto(pid, nombre) {
-  if (!confirm(`¿Desactivar el puesto "${nombre}"?\n\nNo aparecerá en nuevas distribuciones, pero el historial existente queda intacto.`)) return;
+  if (!confirm(`¿Desactivar el puesto "${nombre}"?\n\nNo aparecerá en nuevos horarios de cocina, pero el historial existente queda intacto.`)) return;
   try {
     const r = await fetch(`/api/distribucion/puestos/${pid}`, { method: 'DELETE' });
     if (!r.ok) { toast('Error al desactivar', true); return; }
@@ -933,9 +1094,150 @@ async function eliminarPuesto(pid, nombre) {
 }
 
 // ── Confirmar distribución ────────────────────────────────────────────────────
+async function desconfirmarDistribucion() {
+  if (!_distribucion) return;
+  if (!confirm('¿Volvés la semana a borrador para editarla?\nNecesitarás confirmarla de nuevo cuando termines.')) return;
+  try {
+    const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/desconfirmar`, { method: 'POST' });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      toast(err.detail || 'Error al desconfirmar', true);
+      return;
+    }
+    await cargarGrilla();
+    toast('Semana vuelta a borrador — podés editarla y re-confirmar');
+  } catch(e) {
+    toast('Error de conexión', true);
+  }
+}
+
+async function imprimirGrilla() {
+  if (!_distribucion) return;
+
+  const DIAS_CORTOS = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
+  const NOV_LABELS = { V:'VACACIONES', ILT:'ILT', E:'ENFERMEDAD', L:'LICENCIA',
+                       LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
+                       FD:'FRANCO DÍA', A:'AUSENTE', NF:'NO FICHÓ', CP:'COMIDA PERSO' };
+
+  // Una fila por puesto; nombres separados por coma; omitir si vacía toda la semana
+  const filasPuesto = _puestos.map(p => {
+    const dias = Object.fromEntries(_dias.map(d => {
+      const nombres = _detalles
+        .filter(x => x.puesto_id === p.id && x.fecha === d && !x.es_franco && x.empleado_id)
+        .map(x => x.emp_apellido || x.emp_nombre || '')
+        .filter(Boolean);
+      return [d, nombres.join(', ')];
+    }));
+    const vacia = !Object.values(dias).some(v => v);
+    return vacia ? null : { label: p.nombre, dias };
+  }).filter(Boolean);
+
+  // Una sola fila FRANCO con todos los nombres por día
+  const francoDias = Object.fromEntries(_dias.map(d => {
+    const nombres = _francos
+      .filter(f => f.fecha === d)
+      .map(f => f.emp_apellido || f.emp_nombre || '');
+    return [d, nombres.join(', ')];
+  }));
+  const hayFranco = Object.values(francoDias).some(v => v);
+
+  // Novedades: una fila por tipo+empleado
+  const novByTipo = {};
+  for (const n of _novedades) {
+    if (!NOV_LABELS[n.tipo]) continue;
+    const emp = _empleados.find(e => e.id === n.empleado_id);
+    if (!emp) continue;
+    if (!novByTipo[n.tipo]) novByTipo[n.tipo] = {};
+    if (!novByTipo[n.tipo][n.empleado_id])
+      novByTipo[n.tipo][n.empleado_id] = { nombre: emp.apellido || emp.nombre, dias: {} };
+    novByTipo[n.tipo][n.empleado_id].dias[n.fecha] = true;
+  }
+
+  // Comida de personal
+  const comidaDias = Object.fromEntries(_dias.map(d => {
+    const asig = _comidaPersonal.find(c => c.fecha === d);
+    return [d, asig ? (asig.emp_apellido || asig.emp_nombre || '') : ''];
+  }));
+  const hayComida = Object.values(comidaDias).some(v => v);
+
+  const deptNombre = document.getElementById('sel-departamento').selectedOptions[0]?.text || '';
+  const turnoNombre = _distribucion.turno === 'TM' ? 'MAÑANA' : _distribucion.turno === 'TN' ? 'NOCHE' : _distribucion.turno;
+  const lunes = new Date(_dias[0] + 'T00:00:00');
+  const domingo = new Date(_dias[6] + 'T00:00:00');
+  const fmtF = d => d.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit' });
+
+  const fila = (label, dias, clsRow = '', clsLabel = '') => `
+    <tr class="${clsRow}">
+      <td class="col-puesto ${clsLabel}">${label}</td>
+      ${_dias.map(d => `<td>${dias[d] || ''}</td>`).join('')}
+    </tr>`;
+
+  const filasHTMLPuesto = filasPuesto.map(f => fila(f.label, f.dias)).join('');
+  const filaHTMLFranco = hayFranco ? fila('FRANCO', francoDias, 'fila-off') : '';
+  const filasHTMLNov = Object.entries(novByTipo).flatMap(([tipo, emps]) => {
+    const label = NOV_LABELS[tipo];
+    return Object.values(emps).map(em =>
+      fila(label, em.dias, `fila-nov fila-nov-${tipo.toLowerCase()}`)
+    );
+  }).join('');
+  const filaHTMLComida = hayComida ? fila('COMIDA DE PERSONAL', comidaDias, 'fila-comida') : '';
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Distribución ${deptNombre} — ${turnoNombre}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 10px; padding: 12px; }
+  h2 { text-align: center; font-size: 13px; margin-bottom: 6px; letter-spacing: .05em; }
+  h3 { text-align: center; font-size: 11px; margin-bottom: 10px; color: #444; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #999; padding: 3px 5px; text-align: center; }
+  th { background: #d9ead3; font-weight: bold; font-size: 10px; }
+  td.col-puesto { text-align: left; font-weight: bold; background: #f3f3f3; white-space: nowrap; }
+  tr.fila-off td { background: #d9ead3; }
+  tr.fila-off td.col-puesto { background: #b7d7a8; }
+  tr.fila-nov td { background: #cfe2f3; }
+  tr.fila-nov td.col-puesto { background: #9fc5e8; }
+  tr.fila-nov.fila-nov-v td { background: #9fc5e8; }
+  tr.fila-nov.fila-nov-ilt td { background: #ffe599; }
+  tr.fila-nov.fila-nov-s td { background: #ea9999; }
+  tr.fila-comida td { background: #fce5cd; }
+  tr.fila-comida td.col-puesto { background: #f6b26b; }
+  @media print { body { padding: 4px; } }
+</style>
+</head>
+<body>
+<h2>TURNO ${turnoNombre} — ${deptNombre.toUpperCase()}</h2>
+<h3>Semana del ${fmtF(lunes)} al ${fmtF(domingo)}</h3>
+<table>
+  <thead>
+    <tr>
+      <th style="width:100px"></th>
+      ${DIAS_CORTOS.map(d => `<th>${d}</th>`).join('')}
+    </tr>
+  </thead>
+  <tbody>
+    ${filasHTMLPuesto}
+    ${filaHTMLFranco}
+    ${filasHTMLNov}
+    ${filaHTMLComida}
+  </tbody>
+</table>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 400);
+}
+
 async function confirmarDistribucion() {
   if (!_distribucion) { toast('Primero guardá alguna asignación', true); return; }
-  if (!confirm('¿Confirmás la distribución? Esto escribirá la planificación semanal para este departamento/turno.')) return;
+  if (!confirm('¿Confirmás los horarios de cocina? Esto escribirá la planificación semanal para este departamento/turno.')) return;
   try {
     const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/confirmar`, { method: 'POST' });
     if (!r.ok) {

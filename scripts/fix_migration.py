@@ -103,6 +103,7 @@ add_col("empleados", "dom_lng",          "REAL")
 add_col("empleados", "dom_mapa",         "TEXT")
 add_col("empleados", "foto_path",        "TEXT")
 add_col("empleados", "pagina_inicio",    "TEXT")
+add_col("empleados", "horario_habitual_id", "INTEGER REFERENCES horarios(id)")
 
 # ── cargos ────────────────────────────────────────────────────────────────────
 print("\n[Columnas en cargos]")
@@ -111,8 +112,9 @@ add_col("cargos", "aplica_premio",   "INTEGER NOT NULL DEFAULT 0")
 
 # ── departamentos ─────────────────────────────────────────────────────────────
 print("\n[Columnas en departamentos]")
-add_col("departamentos", "sector_id", "INTEGER REFERENCES sectores_legajo(id)")
-add_col("departamentos", "activo",    "INTEGER NOT NULL DEFAULT 1")
+add_col("departamentos", "sector_id",        "INTEGER REFERENCES sectores_legajo(id)")
+add_col("departamentos", "activo",           "INTEGER NOT NULL DEFAULT 1")
+add_col("departamentos", "usa_distribucion", "INTEGER NOT NULL DEFAULT 0")
 
 # ── usuarios ──────────────────────────────────────────────────────────────────
 print("\n[Columnas en usuarios]")
@@ -125,7 +127,8 @@ add_col("roles", "pagina_inicio", "TEXT DEFAULT '/'")
 # ── distribucion ──────────────────────────────────────────────────────────────
 print("\n[Distribución]")
 if tabla_existe("distribucion_detalle"):
-    add_col("distribucion_detalle", "horario_id", "INTEGER REFERENCES horarios(id)")
+    add_col("distribucion_detalle", "horario_id",         "INTEGER REFERENCES horarios(id)")
+    add_col("distribucion_detalle", "es_comida_personal", "INTEGER NOT NULL DEFAULT 0")
 if tabla_existe("distribucion_aviso_config"):
     add_col("distribucion_aviso_config", "activo", "INTEGER NOT NULL DEFAULT 1")
 create_table("distribucion_franco", """

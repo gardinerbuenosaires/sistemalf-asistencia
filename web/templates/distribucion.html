@@ -1244,7 +1244,13 @@ async function imprimirGrilla() {
 
 async function confirmarDistribucion() {
   if (!_distribucion) { toast('Primero guardá alguna asignación', true); return; }
-  if (!confirm('¿Confirmás los horarios de cocina? Esto escribirá la planificación semanal para este departamento/turno.')) return;
+  const deptId = parseInt(document.getElementById('sel-departamento').value);
+  const dept = _misAccesos.departamentos.find(d => d.id === deptId);
+  const escribe = dept && dept.escribe_planificacion;
+  const msg = escribe
+    ? '¿Confirmás los horarios de cocina? Esto sobreescribirá la planificación semanal para este departamento/turno.'
+    : '¿Confirmás los horarios de cocina? Los horarios quedan guardados pero no modifican la planificación ("Escribe planif." está desactivado para este departamento).';
+  if (!confirm(msg)) return;
   try {
     const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/confirmar`, { method: 'POST' });
     if (!r.ok) {
@@ -1253,7 +1259,7 @@ async function confirmarDistribucion() {
       return;
     }
     await cargarGrilla();
-    toast('Distribución confirmada y planificación actualizada');
+    toast(escribe ? 'Distribución confirmada y planificación actualizada' : 'Distribución confirmada (sin efecto en planificación)');
   } catch(e) {
     toast('Error de conexión', true);
   }

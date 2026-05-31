@@ -407,9 +407,10 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS departamentos (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                nombre           TEXT    NOT NULL UNIQUE,
-                usa_distribucion INTEGER NOT NULL DEFAULT 0
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre                TEXT    NOT NULL UNIQUE,
+                usa_distribucion      INTEGER NOT NULL DEFAULT 0,
+                escribe_planificacion INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS categorias (
@@ -961,6 +962,9 @@ def _migrate(conn):
     if "usa_distribucion" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN usa_distribucion INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna usa_distribucion agregada a departamentos")
+    if "escribe_planificacion" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN escribe_planificacion INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna escribe_planificacion agregada a departamentos")
 
     # puestos de trabajo dentro de cada departamento
     conn.execute("""

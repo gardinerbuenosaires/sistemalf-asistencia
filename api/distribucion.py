@@ -84,6 +84,7 @@ def get_departamentos(_user=Depends(require_permiso("distribucion", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
             """SELECT d.id, d.nombre, d.activo, d.sector_id,
+                      d.usa_distribucion, d.escribe_planificacion,
                       s.nombre AS sector_nombre
                FROM departamentos d
                LEFT JOIN sectores_legajo s ON s.id = d.sector_id
@@ -497,16 +498,12 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
         ).fetchall()
 
         dept_row = conn.execute(
-            "SELECT usa_distribucion FROM departamentos WHERE id=?", (dist["departamento_id"],)
+            "SELECT usa_distribucion, escribe_planificacion FROM departamentos WHERE id=?",
+            (dist["departamento_id"],)
         ).fetchone()
-        usa_dist = bool(dept_row and dept_row["usa_distribucion"])
+        escribe_planificacion = bool(dept_row and dept_row["escribe_planificacion"])
 
-        reemplaza = conn.execute(
-            "SELECT valor FROM configuracion WHERE clave='distribucion_reemplaza_planificacion'"
-        ).fetchone()
-        escribe_planificacion = usa_dist or (reemplaza and reemplaza["valor"] == "1")
-
-        if escribe_planificacion and usa_dist:
+        if escribe_planificacion:
             # Limpiar planificacion auto-generada de la semana para los empleados afectados
             emp_ids = list({det["empleado_id"] for det in detalles} | {fr["empleado_id"] for fr in francos})
             if emp_ids:
@@ -816,13 +813,59 @@ def delete_usuario_acceso(uid: int, _user=Depends(require_permiso("distribucion"
 
 @router.get("/departamentos/{dept_id}/usa-distribucion-preview")
 def preview_usa_distribucion(dept_id: int, _user=Depends(require_permiso("distribucion", "editar"))):
-    """
-    Devuelve cuántos empleados del departamento tienen planificación futura
-    auto-generada que se eliminaría al activar usa_distribucion.
-    """
+    """Devuelve info básica del departamento para confirmar la activación."""
+    with db_session() as conn:
+        dept = conn.execute(
+            "SELECT id, nombre, usa_distribucion FROM departamentos WHERE id=?", (dept_id,)
+        ).fetchone()
+        if not dept:
+            raise HTTPException(404, "Departamento no encontrado")
+        emp_rows = conn.execute(
+            """SELECT e.id FROM empleados e
+               JOIN cargos c ON c.id = e.cargo_id
+               WHERE c.departamento_id = ? AND e.activo = 1""",
+            (dept_id,)
+        ).fetchall()
+    return {
+        "departamento_id": dept_id,
+        "nombre": dept["nombre"],
+        "usa_distribucion": bool(dept["usa_distribucion"]),
+        "empleados_en_dept": len(emp_rows),
+    }
+
+
+class UsaDistribucionIn(BaseModel):
+    value: bool
+
+
+@router.put("/departamentos/{dept_id}/usa-distribucion")
+def set_usa_distribucion(dept_id: int, body: UsaDistribucionIn,
+                         _user=Depends(require_permiso("distribucion", "editar"))):
+    """Activa o desactiva la visibilidad del departamento en el módulo de distribución."""
+    with db_session() as conn:
+        dept = conn.execute("SELECT id FROM departamentos WHERE id=?", (dept_id,)).fetchone()
+        if not dept:
+            raise HTTPException(404, "Departamento no encontrado")
+        conn.execute(
+            "UPDATE departamentos SET usa_distribucion=? WHERE id=?",
+            (int(body.value), dept_id)
+        )
+        if not body.value:
+            # Al desactivar visibilidad también se desactiva escritura en planificación
+            conn.execute(
+                "UPDATE departamentos SET escribe_planificacion=0 WHERE id=?", (dept_id,)
+            )
+    return {"ok": True}
+
+
+@router.get("/departamentos/{dept_id}/escribe-planificacion-preview")
+def preview_escribe_planificacion(dept_id: int, _user=Depends(require_permiso("distribucion", "editar"))):
+    """Devuelve cuántas entradas de planificación auto-generada futura se eliminarían al activar."""
     hoy = str(date.today())
     with db_session() as conn:
-        dept = conn.execute("SELECT id, nombre, usa_distribucion FROM departamentos WHERE id=?", (dept_id,)).fetchone()
+        dept = conn.execute(
+            "SELECT id, nombre, escribe_planificacion FROM departamentos WHERE id=?", (dept_id,)
+        ).fetchone()
         if not dept:
             raise HTTPException(404, "Departamento no encontrado")
         emp_rows = conn.execute(
@@ -832,8 +875,7 @@ def preview_usa_distribucion(dept_id: int, _user=Depends(require_permiso("distri
             (dept_id,)
         ).fetchall()
         emp_ids = [r[0] for r in emp_rows]
-        plan_count = 0
-        emp_afectados = 0
+        plan_count, emp_afectados = 0, 0
         if emp_ids:
             ph = ",".join("?" * len(emp_ids))
             plan_rows = conn.execute(
@@ -847,35 +889,33 @@ def preview_usa_distribucion(dept_id: int, _user=Depends(require_permiso("distri
     return {
         "departamento_id": dept_id,
         "nombre": dept["nombre"],
-        "usa_distribucion": bool(dept["usa_distribucion"]),
+        "escribe_planificacion": bool(dept["escribe_planificacion"]),
         "empleados_en_dept": len(emp_ids),
         "emp_afectados": emp_afectados,
         "plan_auto_futuras": plan_count,
     }
 
 
-class UsaDistribucionIn(BaseModel):
-    value: bool
-
-
-@router.put("/departamentos/{dept_id}/usa-distribucion")
-def set_usa_distribucion(dept_id: int, body: UsaDistribucionIn,
-                         _user=Depends(require_permiso("distribucion", "editar"))):
+@router.put("/departamentos/{dept_id}/escribe-planificacion")
+def set_escribe_planificacion(dept_id: int, body: UsaDistribucionIn,
+                              _user=Depends(require_permiso("distribucion", "editar"))):
     """
-    Activa o desactiva usa_distribucion para el departamento.
-    Si se activa, elimina planificacion auto_generada futura de los empleados del dept.
+    Activa o desactiva que las distribuciones confirmadas escriban en planificación.
+    Al activar, elimina planificación auto-generada futura de los empleados del departamento.
     """
     hoy = str(date.today())
     with db_session() as conn:
-        dept = conn.execute("SELECT id FROM departamentos WHERE id=?", (dept_id,)).fetchone()
+        dept = conn.execute(
+            "SELECT id, usa_distribucion FROM departamentos WHERE id=?", (dept_id,)
+        ).fetchone()
         if not dept:
             raise HTTPException(404, "Departamento no encontrado")
-
+        if body.value and not dept["usa_distribucion"]:
+            raise HTTPException(400, "Activá primero el módulo de distribución para este departamento")
         conn.execute(
-            "UPDATE departamentos SET usa_distribucion=? WHERE id=?",
+            "UPDATE departamentos SET escribe_planificacion=? WHERE id=?",
             (int(body.value), dept_id)
         )
-
         eliminadas = 0
         if body.value:
             emp_rows = conn.execute(
@@ -892,7 +932,6 @@ def set_usa_distribucion(dept_id: int, body: UsaDistribucionIn,
                     [hoy] + emp_ids
                 )
                 eliminadas = cur.rowcount
-
     return {"ok": True, "eliminadas": eliminadas}
 
 

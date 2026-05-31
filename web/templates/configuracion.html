@@ -286,8 +286,8 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarDepto()">+ Nuevo departamento</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:140px;text-align:center">Distribución</th><th style="width:160px">Acciones</th></tr></thead>
-        <tbody id="tabla-deptos"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
+        <thead><tr><th>Nombre</th><th style="width:130px;text-align:center">Módulo activo</th><th style="width:160px;text-align:center">Escribe planif.</th><th style="width:160px">Acciones</th></tr></thead>
+        <tbody id="tabla-deptos"><tr><td colspan="4" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
 
@@ -592,10 +592,10 @@ const PARAMS_META = {
     tipo: "number", min: 1, max: 28,
     descripcion: "Día del mes en que el sistema cierra automáticamente el período del mes anterior (entre 1 y 28)."
   },
-  distribucion_reemplaza_planificacion: {
-    label: "Horarios Cocina reemplaza planificación",
-    tipo: "number", min: 0, max: 1, width: "60px",
-    descripcion: "1 = al confirmar una semana de horarios de cocina, sobreescribe la planificación de esos empleados. 0 = los horarios de cocina son independientes y no tocan la planificación."
+  distribucion_aviso_dia: {
+    label: "Día de aviso de borrador",
+    tipo: "number", min: 1, max: 7, width: "60px",
+    descripcion: "Día de la semana (1=Lunes … 7=Domingo) en que se envía el aviso de borrador de distribución."
   }
 };
 
@@ -1222,27 +1222,38 @@ async function toggleApremio(id, value) {
   }
 }
 
+function _deptBadge(activo) {
+  return activo
+    ? `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:.78rem;background:#d1e7dd;color:#0a5c36;font-weight:bold">Activo</span>`
+    : `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:.78rem;background:#f0f0f0;color:#888">Inactivo</span>`;
+}
+
 function _renderDeptos(lista) {
   _catStore["tabla-deptos"] = { lista, eliminarFn: "eliminarDepto" };
   const tbody = document.getElementById("tabla-deptos");
   if (!lista.length) {
-    tbody.innerHTML = `<tr><td colspan="3" style="color:#aaa">Sin registros</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="color:#aaa">Sin registros</td></tr>`;
     return;
   }
+  const puedeDistrib = canDo('distribucion','editar');
+  const puedeEmp     = canDo('empleados','editar');
   tbody.innerHTML = lista.map(item => {
-    const activo = item.usa_distribucion;
-    const badge = activo
-      ? `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:.78rem;background:#d1e7dd;color:#0a5c36;font-weight:bold">Activo</span>`
-      : `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:.78rem;background:#f0f0f0;color:#888">Inactivo</span>`;
-    const btn = canDo('distribucion','editar')
-      ? `<button class="btn btn-sm ${activo ? 'btn-secondary' : 'btn-primary'}" style="margin-top:4px"
-           onclick="toggleUsaDistribucion(${item.id})">${activo ? 'Desactivar' : 'Activar'}</button>`
+    const usaDist  = item.usa_distribucion;
+    const escribe  = item.escribe_planificacion;
+    const btnDist = puedeDistrib
+      ? `<br><button class="btn btn-sm ${usaDist ? 'btn-secondary' : 'btn-primary'}" style="margin-top:4px"
+           onclick="toggleUsaDistribucion(${item.id})">${usaDist ? 'Desactivar' : 'Activar'}</button>`
       : '';
+    const btnEscribe = puedeDistrib && usaDist
+      ? `<br><button class="btn btn-sm ${escribe ? 'btn-secondary' : 'btn-primary'}" style="margin-top:4px"
+           onclick="toggleEscribePlanificacion(${item.id})">${escribe ? 'Desactivar' : 'Activar'}</button>`
+      : (escribe ? _deptBadge(true) : `<span style="font-size:.78rem;color:#aaa">—</span>`);
     return `<tr id="tabla-deptos-${item.id}">
       <td><strong>${item.nombre}</strong></td>
-      <td style="text-align:center">${badge}${btn}</td>
+      <td style="text-align:center">${_deptBadge(usaDist)}${btnDist}</td>
+      <td style="text-align:center">${_deptBadge(escribe)}${btnEscribe}</td>
       <td>
-        ${canDo('empleados','editar') ? `
+        ${puedeEmp ? `
           <button class="btn btn-sm btn-secondary" onclick="_editarItemCatalogo('tabla-deptos',${item.id})">Editar</button>
           <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="eliminarDepto(${item.id},'${item.nombre.replace(/'/g,"\\'")}')">Eliminar</button>` : ''}
       </td>
@@ -1256,25 +1267,48 @@ async function toggleUsaDistribucion(deptId) {
   const activando = !dept.usa_distribucion;
   if (activando) {
     const prev = await fetch(`/api/distribucion/departamentos/${deptId}/usa-distribucion-preview`).then(r => r.json());
-    let msg = `¿Activar Horarios Cocina para "${prev.nombre}"?`;
-    if (prev.plan_auto_futuras > 0) {
-      msg += `\n\nSe eliminarán ${prev.plan_auto_futuras} entradas de planificación automática futura de ${prev.emp_afectados} empleado${prev.emp_afectados !== 1 ? 's' : ''}.`;
-    } else {
-      msg += `\n\nNo hay planificación automática futura afectada (${prev.empleados_en_dept} empleado${prev.empleados_en_dept !== 1 ? 's' : ''} en el departamento).`;
-    }
-    if (!confirm(msg)) return;
+    const empMsg = `${prev.empleados_en_dept} empleado${prev.empleados_en_dept !== 1 ? 's' : ''} en el departamento.`;
+    if (!confirm(`¿Activar el módulo de distribución para "${prev.nombre}"?\n\n${empMsg}\n\nPodrás crear grillas de horarios sin que afecten la planificación hasta que actives "Escribe planif."`)) return;
   } else {
-    if (!confirm(`¿Desactivar Horarios Cocina para "${dept.nombre}"?\n\nEl calendario automático volverá a gestionar la planificación.`)) return;
+    if (!confirm(`¿Desactivar el módulo de distribución para "${dept.nombre}"?\n\nTambién se desactivará "Escribe planif." si estaba activo.`)) return;
   }
   const res = await fetch(`/api/distribucion/departamentos/${deptId}/usa-distribucion`, {
-    method: "PUT",
-    headers: {"Content-Type":"application/json"},
+    method: "PUT", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({ value: activando })
   });
   if (res.ok) {
     dept.usa_distribucion = activando ? 1 : 0;
+    if (!activando) dept.escribe_planificacion = 0;
     _renderDeptos(deptos);
-    toast(activando ? "Horarios Cocina activado" : "Horarios Cocina desactivado");
+    toast(activando ? "Módulo de distribución activado" : "Módulo de distribución desactivado");
+  } else {
+    const e = await res.json().catch(()=>({}));
+    toast("Error: " + (e.detail || "desconocido"));
+  }
+}
+
+async function toggleEscribePlanificacion(deptId) {
+  const dept = deptos.find(d => d.id === deptId);
+  if (!dept) return;
+  const activando = !dept.escribe_planificacion;
+  if (activando) {
+    const prev = await fetch(`/api/distribucion/departamentos/${deptId}/escribe-planificacion-preview`).then(r => r.json());
+    let msg = `¿Activar "Escribe planificación" para "${prev.nombre}"?\n\nA partir de ahora, confirmar una semana sobreescribirá la planificación de esos empleados.`;
+    if (prev.plan_auto_futuras > 0) {
+      msg += `\n\nSe eliminarán ${prev.plan_auto_futuras} entradas de planificación automática futura de ${prev.emp_afectados} empleado${prev.emp_afectados !== 1 ? 's' : ''}.`;
+    }
+    if (!confirm(msg)) return;
+  } else {
+    if (!confirm(`¿Desactivar "Escribe planificación" para "${dept.nombre}"?\n\nEl calendario automático volverá a gestionar la planificación.`)) return;
+  }
+  const res = await fetch(`/api/distribucion/departamentos/${deptId}/escribe-planificacion`, {
+    method: "PUT", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ value: activando })
+  });
+  if (res.ok) {
+    dept.escribe_planificacion = activando ? 1 : 0;
+    _renderDeptos(deptos);
+    toast(activando ? "Escribe planificación activado" : "Escribe planificación desactivado");
   } else {
     const e = await res.json().catch(()=>({}));
     toast("Error: " + (e.detail || "desconocido"));
@@ -1340,7 +1374,7 @@ function agregarDepto() {
   tr.className = "fila-edit";
   tr.innerHTML = `
     <td><input type="text" id="tabla-deptos-nuevo-nombre" placeholder="Ej: Cocina"></td>
-    <td></td>
+    <td></td><td></td>
     <td>
       <button class="btn btn-sm btn-primary" onclick="crearDepto()">Guardar</button>
       <button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="document.getElementById('tabla-deptos-nueva').remove()">Cancelar</button>

@@ -116,6 +116,21 @@ def set_turno(horario_id: int, data: TurnoAsignacionIn, _user=Depends(require_pe
     return {"ok": True}
 
 
+class GrupoPremiosIn(BaseModel):
+    grupo_premios: Optional[str] = None
+
+
+@router.patch("/{horario_id}/grupo-premios")
+def set_grupo_premios(horario_id: int, data: GrupoPremiosIn, _user=Depends(require_permiso("horarios", "editar"))):
+    if data.grupo_premios not in (None, "TM", "TN", "CO"):
+        raise HTTPException(status_code=422, detail="grupo_premios debe ser TM, TN, CO o null")
+    with db_session() as conn:
+        if not conn.execute("SELECT id FROM horarios WHERE id=?", (horario_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Horario no encontrado")
+        conn.execute("UPDATE horarios SET grupo_premios=? WHERE id=?", (data.grupo_premios, horario_id))
+    return {"ok": True}
+
+
 @router.put("/{horario_id}")
 def update_horario(horario_id: int, data: HorarioIn, _user=Depends(require_permiso("horarios", "editar"))):
     if data.tipo not in ("simple", "cortado"):

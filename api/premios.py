@@ -264,7 +264,7 @@ def _diagnostico(conn, fecha_desde: str, dias_min: int) -> dict:
 
 _QUERY_EVALUACIONES = """
     WITH ult AS (
-        SELECT p.empleado_id, h.tipo, t.nombre AS turno_nombre,
+        SELECT p.empleado_id, h.tipo, h.grupo_premios, t.nombre AS turno_nombre,
                ROW_NUMBER() OVER (
                    PARTITION BY p.empleado_id ORDER BY p.fecha DESC
                ) AS rn
@@ -276,6 +276,7 @@ _QUERY_EVALUACIONES = """
     SELECT pe.*, e.apellido, e.nombre,
            c.nombre AS cargo, d.nombre AS departamento, cat.nombre AS categoria,
            CASE
+               WHEN u.grupo_premios IS NOT NULL THEN u.grupo_premios
                WHEN u.tipo = 'cortado' THEN 'CO'
                WHEN lower(u.turno_nombre) LIKE '%noche%'
                  OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 'TN'
@@ -291,9 +292,8 @@ _QUERY_EVALUACIONES = """
     WHERE pe.periodo=?
     ORDER BY
         CASE
-            WHEN u.tipo = 'cortado' THEN 3
-            WHEN lower(u.turno_nombre) LIKE '%noche%'
-              OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 2
+            WHEN u.grupo_premios = 'CO' OR (u.grupo_premios IS NULL AND u.tipo = 'cortado') THEN 3
+            WHEN u.grupo_premios = 'TN' OR (u.grupo_premios IS NULL AND (lower(u.turno_nombre) LIKE '%noche%' OR lower(u.turno_nombre) LIKE '%madrugada%')) THEN 2
             WHEN u.tipo IS NOT NULL THEN 1
             ELSE 4
         END,

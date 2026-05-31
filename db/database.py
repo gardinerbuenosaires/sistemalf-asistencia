@@ -529,8 +529,11 @@ def _migrate(conn):
         )
         logger.info("Turnos por defecto creados: Mañana, Noche, Madrugada")
 
-    # turno_id en horarios
+    # grupo_premios y turno_id en horarios
     cols_h = {r[1] for r in conn.execute("PRAGMA table_info(horarios)").fetchall()}
+    if "grupo_premios" not in cols_h:
+        conn.execute("ALTER TABLE horarios ADD COLUMN grupo_premios TEXT CHECK(grupo_premios IN ('TM','TN','CO'))")
+        logger.info("Migración: columna grupo_premios agregada a horarios")
     if "turno_id" not in cols_h:
         conn.execute("ALTER TABLE horarios ADD COLUMN turno_id INTEGER REFERENCES turnos(id)")
         logger.info("Migración: columna turno_id agregada a horarios")

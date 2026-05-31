@@ -114,6 +114,7 @@
           <th>Tipo</th>
           <th>Bloques</th>
           <th>Turno</th>
+          <th title="Grupo en el que aparece en Premios (vacío = deriva del turno)">Premio</th>
           <th id="th-acciones">Acciones</th>
         </tr>
       </thead>
@@ -459,6 +460,16 @@ async function cargarHorarios() {
           ${opcionesTurno}
         </select>
       </td>
+      <td>
+        <select data-gp="${h.id}" onchange="asignarGrupoPremios(${h.id}, this.value)"
+          style="padding:3px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.82rem;${canDo('horarios','editar') ? '' : 'opacity:.5;pointer-events:none'}"
+          ${canDo('horarios','editar') ? '' : 'disabled'}>
+          <option value="">— auto —</option>
+          <option value="TM">Mañana</option>
+          <option value="TN">Noche</option>
+          <option value="CO">Cortado</option>
+        </select>
+      </td>
       ${canAcciones ? `<td>
         ${canDo('horarios','editar') ? `<button class="btn btn-sm btn-primary" onclick="abrirFormulario(horariosMap[${h.id}])">Editar</button>` : ''}
         ${canDo('horarios','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:6px" onclick="eliminarHorario(${h.id}, '${h.nombre.replace(/'/g, "\\'")}')">Eliminar</button>` : ''}
@@ -469,6 +480,8 @@ async function cargarHorarios() {
   horarios.forEach(h => {
     const sel = document.querySelector(`select[data-hid="${h.id}"]`);
     if (sel && h.turno_id) sel.value = h.turno_id;
+    const gp = document.querySelector(`select[data-gp="${h.id}"]`);
+    if (gp && h.grupo_premios) gp.value = h.grupo_premios;
   });
 }
 
@@ -480,6 +493,16 @@ async function asignarTurno(horarioId, turnoId) {
   });
   if (res.ok) toast("Turno actualizado");
   else toast("Error al actualizar turno");
+}
+
+async function asignarGrupoPremios(horarioId, valor) {
+  const res = await fetch(`/api/horarios/${horarioId}/grupo-premios`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ grupo_premios: valor || null }),
+  });
+  if (res.ok) toast("Grupo premios actualizado");
+  else toast("Error al actualizar grupo premios");
 }
 
 cargarHorarios();

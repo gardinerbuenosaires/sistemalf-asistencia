@@ -420,7 +420,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-shrink:0">
       <h3 style="margin:0;font-size:1rem">Saldo inicial francos</h3>
       <label style="font-size:.82rem;color:#555;display:flex;align-items:center;gap:6px">
-        Mes de referencia
+        Saldo al cierre de
         <input type="month" id="sf-mes" onchange="cargarSaldoFrancos()" style="padding:3px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.82rem">
       </label>
       <button class="btn-sm" style="background:#e9ecef;color:#333;margin-left:4px" onclick="cargarSaldoFrancos()">↻</button>
@@ -428,6 +428,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
     </div>
     <p style="font-size:.78rem;color:#666;margin-bottom:10px;flex-shrink:0">
       Ingresá el saldo de francos acumulado al cierre del mes seleccionado.
+      Este valor aparece como <strong>arrastre</strong> en la columna SALDO del mes siguiente.
       Positivo = francos que la empresa le debe al empleado. Negativo = el empleado debe francos.
       Filas en verde ya tienen datos guardados.
     </p>
@@ -2101,11 +2102,10 @@ let _sfData = [];
 
 function abrirSaldoFrancos() {
   const el = document.getElementById('sf-mes');
-  if (!el.value) {
-    const hoy = new Date();
-    hoy.setMonth(hoy.getMonth() - 1);
-    el.value = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
-  }
+  // Default to mes anterior al mes que se está viendo en la planilla
+  const [y, m] = mesActual.split('-').map(Number);
+  const prev = new Date(y, m - 2, 1); // m-1 es el índice 0-based del mes actual, m-2 es el anterior
+  el.value = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
   document.getElementById('modal-sf').classList.add('open');
   cargarSaldoFrancos();
 }

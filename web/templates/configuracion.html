@@ -27,7 +27,7 @@
   .nav-dropdown a:hover { background: #f4f6f9; }
   [data-perm] { display: none !important; }
 
-  main { padding: 24px; max-width: 1400px; margin: 0 auto; flex: 1; overflow-y: scroll; }
+  main { padding: 0 24px 24px; max-width: 1400px; margin: 0 auto; flex: 1; overflow-y: scroll; }
 
   .section { background: white; border-radius: 8px; padding: 24px;
              box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 24px; max-width: 900px; }
@@ -70,7 +70,7 @@
                      border-radius: 4px; font-size: .9rem; text-align: center; }
 
   /* Usuarios — layout 2 columnas */
-  .usr-layout { display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
+  .usr-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
   .usr-layout > .usr-panel { min-width: 0; }
   .usr-panel  { border: 1px solid #e8e8e8; border-radius: 6px; overflow: hidden; }
   .usr-panel.scrollable { overflow: visible; }
@@ -130,6 +130,7 @@
   .matriz td.modulo-name { text-align: left; font-size: .82rem; }
   .matriz tr:hover td { background: #fafafa; }
   .chk-perm, .chk-all { width: 15px; height: 15px; cursor: pointer; accent-color: #2c3e50; }
+  .chk-perm:disabled { visibility: hidden; }
   .col-all { background: #f0f4f8; }
   .nivel-bar { height: 3px; border-radius: 2px; background: #2c3e50; margin-top: 4px; }
   .rol-desc-small { font-size: .72rem; color: #888; margin-top: 1px; }
@@ -139,7 +140,7 @@
   .cfg-tabs { display: flex; gap: 2px; margin-bottom: 20px; border-bottom: 2px solid #dee2e6;
     position: sticky; top: 0; z-index: 10;
     background: white; box-shadow: 0 3px 6px rgba(0,0,0,.07);
-    margin-left: -24px; margin-right: -24px; padding: 8px 24px 0; }
+    margin-left: -24px; margin-right: -24px; padding: 24px 24px 0; }
   .cfg-tab { padding: 8px 20px; border: none; background: none; cursor: pointer;
              font-size: .88rem; color: #666; border-bottom: 2px solid transparent;
              margin-bottom: -2px; border-radius: 4px 4px 0 0; transition: color .15s; }
@@ -403,7 +404,7 @@
       </div>
     </div>
 
-    <div class="section" data-perm="distribucion:editar">
+    <div class="section wide" data-perm="distribucion:editar">
       <div class="section-header">
         <div>
           <div class="section-title">Accesos a Distribución</div>
@@ -453,7 +454,7 @@
       </table>
     </div>
 
-    <div class="section" data-perm="distribucion:editar">
+    <div class="section wide" data-perm="distribucion:editar">
       <div class="section-header">
         <div>
           <div class="section-title">Aviso de borradores pendientes — por turno</div>

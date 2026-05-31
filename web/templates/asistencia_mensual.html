@@ -688,7 +688,7 @@ async function init() {
   mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
   construirLeyenda();
   await cargarOrdenes();
-  if (canDo('asistencia', 'ver_todos') && _miRol === 'contabilidad') tabActiva = 'TODOS';
+  if (canDo('asistencia', 'ver_todos') && _miRol.toLowerCase() === 'contabilidad') tabActiva = 'TODOS';
   switchTab(tabActiva);
 }
 

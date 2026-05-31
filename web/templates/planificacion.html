@@ -8,8 +8,8 @@
 <title>Planificación — Sistema de Fichaje</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem; }
-  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
   nav a:hover { opacity: 1; }
   nav a.activo { opacity: 1; font-weight: bold; }
@@ -31,20 +31,21 @@
   .nav-semana button:hover { background: #3d5166; }
   .nav-semana span { font-size: .9rem; font-weight: bold; min-width: 180px; text-align: center; }
 
-  main { padding: 16px; overflow-x: auto; }
+  .toolbar { flex-shrink: 0; }
+  main { padding: 16px; flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 
-  .grilla-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); overflow: hidden; }
+  .grilla-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); overflow: auto; flex: 1; }
 
   table { width: 100%; border-collapse: collapse; min-width: 900px; }
   thead th { padding: 10px 8px; text-align: center; font-size: .8rem; border-bottom: 2px solid #dee2e6; background: #f8f9fa; position: sticky; top: 0; z-index: 10; }
-  thead th.col-nombre { text-align: left; padding-left: 12px; min-width: 180px; }
+  thead th.col-nombre { text-align: left; padding-left: 12px; min-width: 180px; position: sticky; top: 0; left: 0; z-index: 20; }
   thead th.hoy { background: #e8f4fd; color: #004085; }
 
   tbody tr:hover td { background: #fafafa; }
   tr.grupo-header td { background: #2c3e50; color: white; font-size: .75rem; font-weight: bold; text-transform: uppercase; letter-spacing: .05em; padding: 5px 12px; }
 
   td { padding: 3px 4px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
-  td.col-nombre { padding: 6px 12px; font-weight: bold; white-space: nowrap; }
+  td.col-nombre { padding: 6px 12px; font-weight: bold; white-space: nowrap; position: sticky; left: 0; background: white; z-index: 5; }
   td.col-dia { text-align: center; }
 
   .celda {

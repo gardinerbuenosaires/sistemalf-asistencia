@@ -8,10 +8,10 @@ DEVICE_PASSWORD = int(os.getenv("DEVICE_PASSWORD", 0))
 DEVICE_TIMEOUT = int(os.getenv("DEVICE_TIMEOUT", 10))
 
 # Base de datos
-DB_PATH = os.getenv("DB_PATH", "fichajes.db")
+DB_PATH = os.getenv("DB_PATH", "data/fichajes.db")
 
 # Directorio de datos (fotos, etc.) — mismo directorio que la DB por defecto
-DATA_DIR = Path(os.getenv("DB_PATH", "fichajes.db")).parent if os.getenv("DB_PATH") else Path("data")
+DATA_DIR = Path(DB_PATH).parent
 
 # Sincronización automática (minutos)
 SYNC_INTERVAL_MINUTES = int(os.getenv("SYNC_INTERVAL_MINUTES", 5))

@@ -27,10 +27,11 @@
   .nav-dropdown a:hover { background: #f4f6f9; }
   [data-perm] { display: none !important; }
 
-  main { padding: 24px; max-width: 900px; margin: 0 auto; flex: 1; overflow-y: auto; }
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; flex: 1; overflow-y: scroll; }
 
   .section { background: white; border-radius: 8px; padding: 24px;
-             box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 24px; }
+             box-shadow: 0 1px 4px rgba(0,0,0,.1); margin-bottom: 24px; max-width: 900px; }
+  .section.wide { max-width: 100%; }
   .section-title { font-size: 1rem; font-weight: bold; margin-bottom: 6px; }
   .section-desc  { font-size: .82rem; color: #888; margin-bottom: 20px; }
   .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
@@ -69,7 +70,7 @@
                      border-radius: 4px; font-size: .9rem; text-align: center; }
 
   /* Usuarios — layout 2 columnas */
-  .usr-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; align-items: start; }
+  .usr-layout { display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
   .usr-layout > .usr-panel { min-width: 0; }
   .usr-panel  { border: 1px solid #e8e8e8; border-radius: 6px; overflow: hidden; }
   .usr-panel.scrollable { overflow: visible; }
@@ -350,7 +351,7 @@
   <!-- ── Panel: Usuarios ── -->
   <div class="cfg-panel" id="panel-usuarios">
 
-    <div class="section">
+    <div class="section wide">
       <div class="section-header">
         <div>
           <div class="section-title">Usuarios</div>
@@ -376,7 +377,7 @@
       </div>
     </div>
 
-    <div class="section" data-perm="roles:ver">
+    <div class="section wide" data-perm="roles:ver">
       <div class="section-header">
         <div>
           <div class="section-title">Roles y permisos</div>
@@ -490,7 +491,6 @@
           <div class="section-desc" style="margin-bottom:0">Todos los valores que definen el cálculo del premio mensual.</div>
         </div>
         <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px">
-          <button class="btn btn-secondary btn-sm" onclick="recalcularPremioPeriodo()">Recalcular período actual</button>
           <button class="btn btn-primary btn-sm" data-perm="premios:editar" onclick="guardarParametrosPremios()">Guardar parámetros</button>
         </div>
       </div>
@@ -648,7 +648,7 @@ async function guardarParam(clave) {
 // ── Usuarios ──────────────────────────────────────────────────────────────────
 const COLORES_ROL = ["#2c3e50","#2980b9","#8e44ad","#f39c12","#e74c3c","#16a085","#d35400"];
 
-let usuarios = [], roles = [], usrEditandoId = null, meId = null;
+let usuarios = [], roles = [], usrEditandoId = null, meId = null, deptsDist = [];
 
 function colorRol(rid) {
   return COLORES_ROL[(rid || 0) % COLORES_ROL.length];
@@ -665,13 +665,14 @@ function iniciales(nombre) {
 }
 
 async function cargarUsuarios() {
-  const [uRes, rRes, meRes] = await Promise.all([
-    fetch("/api/usuarios"), fetch("/api/roles"), fetch("/api/auth/me")
+  const [uRes, rRes, meRes, dRes] = await Promise.all([
+    fetch("/api/usuarios"), fetch("/api/roles"), fetch("/api/auth/me"), fetch("/api/departamentos")
   ]);
-  usuarios = await uRes.json();
-  roles    = await rRes.json();
-  const me = await meRes.json();
-  meId = me.id;
+  usuarios  = await uRes.json();
+  roles     = await rRes.json();
+  const me  = await meRes.json();
+  meId      = me.id;
+  deptsDist = (await dRes.json()).filter(d => d.usa_distribucion);
 
   document.getElementById("usr-cnt").textContent = usuarios.length;
   document.getElementById("usr-list").innerHTML = usuarios.map(u => `
@@ -745,6 +746,24 @@ function buildForm(u={}) {
       </select>
       <div class="hint">Si se deja en "Usar la del rol", se aplica la configuración del rol asignado.</div>
     </div>
+    <div class="form-group">
+      <label>Sección (Horarios Cocina)</label>
+      <select id="f-dept-dist" ${dis}>
+        <option value="">— Sin sección fija —</option>
+        ${deptsDist.map(d => `<option value="${d.id}"${u.departamento_dist===d.id?' selected':''}>${d.nombre}</option>`).join('')}
+      </select>
+      <div class="hint">Si se asigna, al entrar a Horarios Cocina se pre-selecciona esa sección automáticamente.</div>
+    </div>
+    <div class="form-group">
+      <label>Turno (Horarios Cocina)</label>
+      <select id="f-turno-dist" ${dis}>
+        <option value="">— Sin turno fijo —</option>
+        <option value="TM"${(u.turno_dist||'')==='TM'?' selected':''}>Mañana (TM)</option>
+        <option value="TN"${(u.turno_dist||'')==='TN'?' selected':''}>Noche (TN)</option>
+        <option value="CO"${(u.turno_dist||'')==='CO'?' selected':''}>Cortado (CO)</option>
+      </select>
+      <div class="hint">Si se asigna, al entrar a Horarios Cocina se pre-selecciona ese turno automáticamente.</div>
+    </div>
     ${u.id ? `
     <div class="form-group">
       <label>Estado</label>
@@ -789,14 +808,16 @@ async function guardarUsuario() {
   const password      = document.getElementById("f-password")?.value || "";
   const activo        = parseInt(document.getElementById("f-activo")?.value ?? "1");
   const pagina_inicio = document.getElementById("f-pagina-inicio")?.value || "";
+  const turno_dist       = document.getElementById("f-turno-dist")?.value || "";
+  const departamento_dist = parseInt(document.getElementById("f-dept-dist")?.value) || null;
 
   if (!nombre || !email || !rol_id) { toast("Completá todos los campos"); return; }
 
   const url    = usrEditandoId ? `/api/usuarios/${usrEditandoId}` : "/api/usuarios";
   const method = usrEditandoId ? "PUT" : "POST";
   const body   = usrEditandoId
-    ? { nombre, email, rol_id, activo, password, pagina_inicio }
-    : { nombre, email, rol_id, password, pagina_inicio };
+    ? { nombre, email, rol_id, activo, password, pagina_inicio, turno_dist, departamento_dist }
+    : { nombre, email, rol_id, password, pagina_inicio, turno_dist, departamento_dist };
 
   const res = await fetch(url, { method, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
   if (res.ok) {
@@ -822,7 +843,7 @@ const MODULO_LABELS = {
   dashboard:"Dashboard", empleados:"Empleados", horarios:"Horarios",
   planificacion:"Planificación", calendarios:"Calendarios", asistencia:"Asistencia",
   resultados:"Resultados", usuarios:"Usuarios", roles:"Roles", sync:"Sincronización",
-  premios:"Premios", vacaciones:"Vacaciones", periodos:"Períodos"
+  premios:"Premios", vacaciones:"Vacaciones", periodos:"Períodos", distribucion:"Horarios Cocina"
 };
 const ACCION_LABELS = {
   ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
@@ -921,6 +942,7 @@ function renderRolEditor(rol={}) {
             ['/calendarios', 'Calendarios'],
             ['/empleados', 'Personal'],
             ['/vacaciones', 'Vacaciones'],
+            ['/distribucion', 'Horarios Cocina'],
             ['/configuracion', 'Configuración'],
           ].map(([v,l]) => `<option value="${v}"${(rol.pagina_inicio||'/')===v?' selected':''}>${l}</option>`).join('')}
         </select>
@@ -1497,15 +1519,6 @@ async function guardarParametrosPremios() {
   else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
 }
 
-async function recalcularPremioPeriodo() {
-  const hoy = new Date();
-  const periodo = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
-  const p = prompt("Período a recalcular (AAAA-MM):", periodo);
-  if (!p) return;
-  const res = await fetch(`/api/premios/${p}/recalcular`, {method:"POST"});
-  if (res.ok) { const d = await res.json(); toast(`Recalculados: ${d.recalculados} empleados`); }
-  else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
-}
 
 // ── Turnos ────────────────────────────────────────────────────────────────────
 let turnos = [];

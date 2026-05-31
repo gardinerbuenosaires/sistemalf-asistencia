@@ -298,6 +298,8 @@
 <script>
 // ── Estado ────────────────────────────────────────────────────────────────────
 let _perms = new Set();
+let _miTurno = null;
+let _miDept  = null;
 let _lunes = new Date(); // lunes de la semana activa
 let _distribucion = null; // objeto de la semana cargada
 let _puestos = [];
@@ -334,6 +336,8 @@ async function _loadPerms() {
     if (!r.ok) { window.location.href = '/login'; return; }
     const d = await r.json();
     _perms = new Set((d.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    _miTurno = d.turno_dist || null;
+    _miDept  = d.departamento_dist || null;
     document.querySelectorAll('[data-perm]').forEach(el => {
       const [m, a] = el.dataset.perm.split(':');
       if (canDo(m, a)) el.removeAttribute('data-perm');
@@ -394,6 +398,9 @@ function onDeptChange() {
   });
   if (dept.turnos && dept.turnos.length === 1) {
     selTurno.value = dept.turnos[0];
+    cargarGrilla();
+  } else if (_miTurno && dept.turnos && dept.turnos.includes(_miTurno)) {
+    selTurno.value = _miTurno;
     cargarGrilla();
   } else {
     mostrarVacio();
@@ -1330,6 +1337,9 @@ async function init() {
   if (_misAccesos.departamentos.length === 1) {
     sel.value = _misAccesos.departamentos[0].id;
     onDeptChange();
+  } else if (_miDept) {
+    const match = _misAccesos.departamentos.find(d => d.id === _miDept);
+    if (match) { sel.value = match.id; onDeptChange(); }
   }
 }
 

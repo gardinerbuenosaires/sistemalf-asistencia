@@ -638,6 +638,9 @@ def _migrate(conn):
         if col not in cols_pe:
             conn.execute(f"ALTER TABLE premios_evaluacion ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
             logger.info("Migración: columna %s agregada a premios_evaluacion", col)
+    if "monto_base_manual" not in cols_pe:
+        conn.execute("ALTER TABLE premios_evaluacion ADD COLUMN monto_base_manual INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna monto_base_manual agregada a premios_evaluacion")
 
     # Tabla periodos_cerrados
     conn.execute("""
@@ -906,6 +909,12 @@ def _migrate(conn):
     if "pagina_inicio" not in cols_usuarios:
         conn.execute("ALTER TABLE usuarios ADD COLUMN pagina_inicio TEXT")
         logger.info("Migración: columna pagina_inicio agregada a usuarios")
+    if "turno_dist" not in cols_usuarios:
+        conn.execute("ALTER TABLE usuarios ADD COLUMN turno_dist TEXT")
+        logger.info("Migración: columna turno_dist agregada a usuarios")
+    if "departamento_dist" not in cols_usuarios:
+        conn.execute("ALTER TABLE usuarios ADD COLUMN departamento_dist INTEGER")
+        logger.info("Migración: columna departamento_dist agregada a usuarios")
 
     # Catálogos configurables del legajo (turno y sector)
     conn.execute("""

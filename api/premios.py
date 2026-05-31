@@ -403,7 +403,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
         existentes = {
             r["empleado_id"]: dict(r)
             for r in conn.execute(
-                "SELECT empleado_id, bpm, monto_base FROM premios_evaluacion WHERE periodo=?",
+                "SELECT empleado_id, bpm, monto_base, monto_base_manual FROM premios_evaluacion WHERE periodo=?",
                 (periodo,)
             ).fetchall()
         }
@@ -413,7 +413,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
             eid = emp["id"]
             ev_existente = existentes.get(eid, {})
             bpm_actual = ev_existente.get("bpm") or ""
-            monto_actual = ev_existente.get("monto_base") or params["monto_base"]
+            monto_actual = ev_existente.get("monto_base") if ev_existente.get("monto_base_manual") else params["monto_base"]
             datos = _acumular_periodo(conn, eid, periodo)
             desglose = _calcular({**datos, "bpm": bpm_actual, "desempenio": None, "monto_base": monto_actual}, params)
 
@@ -430,6 +430,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
                     dias_enfermo=excluded.dias_enfermo,
                     dias_suspension=excluded.dias_suspension,
                     dias_ausente=excluded.dias_ausente,
+                    monto_base=CASE WHEN monto_base_manual=1 THEN monto_base ELSE excluded.monto_base END,
                     desglose_json=excluded.desglose_json,
                     valor_calculado=excluded.valor_calculado,
                     valor_final=excluded.valor_final,
@@ -466,6 +467,7 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             ev["desempenio"] = data.desempenio
         if data.monto_base is not None:
             ev["monto_base"] = data.monto_base
+            ev["monto_base_manual"] = 1
         if data.tolerar_nf is not None:
             ev["tolerar_nf"] = int(data.tolerar_nf)
         if data.tolerar_e is not None:
@@ -480,13 +482,13 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
 
         conn.execute("""
             UPDATE premios_evaluacion SET
-                bpm=?, desempenio=?, monto_base=?,
+                bpm=?, desempenio=?, monto_base=?, monto_base_manual=?,
                 tolerar_nf=?, tolerar_e=?, tolerar_retardo=?, anular_premio=?,
                 desglose_json=?, valor_calculado=?, valor_final=?,
                 modificado_en=datetime('now','localtime')
             WHERE id=?
         """, (
-            ev["bpm"], ev["desempenio"], ev["monto_base"],
+            ev["bpm"], ev["desempenio"], ev["monto_base"], ev.get("monto_base_manual", 0),
             ev.get("tolerar_nf", 0), ev.get("tolerar_e", 0), ev.get("tolerar_retardo", 0), ev.get("anular_premio", 0),
             json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
             ev_id

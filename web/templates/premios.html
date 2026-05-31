@@ -330,7 +330,8 @@ function _renderDesglose(d) {
 
 const _GRUPO_LABEL = { TM: "Turno Mañana", TN: "Turno Noche", CO: "Turno Cortado", _sin_turno: "Sin turno" };
 let _grupos = {};
-let _tabActiva = "TM";
+const _h = new Date().getHours(), _m = new Date().getMinutes();
+let _tabActiva = (_h < 7 || _h > 17 || (_h === 17 && _m >= 30)) ? 'TN' : 'TM';
 
 function switchTab(grupo) {
   _tabActiva = grupo;

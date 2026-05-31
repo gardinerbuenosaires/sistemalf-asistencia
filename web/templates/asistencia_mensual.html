@@ -688,7 +688,7 @@ async function init() {
   mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
   construirLeyenda();
   await cargarOrdenes();
-  if (canDo('asistencia', 'ver_todos')) tabActiva = 'TODOS';
+  if (canDo('asistencia', 'ver_todos') && _miRol === 'contabilidad') tabActiva = 'TODOS';
   switchTab(tabActiva);
 }
 
@@ -1814,10 +1814,12 @@ async function guardarHorarioFT() {
 }
 
 let _perms = new Set();
+let _miRol = '';
 async function _loadPerms() {
   try {
     const me = await fetch('/api/auth/me').then(r => r.json());
     _perms = new Set((me.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    _miRol = me.rol || '';
     if (me.nombre) document.getElementById('user-info').textContent = me.nombre;
   } catch(e) {}
   document.querySelectorAll('[data-perm]').forEach(el => {

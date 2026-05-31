@@ -743,7 +743,7 @@ def get_mis_accesos(user=Depends(require_permiso("distribucion", "ver"))):
             f"""SELECT d.id, d.nombre, d.sector_id, s.nombre AS sector_nombre
                 FROM departamentos d
                 LEFT JOIN sectores_legajo s ON s.id = d.sector_id
-                WHERE d.id IN ({placeholders}) AND d.activo=1
+                WHERE d.id IN ({placeholders}) AND d.activo=1 AND d.usa_distribucion=1
                 ORDER BY s.nombre, d.nombre""",
             dept_ids
         ).fetchall()

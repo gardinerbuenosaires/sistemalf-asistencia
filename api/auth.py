@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Response, Depends
 from pydantic import BaseModel
+from typing import Optional
 from db.database import db_session
 from auth.core import (verify_password, create_token, get_current_user,
                        hash_password, require_permiso, invalidar_cache,
@@ -25,6 +26,8 @@ class UsuarioIn(BaseModel):
     password: str = ""
     activo: int = 1
     pagina_inicio: str = ""
+    turno_dist: str = ""
+    departamento_dist: Optional[int] = None
 
 
 class RolIn(BaseModel):
@@ -45,7 +48,7 @@ def login(data: LoginIn, response: Response):
     with db_session() as conn:
         row = conn.execute(
             """SELECT u.*, r.nombre as rol_nombre,
-                      COALESCE(u.pagina_inicio, r.pagina_inicio, '/') AS pagina_inicio
+                      COALESCE(u.pagina_inicio, r.pagina_inicio, '/') AS pagina_inicio_eff
                FROM usuarios u LEFT JOIN roles r ON r.id=u.rol_id
                WHERE u.email=? AND u.activo=1""",
             (data.email.strip(),)
@@ -55,7 +58,7 @@ def login(data: LoginIn, response: Response):
     token = create_token(row["id"], row["email"], row["rol_id"], row["rol_nombre"] or "")
     response.set_cookie("session", token, httponly=True, samesite="lax", max_age=INACTIVITY_TTL)
     return {"ok": True, "rol": row["rol_nombre"], "nombre": row["nombre"],
-            "pagina_inicio": row["pagina_inicio"] or "/"}
+            "pagina_inicio": row["pagina_inicio_eff"] or "/"}
 
 
 @router.post("/api/auth/logout")
@@ -68,7 +71,7 @@ def logout(response: Response):
 def me(user=Depends(get_current_user)):
     with db_session() as conn:
         row = conn.execute(
-            """SELECT u.id, u.nombre, u.email, u.rol_id, r.nombre as rol
+            """SELECT u.id, u.nombre, u.email, u.rol_id, u.turno_dist, u.departamento_dist, r.nombre as rol
                FROM usuarios u LEFT JOIN roles r ON r.id=u.rol_id
                WHERE u.id=?""",
             (user["sub"],)
@@ -100,7 +103,7 @@ def list_usuarios(user=Depends(require_permiso("usuarios", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
             """SELECT u.id, u.nombre, u.email, u.rol_id, u.activo, u.creado_en,
-                      u.pagina_inicio, r.nombre as rol_nombre
+                      u.pagina_inicio, u.turno_dist, u.departamento_dist, r.nombre as rol_nombre
                FROM usuarios u LEFT JOIN roles r ON r.id=u.rol_id
                ORDER BY u.nombre"""
         ).fetchall()
@@ -114,10 +117,11 @@ def create_usuario(data: UsuarioIn, user=Depends(require_permiso("usuarios", "ed
     with db_session() as conn:
         if conn.execute("SELECT id FROM usuarios WHERE email=?", (data.email,)).fetchone():
             raise HTTPException(409, "Email ya registrado")
+        turno_dist = data.turno_dist.strip() or None
         cur = conn.execute(
-            "INSERT INTO usuarios (nombre, email, password_hash, rol_id, activo) VALUES (?,?,?,?,?)",
+            "INSERT INTO usuarios (nombre, email, password_hash, rol_id, activo, turno_dist, departamento_dist) VALUES (?,?,?,?,?,?,?)",
             (data.nombre.strip(), data.email.strip(), hash_password(data.password),
-             data.rol_id, data.activo)
+             data.rol_id, data.activo, turno_dist, data.departamento_dist)
         )
         return {"id": cur.lastrowid, "ok": True}
 
@@ -128,18 +132,19 @@ def update_usuario(uid: int, data: UsuarioIn, user=Depends(require_permiso("usua
         if not conn.execute("SELECT id FROM usuarios WHERE id=?", (uid,)).fetchone():
             raise HTTPException(404)
         pagina = data.pagina_inicio.strip() or None
+        turno_dist = data.turno_dist.strip() or None
         if data.password:
             if len(data.password) < 6:
                 raise HTTPException(400, "Mínimo 6 caracteres")
             conn.execute(
-                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,password_hash=?,pagina_inicio=? WHERE id=?",
+                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,password_hash=?,pagina_inicio=?,turno_dist=?,departamento_dist=? WHERE id=?",
                 (data.nombre.strip(), data.email.strip(), data.rol_id,
-                 data.activo, hash_password(data.password), pagina, uid)
+                 data.activo, hash_password(data.password), pagina, turno_dist, data.departamento_dist, uid)
             )
         else:
             conn.execute(
-                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,pagina_inicio=? WHERE id=?",
-                (data.nombre.strip(), data.email.strip(), data.rol_id, data.activo, pagina, uid)
+                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,pagina_inicio=?,turno_dist=?,departamento_dist=? WHERE id=?",
+                (data.nombre.strip(), data.email.strip(), data.rol_id, data.activo, pagina, turno_dist, data.departamento_dist, uid)
             )
     return {"ok": True}
 

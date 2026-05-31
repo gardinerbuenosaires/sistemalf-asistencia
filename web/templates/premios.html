@@ -82,7 +82,7 @@
 
   /* Inline edits */
   .field-bpm select { padding: 3px 6px; border: 1px solid #ced4da; border-radius: 4px; font-size: .8rem; }
-  .field-desempenio textarea { width: 100%; min-height: 50px; padding: 4px 6px; border: 1px solid #ced4da; border-radius: 4px; font-size: .8rem; resize: vertical; font-family: inherit; }
+  .field-desempenio textarea { width: 100%; min-height: 50px; padding: 4px 6px; border: 1px solid #ced4da; border-radius: 4px; font-size: .8rem; resize: none; font-family: inherit; overflow: hidden; }
   .field-monto input { width: 90px; padding: 3px 6px; border: 1px solid #ced4da; border-radius: 4px; font-size: .8rem; }
 
   .btn-save-row { padding: 3px 10px; font-size: .75rem; background: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 4px; }
@@ -123,7 +123,7 @@
     th, td { padding: 4px 6px; }
     .desglose { display: none !important; }
     .field-bpm select { border: none; background: transparent; -webkit-appearance: none; appearance: none; font-size: .7rem; }
-    .field-desempenio textarea { border: none; background: transparent; resize: none; font-size: .7rem; overflow: hidden; min-height: 0; }
+    .field-desempenio textarea { display: none !important; }
     .firma-cell, .th-firma { display: table-cell !important; min-width: 120px; }
     .det-col, .th-det, .det-inline { display: none !important; }
     .screen-only { display: none !important; }
@@ -132,6 +132,7 @@
     .grupo-header td { padding: 5px 8px !important; }
     tbody td { border-bottom: 1px solid #aaa !important; }
     .print-only { display: block !important; }
+    #print-titulo { display: flex !important; justify-content: space-between; align-items: baseline; }
   }
 </style>
 </head>
@@ -209,7 +210,10 @@
     <button class="tab-btn" onclick="switchTab('_sin_turno')" id="tab-_sin_turno" style="display:none">Sin turno<span class="cnt" id="cnt-tab-_sin_turno">0</span></button>
   </div>
 
-  <div id="print-titulo" class="print-only" style="font-size:1.1rem;font-weight:bold;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #333;"></div>
+  <div id="print-titulo" class="print-only" style="font-size:1.1rem;font-weight:bold;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #333;display:flex;justify-content:space-between;align-items:baseline">
+    <span id="print-titulo-texto"></span>
+    <span id="print-titulo-total" style="text-align:right"></span>
+  </div>
 
   <div class="section">
     <table>
@@ -353,7 +357,7 @@ function _mostrarTab() {
   const periodo = document.getElementById("periodo-sel").value;
   const tituloEl = document.getElementById("print-titulo");
   const prefijo = _nombreEmpresa ? `${_nombreEmpresa} — ` : "";
-  if (tituloEl) tituloEl.textContent = `${prefijo}Premios ${_GRUPO_LABEL[_tabActiva] || _tabActiva} — ${_fmtPeriodo(periodo)}`;
+  document.getElementById('print-titulo-texto').textContent = `${prefijo}Premios ${_GRUPO_LABEL[_tabActiva] || _tabActiva} — ${_fmtPeriodo(periodo)}`;
   const data = _grupos[_tabActiva] || [];
   if (!data.length) {
     tbody.innerHTML = `<tr><td colspan="14"><div class="empty-state">Sin empleados en este turno para el período.</div></td></tr>`;
@@ -362,7 +366,13 @@ function _mostrarTab() {
   }
   const corregir = canDo("premios", "corregir");
   tbody.innerHTML = data.map(ev => _filaHtml(ev, editar, corregir)).join("");
+  tbody.querySelectorAll('.field-desempenio textarea').forEach(_autoResize);
   _recalcularCards();
+}
+
+function _autoResize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
 }
 
 function _cnt(val, suffix = '') {
@@ -422,19 +432,19 @@ function _filaHtml(ev, editar, corregir) {
       ${_renderDesglose(d)}
     </td>
     <td class="${bloqueado ? '' : (ev.anular_premio ? 'valor-cero' : clsValor)}">
-      <span class="screen-only">
-        ${sinBpm        ? '<div class="falta-bpm">Falta BPM</div>'            : ''}
-        ${sinAsistencia ? '<div class="asist-inc">Asistencia incompleta</div>' : ''}
-        ${!bloqueado    ? _fmtPesos(vfPantalla)                               : ''}
-      </span>
-      <span class="print-only">${_fmtPesos(vf)}</span>
+      ${sinBpm        ? '<div class="falta-bpm">Falta BPM</div>'            : ''}
+      ${sinAsistencia ? '<div class="asist-inc">Asistencia incompleta</div>' : ''}
+      ${bloqueado
+        ? (!sinBpm ? `<div style="font-size:.78rem;color:#ccc;font-style:italic;margin-top:3px">${_fmtPesos(vfPantalla)}</div>` : '')
+        : _fmtPesos(vfPantalla)}
       ${_periodoAbierto && !bloqueado ? '<div style="font-size:.65rem;color:#b8860b;font-style:italic;line-height:1.1;margin-top:2px">a confirmar</div>' : ''}
     </td>
     <td class="det-col">${chkAnula}</td>
     <td class="field-desempenio" style="min-width:160px">
       ${editar
-        ? `<textarea oninput="guardarDesempenioDebounce(${ev.id})">${ev.desempenio||""}</textarea>`
-        : `<span style="font-size:.8rem">${ev.desempenio||""}</span>`}
+        ? `<textarea oninput="_autoResize(this);guardarDesempenioDebounce(${ev.id})">${ev.desempenio||""}</textarea>
+           <span class="print-only" style="font-size:.7rem;white-space:pre-wrap;word-break:break-word">${ev.desempenio||""}</span>`
+        : `<span style="font-size:.8rem;white-space:pre-wrap">${ev.desempenio||""}</span>`}
     </td>
     <td class="field-bpm">${editar ? bpmSelect : bpmBadge}</td>
     <td class="cell-puntualidad">${_badgePuntualidad(d.puntualidad_status, d.descalificado)}</td>
@@ -583,6 +593,7 @@ function _recalcularCards() {
   document.getElementById("cnt-descuento").textContent = descuento;
   document.getElementById("cnt-cero").textContent      = cero;
   document.getElementById("total-pagar").textContent   = _fmtPesos(total);
+  document.getElementById("print-titulo-total").textContent = `Total a pagar: ${_fmtPesos(total)}`;
 }
 
 function _renderDiagnostico(d) {
@@ -623,8 +634,7 @@ async function cargarDiagnostico() {
 
 function imprimirPremios() {
   if (_periodoAbierto) {
-    alert("⚠ El período no está cerrado en asistencia.\nLos valores pueden cambiar — cerrá el período antes de imprimir.");
-    return;
+    if (!confirm("⚠ El período no está cerrado — los valores pueden cambiar.\n¿Imprimís de todas formas?")) return;
   }
   window.print();
 }

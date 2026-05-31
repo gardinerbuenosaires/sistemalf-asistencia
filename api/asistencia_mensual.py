@@ -492,7 +492,7 @@ def _asistencia_datos(mes: str) -> dict:
                             feriados_trab += 1.0
 
         transporte = transporte_map.get(eid, 0)
-        saldo_mes  = tots.get("FD", 0) - tots.get("FT", 0)
+        saldo_mes  = transporte + tots.get("FD", 0) - tots.get("FT", 0)
         control    = _calcular_control(fechas, f_egr, celdas, cortado, f0, f1,
                                        date.today().isoformat())
 

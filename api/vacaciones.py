@@ -118,7 +118,7 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
                FROM empleados e
                LEFT JOIN cargos c ON c.id = e.cargo_id
                LEFT JOIN categorias cat ON cat.id = e.categoria_id
-               WHERE e.activo = 1 AND e.tipo != 'acceso' ORDER BY e.apellido, e.nombre"""
+               WHERE e.activo = 1 AND e.tipo != 'acceso' ORDER BY e.apellido COLLATE NOCASE, e.nombre COLLATE NOCASE"""
         ).fetchall()
 
         # Todos los saldos_iniciales (cualquier año)
@@ -223,7 +223,7 @@ def get_saldo_inicial(anio: int, _user=Depends(require_permiso("vacaciones", "ed
             """SELECT e.id, e.nombre, e.apellido, e.fecha_ingreso, c.nombre AS cargo
                FROM empleados e
                LEFT JOIN cargos c ON c.id = e.cargo_id
-               WHERE e.activo = 1 AND e.tipo != 'acceso' ORDER BY e.apellido, e.nombre"""
+               WHERE e.activo = 1 AND e.tipo != 'acceso' ORDER BY e.apellido COLLATE NOCASE, e.nombre COLLATE NOCASE"""
         ).fetchall()
         saldos = {
             r["empleado_id"]: dict(r)

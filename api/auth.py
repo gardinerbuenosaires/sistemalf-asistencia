@@ -164,7 +164,7 @@ def delete_usuario(uid: int, user=Depends(require_permiso("usuarios", "eliminar"
 def list_roles(user=Depends(get_current_user)):
     with db_session() as conn:
         roles = conn.execute(
-            "SELECT * FROM roles WHERE activo=1 ORDER BY nivel DESC"
+            "SELECT * FROM roles WHERE activo=1 ORDER BY nombre"
         ).fetchall()
         result = []
         for r in roles:

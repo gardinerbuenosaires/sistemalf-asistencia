@@ -882,9 +882,8 @@ function renderRolesList() {
       <div style="flex:1;min-width:0">
         <div class="usr-nombre">${r.nombre}</div>
         <div class="rol-desc-small">${r.descripcion||""}</div>
-        <div class="nivel-bar" style="width:${Math.min(r.nivel,100)}%"></div>
       </div>
-      <span class="rol-nivel-tag">Nivel ${r.nivel}</span>
+      <span class="rol-nivel-tag">${(r.permisos||[]).length} permisos</span>
     </div>`).join("");
 }
 
@@ -917,10 +916,6 @@ function renderRolEditor(rol={}) {
       <div class="form-group">
         <label>Descripción</label>
         <input type="text" id="rf-desc" value="${rol.descripcion||''}" ${dis}>
-      </div>
-      <div class="form-group">
-        <label>Nivel</label>
-        <input type="number" id="rf-nivel" value="${rol.nivel||1}" min="1" max="100" ${dis}>
       </div>
     </div>
     <div class="form-row-3" style="margin-top:8px">
@@ -1007,7 +1002,6 @@ function cancelarRol() {
 async function guardarRol() {
   const nombre        = document.getElementById("rf-nombre").value.trim();
   const desc          = document.getElementById("rf-desc").value.trim();
-  const nivel         = parseInt(document.getElementById("rf-nivel").value) || 1;
   const paginaInicio  = document.getElementById("rf-pagina-inicio").value.trim() || "/";
   if (!nombre) { toast("El nombre es obligatorio"); return; }
 
@@ -1015,13 +1009,13 @@ async function guardarRol() {
   if (rid) {
     const r = await fetch(`/api/roles/${rid}`, {
       method:"PUT", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({nombre, descripcion:desc, nivel, pagina_inicio:paginaInicio})
+      body: JSON.stringify({nombre, descripcion:desc, nivel:1, pagina_inicio:paginaInicio})
     });
     if (!r.ok) { toast("Error al guardar"); return; }
   } else {
     const r = await fetch("/api/roles", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({nombre, descripcion:desc, nivel, pagina_inicio:paginaInicio})
+      body: JSON.stringify({nombre, descripcion:desc, nivel:1, pagina_inicio:paginaInicio})
     });
     if (!r.ok) { const e=await r.json().catch(()=>({})); toast("Error: "+(e.detail||"desconocido")); return; }
     const data = await r.json();

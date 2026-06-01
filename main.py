@@ -591,6 +591,11 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
         if (all(f["timestamp"][11:16] < "06:00" for f in fichajes_hoy_f)
                 and any(f["timestamp"][11:16] >= "17:00" for f in fichajes_ayer_f)):
             continue
+        # Salida de turno 00:00-08:00: todos los fichajes de hoy son antes de las 09:00
+        # y hay una entrada ayer después de las 23:00 → salida del turno de medianoche, ignorar.
+        if (all(f["timestamp"][11:16] < "09:00" for f in fichajes_hoy_f)
+                and any(f["timestamp"][11:16] >= "23:00" for f in fichajes_ayer_f)):
+            continue
         ultimo_dt = datetime.strptime(fichajes_hoy_f[-1]["timestamp"], "%Y-%m-%d %H:%M:%S")
         entrada = {
             "empleado_id":    fila["empleado_id"],

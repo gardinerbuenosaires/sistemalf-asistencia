@@ -191,6 +191,7 @@
     </div>
     <button class="btn btn-primary" onclick="cargar()">Filtrar</button>
     <button class="btn btn-green" data-perm="resultados:procesar" onclick="procesar()" title="Re-procesar el período seleccionado contra la planificación">&#8635; Procesar</button>
+    <button class="btn" data-perm="resultados:procesar" onclick="abrirForzarReproceso()" style="background:#c0392b;color:white" title="Forzar reproceso de un día para un empleado, pisando correcciones manuales">⚠ Forzar reproceso</button>
     <button class="btn" data-perm="asistencia:editar" onclick="abrirModal()" style="background:#8e44ad;color:white">+ Corrección</button>
   </div>
 
@@ -223,6 +224,30 @@
 <div id="toast"></div>
 
 <!-- ── Modal corrección ─────────────────────────────────────────── -->
+<div class="modal-backdrop" id="modal-forzar" onclick="document.getElementById('modal-forzar').classList.remove('open')">
+  <div class="modal-panel" onclick="event.stopPropagation()" style="max-width:420px">
+    <h3 style="color:#c0392b">⚠ Forzar reproceso</h3>
+    <p style="font-size:.82rem;color:#555;margin-bottom:16px;line-height:1.5">
+      Reprocesa el día seleccionado para el empleado, <strong>pisando cualquier corrección manual previa</strong>.
+      Usarlo solo cuando la planificación fue modificada y el Procesar normal no actualizó el resultado.
+    </p>
+    <div class="modal-grid2">
+      <div class="fg">
+        <label>Empleado</label>
+        <select id="fr-empleado" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem"><option value="">— seleccionar —</option></select>
+      </div>
+      <div class="fg">
+        <label>Fecha</label>
+        <input type="date" id="fr-fecha" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="document.getElementById('modal-forzar').classList.remove('open')">Cancelar</button>
+      <button class="btn" onclick="ejecutarForzarReproceso()" style="background:#c0392b;color:white;font-weight:bold">Forzar reproceso</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-corr" onclick="cerrarModal()">
   <div class="modal-panel" onclick="event.stopPropagation()">
     <h3>Corrección manual</h3>
@@ -677,6 +702,36 @@ function abrirModal(empId = null, fecha = null) {
 function cerrarModal() {
   document.getElementById('modal-corr').classList.remove('open');
   _grupalEmps = [];
+}
+
+function abrirForzarReproceso() {
+  const sel = document.getElementById('fr-empleado');
+  if (sel.options.length <= 1) {
+    todosEmpleados.forEach(e => {
+      sel.appendChild(new Option(
+        `${e.apellido}${e.nombre ? ', '+e.nombre : ''}`,
+        e.id
+      ));
+    });
+  }
+  const fechaDesde = document.getElementById('f-desde').value;
+  if (fechaDesde) document.getElementById('fr-fecha').value = fechaDesde;
+  document.getElementById('modal-forzar').classList.add('open');
+}
+
+async function ejecutarForzarReproceso() {
+  const empId = document.getElementById('fr-empleado').value;
+  const fecha  = document.getElementById('fr-fecha').value;
+  if (!empId || !fecha) { toast('Seleccioná empleado y fecha'); return; }
+  if (!confirm(`⚠ Esto pisará la corrección manual del ${fecha} para este empleado.\n¿Continuar?`)) return;
+  const res = await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${empId}&respetar_correcciones=false`, { method: 'POST' });
+  if (res.ok) {
+    document.getElementById('modal-forzar').classList.remove('open');
+    toast('Reproceso forzado OK');
+    await cargar();
+  } else {
+    toast('Error al reprocesar');
+  }
 }
 
 function modalTab(tab) {

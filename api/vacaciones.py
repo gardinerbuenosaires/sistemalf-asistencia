@@ -216,7 +216,7 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
 
 
 @router.get("/saldo-inicial")
-def get_saldo_inicial(anio: int, _user=Depends(require_permiso("vacaciones", "editar"))):
+def get_saldo_inicial(anio: int, _user=Depends(require_permiso("vacaciones", "carga_inicial"))):
     """Devuelve todos los empleados activos con sus datos de saldo inicial (para edición)."""
     with db_session() as conn:
         empleados = conn.execute(
@@ -309,7 +309,7 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
 
 
 @router.post("/saldo-inicial", status_code=200)
-def upsert_saldo_inicial(data: SaldoInicialIn, _user=Depends(require_permiso("vacaciones", "editar"))):
+def upsert_saldo_inicial(data: SaldoInicialIn, _user=Depends(require_permiso("vacaciones", "carga_inicial"))):
     """Inserta o actualiza el saldo inicial de un empleado para un año."""
     with db_session() as conn:
         if not conn.execute("SELECT id FROM empleados WHERE id=?", (data.empleado_id,)).fetchone():

@@ -108,6 +108,10 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
         if plan["es_franco"]:
             return {"letra": "F", "tipo": "normal"}
         if plan["horario_id"]:
+            if bloque == 1 and not plan.get("b1_aplica", 1):
+                return {"letra": "MT", "tipo": "mt"}
+            if bloque == 2 and not plan.get("b2_aplica", 1):
+                return {"letra": "MT", "tipo": "mt"}
             return {"letra": None, "tipo": "pendiente"}
 
     return {"letra": None, "tipo": "sin_plan"}
@@ -214,8 +218,11 @@ def get_control_estados_batch(conn, eids: list, f0: str, f1: str) -> dict:
             cortado_map[r["empleado_id"]] = (r["tipo"] == "cortado")
 
     planes = conn.execute(
-        f"SELECT p.empleado_id, p.fecha, p.es_franco, p.horario_id, h.tipo AS horario_tipo "
+        f"SELECT p.empleado_id, p.fecha, p.es_franco, p.horario_id, h.tipo AS horario_tipo, "
+        f"COALESCE(hb1.aplica,1) AS b1_aplica, COALESCE(hb2.aplica,1) AS b2_aplica "
         f"FROM planificacion p LEFT JOIN horarios h ON h.id=p.horario_id "
+        f"LEFT JOIN horarios_bloques hb1 ON hb1.horario_id=p.horario_id AND hb1.bloque=1 "
+        f"LEFT JOIN horarios_bloques hb2 ON hb2.horario_id=p.horario_id AND hb2.bloque=2 "
         f"WHERE p.empleado_id IN ({ph}) AND p.fecha>=? AND p.fecha<=?",
         (*eids, f0, f1)
     ).fetchall()
@@ -354,9 +361,12 @@ def _asistencia_datos(mes: str) -> dict:
         ph   = ",".join("?" * len(eids))
 
         planes = conn.execute(
-            f"SELECT p.empleado_id, p.fecha, p.es_franco, p.horario_id, h.tipo AS horario_tipo "
+            f"SELECT p.empleado_id, p.fecha, p.es_franco, p.horario_id, h.tipo AS horario_tipo, "
+            f"COALESCE(hb1.aplica,1) AS b1_aplica, COALESCE(hb2.aplica,1) AS b2_aplica "
             f"FROM planificacion p "
             f"LEFT JOIN horarios h ON h.id = p.horario_id "
+            f"LEFT JOIN horarios_bloques hb1 ON hb1.horario_id=p.horario_id AND hb1.bloque=1 "
+            f"LEFT JOIN horarios_bloques hb2 ON hb2.horario_id=p.horario_id AND hb2.bloque=2 "
             f"WHERE p.empleado_id IN ({ph}) AND p.fecha>=? AND p.fecha<=?",
             (*eids, f0, f1)
         ).fetchall()

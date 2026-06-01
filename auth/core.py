@@ -189,16 +189,17 @@ def ensure_admin():
     logger = logging.getLogger(__name__)
 
     with db_session() as conn:
-        # Crear roles default si no existen
+        # Crear roles default si no existen (comparación case-insensitive)
         for nombre, desc, nivel in ROLES_DEFAULT:
-            conn.execute(
-                "INSERT OR IGNORE INTO roles (nombre, descripcion, nivel) VALUES (?,?,?)",
-                (nombre, desc, nivel)
-            )
+            if not conn.execute("SELECT id FROM roles WHERE lower(nombre)=lower(?)", (nombre,)).fetchone():
+                conn.execute(
+                    "INSERT INTO roles (nombre, descripcion, nivel) VALUES (?,?,?)",
+                    (nombre, desc, nivel)
+                )
 
-        # Crear permisos default para cada rol
+        # Crear permisos default para cada rol (case-insensitive)
         for rol_nombre, modulos in PERMISOS_DEFAULT.items():
-            rol = conn.execute("SELECT id FROM roles WHERE nombre=?", (rol_nombre,)).fetchone()
+            rol = conn.execute("SELECT id FROM roles WHERE lower(nombre)=lower(?)", (rol_nombre,)).fetchone()
             if not rol:
                 continue
             rid = rol["id"]

@@ -1939,6 +1939,7 @@ function _tipShow(e) {
     if (isCp)  html += `<div class="tip-manual" style="margin-top:4px;font-weight:bold;text-transform:uppercase">COMPENSACIÓN DE PRESENCIA</div>`;
     if (desc)  html += `<div class="tip-manual" style="margin-top:2px;white-space:normal;max-width:160px">${escHtml(desc)}</div>`;
     if (autor) html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:2px">${escHtml(autor)}</div>`;
+    if (cel.querySelector('.tipo-mt')) html += `<div style="color:#f0c040;font-size:.71rem;margin-top:5px;white-space:normal;max-width:220px;line-height:1.4">⚠ Bloque MT — al cargar cualquier novedad que no sea presente, aplicala en ambos bloques, sino el día no se cuenta correctamente.</div>`;
     _tipEl.innerHTML = html;
     _tipEl.style.display = 'block';
     _tipPos(e);

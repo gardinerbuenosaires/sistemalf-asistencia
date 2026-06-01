@@ -349,10 +349,26 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                             if excluir_antes is None or actual_excluir > excluir_antes:
                                 excluir_antes = actual_excluir
                             break
+                # Excluir fichajes nocturnos que son entrada anticipada del turno siguiente (ej: 00:00-08:00)
+                excluir_desde: datetime | None = None
+                plan_sig = conn.execute(
+                    "SELECT horario_id FROM planificacion WHERE empleado_id=? AND fecha=? AND es_franco=0",
+                    (eid, str(fecha + timedelta(days=1)))
+                ).fetchone()
+                if plan_sig and plan_sig["horario_id"]:
+                    bloque_sig = conn.execute(
+                        "SELECT hora_entrada, tolerancia_entrada_antes FROM horarios_bloques "
+                        "WHERE horario_id=? AND bloque=1",
+                        (plan_sig["horario_id"],)
+                    ).fetchone()
+                    if bloque_sig and bloque_sig["hora_entrada"] <= "01:00":
+                        tol = bloque_sig["tolerancia_entrada_antes"] or 30
+                        excluir_desde = _dt(fecha + timedelta(days=1), "00:00") - timedelta(minutes=tol)
                 fichajes_franco = [
                     f for f in fich_map.get(eid, [])
                     if f["timestamp"][:10] == fecha_str
                     and (excluir_antes is None or datetime.fromisoformat(f["timestamp"]) > excluir_antes)
+                    and (excluir_desde is None or datetime.fromisoformat(f["timestamp"]) < excluir_desde)
                 ]
                 # Último recurso: un único fichaje antes de las 06:00 en un día franco
                 # solo se descarta si hay fichajes de ayer después de las 17:00 (evidencia de turno noche anterior)

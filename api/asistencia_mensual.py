@@ -163,6 +163,8 @@ def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
     extra = {"dias_ausentes_sc": dias_ausentes_sc} if dias_ausentes_sc else {}
 
     if dias_activos < 3:
+        if tiene_egreso_mes:
+            return {"estado": "liquidacion", **extra}
         return {"estado": "vacio", **extra}
     if not dias_duda and not dias_faltantes:
         if dias_ausentes_sc:

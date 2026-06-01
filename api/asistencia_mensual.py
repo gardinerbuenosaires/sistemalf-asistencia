@@ -331,22 +331,24 @@ def _asistencia_datos(mes: str) -> dict:
 
         # Empleados: activos + desvinculados cuyo fecha_egreso cae dentro del mes
         emp_rows = conn.execute("""
-            WITH ult AS (
+            WITH freq AS (
                 SELECT p.empleado_id, h.tipo, t.nombre AS turno_nombre,
+                       COUNT(*) AS cnt,
                        ROW_NUMBER() OVER (
-                           PARTITION BY p.empleado_id ORDER BY p.fecha DESC
+                           PARTITION BY p.empleado_id ORDER BY COUNT(*) DESC
                        ) AS rn
                 FROM planificacion p
                 JOIN horarios h ON h.id = p.horario_id
                 LEFT JOIN turnos t ON t.id = h.turno_id
                 WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
+                GROUP BY p.empleado_id, h.tipo, t.nombre
             )
             SELECT e.id, e.user_id, e.nombre, e.apellido, c.nombre AS cargo,
                    e.fecha_ingreso, e.fecha_egreso, e.en_dispositivo, e.activo,
                    u.tipo AS hipo, u.turno_nombre
             FROM empleados e
             LEFT JOIN cargos c ON c.id = e.cargo_id
-            LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
+            LEFT JOIN freq u ON u.empleado_id = e.id AND u.rn = 1
             WHERE e.tipo != 'acceso'
               AND (e.activo = 1
                OR (e.fecha_egreso > ? AND e.fecha_egreso <= ?))

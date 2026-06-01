@@ -457,6 +457,8 @@ def _asistencia_datos(mes: str) -> dict:
                         tots[l] += 0.5
                         if l in CONTABLES:
                             tots["dias"] += 0.5
+                    elif b["tipo"] in ("mt", "mt_trabajado"):
+                        tots["dias"] += 0.5
                 if fecha in feriados:
                     letras_feri = [b["letra"] for b in (b1, b2)
                                    if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF")]
@@ -475,6 +477,9 @@ def _asistencia_datos(mes: str) -> dict:
                             tots[l] += 0.5
                             if l in CONTABLES:
                                 tots["dias"] += 0.5
+                        elif b["tipo"] in ("mt", "mt_trabajado"):
+                            tots["MT"] += 0.5
+                            tots["dias"] += 0.5
                     if fecha in feriados:
                         letras_feri = [b["letra"] for b in (b1, b2)
                                        if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF")]

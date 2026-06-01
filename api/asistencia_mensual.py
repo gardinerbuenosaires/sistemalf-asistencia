@@ -463,7 +463,7 @@ def _asistencia_datos(mes: str) -> dict:
                     letras_feri = [b["letra"] for b in (b1, b2)
                                    if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF")]
                     if any(l != "@" for l in letras_feri):
-                        feriados_trab += len(letras_feri) * 0.5
+                        feriados_trab += 1.0
             else:
                 plan = plan_map.get((eid, fecha))
                 dia_cortado = plan and plan.get("horario_tipo") == "cortado"

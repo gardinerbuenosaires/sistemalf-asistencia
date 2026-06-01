@@ -217,6 +217,7 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                   horario_ids: list | None = None) -> dict:
     """Procesa todos los empleados con planificación en fecha_str."""
     fecha     = date.fromisoformat(fecha_str)
+    fecha_ant = str(fecha - timedelta(days=1))
     fecha_sig = str(fecha + timedelta(days=1))
     resumen   = {"evaluados": 0, "ok": 0, "tarde": 0, "ausente": 0, "franco": 0, "otros": 0, "saltados": 0}
 
@@ -296,9 +297,9 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
         pe   = ",".join("?" * len(eids))
         fichajes_rows = conn.execute(
             f"SELECT * FROM fichajes "
-            f"WHERE empleado_id IN ({pe}) AND (date(timestamp)=? OR date(timestamp)=?) "
+            f"WHERE empleado_id IN ({pe}) AND (date(timestamp)=? OR date(timestamp)=? OR date(timestamp)=?) "
             f"ORDER BY empleado_id, timestamp",
-            eids + [fecha_str, fecha_sig]
+            eids + [fecha_ant, fecha_str, fecha_sig]
         ).fetchall()
 
         fich_map: dict[int, list] = defaultdict(list)

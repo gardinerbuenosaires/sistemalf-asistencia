@@ -179,7 +179,7 @@ def list_roles(user=Depends(get_current_user)):
 @router.post("/api/roles", status_code=201)
 def create_rol(data: RolIn, user=Depends(require_permiso("roles", "editar"))):
     with db_session() as conn:
-        if conn.execute("SELECT id FROM roles WHERE nombre=?", (data.nombre,)).fetchone():
+        if conn.execute("SELECT id FROM roles WHERE lower(nombre)=lower(?)", (data.nombre,)).fetchone():
             raise HTTPException(409, "Ya existe un rol con ese nombre")
         cur = conn.execute(
             "INSERT INTO roles (nombre, descripcion, nivel, pagina_inicio) VALUES (?,?,?,?)",
@@ -193,6 +193,8 @@ def update_rol(rid: int, data: RolIn, user=Depends(require_permiso("roles", "edi
     with db_session() as conn:
         if not conn.execute("SELECT id FROM roles WHERE id=?", (rid,)).fetchone():
             raise HTTPException(404)
+        if conn.execute("SELECT id FROM roles WHERE lower(nombre)=lower(?) AND id!=?", (data.nombre, rid)).fetchone():
+            raise HTTPException(409, "Ya existe un rol con ese nombre")
         conn.execute(
             "UPDATE roles SET nombre=?,descripcion=?,nivel=?,pagina_inicio=? WHERE id=?",
             (data.nombre.strip(), data.descripcion.strip(), data.nivel,

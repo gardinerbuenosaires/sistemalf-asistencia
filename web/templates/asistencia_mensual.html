@@ -409,6 +409,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
   </button>
   <button class="btn-orden" data-perm="asistencia:carga_inicial" onclick="abrirSaldoFrancos()"
           style="background:#856404;color:white;border-color:#856404">Saldo inicial francos</button>
+  <button class="btn-orden" onclick="reporteNF()" title="Imprime empleados con No Fichadas en el período">Reporte NF</button>
   <button class="btn-orden btn-cerrar" id="btn-cerrar-periodo" style="display:none" onclick="toggleCerrarPeriodo()">
     Cerrar período
   </button>
@@ -672,6 +673,7 @@ const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio',
 // ── Estado global ─────────────────────────────────────────────────────────────
 let mesActual = '';
 let datosActuales = null;
+let _asignaciones = {};
 const _h = new Date().getHours(), _m = new Date().getMinutes();
 let tabActiva = (_h < 7 || _h > 17 || (_h === 17 && _m >= 30)) ? 'TN' : 'TM';
 let modalCtx = null;
@@ -726,6 +728,7 @@ async function cargar() {
       fetch(`/api/periodos-cerrados/${y}/${m}`),
     ]);
     datosActuales = await rData.json();
+    _asignaciones = datosActuales.asignaciones || {};
     const periodo = await rPeriodo.json();
     periodoCerrado = periodo.cerrado === true;
     actualizarBannerCerrado(y, m);
@@ -1940,6 +1943,9 @@ function _tipShow(e) {
     if (desc)  html += `<div class="tip-manual" style="margin-top:2px;white-space:normal;max-width:160px">${escHtml(desc)}</div>`;
     if (autor) html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:2px">${escHtml(autor)}</div>`;
     if (cel.closest('tr')?.querySelector('.tipo-mt')) html += `<div style="color:#f0c040;font-size:.71rem;margin-top:5px;white-space:normal;max-width:220px;line-height:1.4">⚠ Bloque MT — al cargar cualquier novedad que no sea presente, aplicala en ambos bloques, sino el día no se cuenta correctamente.</div>`;
+    const asigKey = `${eid}_${fecha}`;
+    const asigPor = _asignaciones[asigKey];
+    if (asigPor) html += `<div class="tip-manual" style="margin-top:4px">✎ Asignado por: ${escHtml(asigPor)}</div>`;
     _tipEl.innerHTML = html;
     _tipEl.style.display = 'block';
     _tipPos(e);
@@ -2100,6 +2106,60 @@ document.addEventListener('keydown', e => {
 
 // ── Saldo inicial francos ──────────────────────────────────────────────────────
 let _sfData = [];
+
+function reporteNF() {
+  if (!datosActuales) { alert('Cargá un período primero'); return; }
+  const d = datosActuales;
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const [y, m] = mesActual.split('-');
+  const periodo = `${meses[parseInt(m,10)-1]} ${y}`;
+  const grupos = [
+    { key: 'TM', label: 'Turno Mañana' },
+    { key: 'TN', label: 'Turno Noche'  },
+    { key: 'CO', label: 'Turno Cortado' },
+  ];
+  let bloques = '';
+  for (const { key, label } of grupos) {
+    const emps = (d[key] || []).filter(e => (e.totales?.NF ?? 0) > 0).sort((a, b) => (b.totales.NF ?? 0) - (a.totales.NF ?? 0));
+    if (!emps.length) continue;
+    const filas = emps.map(e => `
+      <tr>
+        <td>${e.apellido}, ${e.nombre}</td>
+        <td>${e.cargo || ''}</td>
+        <td style="text-align:center;font-weight:bold">${e.totales.NF}</td>
+      </tr>`).join('');
+    bloques += `
+      <h3 style="margin:18px 0 6px;font-size:.95rem;border-bottom:1px solid #333;padding-bottom:3px">${label}</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+        <thead><tr>
+          <th style="text-align:left;padding:4px 8px;border-bottom:2px solid #333">Empleado</th>
+          <th style="text-align:left;padding:4px 8px;border-bottom:2px solid #333">Cargo</th>
+          <th style="text-align:center;padding:4px 8px;border-bottom:2px solid #333">NF</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>`;
+  }
+  if (!bloques) { alert('Ningún empleado tiene No Fichadas en este período.'); return; }
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Reporte NF — ${periodo}</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 20mm; color: #333; }
+      h2 { font-size: 1.1rem; margin-bottom: 4px; }
+      .sub { font-size: .8rem; color: #666; margin-bottom: 16px; }
+      tbody tr:nth-child(even) { background: #f5f5f5; }
+      td, th { padding: 4px 8px; }
+      @media print { @page { size: A4 portrait; margin: 15mm; } }
+    </style>
+  </head><body>
+    <h2>Reporte No Fichadas — ${periodo}</h2>
+    <div class="sub">Solo empleados con NF &gt; 0</div>
+    ${bloques}
+  </body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
+}
 
 function abrirSaldoFrancos() {
   const el = document.getElementById('sf-mes');

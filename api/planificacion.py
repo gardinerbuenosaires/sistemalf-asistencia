@@ -107,19 +107,21 @@ def set_dia(data: PlanDiaIn, _user=Depends(require_permiso("planificacion", "edi
 
     with db_session() as conn:
         check_periodo_abierto(conn, data.fecha)
+        uid = int(_user.get("sub") or 0) or None
         conn.execute(
             """
-            INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, observacion, auto_generado)
-            VALUES (?, ?, ?, ?, ?, 0)
+            INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, observacion, auto_generado, creado_por)
+            VALUES (?, ?, ?, ?, ?, 0, ?)
             ON CONFLICT(empleado_id, fecha) DO UPDATE SET
                 horario_id     = excluded.horario_id,
                 es_franco      = excluded.es_franco,
                 observacion    = excluded.observacion,
                 auto_generado  = 0,
+                creado_por     = excluded.creado_por,
                 modificado_en  = datetime('now','localtime')
             """,
             (data.empleado_id, data.fecha, data.horario_id,
-             int(data.es_franco), data.observacion),
+             int(data.es_franco), data.observacion, uid),
         )
         # Devolver la fila actualizada con nombre de horario
         row = conn.execute(

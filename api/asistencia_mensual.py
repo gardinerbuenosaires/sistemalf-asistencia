@@ -535,13 +535,27 @@ def _asistencia_datos(mes: str) -> dict:
             },
         })
 
+    # Asignaciones manuales: eid_fecha → nombre del usuario que asignó el horario
+    with db_session() as conn:
+        ph2 = ",".join("?" * len([r["id"] for r in emp_rows])) if emp_rows else "0"
+        eids2 = [r["id"] for r in emp_rows] if emp_rows else []
+        asig_rows = conn.execute(
+            f"SELECT p.empleado_id, p.fecha, u.nombre as asignado_por "
+            f"FROM planificacion p JOIN usuarios u ON u.id = p.creado_por "
+            f"WHERE p.empleado_id IN ({ph2}) AND p.fecha>=? AND p.fecha<=? "
+            f"AND p.auto_generado=0 AND p.creado_por IS NOT NULL",
+            (*eids2, f0, f1)
+        ).fetchall() if eids2 else []
+    asignaciones = {f"{r['empleado_id']}_{r['fecha']}": r['asignado_por'] for r in asig_rows}
+
     return {
-        "mes":  mes,
-        "dias": _build_dias(fechas, feriados),
-        "TM":   grupos["TM"],
-        "TN":   grupos["TN"],
-        "CO":   grupos["CO"],
-        "ST":   grupos["ST"],
+        "mes":          mes,
+        "dias":         _build_dias(fechas, feriados),
+        "TM":           grupos["TM"],
+        "TN":           grupos["TN"],
+        "CO":           grupos["CO"],
+        "ST":           grupos["ST"],
+        "asignaciones": asignaciones,
     }
 
 

@@ -236,7 +236,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
 #modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; }
 #modal {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  background: white; border-radius: 12px; padding: 20px 24px 24px; width: 340px;
+  background: white; border-radius: 12px; padding: 20px 24px 24px; width: 420px;
   box-shadow: 0 12px 40px rgba(0,0,0,.22); z-index: 101;
 }
 #modal h3 { font-size: 1rem; font-weight: 700; color: #1a2633; margin-bottom: 2px; }
@@ -273,13 +273,14 @@ tr[draggable="true"]:active { cursor: grabbing; }
   border-bottom: 2px solid #e8ecf0;
   margin: 14px -24px 16px;
   padding: 0 24px;
+  overflow-x: auto;
 }
 .modal-tab-btn {
-  padding: 7px 14px; border: none;
+  padding: 7px 10px; border: none;
   border-bottom: 2px solid transparent; margin-bottom: -2px;
-  cursor: pointer; font-size: .78rem; font-weight: 500;
+  cursor: pointer; font-size: .76rem; font-weight: 500;
   background: transparent; color: #aaa; letter-spacing: .01em;
-  border-radius: 4px 4px 0 0; transition: color .15s;
+  border-radius: 4px 4px 0 0; transition: color .15s; white-space: nowrap;
 }
 .modal-tab-btn:hover:not(.activo) { color: #555; background: #f5f7f9; }
 .modal-tab-btn.activo { border-bottom-color: #2c3e50; color: #2c3e50; font-weight: 600; }

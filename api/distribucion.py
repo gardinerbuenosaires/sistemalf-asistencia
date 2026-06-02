@@ -240,20 +240,29 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         lunes_str = str(lunes)
 
         if usa_dist:
-            # Filtrar por turno del horario_habitual_id (no usa planilla_orden)
+            # Filtrar por grupo de turno del horario_habitual_id (TM/TN/CO)
             cargo_filter = ""
-            params: list = [turno]
             if cargo_ids:
                 ph = ",".join("?" * len(cargo_ids))
                 cargo_filter = f"AND e.cargo_id IN ({ph})"
-                params += cargo_ids
+            if turno == "CO":
+                turno_cond = "AND h.tipo = 'cortado'"
+                turno_params: list = []
+            elif turno == "TN":
+                turno_cond = "AND h.tipo != 'cortado' AND (lower(COALESCE(t.nombre,'')) LIKE '%noche%' OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%')"
+                turno_params = []
+            else:  # TM
+                turno_cond = "AND h.tipo != 'cortado' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%noche%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%madrugada%'"
+                turno_params = []
+            params: list = turno_params + (cargo_ids if cargo_ids else [])
             empleados = conn.execute(
                 f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
                        e.horario_habitual_id AS horario_actual_id
                    FROM empleados e
-                   JOIN horarios h  ON h.id = e.horario_habitual_id
-                   JOIN turnos   t  ON t.id = h.turno_id AND t.nombre = ?
+                   JOIN horarios h   ON h.id = e.horario_habitual_id
+                   LEFT JOIN turnos t ON t.id = h.turno_id
                    WHERE e.activo=1 AND e.tipo != 'acceso'
+                   {turno_cond}
                    {cargo_filter}
                    ORDER BY e.apellido, e.nombre""",
                 params

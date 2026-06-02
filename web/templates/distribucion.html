@@ -176,8 +176,20 @@
   .opcion { padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: .85rem;
     border: 1px solid #dee2e6; }
   .opcion:hover { background: #f0f4f8; }
-  .opcion.franco-opt { background: #fff3cd; border-color: #ffc107; color: #856404; }
-  .opcion.vaciar-opt { color: #e74c3c; border-color: #e74c3c; }
+  .opcion.franco-opt  { background: #fff3cd; border-color: #ffc107; color: #856404; }
+  .opcion.vaciar-opt  { color: #e74c3c; border-color: #e74c3c; }
+  .opcion.nov-V       { background: #d0e8f8; border-color: #95B3D7; cursor: default; pointer-events: none; }
+  .opcion.nov-L       { background: #d0f0f7; border-color: #92CDDC; cursor: default; pointer-events: none; }
+  .opcion.nov-LSG     { background: #e8dff5; border-color: #B1A0C7; cursor: default; pointer-events: none; }
+  .opcion.nov-S       { background: #fad5d5; border-color: #DA9694; cursor: default; pointer-events: none; }
+  .opcion.nov-E       { background: #fde8cc; border-color: #FABF8F; cursor: default; pointer-events: none; }
+  .opcion.nov-ILT     { background: #e4edcc; border-color: #C4D79B; cursor: default; pointer-events: none; }
+  .opcion.nov-NF      { background: #fef9cc; border-color: #F4D03F; cursor: default; pointer-events: none; }
+  .opcion.nov-A       { background: #fad5d5; border-color: #DA9694; cursor: default; pointer-events: none; }
+  .opcion.nov-F       { background: #fff3cd; border-color: #ffc107; color: #856404; cursor: default; pointer-events: none; }
+  .opcion.nov-otro    { background: #f0f0f0; border-color: #ccc; cursor: default; pointer-events: none; }
+  .nov-badge { font-size: .7rem; font-weight: 700; padding: 1px 6px; border-radius: 8px;
+               background: rgba(0,0,0,.1); margin-left: 6px; }
   .modal-footer { margin-top: 14px; text-align: right; }
   .btn-cancel { background: #eee; border: none; padding: 7px 16px; border-radius: 5px; cursor: pointer; }
 
@@ -732,18 +744,20 @@ function abrirModal(puestoId, fecha) {
     opt.className = 'opcion';
     opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
     const nov = _novedad(e.id, fecha);
+    const nombre = `${e.apellido}, ${e.nombre}`;
     if (nov) {
-      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ${NOV_LABEL[nov.tipo] || nov.tipo}`;
-      opt.style.cssText = 'opacity:.55;font-style:italic;cursor:default;pointer-events:none;border-color:#ccc';
-      opt.title = nov.descripcion || NOV_LABEL[nov.tipo] || nov.tipo;
+      const label = NOV_LABEL[nov.tipo] || nov.tipo;
+      opt.innerHTML = `${nombre} <span class="nov-badge">${label}</span>`;
+      opt.classList.add(`nov-${nov.tipo in NOV_LABEL ? nov.tipo : 'otro'}`);
+      opt.title = nov.descripcion || label;
     } else if (francoHoy.has(e.id)) {
-      opt.textContent = `${e.apellido}, ${e.nombre}  ·  FRANCO`;
-      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ffc107;color:#856404';
+      opt.innerHTML = `${nombre} <span class="nov-badge">Franco</span>`;
+      opt.classList.add('nov-F');
     } else if (asignadosEnOtro.has(e.id)) {
-      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ya en otro puesto`;
+      opt.textContent = `${nombre}  ·  ya en otro puesto`;
       opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
     } else {
-      opt.textContent = `${e.apellido}, ${e.nombre}`;
+      opt.textContent = nombre;
       opt.onclick = () => asignar(puestoId, fecha, e.id, false, e.horario_actual_id || null);
     }
     lista.appendChild(opt);

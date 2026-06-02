@@ -316,15 +316,31 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                ORDER BY COALESCE(t.hora_desde,'00:00'), h.nombre"""
         ).fetchall()
 
-        # Novedades de la semana — fuente: asistencia mensual
+        # Novedades de la semana — excluye CO (observaciones, no bloquean asignación)
         novedades_rows = conn.execute(
             """SELECT n.empleado_id, n.fecha, n.tipo, n.descripcion
                FROM novedades n
                WHERE n.fecha >= ? AND n.fecha <= ?
-               AND n.bloque = 0""",
+               AND n.bloque = 0 AND n.tipo != 'CO'""",
             (dias[0], dias[6])
         ).fetchall()
         novedades = [dict(r) for r in novedades_rows]
+
+        # Francos de planificacion regular (es_franco=1) — bloquean asignación aunque
+        # no estén en distribucion_franco
+        emp_ids = [e["id"] for e in empleados]
+        if emp_ids:
+            ph2 = ",".join("?" * len(emp_ids))
+            plan_francos = conn.execute(
+                f"""SELECT p.empleado_id, p.fecha
+                    FROM planificacion p
+                    WHERE p.es_franco = 1
+                    AND p.fecha >= ? AND p.fecha <= ?
+                    AND p.empleado_id IN ({ph2})""",
+                [dias[0], dias[6]] + emp_ids
+            ).fetchall()
+            novedades += [{"empleado_id": r["empleado_id"], "fecha": r["fecha"],
+                           "tipo": "F", "descripcion": None} for r in plan_francos]
 
     return {
         "distribucion": dict(dist) if dist else None,

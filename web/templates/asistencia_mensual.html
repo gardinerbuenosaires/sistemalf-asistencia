@@ -1509,7 +1509,7 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
     ? (bloqueInicial === 2 ? celda?.b2?.ft_pendiente : celda?.b1?.ft_pendiente)
     : celda?.ft_pendiente;
   const esFT      = !bloqueado && letraActual === 'FT' && canDo('planificacion','editar');
-  const canHorario = !bloqueado && canDo('planificacion','editar');
+  const canHorario = !bloqueado && canDo('planificacion','editar') && letraActual !== 'F';
   const canFranco = !bloqueado && !periodoCerrado && canDo('planificacion','editar')
     && letraActual !== 'F' && letraActual !== 'FT' && letraActual !== 'FD';
   document.getElementById('mtab-ft').style.display     = canHorario ? 'inline-block' : 'none';

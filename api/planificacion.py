@@ -187,6 +187,13 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
             (horario_id, empleado_id, fecha_str)
         )
 
+        if fecha > date.today():
+            row = conn.execute(
+                "SELECT * FROM planificacion WHERE empleado_id=? AND fecha=?",
+                (empleado_id, fecha_str)
+            ).fetchone()
+            return dict(row)
+
         fichajes = [dict(f) for f in conn.execute(
             "SELECT * FROM fichajes WHERE empleado_id=? AND (date(timestamp)=? OR date(timestamp)=?) ORDER BY timestamp",
             (empleado_id, fecha_str, fecha_sig)

@@ -527,7 +527,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <div class="modal-tab-bar" id="modal-tab-bar">
     <button class="modal-tab-btn activo" id="mtab-nov"    onclick="modalTabPlani('nov')">Novedad</button>
     <button class="modal-tab-btn"        id="mtab-fm"     onclick="modalTabPlani('fm')">Fichaje manual</button>
-    <button class="modal-tab-btn"        id="mtab-co"     onclick="modalTabPlani('co')">Comentario</button>
+    <button class="modal-tab-btn"        id="mtab-co"     onclick="modalTabPlani('co')">Observación</button>
     <button class="modal-tab-btn"        id="mtab-ft"     onclick="_poblarHorariosFT();modalTabPlani('ft')" style="display:none">Asignar horario</button>
     <button class="modal-tab-btn"        id="mtab-franco" onclick="abrirPanelFranco()" style="display:none">Franco</button>
   </div>
@@ -624,7 +624,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <!-- Panel comentario fuerza mayor -->
   <div id="mpanel-co" style="display:none">
     <div style="font-size:.82rem;color:#555;margin-bottom:8px">
-      Dejá una nota explicando el motivo de la tardanza u otro evento. No modifica ningún cálculo.
+      Registrá una observación sobre este día. No modifica ningún cálculo ni estado.
     </div>
     <textarea id="co-texto" rows="3"
       style="width:100%;box-sizing:border-box;border:1px solid #ced4da;border-radius:6px;padding:6px 8px;font-size:.83rem;resize:vertical"
@@ -1156,7 +1156,7 @@ function renderGrupo(grupo, dias, empleados) {
 
     if (novsComentarios.length) {
       html += '<div class="informe-col-co">';
-      html += '<div class="informe-titulo">Comentarios</div>';
+      html += '<div class="informe-titulo">Observaciones</div>';
       novsComentarios.forEach(c => {
         const autor = c.creado_por ? `<span class="informe-autor">${escHtml(c.creado_por)}</span>` : '';
         html += `<div class="informe-fila">

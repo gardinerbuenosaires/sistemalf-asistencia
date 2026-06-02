@@ -265,13 +265,15 @@ def _diagnostico(conn, fecha_desde: str, dias_min: int) -> dict:
 _QUERY_EVALUACIONES = """
     WITH ult AS (
         SELECT p.empleado_id, h.tipo, h.grupo_premios, t.nombre AS turno_nombre,
+               COUNT(*) AS cnt,
                ROW_NUMBER() OVER (
-                   PARTITION BY p.empleado_id ORDER BY p.fecha DESC
+                   PARTITION BY p.empleado_id ORDER BY COUNT(*) DESC
                ) AS rn
         FROM planificacion p
         JOIN horarios h ON h.id = p.horario_id
         LEFT JOIN turnos t ON t.id = h.turno_id
         WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
+        GROUP BY p.empleado_id, h.tipo, h.grupo_premios, t.nombre
     )
     SELECT pe.*, e.apellido, e.nombre,
            c.nombre AS cargo, d.nombre AS departamento, cat.nombre AS categoria,

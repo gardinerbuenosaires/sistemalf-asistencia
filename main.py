@@ -414,6 +414,26 @@ def sincronizar_hora_dispositivo(_user=Depends(require_permiso("usuarios", "edit
     return {"ok": True}
 
 
+@app.post("/api/admin/liberar-ids-dispositivo", tags=["admin"])
+def liberar_ids_dispositivo_manual(_user=Depends(require_permiso("usuarios", "editar"))):
+    """Libera el user_id de empleados dados de baja hace más de 48 horas."""
+    from db.database import db_session
+    with db_session() as conn:
+        rows = conn.execute("""
+            SELECT id, user_id, nombre, apellido
+            FROM empleados
+            WHERE activo = 0
+              AND user_id IS NOT NULL
+              AND fecha_egreso IS NOT NULL
+              AND (julianday('now','localtime') - julianday(fecha_egreso)) >= 2
+        """).fetchall()
+        liberados = []
+        for r in rows:
+            conn.execute("UPDATE empleados SET user_id=NULL, en_dispositivo=0 WHERE id=?", (r["id"],))
+            liberados.append({"nombre": f"{r['apellido']} {r['nombre']}", "user_id": r["user_id"]})
+    return {"liberados": len(liberados), "detalle": liberados}
+
+
 @app.get("/api/presencia/hoy", tags=["presencia"])
 def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
     """

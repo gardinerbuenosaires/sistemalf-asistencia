@@ -194,6 +194,7 @@
     <button class="cfg-tab" data-perm="empleados:ver" id="tab-catalogos" onclick="switchCfgTab('catalogos')">Cargos</button>
     <button class="cfg-tab" id="tab-usuarios"  onclick="switchCfgTab('usuarios')">Usuarios</button>
     <button class="cfg-tab" data-perm="premios:ver" id="tab-premios" onclick="switchCfgTab('premios')">Premios</button>
+    <button class="cfg-tab" id="tab-automatico" onclick="switchCfgTab('automatico')">Procesos automáticos</button>
   </div>
 
   <!-- ── Panel: Sistema ── -->
@@ -509,6 +510,81 @@
 
   </div>
 
+  <!-- ── Panel: Procesos automáticos ── -->
+  <div class="cfg-panel" id="panel-automatico">
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Procesos automáticos</div>
+          <div class="section-desc">El sistema ejecuta estas tareas en segundo plano sin intervención manual. Son informativas — no tienen configuración en esta pantalla.</div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead>
+          <tr style="background:#f8f9fa;border-bottom:2px solid #dee2e6">
+            <th style="padding:10px 12px;text-align:left;width:30%">Proceso</th>
+            <th style="padding:10px 12px;text-align:left;width:20%">Cuándo corre</th>
+            <th style="padding:10px 12px;text-align:left">Qué hace</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #f0f0f0">
+            <td style="padding:10px 12px;font-weight:bold">Sincronización de fichajes</td>
+            <td style="padding:10px 12px;color:#666">Cada N minutos</td>
+            <td style="padding:10px 12px;color:#444">Lee los fichajes del lector biométrico y los guarda en el sistema. <span style="color:#2c6fad;font-size:.8rem">⚙ El intervalo se configura en <a href="#" onclick="switchCfgTab('sistema');return false;" style="color:#2c6fad">Parámetros del sistema → Intervalo de sincronización</a>.</span></td>
+          </tr>
+          <tr style="border-bottom:1px solid #f0f0f0;background:#fafafa">
+            <td style="padding:10px 12px;font-weight:bold">Evaluación automática</td>
+            <td style="padding:10px 12px;color:#666">Cada 5 minutos</td>
+            <td style="padding:10px 12px;color:#444">Procesa los fichajes contra la planificación y determina el estado de asistencia de cada empleado. Solo actúa en la ventana de apertura y cierre de cada turno.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f0f0f0">
+            <td style="padding:10px 12px;font-weight:bold">Barrido nocturno</td>
+            <td style="padding:10px 12px;color:#666">23:00 todos los días</td>
+            <td style="padding:10px 12px;color:#444">Evalúa los turnos diurnos del día actual que no hayan sido procesados durante el turno.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f0f0f0;background:#fafafa">
+            <td style="padding:10px 12px;font-weight:bold">Barrido matutino</td>
+            <td style="padding:10px 12px;color:#666">06:00 todos los días</td>
+            <td style="padding:10px 12px;color:#444">Evalúa los turnos nocturnos del día anterior que terminaron pasada la medianoche.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f0f0f0">
+            <td style="padding:10px 12px;font-weight:bold">Generación de planificación</td>
+            <td style="padding:10px 12px;color:#666">01:00 todos los días</td>
+            <td style="padding:10px 12px;color:#444">Genera automáticamente la planificación de la semana actual y las próximas 4 semanas a partir de los calendarios asignados. No pisa asignaciones manuales.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f0f0f0;background:#fafafa">
+            <td style="padding:10px 12px;font-weight:bold">Sincronización de feriados</td>
+            <td style="padding:10px 12px;color:#666">Día 1 de cada mes, madrugada</td>
+            <td style="padding:10px 12px;color:#444">Actualiza el calendario de feriados nacionales del año en curso y el siguiente desde una fuente oficial.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f0f0f0">
+            <td style="padding:10px 12px;font-weight:bold">Sincronización de hora del dispositivo</td>
+            <td style="padding:10px 12px;color:#666">Una vez por día, madrugada</td>
+            <td style="padding:10px 12px;color:#444">Ajusta el reloj interno del lector biométrico para que sus timestamps estén siempre sincronizados con el servidor.</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f0f0f0;background:#fafafa">
+            <td style="padding:10px 12px;font-weight:bold">Cierre automático de período</td>
+            <td style="padding:10px 12px;color:#666">Día configurable de cada mes, madrugada</td>
+            <td style="padding:10px 12px;color:#444">Cierra automáticamente el período de asistencia del mes anterior en la fecha configurada. <span style="color:#2c6fad;font-size:.8rem">⚙ El día se configura en <a href="#" onclick="switchCfgTab('sistema');return false;" style="color:#2c6fad">Parámetros del sistema → Día de cierre automático de período</a>.</span></td>
+          </tr>
+          <tr>
+            <td style="padding:10px 12px;font-weight:bold">Liberación de IDs del dispositivo</td>
+            <td style="padding:10px 12px;color:#666">Una vez por día, madrugada</td>
+            <td style="padding:10px 12px;color:#444">
+              Cuando un empleado lleva más de 48 horas dado de baja, libera su ID del lector para que pueda ser reutilizado al incorporar un nuevo empleado con el mismo número.
+              <div style="margin-top:8px" data-perm="usuarios:editar">
+                <button onclick="liberarIdsDispositivo()" style="padding:5px 14px;background:#c0392b;color:white;border:none;border-radius:4px;cursor:pointer;font-size:.8rem;font-weight:bold">
+                  ⚠ Ejecutar ahora
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </main>
 <div id="toast"></div>
 
@@ -538,6 +614,42 @@ function toast(msg, ms=3000) {
   el.textContent = msg;
   el.style.display = "block";
   setTimeout(() => el.style.display = "none", ms);
+}
+
+async function liberarIdsDispositivo() {
+  const confirmado = confirm(
+    "⚠ ATENCIÓN — Liberación de IDs del dispositivo\n\n" +
+    "Esta acción anula permanentemente el ID de lector de todos los empleados\n" +
+    "dados de baja hace más de 48 horas.\n\n" +
+    "Una vez liberados, esos IDs pueden ser reutilizados para nuevos empleados.\n" +
+    "Esta acción NO puede deshacerse.\n\n" +
+    "¿Confirmás que querés ejecutarla ahora?"
+  );
+  if (!confirmado) return;
+  const res = await fetch('/api/admin/liberar-ids-dispositivo', { method: 'POST' });
+  if (res.ok) {
+    const data = await res.json();
+    if (data.liberados === 0) {
+      toast('No hay IDs para liberar en este momento.');
+    } else {
+      const lista = data.detalle.map(d =>
+        `<div style="padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:.83rem">${d.nombre} <span style="color:#888;font-size:.75rem">ID ${d.user_id}</span></div>`
+      ).join('');
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+      modal.innerHTML = `
+        <div style="background:white;border-radius:10px;padding:24px;width:460px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+          <div style="font-weight:bold;font-size:1rem;margin-bottom:4px">✓ IDs liberados: ${data.liberados}</div>
+          <div style="font-size:.8rem;color:#666;margin-bottom:12px">Los siguientes empleados tuvieron su ID de dispositivo liberado.</div>
+          <div style="overflow-y:auto;flex:1;border:1px solid #eee;border-radius:4px;padding:8px 12px">${lista}</div>
+          <button onclick="this.closest('div[style*=fixed]').remove()" style="margin-top:16px;padding:8px 20px;background:#2c3e50;color:white;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;align-self:flex-end">Cerrar</button>
+        </div>`;
+      document.body.appendChild(modal);
+      toast(`${data.liberados} ID(s) liberados correctamente`);
+    }
+  } else {
+    toast('Error al ejecutar la liberación');
+  }
 }
 
 async function logout() {

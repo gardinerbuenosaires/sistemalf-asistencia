@@ -28,7 +28,7 @@ _EST_B2 = {
 }
 
 CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "@", "NF"}
-LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "F", "@", "NF", "A", "CP"}
+LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "F", "@", "NF", "A", "CP", "CO"}
 DIAS_SEMANA   = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]
 
 
@@ -422,17 +422,23 @@ def _asistencia_datos(mes: str) -> dict:
     for f in fichajes_manuales:
         fm_count[f["empleado_id"]] += 1
     nov_map  = {}
+    co_map: dict[tuple, dict] = {}
     comentarios_map: dict[int, list] = defaultdict(list)
     for n in novedades:
-        nov_map[(n["empleado_id"], n["fecha"], n["bloque"])] = {
-            "id": n["id"], "tipo": n["tipo"], "descripcion": n["descripcion"],
-            "creado_por": n["creado_por"],
-        }
         comentarios_map[n["empleado_id"]].append({
             "fecha": n["fecha"], "bloque": n["bloque"],
             "tipo": n["tipo"], "descripcion": n["descripcion"],
             "creado_por": n["creado_por"],
         })
+        if n["tipo"] == "CO":
+            co_map[(n["empleado_id"], n["fecha"])] = {
+                "id": n["id"], "descripcion": n["descripcion"], "creado_por": n["creado_por"],
+            }
+        else:
+            nov_map[(n["empleado_id"], n["fecha"], n["bloque"])] = {
+                "id": n["id"], "tipo": n["tipo"], "descripcion": n["descripcion"],
+                "creado_por": n["creado_por"],
+            }
     ali_set       = {(a["empleado_id"], a["fecha"], a["bloque"]) for a in aliviadas}
     transporte_map = {s["empleado_id"]: s["saldo"] for s in saldos}
 
@@ -465,6 +471,11 @@ def _asistencia_datos(mes: str) -> dict:
                 b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
                 b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
                 celdas[fecha] = {"b1": b1, "b2": b2}
+                co = co_map.get((eid, fecha))
+                if co:
+                    celdas[fecha]["co_comment"] = co["descripcion"]
+                    celdas[fecha]["co_nov_id"]   = co["id"]
+                    celdas[fecha]["co_autor"]    = co["creado_por"]
                 for b in (b1, b2):
                     l = b["letra"]
                     if l and b["tipo"] == "normal" and l != "A!!!":
@@ -485,6 +496,11 @@ def _asistencia_datos(mes: str) -> dict:
                     b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
                     b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
                     celdas[fecha] = {"b1": b1, "b2": b2, "es_cortado_dia": True}
+                    co = co_map.get((eid, fecha))
+                    if co:
+                        celdas[fecha]["co_comment"] = co["descripcion"]
+                        celdas[fecha]["co_nov_id"]   = co["id"]
+                        celdas[fecha]["co_autor"]    = co["creado_por"]
                     for b in (b1, b2):
                         l = b["letra"]
                         if l and b["tipo"] == "normal" and l != "A!!!":
@@ -501,6 +517,11 @@ def _asistencia_datos(mes: str) -> dict:
                             feriados_trab += len(letras_feri) * 0.5
                 else:
                     c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                    co = co_map.get((eid, fecha))
+                    if co:
+                        c["co_comment"] = co["descripcion"]
+                        c["co_nov_id"]   = co["id"]
+                        c["co_autor"]    = co["creado_por"]
                     celdas[fecha] = c
                     l = c["letra"]
                     if l and c["tipo"] == "normal" and l != "A!!!":
@@ -789,6 +810,16 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
         raise HTTPException(400, "La aliviada (@) requiere bloque 1 o 2")
     if data.tipo == "CP" and not data.descripcion:
         raise HTTPException(400, "La compensación de presencia requiere una descripción")
+    if data.tipo == "CO" and not data.descripcion:
+        raise HTTPException(400, "El comentario requiere una descripción")
+    if data.tipo == "CO":
+        with db_session() as conn:
+            existing = conn.execute(
+                "SELECT tipo FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=0",
+                (data.empleado_id, data.fecha)
+            ).fetchone()
+            if existing and existing["tipo"] != "CO":
+                raise HTTPException(400, "No se puede agregar comentario: ya hay una novedad registrada para ese día")
     if data.tipo == "V":
         from api.vacaciones import _calcular_dias_formula, _get_arrastre
         anio_periodo = int(data.fecha[:4]) - 1

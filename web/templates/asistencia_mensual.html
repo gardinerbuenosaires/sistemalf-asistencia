@@ -97,6 +97,9 @@ table.planilla tbody td.col-ctrl  { font-size: .68rem; font-weight: bold; paddin
 .ctrl-ausentes-sc { background: #7b0000; color: #ffffff; }
 .ctrl-vacio       { color: #bbb; }
 .informe-comentarios { margin-top: 8px; border-top: 2px solid #dee2e6; padding: 10px 4px 4px; }
+.informe-wrapper { display: flex; gap: 24px; align-items: flex-start; }
+.informe-col { flex: 1; min-width: 0; }
+.informe-col-co { flex: 0 0 320px; border-left: 2px solid #e8f4fd; padding-left: 16px; }
 .informe-titulo { font-size: .68rem; font-weight: 700; text-transform: uppercase; color: #888; letter-spacing: .05em; margin-bottom: 6px; }
 .informe-fila { display: flex; align-items: baseline; gap: 8px; font-size: .78rem; padding: 3px 0; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
 .informe-nombre { font-weight: 600; min-width: 160px; }
@@ -104,6 +107,7 @@ table.planilla tbody td.col-ctrl  { font-size: .68rem; font-weight: bold; paddin
 .informe-tipo   { padding: 1px 5px; border-radius: 3px; font-size: .7rem; font-weight: 700; white-space: nowrap; }
 .informe-desc   { color: #444; font-style: italic; flex: 1; }
 .informe-autor  { font-style: normal; color: #999; font-size: .7rem; white-space: nowrap; min-width: 140px; }
+.informe-co-texto { color: #1a6c9c; font-style: italic; font-size: .78rem; flex: 1; }
 
 /* Menú contextual empleado */
 #ctx-menu {
@@ -523,6 +527,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
   <div class="modal-tab-bar" id="modal-tab-bar">
     <button class="modal-tab-btn activo" id="mtab-nov"    onclick="modalTabPlani('nov')">Novedad</button>
     <button class="modal-tab-btn"        id="mtab-fm"     onclick="modalTabPlani('fm')">Fichaje manual</button>
+    <button class="modal-tab-btn"        id="mtab-co"     onclick="modalTabPlani('co')">Comentario</button>
     <button class="modal-tab-btn"        id="mtab-ft"     onclick="_poblarHorariosFT();modalTabPlani('ft')" style="display:none">Asignar horario</button>
     <button class="modal-tab-btn"        id="mtab-franco" onclick="abrirPanelFranco()" style="display:none">Franco</button>
   </div>
@@ -612,6 +617,21 @@ tr[draggable="true"]:active { cursor: grabbing; }
     <div class="modal-actions" style="margin-top:8px">
       <button class="btn-guardar" onclick="confirmarAusente()">Confirmar ausente</button>
       <button class="btn-cancelar" style="background:#e9ecef;color:#333" onclick="modalTabPlani('nov')">Otra novedad</button>
+      <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Panel comentario fuerza mayor -->
+  <div id="mpanel-co" style="display:none">
+    <div style="font-size:.82rem;color:#555;margin-bottom:8px">
+      Dejá una nota explicando el motivo de la tardanza u otro evento. No modifica ningún cálculo.
+    </div>
+    <textarea id="co-texto" rows="3"
+      style="width:100%;box-sizing:border-box;border:1px solid #ced4da;border-radius:6px;padding:6px 8px;font-size:.83rem;resize:vertical"
+      placeholder="Ej: Demora por corte de servicio de colectivos"></textarea>
+    <div class="modal-actions">
+      <button class="btn-guardar"  onclick="guardarComentarioCO()">Guardar</button>
+      <button class="btn-borrar"   id="btn-borrar-co" onclick="borrarComentarioCO()" style="display:none">Quitar</button>
       <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
     </div>
   </div>
@@ -1107,25 +1127,49 @@ function renderGrupo(grupo, dias, empleados) {
     return grupos;
   }).sort((a,b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
 
-  if (novedadesAgrupadas.length) {
-    html += '<div class="informe-comentarios">';
-    html += '<div class="informe-titulo">Novedades del mes</div>';
-    novedadesAgrupadas.forEach(c => {
-      const blq   = c.bloque > 0 ? ` B${c.bloque}` : '';
-      const rango = c.fecha_hasta !== c.fecha
-        ? `${_fmtD(c.fecha)} → ${_fmtD(c.fecha_hasta)}${blq}`
-        : `${_fmtD(c.fecha)}${blq}`;
-      const autor = c.creado_por ? `<span class="informe-autor">${escHtml(c.creado_por)}</span>` : '<span class="informe-autor" style="color:#ddd">—</span>';
-      const desc  = c.descripcion ? escHtml(c.descripcion) : '';
-      html += `<div class="informe-fila">
-        <span class="informe-nombre">${escHtml(c.nombre)}</span>
-        <span class="informe-fecha">${rango}</span>
-        <span class="informe-tipo" style="background:${(C[c.tipo]||{bg:'#eee'}).bg};color:${(C[c.tipo]||{txt:'#333'}).txt}">${c.tipo}</span>
-        ${autor}
-        <span class="informe-desc">${desc}</span>
-      </div>`;
-    });
-    html += '</div>';
+  const novsRegulares  = novedadesAgrupadas.filter(c => c.tipo !== 'CO');
+  const novsComentarios = novedadesAgrupadas.filter(c => c.tipo === 'CO');
+
+  if (novsRegulares.length || novsComentarios.length) {
+    html += '<div class="informe-comentarios"><div class="informe-wrapper">';
+
+    if (novsRegulares.length) {
+      html += '<div class="informe-col">';
+      html += '<div class="informe-titulo">Novedades del mes</div>';
+      novsRegulares.forEach(c => {
+        const blq   = c.bloque > 0 ? ` B${c.bloque}` : '';
+        const rango = c.fecha_hasta !== c.fecha
+          ? `${_fmtD(c.fecha)} → ${_fmtD(c.fecha_hasta)}${blq}`
+          : `${_fmtD(c.fecha)}${blq}`;
+        const autor = c.creado_por ? `<span class="informe-autor">${escHtml(c.creado_por)}</span>` : '<span class="informe-autor" style="color:#ddd">—</span>';
+        const desc  = c.descripcion ? escHtml(c.descripcion) : '';
+        html += `<div class="informe-fila">
+          <span class="informe-nombre">${escHtml(c.nombre)}</span>
+          <span class="informe-fecha">${rango}</span>
+          <span class="informe-tipo" style="background:${(C[c.tipo]||{bg:'#eee'}).bg};color:${(C[c.tipo]||{txt:'#333'}).txt}">${c.tipo}</span>
+          ${autor}
+          <span class="informe-desc">${desc}</span>
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    if (novsComentarios.length) {
+      html += '<div class="informe-col-co">';
+      html += '<div class="informe-titulo">Comentarios</div>';
+      novsComentarios.forEach(c => {
+        const autor = c.creado_por ? `<span class="informe-autor">${escHtml(c.creado_por)}</span>` : '';
+        html += `<div class="informe-fila">
+          <span class="informe-nombre">${escHtml(c.nombre)}</span>
+          <span class="informe-fecha">${_fmtD(c.fecha)}</span>
+          <span class="informe-co-texto">${escHtml(c.descripcion||'')}</span>
+          ${autor}
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    html += '</div></div>';
   }
 
   contenedor.innerHTML = html;
@@ -1345,16 +1389,17 @@ function onDrop(e) {
 function celdaSimpleHtml(celda, eid, fecha, mark='') {
   const {bg, txt, cls} = estiloBloque(celda);
   const letra = celda.letra || '';
-  const novId = celda.nov_id ? `data-nov-id="${celda.nov_id}"` : '';
-  const desc  = celda.descripcion ? `data-desc="${escHtml(celda.descripcion)}"` : '';
-  const autor = celda.creado_por  ? `data-autor="${escHtml(celda.creado_por)}"` : '';
+  const novId  = celda.nov_id     ? `data-nov-id="${celda.nov_id}"` : '';
+  const desc   = celda.descripcion ? `data-desc="${escHtml(celda.descripcion)}"` : '';
+  const autor  = celda.creado_por  ? `data-autor="${escHtml(celda.creado_por)}"` : '';
+  const coAttr = celda.co_comment  ? `data-co-comment="${escHtml(celda.co_comment)}" data-co-autor="${escHtml(celda.co_autor||'')}"` : '';
   const cpAttr = celda.cp ? 'data-cp="1"' : '';
   const ftCls = celda.ft_pendiente ? 'ft-pendiente' : '';
   const ftDot = celda.ft_pendiente ? '<span class="ft-dot"></span>' : '';
   const inactiva = celda.tipo === 'antes_ingreso' || celda.tipo === 'fuera';
   const interaccion = inactiva ? '' : `onclick="abrirModal(${eid},'${fecha}',0,false)" data-eid="${eid}" data-fecha="${fecha}"`;
   return `<div class="celda-simple ${cls} ${ftCls} ${mark}" style="background:${bg};color:${txt}"
-    ${novId} ${desc} ${autor} ${cpAttr} ${interaccion}>${letra}${ftDot}</div>`;
+    ${novId} ${desc} ${autor} ${coAttr} ${cpAttr} ${interaccion}>${letra}${ftDot}</div>`;
 }
 
 function celdaCortadoHtml(celda, eid, fecha, mark='') {
@@ -1377,7 +1422,8 @@ function celdaCortadoHtml(celda, eid, fecha, mark='') {
   const ft2 = b2.ft_pendiente ? ' ft-pendiente' : '';
   const dot1 = b1.ft_pendiente ? '<span class="ft-dot"></span>' : '';
   const dot2 = b2.ft_pendiente ? '<span class="ft-dot"></span>' : '';
-  return `<div class="celda-cortado ${mark}" data-eid="${eid}" data-fecha="${fecha}">
+  const coAttr = celda.co_comment ? `data-co-comment="${escHtml(celda.co_comment)}" data-co-autor="${escHtml(celda.co_autor||'')}"` : '';
+  return `<div class="celda-cortado ${mark}" data-eid="${eid}" data-fecha="${fecha}" ${coAttr}>
     <div class="celda-bloque ${s1.cls}${ft1}" style="background:${s1.bg};color:${s1.txt}" ${nid1} ${d1} ${a1} ${cp1} ${click1}>${b1.letra||''}${dot1}</div>
     <div class="celda-bloque ${s2.cls}${ft2}" style="background:${s2.bg};color:${s2.txt}" ${nid2} ${d2} ${a2} ${cp2} ${click2}>${b2.letra||''}${dot2}</div>
   </div>`;
@@ -1416,12 +1462,14 @@ function _localDateStr() {
 function modalTabPlani(tab) {
   document.getElementById('mpanel-nov').style.display        = tab === 'nov'        ? 'block' : 'none';
   document.getElementById('mpanel-fm').style.display         = tab === 'fm'         ? 'block' : 'none';
+  document.getElementById('mpanel-co').style.display         = tab === 'co'         ? 'block' : 'none';
   document.getElementById('mpanel-ft').style.display         = tab === 'ft'         ? 'block' : 'none';
   document.getElementById('mpanel-franco').style.display     = tab === 'franco'     ? 'block' : 'none';
   document.getElementById('mpanel-bloqueado').style.display  = tab === 'bloqueado'  ? 'block' : 'none';
   document.getElementById('mpanel-ausente-sc').style.display = tab === 'ausente-sc' ? 'block' : 'none';
   document.getElementById('mtab-nov').className    = 'modal-tab-btn' + (tab === 'nov'    ? ' activo' : '');
   document.getElementById('mtab-fm').className     = 'modal-tab-btn' + (tab === 'fm'     ? ' activo' : '');
+  document.getElementById('mtab-co').className     = 'modal-tab-btn' + (tab === 'co'     ? ' activo' : '');
   document.getElementById('mtab-ft').className     = 'modal-tab-btn' + (tab === 'ft'     ? ' activo' : '');
   document.getElementById('mtab-franco').className = 'modal-tab-btn' + (tab === 'franco' ? ' activo' : '');
 }
@@ -1495,6 +1543,13 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   document.getElementById('nov-desde').value  = fecha;
   document.getElementById('nov-hasta').value  = '';
   document.getElementById('nov-hasta').min    = fecha;
+
+  // Panel comentario CO
+  const coComment = celda?.co_comment || '';
+  const coNovId   = celda?.co_nov_id  || null;
+  modalCtx.co_nov_id = coNovId;
+  document.getElementById('co-texto').value = coComment;
+  document.getElementById('btn-borrar-co').style.display = coNovId ? 'inline-block' : 'none';
 
   document.getElementById('modal-nombre').textContent = modalCtx.nombre;
   document.getElementById('modal-subtitulo').textContent =
@@ -1686,6 +1741,27 @@ async function confirmarAusente() {
   toast('Ausente confirmado');
   cerrarModal();
   cargar();
+}
+
+async function guardarComentarioCO() {
+  const { eid, fecha } = modalCtx;
+  const texto = document.getElementById('co-texto').value.trim();
+  if (!texto) { toast('Escribí un comentario antes de guardar'); return; }
+  const res = await fetch('/api/asistencia/novedades', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({empleado_id: eid, fecha, bloque: 0, tipo: 'CO', descripcion: texto}),
+  });
+  if (res.ok) { toast('Comentario guardado'); cerrarModal(); cargar(); }
+  else { const e = await res.json(); toast('Error: '+(e.detail||res.status)); }
+}
+
+async function borrarComentarioCO() {
+  const novId = modalCtx.co_nov_id;
+  if (!novId) return;
+  const res = await fetch(`/api/asistencia/novedades/${novId}`, {method:'DELETE'});
+  if (res.ok) { toast('Comentario eliminado'); cerrarModal(); cargar(); }
+  else { const e = await res.json(); toast('Error: '+(e.detail||res.status)); }
 }
 
 async function guardarFichajeManual() {
@@ -1939,9 +2015,13 @@ function _tipShow(e) {
     const isCp  = e.target.closest('[data-cp]')?.dataset.cp === '1' || cel.dataset.cp === '1';
     const desc  = tipSrc.dataset.desc;
     const autor = tipSrc.dataset.autor;
-    if (isCp)  html += `<div class="tip-manual" style="margin-top:4px;font-weight:bold;text-transform:uppercase">COMPENSACIÓN DE PRESENCIA</div>`;
-    if (desc)  html += `<div class="tip-manual" style="margin-top:2px;white-space:normal;max-width:160px">${escHtml(desc)}</div>`;
-    if (autor) html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:2px">${escHtml(autor)}</div>`;
+    const coComment = cel.dataset.coComment;
+    const coAutor   = cel.dataset.coAutor;
+    if (isCp)      html += `<div class="tip-manual" style="margin-top:4px;font-weight:bold;text-transform:uppercase">COMPENSACIÓN DE PRESENCIA</div>`;
+    if (desc)      html += `<div class="tip-manual" style="margin-top:2px;white-space:normal;max-width:160px">${escHtml(desc)}</div>`;
+    if (autor)     html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:2px">${escHtml(autor)}</div>`;
+    if (coComment) html += `<div style="margin-top:5px;background:#e8f4fd;color:#1a6c9c;border-radius:3px;padding:2px 6px;font-size:.72rem;white-space:normal;max-width:180px">💬 ${escHtml(coComment)}</div>`;
+    if (coComment && coAutor) html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:1px">${escHtml(coAutor)}</div>`;
     if (cel.closest('tr')?.querySelector('.tipo-mt')) html += `<div style="color:#f0c040;font-size:.71rem;margin-top:5px;white-space:normal;max-width:220px;line-height:1.4">⚠ Bloque MT — al cargar cualquier novedad que no sea presente, aplicala en ambos bloques, sino el día no se cuenta correctamente.</div>`;
     const asigKey = `${eid}_${fecha}`;
     const asigPor = _asignaciones[asigKey];

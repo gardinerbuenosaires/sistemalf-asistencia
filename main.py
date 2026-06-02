@@ -586,10 +586,10 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
         if not fichajes_hoy_f:
             continue
         # Salida de turno noche que cruza medianoche: todos los fichajes de hoy son antes de las
-        # 06:00 y hay al menos una entrada ayer después de las 17:00 → par completo, ignorar.
+        # 06:00 y hay al menos una entrada ayer después de las 15:00 → par completo, ignorar.
         fichajes_ayer_f = [f for f in fich_map.get(eid, []) if f["timestamp"][:10] == ayer]
         if (all(f["timestamp"][11:16] < "06:00" for f in fichajes_hoy_f)
-                and any(f["timestamp"][11:16] >= "17:00" for f in fichajes_ayer_f)):
+                and any(f["timestamp"][11:16] >= "15:00" for f in fichajes_ayer_f)):
             continue
         # Salida de turno 00:00-08:00: todos los fichajes de hoy son antes de las 09:00
         # y hay una entrada ayer después de las 23:00 → salida del turno de medianoche, ignorar.

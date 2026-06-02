@@ -240,18 +240,25 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         lunes_str = str(lunes)
 
         if usa_dist:
-            # En distribución el turno identifica el turno a armar, no el del empleado.
-            # Se muestran todos los activos del departamento sin filtrar por horario habitual.
-            params: list = cargo_ids if cargo_ids else []
+            # Filtra por turno_id del empleado usando la misma lógica de grupo TM/TN/CO
             cargo_filter = ""
             if cargo_ids:
                 ph = ",".join("?" * len(cargo_ids))
                 cargo_filter = f"AND e.cargo_id IN ({ph})"
+            if turno == "CO":
+                turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%cortado%')"
+            elif turno == "TN":
+                turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%noche%' OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%')"
+            else:  # TM — todo lo que no es noche/madrugada/cortado, incluyendo sin turno asignado
+                turno_cond = "AND (e.turno_id IS NULL OR (lower(COALESCE(t.nombre,'')) NOT LIKE '%noche%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%madrugada%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%cortado%'))"
+            params: list = cargo_ids if cargo_ids else []
             empleados = conn.execute(
                 f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
                        e.horario_habitual_id AS horario_actual_id
                    FROM empleados e
+                   LEFT JOIN turnos t ON t.id = e.turno_id
                    WHERE e.activo=1 AND e.tipo != 'acceso'
+                   {turno_cond}
                    {cargo_filter}
                    ORDER BY e.apellido, e.nombre""",
                 params

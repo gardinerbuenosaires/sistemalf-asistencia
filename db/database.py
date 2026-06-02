@@ -645,6 +645,9 @@ def _migrate(conn):
     if "monto_base_manual" not in cols_pe:
         conn.execute("ALTER TABLE premios_evaluacion ADD COLUMN monto_base_manual INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna monto_base_manual agregada a premios_evaluacion")
+    if "dias_tarde" not in cols_pe:
+        conn.execute("ALTER TABLE premios_evaluacion ADD COLUMN dias_tarde INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna dias_tarde agregada a premios_evaluacion")
 
     # Tabla periodos_cerrados
     conn.execute("""

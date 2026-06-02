@@ -165,6 +165,17 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
                 ELSE 0
             END), 0) AS minutos_retardo,
             COUNT(CASE
+                WHEN rd.estado IN ('ok','tarde','tarde_y_sin_salida','tarde_y_salida_anticipada','nf','sin_salida')
+                 AND NOT EXISTS (
+                     SELECT 1 FROM novedades n
+                     WHERE n.empleado_id = rd.empleado_id
+                       AND n.fecha = rd.fecha
+                       AND n.tipo IN ('E','ILT','S','V')
+                 )
+                 AND (COALESCE(rd.b1_minutos_tarde,0) + COALESCE(rd.b2_minutos_tarde,0)) > 0
+                THEN 1
+            END) AS dias_tarde,
+            COUNT(CASE
                 WHEN (
                     rd.estado = 'nf'
                      AND NOT EXISTS (
@@ -203,6 +214,7 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
 
     return {
         "minutos_retardo": r["minutos_retardo"],
+        "dias_tarde":      r["dias_tarde"],
         "no_fichadas":     r["no_fichadas"],
         "dias_ausente":    n["dias_ausente"],
         "dias_vacacion":   n["dias_vacacion"],
@@ -332,13 +344,13 @@ def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver
                 desglose = _calcular(ev_full, params)
                 conn.execute("""
                     UPDATE premios_evaluacion SET
-                        minutos_retardo=?, no_fichadas=?, dias_vacacion=?,
+                        minutos_retardo=?, dias_tarde=?, no_fichadas=?, dias_vacacion=?,
                         dias_enfermo=?, dias_suspension=?, dias_ausente=?,
                         desglose_json=?, valor_calculado=?, valor_final=?,
                         modificado_en=datetime('now','localtime')
                     WHERE id=?
                 """, (
-                    datos["minutos_retardo"], datos["no_fichadas"], datos["dias_vacacion"],
+                    datos["minutos_retardo"], datos["dias_tarde"], datos["no_fichadas"], datos["dias_vacacion"],
                     datos["dias_enfermo"], datos["dias_suspension"], datos["dias_ausente"],
                     json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
                     ev["id"]
@@ -421,12 +433,13 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
 
             conn.execute("""
                 INSERT INTO premios_evaluacion
-                    (empleado_id, periodo, minutos_retardo, no_fichadas, dias_vacacion,
+                    (empleado_id, periodo, minutos_retardo, dias_tarde, no_fichadas, dias_vacacion,
                      dias_enfermo, dias_suspension, dias_ausente, bpm, monto_base,
                      desglose_json, valor_calculado, valor_final)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(empleado_id, periodo) DO UPDATE SET
                     minutos_retardo=excluded.minutos_retardo,
+                    dias_tarde=excluded.dias_tarde,
                     no_fichadas=excluded.no_fichadas,
                     dias_vacacion=excluded.dias_vacacion,
                     dias_enfermo=excluded.dias_enfermo,
@@ -439,7 +452,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
                     modificado_en=datetime('now','localtime')
             """, (
                 eid, periodo,
-                datos["minutos_retardo"], datos["no_fichadas"], datos["dias_vacacion"],
+                datos["minutos_retardo"], datos["dias_tarde"], datos["no_fichadas"], datos["dias_vacacion"],
                 datos["dias_enfermo"], datos["dias_suspension"], datos["dias_ausente"],
                 bpm_actual, monto_actual,
                 json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"]

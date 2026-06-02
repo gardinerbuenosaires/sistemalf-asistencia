@@ -448,7 +448,7 @@ function _filaHtml(ev, editar, corregir) {
     </td>
     <td class="field-bpm">${editar ? bpmSelect : bpmBadge}</td>
     <td class="cell-puntualidad">${_badgePuntualidad(d.puntualidad_status, d.descalificado)}</td>
-    <td>${_cnt(_fmtMin(ev.minutos_retardo), tolRetbadge + chkTolRet)}</td>
+    <td>${_cnt(_fmtMin(ev.minutos_retardo) + (ev.dias_tarde > 0 ? ` <span style="color:#999;font-size:.75rem">(${ev.dias_tarde}v)</span>` : ''), tolRetbadge + chkTolRet)}</td>
     <td>${_cnt(ev.no_fichadas, tolNFbadge + chkTolNF)}</td>
     <td>${_cnt(ev.dias_vacacion)}</td>
     <td>${_cnt(ev.dias_enfermo, tolEbadge + chkTolE)}</td>

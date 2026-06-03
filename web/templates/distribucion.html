@@ -658,7 +658,7 @@ function renderGrilla() {
     const comidaCeldas = _dias.map(d => {
       const esHoy = d === hoyStr;
       const asig = _comidaPersonal.find(c => c.fecha === d);
-      const nombre = asig ? (asig.emp_apellido || asig.emp_nombre) : '';
+      const nombre = asig ? `${asig.emp_apellido}, ${asig.emp_nombre}` : '';
       if (puedoEditar) {
         return `<td class="col-dia${esHoy ? ' hoy' : ''}" style="cursor:pointer;background:#fce5cd"
           onclick="abrirModalComida('${d}')">${nombre ? `<span class="badge-franco removable" title="Cambiar" onclick="event.stopPropagation();abrirModalComida('${d}')">${nombre}</span>` : '<span style="color:#aaa;font-size:.75rem">+ Asignar</span>'}</td>`;

@@ -251,10 +251,21 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                 turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%noche%' OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%')"
             else:  # TM — todo lo que no es noche/madrugada/cortado, incluyendo sin turno asignado
                 turno_cond = "AND (e.turno_id IS NULL OR (lower(COALESCE(t.nombre,'')) NOT LIKE '%noche%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%madrugada%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%cortado%'))"
-            params: list = cargo_ids if cargo_ids else []
+            params: list = [lunes_str, lunes_str] + (cargo_ids if cargo_ids else [])
             empleados = conn.execute(
                 f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
-                       e.horario_habitual_id AS horario_actual_id
+                       COALESCE(
+                         (SELECT COALESCE(a.horario_id,
+                              (SELECT cd.horario_id FROM calendarios_dias cd
+                               WHERE cd.calendario_id = a.calendario_id
+                                 AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
+                               LIMIT 1))
+                          FROM asignaciones a
+                          WHERE a.empleado_id = e.id
+                            AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
+                          ORDER BY a.fecha_desde DESC LIMIT 1),
+                         e.horario_habitual_id
+                       ) AS horario_actual_id
                    FROM empleados e
                    LEFT JOIN turnos t ON t.id = e.turno_id
                    WHERE e.activo=1 AND e.tipo != 'acceso'

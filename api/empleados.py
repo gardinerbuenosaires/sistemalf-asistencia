@@ -226,11 +226,11 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
                 if not cargo_id:
                     return False
                 r = conn.execute(
-                    """SELECT d.usa_distribucion FROM cargos c
+                    """SELECT d.usa_distribucion, d.escribe_planificacion FROM cargos c
                        JOIN departamentos d ON d.id = c.departamento_id
                        WHERE c.id = ?""", (cargo_id,)
                 ).fetchone()
-                return bool(r and r["usa_distribucion"])
+                return bool(r and r["usa_distribucion"] and r["escribe_planificacion"])
 
             nuevo_usa_dist   = _usa_dist(data.cargo_id)
             anterior_usa_dist = _usa_dist(cargo_id_anterior)

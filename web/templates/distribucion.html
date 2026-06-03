@@ -66,7 +66,7 @@
     border: 1px solid #c3e6cb; border-radius: 10px; padding: 2px 8px; font-weight: bold; white-space: nowrap; }
 
   tbody tr:hover td { background: #fafafa; }
-  td { padding: 4px 4px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  td { padding: 4px 4px; border-bottom: 2px solid #8a9ab0; vertical-align: middle; }
   td.col-puesto { padding: 6px 14px; font-weight: bold; font-size: .82rem; white-space: nowrap;
     border-right: 2px solid #dee2e6; }
   td.col-dia { text-align: center; }
@@ -562,7 +562,7 @@ function renderGrilla() {
           return `<span class="${cls}" style="flex-direction:column;align-items:flex-start">${labelTxt}${horLabel}</span>`;
         }).join('');
         const addBtn = puedoEditar
-          ? `<button class="btn-add-emp" onclick="abrirModal(${p.id}, '${d}')">+ Agregar</button>`
+          ? `<button class="btn-add-emp" onclick="abrirModal(${p.id}, '${d}')">+ ${p.nombre}</button>`
           : '';
         const badgesWrap = badges ? `<div class="celda-puesto-badges">${badges}</div>` : '';
         return `<td class="col-dia${esHoy ? ' hoy' : ''}">
@@ -598,6 +598,9 @@ function renderGrilla() {
       const enFranco = _francos.filter(f => f.fecha === d);
       const badges = enFranco.map(f => {
         const nombre = f.emp_apellido ? `${f.emp_apellido}, ${f.emp_nombre}` : '?';
+        if (f.from_planificacion) {
+          return `<span class="badge-franco" style="background:#e0e0e0;color:#555;border-color:#bbb" title="Franco de planificación">${nombre}</span>`;
+        }
         if (puedoEditar) {
           return `<span class="badge-franco removable" title="Quitar franco" onclick="quitarFranco(${f.id})">${nombre} ✕</span>`;
         }
@@ -1210,13 +1213,13 @@ async function imprimirGrilla() {
 <meta charset="UTF-8">
 <title>Distribución ${deptNombre} — ${turnoNombre}</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 10px; padding: 12px; }
-  h2 { text-align: center; font-size: 13px; margin-bottom: 6px; letter-spacing: .05em; }
-  h3 { text-align: center; font-size: 11px; margin-bottom: 10px; color: #444; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: Arial, sans-serif; font-size: 13px; font-weight: bold; padding: 12px; }
+  h2 { text-align: center; font-size: 16px; margin-bottom: 6px; letter-spacing: .05em; }
+  h3 { text-align: center; font-size: 13px; margin-bottom: 10px; color: #444; font-weight: normal; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #999; padding: 3px 5px; text-align: center; }
-  th { background: #d9ead3; font-weight: bold; font-size: 10px; }
+  th, td { border: 1px solid #bbb; border-top: 2px solid #555; padding: 5px 6px; text-align: center; font-size: 13px; }
+  th { background: #d9ead3; font-weight: bold; font-size: 12px; border-top: 2px solid #555; }
   td.col-puesto { text-align: left; font-weight: bold; background: #f3f3f3; white-space: nowrap; }
   tr.fila-off td { background: #d9ead3; }
   tr.fila-off td.col-puesto { background: #b7d7a8; }
@@ -1227,7 +1230,8 @@ async function imprimirGrilla() {
   tr.fila-nov.fila-nov-s td { background: #ea9999; }
   tr.fila-comida td { background: #fce5cd; }
   tr.fila-comida td.col-puesto { background: #f6b26b; }
-  @media print { body { padding: 4px; } }
+  @page { size: legal landscape; margin: 8mm; }
+  @media print { body { padding: 0; } }
 </style>
 </head>
 <body>
@@ -1250,11 +1254,10 @@ async function imprimirGrilla() {
 </body>
 </html>`;
 
-  const w = window.open('', '_blank');
-  w.document.write(html);
-  w.document.close();
-  w.focus();
-  setTimeout(() => w.print(), 400);
+  const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const w    = window.open(url, '_blank');
+  w.addEventListener('load', () => { w.print(); URL.revokeObjectURL(url); });
 }
 
 async function confirmarDistribucion() {

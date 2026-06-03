@@ -1394,10 +1394,10 @@ async function toggleEscribePlanificacion(deptId) {
   const activando = !dept.escribe_planificacion;
   if (activando) {
     const prev = await fetch(`/api/distribucion/departamentos/${deptId}/escribe-planificacion-preview`).then(r => r.json());
-    let msg = `¿Activar "Escribe planificación" para "${prev.nombre}"?\n\nA partir de ahora, confirmar una semana sobreescribirá la planificación de esos empleados.`;
-    if (prev.plan_auto_futuras > 0) {
-      msg += `\n\nSe eliminarán ${prev.plan_auto_futuras} entradas de planificación automática futura de ${prev.emp_afectados} empleado${prev.emp_afectados !== 1 ? 's' : ''}.`;
-    }
+    let msg = `¿Activar "Escribe planificación" para "${prev.nombre}"?\n\n` +
+      `• A partir de ahora el calendario automático deja de generar planificación para estos empleados.\n` +
+      `• Confirmar una semana en distribución sobreescribirá la planificación de esa semana.\n` +
+      `• Se cargará el horario habitual de cada empleado desde su calendario vigente.`;
     if (!confirm(msg)) return;
   } else {
     if (!confirm(`¿Desactivar "Escribe planificación" para "${dept.nombre}"?\n\nEl calendario automático volverá a gestionar la planificación.`)) return;

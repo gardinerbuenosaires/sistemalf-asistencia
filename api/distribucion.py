@@ -255,6 +255,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             empleados = conn.execute(
                 f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
                        COALESCE(
+                         e.horario_habitual_id,
                          (SELECT COALESCE(a.horario_id,
                               (SELECT cd.horario_id FROM calendarios_dias cd
                                WHERE cd.calendario_id = a.calendario_id
@@ -263,8 +264,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                           FROM asignaciones a
                           WHERE a.empleado_id = e.id
                             AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
-                          ORDER BY a.fecha_desde DESC LIMIT 1),
-                         e.horario_habitual_id
+                          ORDER BY a.fecha_desde DESC LIMIT 1)
                        ) AS horario_actual_id
                    FROM empleados e
                    LEFT JOIN turnos t ON t.id = e.turno_id
@@ -326,6 +326,28 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                WHERE h.activo=1
                ORDER BY COALESCE(t.hora_desde,'00:00'), h.nombre"""
         ).fetchall()
+
+        # Francos de planificacion regular para empleados del dept (visible pero no quitables)
+        emp_ids_list = [e["id"] for e in empleados]
+        if emp_ids_list:
+            ph_e = ",".join("?" * len(emp_ids_list))
+            plan_francos = conn.execute(
+                f"""SELECT p.empleado_id, p.fecha,
+                           e.nombre AS emp_nombre, e.apellido AS emp_apellido
+                    FROM planificacion p
+                    JOIN empleados e ON e.id = p.empleado_id
+                    WHERE p.es_franco=1 AND p.fecha>=? AND p.fecha<=?
+                    AND p.empleado_id IN ({ph_e})""",
+                [dias[0], dias[6]] + emp_ids_list
+            ).fetchall()
+            dist_franco_keys = {(f["empleado_id"], f["fecha"]) for f in francos}
+            francos = list(francos) + [
+                {"id": None, "empleado_id": r["empleado_id"], "fecha": r["fecha"],
+                 "emp_nombre": r["emp_nombre"], "emp_apellido": r["emp_apellido"],
+                 "from_planificacion": True}
+                for r in plan_francos
+                if (r["empleado_id"], r["fecha"]) not in dist_franco_keys
+            ]
 
         # Novedades de la semana — excluye CO (observaciones, no bloquean asignación)
         novedades_rows = conn.execute(
@@ -947,6 +969,36 @@ def set_escribe_planificacion(dept_id: int, body: UsaDistribucionIn,
             "UPDATE departamentos SET escribe_planificacion=? WHERE id=?",
             (int(body.value), dept_id)
         )
+        if body.value:
+            # Al activar: poblar horario_habitual_id de los empleados que no lo tienen,
+            # tomando el horario de su asignación de calendario vigente
+            hoy = str(date.today())
+            emp_rows = conn.execute(
+                """SELECT e.id FROM empleados e
+                   JOIN cargos c ON c.id = e.cargo_id
+                   WHERE c.departamento_id = ? AND e.activo = 1
+                     AND e.horario_habitual_id IS NULL""",
+                (dept_id,)
+            ).fetchall()
+            for emp in emp_rows:
+                horario = conn.execute(
+                    """SELECT COALESCE(a.horario_id,
+                           (SELECT cd.horario_id FROM calendarios_dias cd
+                            WHERE cd.calendario_id = a.calendario_id
+                              AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
+                            LIMIT 1)) AS horario_id
+                       FROM asignaciones a
+                       WHERE a.empleado_id = ?
+                         AND a.fecha_desde <= ?
+                         AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
+                       ORDER BY a.fecha_desde DESC LIMIT 1""",
+                    (emp["id"], hoy, hoy)
+                ).fetchone()
+                if horario and horario["horario_id"]:
+                    conn.execute(
+                        "UPDATE empleados SET horario_habitual_id=? WHERE id=?",
+                        (horario["horario_id"], emp["id"])
+                    )
     return {"ok": True}
 
 

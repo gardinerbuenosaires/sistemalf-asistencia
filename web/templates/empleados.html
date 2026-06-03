@@ -617,7 +617,7 @@ function _getCargoUsaDistribucion(cargoId) {
   const cargo = cargosOpts.find(c => c.id === parseInt(cargoId));
   if (!cargo || !cargo.departamento_id) return false;
   const dept = deptosOpts.find(d => d.id === cargo.departamento_id);
-  return !!(dept && dept.usa_distribucion);
+  return !!(dept && dept.usa_distribucion && dept.escribe_planificacion);
 }
 
 async function onCargoChange() {
@@ -649,12 +649,16 @@ function buildCalendarioSection(asignaciones = [], usaDistribucion = false, hora
     const calActivo = asignaciones.find(a =>
       a.fecha_desde <= hoyStr && (a.fecha_hasta === null || a.fecha_hasta > hoyStr)
     ) || null;
+    const _hhNombreAviso = horarioHabitualId ? horarios.find(h => h.id === horarioHabitualId)?.nombre : null;
+    const _hhInnerAviso = _hhNombreAviso
+      ? `<strong>"${_hhNombreAviso}"</strong>`
+      : `<em>(sin asignar)</em>`;
     const avisoCalendario = calActivo
-      ? `<div style="margin-top:10px;padding:10px 12px;background:#f8d7da;
-            border:1px solid #f5c6cb;border-radius:4px;font-size:.82rem;color:#721c24;line-height:1.5">
-          <strong>Atención:</strong> este empleado tiene el calendario
-          <strong>"${calActivo.calendario_nombre}"</strong> activo.
-          Al guardar se desvinculará desde hoy.
+      ? `<div style="margin-top:10px;padding:10px 12px;background:#fff3cd;
+            border:1px solid #ffc107;border-radius:4px;font-size:.82rem;color:#856404;line-height:1.5">
+          <strong>Nota:</strong> este empleado tiene un calendario asignado, pero no genera planificación automática
+          porque el departamento es gestionado por horarios de cocina.
+          Se usará el horario <span id="aviso-hh-nombre">${_hhInnerAviso}</span> como valor por defecto al asignar en distribución.
         </div>`
       : '';
 
@@ -1257,6 +1261,13 @@ async function refrescarCalendarioSection() {
 
 function onHorarioHabitualChange() {
   document.getElementById("horario-habitual-desde").style.display = "";
+  const sel = document.getElementById("sel-horario-habitual");
+  const span = document.getElementById("aviso-hh-nombre");
+  if (sel && span) {
+    span.innerHTML = sel.value
+      ? `<strong>"${sel.options[sel.selectedIndex].text}"</strong>`
+      : `<em>(sin asignar)</em>`;
+  }
 }
 
 function cancelarCambioHorario() {

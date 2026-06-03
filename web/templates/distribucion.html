@@ -1146,7 +1146,7 @@ async function imprimirGrilla() {
     const dias = Object.fromEntries(_dias.map(d => {
       const nombres = _detalles
         .filter(x => x.puesto_id === p.id && x.fecha === d && !x.es_franco && x.empleado_id)
-        .map(x => x.emp_apellido || x.emp_nombre || '')
+        .map(x => `${x.emp_apellido || ''}, ${x.emp_nombre || ''}`.trim().replace(/^,\s*/, ''))
         .filter(Boolean);
       return [d, nombres.join('<br>')];
     }));
@@ -1158,7 +1158,7 @@ async function imprimirGrilla() {
   const francoDias = Object.fromEntries(_dias.map(d => {
     const nombres = _francos
       .filter(f => f.fecha === d)
-      .map(f => f.emp_apellido || f.emp_nombre || '');
+      .map(f => `${f.emp_apellido || ''}, ${f.emp_nombre || ''}`.trim().replace(/^,\s*/, ''));
     return [d, nombres.join('<br>')];
   }));
   const hayFranco = Object.values(francoDias).some(v => v);
@@ -1169,7 +1169,7 @@ async function imprimirGrilla() {
     if (!NOV_LABELS[n.tipo]) continue;
     const emp = _empleados.find(e => e.id === n.empleado_id);
     if (!emp) continue;
-    const nombre = emp.apellido || emp.nombre || '';
+    const nombre = `${emp.apellido || ''}, ${emp.nombre || ''}`.trim().replace(/^,\s*/, '');
     if (!novByTipo[n.tipo]) novByTipo[n.tipo] = {};
     if (!novByTipo[n.tipo][n.fecha]) novByTipo[n.tipo][n.fecha] = [];
     if (!novByTipo[n.tipo][n.fecha].includes(nombre))
@@ -1179,7 +1179,7 @@ async function imprimirGrilla() {
   // Comida de personal
   const comidaDias = Object.fromEntries(_dias.map(d => {
     const asig = _comidaPersonal.find(c => c.fecha === d);
-    return [d, asig ? `${asig.emp_apellido}<br>${asig.emp_nombre}` : ''];
+    return [d, asig ? `${asig.emp_apellido || ''}, ${asig.emp_nombre || ''}`.trim().replace(/^,\s*/, '') : ''];
   }));
   const hayComida = Object.values(comidaDias).some(v => v);
 

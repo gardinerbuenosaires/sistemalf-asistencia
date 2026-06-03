@@ -339,9 +339,9 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
                     "franco_dia_semana": a["franco_dia_semana"],
                 }
 
-        # Excluir empleados en departamentos gestionados por distribución
+        # Excluir empleados de deptos donde distribución YA escribe en planificación
         depts_dist = {r[0] for r in conn.execute(
-            "SELECT id FROM departamentos WHERE usa_distribucion = 1"
+            "SELECT id FROM departamentos WHERE usa_distribucion = 1 AND escribe_planificacion = 1"
         ).fetchall()}
         if depts_dist:
             ph = ",".join("?" * len(depts_dist))
@@ -406,3 +406,20 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
                 generados += 1
 
     return {"generados": generados, "omitidos": omitidos}
+
+
+@router.post("/generar-rango")
+def generar_rango(fecha_desde: str, fecha_hasta: str,
+                  _user=Depends(require_permiso("calendarios", "editar"))):
+    """Regenera planificación semana a semana para un rango de fechas."""
+    from datetime import date as dt
+    d = dt.fromisoformat(fecha_desde)
+    hasta = dt.fromisoformat(fecha_hasta)
+    lunes = d - timedelta(days=d.weekday())
+    totales = {"generados": 0, "omitidos": 0}
+    while lunes <= hasta:
+        r = generar_semana(str(lunes), _user=_user)
+        totales["generados"] += r.get("generados", 0)
+        totales["omitidos"]  += r.get("omitidos", 0)
+        lunes += timedelta(weeks=1)
+    return totales

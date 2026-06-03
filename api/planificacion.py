@@ -188,6 +188,10 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
         )
 
         if fecha > date.today():
+            conn.execute(
+                "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha=?",
+                (empleado_id, fecha_str)
+            )
             row = conn.execute(
                 "SELECT * FROM planificacion WHERE empleado_id=? AND fecha=?",
                 (empleado_id, fecha_str)

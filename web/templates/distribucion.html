@@ -1141,25 +1141,25 @@ async function imprimirGrilla() {
                        LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
                        FD:'FRANCO DÍA', A:'AUSENTE', NF:'NO FICHÓ', CP:'COMIDA PERSO' };
 
-  // Una fila por puesto; nombres separados por coma; omitir si vacía toda la semana
+  // Una fila por puesto; nombres apilados por línea
   const filasPuesto = _puestos.map(p => {
     const dias = Object.fromEntries(_dias.map(d => {
       const nombres = _detalles
         .filter(x => x.puesto_id === p.id && x.fecha === d && !x.es_franco && x.empleado_id)
         .map(x => x.emp_apellido || x.emp_nombre || '')
         .filter(Boolean);
-      return [d, nombres.join(', ')];
+      return [d, nombres.join('<br>')];
     }));
     const vacia = !Object.values(dias).some(v => v);
     return vacia ? null : { label: p.nombre, dias };
   }).filter(Boolean);
 
-  // Una sola fila FRANCO con todos los nombres por día
+  // Una sola fila FRANCO con todos los nombres apilados por día
   const francoDias = Object.fromEntries(_dias.map(d => {
     const nombres = _francos
       .filter(f => f.fecha === d)
       .map(f => f.emp_apellido || f.emp_nombre || '');
-    return [d, nombres.join(', ')];
+    return [d, nombres.join('<br>')];
   }));
   const hayFranco = Object.values(francoDias).some(v => v);
 
@@ -1179,7 +1179,7 @@ async function imprimirGrilla() {
   // Comida de personal
   const comidaDias = Object.fromEntries(_dias.map(d => {
     const asig = _comidaPersonal.find(c => c.fecha === d);
-    return [d, asig ? `${asig.emp_apellido}, ${asig.emp_nombre}` : ''];
+    return [d, asig ? `${asig.emp_apellido}<br>${asig.emp_nombre}` : ''];
   }));
   const hayComida = Object.values(comidaDias).some(v => v);
 
@@ -1237,7 +1237,7 @@ async function imprimirGrilla() {
   <thead>
     <tr>
       <th style="width:100px"></th>
-      ${DIAS_CORTOS.map(d => `<th>${d}</th>`).join('')}
+      ${_dias.map((d, i) => `<th>${DIAS_CORTOS[i]}<br><span style="font-weight:normal">${d.slice(8)}/${d.slice(5,7)}</span></th>`).join('')}
     </tr>
   </thead>
   <tbody>

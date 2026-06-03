@@ -1163,22 +1163,23 @@ async function imprimirGrilla() {
   }));
   const hayFranco = Object.values(francoDias).some(v => v);
 
-  // Novedades: una fila por tipo+empleado
+  // Novedades: una fila por tipo, nombres apilados por día
   const novByTipo = {};
   for (const n of _novedades) {
     if (!NOV_LABELS[n.tipo]) continue;
     const emp = _empleados.find(e => e.id === n.empleado_id);
     if (!emp) continue;
+    const nombre = emp.apellido || emp.nombre || '';
     if (!novByTipo[n.tipo]) novByTipo[n.tipo] = {};
-    if (!novByTipo[n.tipo][n.empleado_id])
-      novByTipo[n.tipo][n.empleado_id] = { nombre: emp.apellido || emp.nombre, dias: {} };
-    novByTipo[n.tipo][n.empleado_id].dias[n.fecha] = true;
+    if (!novByTipo[n.tipo][n.fecha]) novByTipo[n.tipo][n.fecha] = [];
+    if (!novByTipo[n.tipo][n.fecha].includes(nombre))
+      novByTipo[n.tipo][n.fecha].push(nombre);
   }
 
   // Comida de personal
   const comidaDias = Object.fromEntries(_dias.map(d => {
     const asig = _comidaPersonal.find(c => c.fecha === d);
-    return [d, asig ? (asig.emp_apellido || asig.emp_nombre || '') : ''];
+    return [d, asig ? `${asig.emp_apellido}, ${asig.emp_nombre}` : ''];
   }));
   const hayComida = Object.values(comidaDias).some(v => v);
 
@@ -1196,11 +1197,10 @@ async function imprimirGrilla() {
 
   const filasHTMLPuesto = filasPuesto.map(f => fila(f.label, f.dias)).join('');
   const filaHTMLFranco = hayFranco ? fila('FRANCO', francoDias, 'fila-off') : '';
-  const filasHTMLNov = Object.entries(novByTipo).flatMap(([tipo, emps]) => {
+  const filasHTMLNov = Object.entries(novByTipo).map(([tipo, diasMap]) => {
     const label = NOV_LABELS[tipo];
-    return Object.values(emps).map(em =>
-      fila(label, em.dias, `fila-nov fila-nov-${tipo.toLowerCase()}`)
-    );
+    const dias = Object.fromEntries(_dias.map(d => [d, (diasMap[d] || []).join(', ')]));
+    return fila(label, dias, `fila-nov fila-nov-${tipo.toLowerCase()}`);
   }).join('');
   const filaHTMLComida = hayComida ? fila('COMIDA DE PERSONAL', comidaDias, 'fila-comida') : '';
 

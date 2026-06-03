@@ -922,9 +922,8 @@ def set_escribe_planificacion(dept_id: int, body: UsaDistribucionIn,
                               _user=Depends(require_permiso("distribucion", "editar"))):
     """
     Activa o desactiva que las distribuciones confirmadas escriban en planificación.
-    Al activar, elimina planificación auto-generada futura de los empleados del departamento.
+    El borrado de planificación ocurre solo al confirmar cada semana, no aquí.
     """
-    hoy = str(date.today())
     with db_session() as conn:
         dept = conn.execute(
             "SELECT id, usa_distribucion FROM departamentos WHERE id=?", (dept_id,)
@@ -937,23 +936,7 @@ def set_escribe_planificacion(dept_id: int, body: UsaDistribucionIn,
             "UPDATE departamentos SET escribe_planificacion=? WHERE id=?",
             (int(body.value), dept_id)
         )
-        eliminadas = 0
-        if body.value:
-            emp_rows = conn.execute(
-                """SELECT e.id FROM empleados e
-                   JOIN cargos c ON c.id = e.cargo_id
-                   WHERE c.departamento_id = ? AND e.activo = 1""",
-                (dept_id,)
-            ).fetchall()
-            emp_ids = [r[0] for r in emp_rows]
-            if emp_ids:
-                ph = ",".join("?" * len(emp_ids))
-                cur = conn.execute(
-                    f"DELETE FROM planificacion WHERE auto_generado = 1 AND fecha >= ? AND empleado_id IN ({ph})",
-                    [hoy] + emp_ids
-                )
-                eliminadas = cur.rowcount
-    return {"ok": True, "eliminadas": eliminadas}
+    return {"ok": True}
 
 
 # ── Config de avisos por turno ────────────────────────────────────────────────

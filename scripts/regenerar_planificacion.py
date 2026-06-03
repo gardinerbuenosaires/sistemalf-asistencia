@@ -5,6 +5,8 @@ Uso: python scripts/regenerar_planificacion.py 2026-06-01 2026-07-31
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from db.database import init_db
+init_db()
 from api.calendarios import generar_semana
 from datetime import date, timedelta
 

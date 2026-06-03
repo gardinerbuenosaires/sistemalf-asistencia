@@ -60,8 +60,16 @@ def procesar(
     from sync.evaluador import evaluar_fecha, evaluar_rango
     from api.periodos_cerrados import check_periodo_abierto, check_rango_abierto
     if fecha:
+        from datetime import date
         with db_session() as conn:
             check_periodo_abierto(conn, fecha)
+            if fecha > str(date.today()):
+                if empleado_id:
+                    conn.execute("DELETE FROM resultados_dia WHERE empleado_id=? AND fecha=?",
+                                 (empleado_id, fecha))
+                else:
+                    conn.execute("DELETE FROM resultados_dia WHERE fecha=?", (fecha,))
+                return {"procesados": 0, "nota": "Fecha futura — resultados limpiados"}
         return evaluar_fecha(fecha, respetar_correcciones=respetar_correcciones,
                              solo_empleado_id=empleado_id)
     if fecha_desde and fecha_hasta:

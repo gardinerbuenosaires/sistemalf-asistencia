@@ -170,7 +170,7 @@ def set_horario_habitual(eid: int, body: dict, _user=Depends(require_permiso("em
                     409,
                     f"El horario está confirmado en la semana del {lunes.strftime('%d/%m')} "
                     f"al {domingo.strftime('%d/%m')}. "
-                    f"Para cambiarlo desde esa fecha, primero desconfirmá esa semana en Distribución."
+                    f"Para modificarlo desde esa fecha es necesario desconfirmar esa semana en Distribución."
                 )
             conn.execute(
                 "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= ? AND origen='distribucion'",
@@ -196,7 +196,7 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
         conn.execute(
             """UPDATE empleados SET
                nombre=?, apellido=?, dni=?, cuil=?, fecha_nacimiento=?, fecha_ingreso=?,
-               fecha_egreso=?, cargo_id=?, categoria_id=?, telefono=?, email=?,
+               cargo_id=?, categoria_id=?, telefono=?, email=?,
                domicilio=?, observaciones=?, activo=?, tipo=?,
                nacionalidad=?, estado_civil=?, turno_id=?, sector_id=?,
                contacto_emergencia_nombre=?, contacto_emergencia_telefono=?,
@@ -207,7 +207,7 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
                modificado_en=datetime('now','localtime')
                WHERE id=?""",
             (data.nombre.strip(), data.apellido.strip(), data.dni, data.cuil,
-             data.fecha_nacimiento, data.fecha_ingreso, data.fecha_egreso,
+             data.fecha_nacimiento, data.fecha_ingreso,
              data.cargo_id, data.categoria_id,
              data.telefono, data.email, data.domicilio, data.observaciones, data.activo, data.tipo,
              data.nacionalidad, data.estado_civil, data.turno_id, data.sector_id,
@@ -218,6 +218,8 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
              data.dom_lat, data.dom_lng, data.dom_mapa,
              eid)
         )
+        if anterior["activo"] == 0 and data.activo == 1:
+            conn.execute("UPDATE empleados SET fecha_egreso=NULL WHERE id=?", (eid,))
         # Si el cargo cambió, manejar transiciones entre sistemas de planificación
         if data.cargo_id and data.cargo_id != cargo_id_anterior:
             hoy = conn.execute("SELECT date('now','localtime')").fetchone()[0]
@@ -255,7 +257,7 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
                     (eid, corte)
                 )
 
-        baja = anterior["activo"] == 1 and (data.activo == 0 or bool(data.fecha_egreso))
+        baja = anterior["activo"] == 1 and data.activo == 0
         if baja:
             corte = data.fecha_egreso or conn.execute(
                 "SELECT date('now','localtime')"

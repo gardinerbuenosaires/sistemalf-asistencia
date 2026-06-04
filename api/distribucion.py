@@ -359,21 +359,6 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         ).fetchall()
         novedades = [dict(r) for r in novedades_rows]
 
-        # Francos de planificacion regular (es_franco=1) — bloquean asignación aunque
-        # no estén en distribucion_franco
-        emp_ids = [e["id"] for e in empleados]
-        if emp_ids:
-            ph2 = ",".join("?" * len(emp_ids))
-            plan_francos = conn.execute(
-                f"""SELECT p.empleado_id, p.fecha
-                    FROM planificacion p
-                    WHERE p.es_franco = 1
-                    AND p.fecha >= ? AND p.fecha <= ?
-                    AND p.empleado_id IN ({ph2})""",
-                [dias[0], dias[6]] + emp_ids
-            ).fetchall()
-            novedades += [{"empleado_id": r["empleado_id"], "fecha": r["fecha"],
-                           "tipo": "F", "descripcion": None} for r in plan_francos]
 
     return {
         "distribucion": dict(dist) if dist else None,
@@ -1071,7 +1056,7 @@ def get_avisos(_user=Depends(require_permiso("distribucion", "ver"))):
 
             lunes_semana = date.fromisoformat(b["semana_inicio"])
             # Retroceder al día de aviso de la semana anterior al lunes del borrador
-            dias_antes = (7 - aviso_dia) % 7
+            dias_antes = 8 - aviso_dia
             fecha_aviso = lunes_semana - timedelta(days=dias_antes)
             dt_aviso = datetime.combine(fecha_aviso, datetime.strptime(aviso_hora, "%H:%M").time())
 

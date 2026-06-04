@@ -964,10 +964,11 @@ function buildForm(e = {}, asignaciones = []) {
             <label>Fecha de ingreso</label>
             <input type="date" id="f-ingreso" value="${e.fecha_ingreso||""}">
           </div>
+          ${!e.activo && e.fecha_egreso ? `
           <div class="form-group">
             <label>Fecha de egreso</label>
-            <input type="date" id="f-egreso" value="${e.fecha_egreso||""}" oninput="actualizarBtnGuardar()">
-          </div>
+            <input type="text" disabled value="${_fmtF(e.fecha_egreso)}" style="background:#f8f9fa;color:#888">
+          </div>` : ''}
           ${editandoId ? _buildPremioAviso(e) : ""}
           <div class="form-group">
             <label>Tipo de empleado</label>
@@ -1105,6 +1106,16 @@ function buildForm(e = {}, asignaciones = []) {
         </div>
       </div>
 
+      ${e.activo && editandoId && canDo('empleados','editar') ? `
+      <div id="baja-panel" style="display:none;margin-bottom:8px;padding:10px 14px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;width:fit-content;margin-left:auto">
+        <div style="font-size:.78rem;font-weight:bold;color:#856404;margin-bottom:6px">Fecha de egreso</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="date" id="f-baja-fecha" value="${_localDateStr()}"
+            style="padding:5px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.84rem">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="toggleBajaPanel(false)">Cancelar</button>
+          <button type="button" class="btn btn-danger btn-sm" onclick="confirmarBaja()">Confirmar baja</button>
+        </div>
+      </div>` : ''}
       <div class="form-footer">
         ${!e.activo && editandoId && canDo('empleados','editar') ? `
         <button class="btn btn-success btn-sm" onclick="toggleActivo()">Reactivar</button>` : ''}
@@ -1112,9 +1123,9 @@ function buildForm(e = {}, asignaciones = []) {
         <button class="btn btn-sm" style="background:#856404;color:white" onclick="liberarId(${e.id}, '${e.user_id}')">Liberar ID dispositivo</button>` : ''}
         ${editandoId ? `<a href="/empleados/${e.id}/legajo" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">Legajo</a>` : ''}
         <button class="btn btn-secondary" onclick="cancelar()">Cancelar</button>
-        ${canDo('empleados','editar') ? `<button id="btn-guardar" class="btn ${e.activo && e.fecha_egreso ? 'btn-danger' : 'btn-primary'}" onclick="guardar()">
-          ${e.activo && e.fecha_egreso ? 'Dar de baja' : 'Guardar'}
-        </button>` : ''}
+        ${canDo('empleados','editar') ? `<button id="btn-guardar" class="btn btn-primary" onclick="guardar()">Guardar</button>` : ''}
+        ${e.activo && editandoId && canDo('empleados','editar') ? `
+        <button class="btn btn-danger btn-sm" onclick="toggleBajaPanel()">Dar de baja</button>` : ''}
       </div>
     </form>`;
 }
@@ -1161,7 +1172,6 @@ function getFormData() {
     cuil:        _val("f-cuil"),
     fecha_nacimiento: _val("f-nacimiento"),
     fecha_ingreso:    _val("f-ingreso"),
-    fecha_egreso:     _val("f-egreso"),
     cargo_id:        parseInt(_val("f-cargo"))        || null,
     categoria_id:    parseInt(_val("f-categoria"))    || null,
     telefono:     _val("f-telefono"),
@@ -1198,35 +1208,43 @@ function getFormData() {
   };
 }
 
-function actualizarBtnGuardar() {
-  const btn = document.getElementById('btn-guardar');
-  if (!btn) return;
-  const fecha = document.getElementById('f-egreso')?.value;
-  if (editandoActivo && fecha) {
-    btn.className = 'btn btn-danger';
-    btn.textContent = 'Dar de baja';
-  } else {
-    btn.className = 'btn btn-primary';
-    btn.textContent = 'Guardar';
-  }
-}
-
 async function guardar() {
   if (!editandoId) return;
   const data = getFormData();
   if (!data.apellido || !data.nombre) { toast("Apellido y nombre son obligatorios"); return; }
-
-  const esBaja = editandoActivo && data.fecha_egreso;
-
   const res = await fetch(`/api/empleados/${editandoId}`, {
     method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data)
   });
-
   if (res.ok) {
-    const e = await res.json();
-    toast(esBaja ? "Empleado dado de baja" : "Cambios guardados");
+    toast("Cambios guardados");
     await cargar();
     await editarEmpleado(editandoId);
+  } else {
+    const err = await res.json().catch(() => ({}));
+    toast("Error: " + (err.detail || "desconocido"));
+  }
+}
+
+function toggleBajaPanel(mostrar) {
+  const panel = document.getElementById("baja-panel");
+  if (!panel) return;
+  if (mostrar === undefined) mostrar = panel.style.display === "none";
+  panel.style.display = mostrar ? "" : "none";
+}
+
+async function confirmarBaja() {
+  const fecha = document.getElementById("f-baja-fecha")?.value;
+  if (!fecha) { toast("Ingresá la fecha de egreso"); return; }
+  const data = getFormData();
+  data.activo = 0;
+  data.fecha_egreso = fecha;
+  const res = await fetch(`/api/empleados/${editandoId}`, {
+    method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data)
+  });
+  if (res.ok) {
+    toast("Empleado dado de baja");
+    await cargar();
+    cancelar();
   } else {
     const err = await res.json().catch(() => ({}));
     toast("Error: " + (err.detail || "desconocido"));

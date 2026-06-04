@@ -23,6 +23,7 @@ ESTADO_LABELS: dict[str, str] = {
     "nf":                       "No fichó",
     "ft":                       "Franco trabajado",
     "duda":                     "Presencia dudosa",
+    "no_iniciado":              "Sin iniciar",
 }
 
 

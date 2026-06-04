@@ -379,7 +379,12 @@ fetch("/api/resultados/estados").then(r=>r.json()).then(d=>{ ESTADO_LABELS = d; 
 
 function estadoBadge(estado) {
   if (!estado) return '<span class="estado sin_horario">—</span>';
-  return `<span class="estado ${estado}">${ESTADO_LABELS[estado]||estado}</span>`;
+  let label = ESTADO_LABELS[estado];
+  if (!label && estado.endsWith('_b2_ni')) {
+    const base = estado.slice(0, -6);
+    label = (ESTADO_LABELS[base] || base) + ' · b2 pend.';
+  }
+  return `<span class="estado ${estado}">${label || estado}</span>`;
 }
 
 function fmtHora(ts) {

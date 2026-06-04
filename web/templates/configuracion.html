@@ -206,6 +206,7 @@
           <div class="section-title">Parámetros del sistema</div>
         </div>
         <button class="btn btn-secondary btn-sm" data-perm="usuarios:editar" onclick="sincronizarHora()">Sincronizar hora del dispositivo</button>
+        <button class="btn btn-secondary btn-sm" data-perm="usuarios:editar" onclick="reiniciarDispositivo()">Reiniciar dispositivo</button>
       </div>
       <div id="params-container"><p style="color:#aaa;font-size:.9rem">Cargando...</p></div>
     </div>
@@ -705,6 +706,22 @@ const PARAMS_META = {
     descripcion: "Día del mes en que el sistema cierra automáticamente el período del mes anterior (entre 1 y 28)."
   }
 };
+
+async function reiniciarDispositivo() {
+  if (!confirm("¿Reiniciar el dispositivo ZKTeco ahora?\nQuedará fuera de servicio unos segundos mientras arranca.")) return;
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = "Reiniciando...";
+  const res = await fetch("/api/dispositivo/reiniciar", { method: "POST" });
+  btn.disabled = false;
+  btn.textContent = "Reiniciar dispositivo";
+  if (res.ok) {
+    alert("Dispositivo reiniciado. Estará disponible en unos segundos.");
+  } else {
+    const err = await res.json().catch(() => ({}));
+    alert("Error: " + (err.detail || "No se pudo conectar al dispositivo"));
+  }
+}
 
 async function sincronizarHora() {
   const btn = event.target;

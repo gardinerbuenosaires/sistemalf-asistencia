@@ -414,6 +414,16 @@ def sincronizar_hora_dispositivo(_user=Depends(require_permiso("usuarios", "edit
     return {"ok": True}
 
 
+@app.post("/api/dispositivo/reiniciar", tags=["dispositivo"])
+def reiniciar_dispositivo(_user=Depends(require_permiso("usuarios", "editar"))):
+    from sync.downloader import restart_device
+    result = restart_device()
+    if not result["ok"]:
+        from fastapi import HTTPException
+        raise HTTPException(500, detail=result["error"] or "Error al reiniciar el dispositivo")
+    return {"ok": True}
+
+
 @app.post("/api/admin/liberar-ids-dispositivo", tags=["admin"])
 def liberar_ids_dispositivo_manual(_user=Depends(require_permiso("usuarios", "editar"))):
     """Libera el user_id de empleados dados de baja hace más de 48 horas."""

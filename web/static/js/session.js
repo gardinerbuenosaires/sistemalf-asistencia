@@ -65,6 +65,19 @@
     } catch (_) {}
   }
 
+  // ── Timer de inactividad del cliente ───────────────────────────────────────
+  var _ultimaActividad = Date.now();
+  var _INACTIVIDAD_MS = 10 * 60 * 1000;
+
+  ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(function(ev) {
+    document.addEventListener(ev, function() { _ultimaActividad = Date.now(); }, { passive: true });
+  });
+
+  setInterval(function() {
+    if (location.pathname.startsWith('/login')) return;
+    if (Date.now() - _ultimaActividad > _INACTIVIDAD_MS) _sesionExpirada();
+  }, 60000);
+
   document.addEventListener('DOMContentLoaded', function () {
     setTimeout(_checkAvisosDistribucion, 1500);
   });

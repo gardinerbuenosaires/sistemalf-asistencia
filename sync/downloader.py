@@ -153,6 +153,27 @@ def sync_time() -> dict:
     return result
 
 
+def restart_device() -> dict:
+    """Reinicia el dispositivo ZKTeco."""
+    result = {"ok": False, "error": None}
+    conn_zk = None
+    try:
+        conn_zk = _connect()
+        conn_zk.restart()
+        result["ok"] = True
+        logger.info("Dispositivo ZKTeco reiniciado correctamente")
+    except Exception as exc:
+        result["error"] = str(exc)
+        logger.error("Error al reiniciar el dispositivo: %s", exc)
+    finally:
+        if conn_zk:
+            try:
+                conn_zk.disconnect()
+            except Exception:
+                pass
+    return result
+
+
 def sync_users() -> dict:
     """
     Conecta al dispositivo, descarga la lista de usuarios y crea los empleados

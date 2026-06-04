@@ -157,6 +157,31 @@ def _sync_feriados_auto():
         logger.error("Error en sync automático de feriados: %s", e)
 
 
+_fecha_ultimo_restart = None
+
+def _reiniciar_dispositivo_auto():
+    """Reinicia el dispositivo ZKTeco una vez por día a las 4am."""
+    global _fecha_ultimo_restart
+    ahora = datetime.now()
+    hoy   = str(ahora.date())
+
+    if _fecha_ultimo_restart == hoy:
+        return
+    if ahora.hour != 4:
+        return
+
+    try:
+        from sync.downloader import restart_device
+        result = restart_device()
+        if result["ok"]:
+            _fecha_ultimo_restart = hoy
+            logger.info("Dispositivo ZKTeco reiniciado automáticamente")
+        else:
+            logger.warning("Fallo en reinicio automático del dispositivo: %s", result["error"])
+    except Exception as e:
+        logger.error("Error en reinicio automático del dispositivo: %s", e)
+
+
 def _sincronizar_hora_auto():
     """Sincroniza la hora del dispositivo una vez por día a la madrugada."""
     global _fecha_ultimo_sync_hora
@@ -404,6 +429,7 @@ def start_scheduler():
         while True:
             _generar_planificacion_auto()
             _sync_feriados_auto()
+            _reiniciar_dispositivo_auto()
             _sincronizar_hora_auto()
             _cerrar_periodo_auto()
             _evaluar_barrido_manana()

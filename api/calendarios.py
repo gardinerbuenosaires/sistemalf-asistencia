@@ -96,10 +96,15 @@ def get_calendario(cid: int, _user=Depends(require_permiso("calendarios", "ver")
         return _get_calendario(conn, cid)
 
 
+_DIAS_NOMBRES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+
 @router.post("", status_code=201)
 def create_calendario(data: CalendarioIn, _user=Depends(require_permiso("calendarios", "editar"))):
     if len(data.dias) != 7:
         raise HTTPException(422, "Se requieren exactamente 7 días")
+    for d in data.dias:
+        if not d.es_franco and not d.horario_id:
+            raise HTTPException(422, f"{_DIAS_NOMBRES[d.dia_semana]} no tiene horario asignado ni está marcado como franco")
     with db_session() as conn:
         cur = conn.execute(
             "INSERT INTO calendarios (nombre, franco_en_feriado) VALUES (?,?)",
@@ -118,6 +123,9 @@ def create_calendario(data: CalendarioIn, _user=Depends(require_permiso("calenda
 def update_calendario(cid: int, data: CalendarioIn, _user=Depends(require_permiso("calendarios", "editar"))):
     if len(data.dias) != 7:
         raise HTTPException(422, "Se requieren exactamente 7 días")
+    for d in data.dias:
+        if not d.es_franco and not d.horario_id:
+            raise HTTPException(422, f"{_DIAS_NOMBRES[d.dia_semana]} no tiene horario asignado ni está marcado como franco")
     with db_session() as conn:
         c = conn.execute("SELECT id FROM calendarios WHERE id=?", (cid,)).fetchone()
         if not c:

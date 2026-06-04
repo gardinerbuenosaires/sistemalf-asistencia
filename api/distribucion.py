@@ -240,40 +240,41 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         lunes_str = str(lunes)
 
         if usa_dist:
-            # Filtra por turno_id del empleado usando la misma lógica de grupo TM/TN/CO
-            cargo_filter = ""
-            if cargo_ids:
+            if not cargo_ids:
+                empleados = []
+            else:
+                # Filtra por turno_id del empleado usando la misma lógica de grupo TM/TN/CO
                 ph = ",".join("?" * len(cargo_ids))
                 cargo_filter = f"AND e.cargo_id IN ({ph})"
-            if turno == "CO":
-                turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%cortado%')"
-            elif turno == "TN":
-                turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%noche%' OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%')"
-            else:  # TM — todo lo que no es noche/madrugada/cortado, incluyendo sin turno asignado
-                turno_cond = "AND (e.turno_id IS NULL OR (lower(COALESCE(t.nombre,'')) NOT LIKE '%noche%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%madrugada%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%cortado%'))"
-            params: list = [lunes_str, lunes_str] + (cargo_ids if cargo_ids else [])
-            empleados = conn.execute(
-                f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
-                       COALESCE(
-                         e.horario_habitual_id,
-                         (SELECT COALESCE(a.horario_id,
-                              (SELECT cd.horario_id FROM calendarios_dias cd
-                               WHERE cd.calendario_id = a.calendario_id
-                                 AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
-                               LIMIT 1))
-                          FROM asignaciones a
-                          WHERE a.empleado_id = e.id
-                            AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
-                          ORDER BY a.fecha_desde DESC LIMIT 1)
-                       ) AS horario_actual_id
-                   FROM empleados e
-                   LEFT JOIN turnos t ON t.id = e.turno_id
-                   WHERE e.activo=1 AND e.tipo != 'acceso'
-                   {turno_cond}
-                   {cargo_filter}
-                   ORDER BY e.apellido, e.nombre""",
-                params
-            ).fetchall()
+                if turno == "CO":
+                    turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%cortado%')"
+                elif turno == "TN":
+                    turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%noche%' OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%')"
+                else:  # TM — todo lo que no es noche/madrugada/cortado, incluyendo sin turno asignado
+                    turno_cond = "AND (e.turno_id IS NULL OR (lower(COALESCE(t.nombre,'')) NOT LIKE '%noche%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%madrugada%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%cortado%'))"
+                params: list = [lunes_str, lunes_str] + cargo_ids
+                empleados = conn.execute(
+                    f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
+                           COALESCE(
+                             e.horario_habitual_id,
+                             (SELECT COALESCE(a.horario_id,
+                                  (SELECT cd.horario_id FROM calendarios_dias cd
+                                   WHERE cd.calendario_id = a.calendario_id
+                                     AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
+                                   LIMIT 1))
+                              FROM asignaciones a
+                              WHERE a.empleado_id = e.id
+                                AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
+                              ORDER BY a.fecha_desde DESC LIMIT 1)
+                           ) AS horario_actual_id
+                       FROM empleados e
+                       LEFT JOIN turnos t ON t.id = e.turno_id
+                       WHERE e.activo=1 AND e.tipo != 'acceso'
+                       {turno_cond}
+                       {cargo_filter}
+                       ORDER BY e.apellido, e.nombre""",
+                    params
+                ).fetchall()
         elif cargo_ids:
             placeholders = ",".join("?" * len(cargo_ids))
             empleados = conn.execute(

@@ -149,6 +149,8 @@ def set_horario_habitual(eid: int, body: dict, _user=Depends(require_permiso("em
             (horario_id, eid)
         )
         if fecha_desde:
+            from api.periodos_cerrados import check_periodo_abierto
+            check_periodo_abierto(conn, fecha_desde)
             # Verificar si fecha_desde cae dentro de una semana confirmada de este empleado
             conflicto = conn.execute(
                 """SELECT ds.semana_inicio

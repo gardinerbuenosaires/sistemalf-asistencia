@@ -15,6 +15,8 @@ class PuestoIn(BaseModel):
     departamento_id: int
     orden: int = 0
     activo: bool = True
+    es_chef: bool = False
+    turno: Optional[str] = None
 
 
 class DistribucionIn(BaseModel):
@@ -115,9 +117,10 @@ def get_puestos(departamento_id: Optional[int] = None,
 @router.post("/puestos")
 def create_puesto(body: PuestoIn, user=Depends(require_permiso("distribucion", "editar"))):
     with db_session() as conn:
+        turno_val = body.turno if body.turno in ("TM", "TN", "CO") else None
         cur = conn.execute(
-            "INSERT INTO puestos (nombre, departamento_id, orden, activo) VALUES (?,?,?,?)",
-            (body.nombre, body.departamento_id, body.orden, 1 if body.activo else 0)
+            "INSERT INTO puestos (nombre, departamento_id, orden, activo, es_chef, turno) VALUES (?,?,?,?,?,?)",
+            (body.nombre, body.departamento_id, body.orden, 1 if body.activo else 0, 1 if body.es_chef else 0, turno_val)
         )
         return {"id": cur.lastrowid}
 
@@ -141,9 +144,10 @@ def reordenar_puestos(departamento_id: int, body: ReordenarPuestosIn,
 @router.put("/puestos/{pid}")
 def update_puesto(pid: int, body: PuestoIn, user=Depends(require_permiso("distribucion", "editar"))):
     with db_session() as conn:
+        turno_val = body.turno if body.turno in ("TM", "TN", "CO") else None
         conn.execute(
-            "UPDATE puestos SET nombre=?, departamento_id=?, orden=?, activo=? WHERE id=?",
-            (body.nombre, body.departamento_id, body.orden, 1 if body.activo else 0, pid)
+            "UPDATE puestos SET nombre=?, departamento_id=?, orden=?, activo=?, es_chef=?, turno=? WHERE id=?",
+            (body.nombre, body.departamento_id, body.orden, 1 if body.activo else 0, 1 if body.es_chef else 0, turno_val, pid)
         )
     return {"ok": True}
 
@@ -190,8 +194,8 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         ).fetchone()
 
         puestos = conn.execute(
-            "SELECT * FROM puestos WHERE departamento_id=? AND activo=1 ORDER BY orden, nombre",
-            (departamento_id,)
+            "SELECT * FROM puestos WHERE departamento_id=? AND activo=1 AND (turno IS NULL OR turno=?) ORDER BY orden, nombre",
+            (departamento_id, turno)
         ).fetchall()
 
         detalles = []
@@ -962,11 +966,16 @@ def set_escribe_planificacion(dept_id: int, body: UsaDistribucionIn,
             emp_rows = conn.execute(
                 """SELECT e.id FROM empleados e
                    JOIN cargos c ON c.id = e.cargo_id
-                   WHERE c.departamento_id = ? AND e.activo = 1
-                     AND e.horario_habitual_id IS NULL""",
+                   WHERE c.departamento_id = ? AND e.activo = 1""",
                 (dept_id,)
             ).fetchall()
+            emp_ids = [e["id"] for e in emp_rows]
             for emp in emp_rows:
+                if not conn.execute(
+                    "SELECT horario_habitual_id FROM empleados WHERE id=? AND horario_habitual_id IS NULL",
+                    (emp["id"],)
+                ).fetchone():
+                    continue
                 horario = conn.execute(
                     """SELECT COALESCE(a.horario_id,
                            (SELECT cd.horario_id FROM calendarios_dias cd
@@ -985,6 +994,13 @@ def set_escribe_planificacion(dept_id: int, body: UsaDistribucionIn,
                         "UPDATE empleados SET horario_habitual_id=? WHERE id=?",
                         (horario["horario_id"], emp["id"])
                     )
+            # Limpiar planificación auto-generada futura de todos los empleados del dpto
+            if emp_ids:
+                ph = ",".join("?" * len(emp_ids))
+                conn.execute(
+                    f"DELETE FROM planificacion WHERE auto_generado=1 AND fecha >= ? AND empleado_id IN ({ph})",
+                    [hoy] + emp_ids
+                )
     return {"ok": True}
 
 

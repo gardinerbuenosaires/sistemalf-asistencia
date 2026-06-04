@@ -156,6 +156,8 @@
   .badge-emp.novedad-E   { background: #FABF8F; color: #000; border-color: #e8a870; }
   .badge-emp.novedad-ILT { background: #C4D79B; color: #000; border-color: #a8c07a; }
   .badge-emp.novedad-NF  { background: #F4D03F; color: #7D4900; border-color: #d4b030; }
+  .badge-emp.chef { background: #e1bee7; color: #6a1b9a; border-color: #ce93d8; }
+  .badge-emp.chef:hover { background: #ce93d8; }
   .btn-add-emp { background: none; border: 1px dashed #28a745; color: #155724;
     border-radius: 12px; padding: 3px 10px; font-size: .72rem; cursor: pointer; white-space: nowrap; }
   .btn-add-emp:hover { background: #d4edda; }
@@ -295,7 +297,20 @@
     <h3 id="modal-puesto-titulo">Nuevo puesto</h3>
     <p class="subtitulo" style="margin-bottom:12px">Nombre del puesto en este departamento</p>
     <input type="text" id="input-puesto-nombre" placeholder="Ej: Horno, Parrilla, Servicio..." maxlength="60">
-    <div style="display:flex;gap:8px;justify-content:flex-end">
+    <div style="margin-top:10px">
+      <label style="font-size:.8rem;color:#666;display:block;margin-bottom:4px">Turno</label>
+      <select id="input-puesto-turno" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+        <option value="">Todos los turnos</option>
+        <option value="TM">Mañana (TM)</option>
+        <option value="TN">Noche (TN)</option>
+        <option value="CO">Cortado (CO)</option>
+      </select>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.85rem;cursor:pointer">
+      <input type="checkbox" id="input-puesto-chef">
+      Puesto Chef (aparece al final con color distintivo)
+    </label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button class="btn-cancel" onclick="cerrarModalPuesto()">Cancelar</button>
       <button class="modal-puesto .btn-save btn" onclick="guardarPuesto()"
         style="background:#2c3e50;color:white;border:none;padding:8px 18px;border-radius:5px;cursor:pointer">
@@ -536,14 +551,18 @@ function renderGrilla() {
       Sin puestos definidos. Agregá el primero abajo.
     </td></tr>`;
   } else {
-    const puestosHtml = _puestos.map(p => {
+    const puestosOrdenados = [
+      ..._puestos.filter(p => !p.es_chef),
+      ..._puestos.filter(p => p.es_chef)
+    ];
+    const puestosHtml = puestosOrdenados.map(p => {
       const celdas = _dias.map(d => {
         const esHoy = d === hoyStr;
         const detsDelDia = _detalles.filter(x => x.puesto_id === p.id && x.fecha === d && !x.es_franco);
         const badges = detsDelDia.map(det => {
           const nombre = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?';
           const nov = det.empleado_id ? _novedad(det.empleado_id, d) : null;
-          let cls = 'badge-emp';
+          let cls = 'badge-emp' + (p.es_chef && !nov ? ' chef' : '');
           let labelTxt = nombre;
           if (nov) { cls += ` novedad-${nov.tipo}`; labelTxt = `${nombre} · ${nov.tipo}`; }
           if (puedoEditar) {
@@ -584,9 +603,11 @@ function renderGrilla() {
            ondragend="dragEnd()"`
         : '';
 
-      return `<tr ${dragAttrs}>
-        <td class="col-puesto">
-          ${puedeEditarPuestos ? '<span class="drag-handle">⠿</span>' : ''}${p.nombre}${accionesPuesto}
+      const chefStyle = p.es_chef ? ' style="background:#f3e5f5;border-top:2px solid #9c27b0"' : '';
+      const chefColStyle = p.es_chef ? ' style="background:#e1bee7;color:#6a1b9a"' : '';
+      return `<tr ${dragAttrs}${chefStyle}>
+        <td class="col-puesto"${chefColStyle}>
+          ${puedeEditarPuestos && !p.es_chef ? '<span class="drag-handle">⠿</span>' : ''}${p.nombre}${accionesPuesto}
         </td>
         ${celdas}
       </tr>`;
@@ -622,10 +643,10 @@ function renderGrilla() {
     // Filas de novedades
     const NOV_LABELS_GRID = { V:'VACACIONES', ILT:'ILT', E:'ENFERMEDAD', L:'LICENCIA',
                                LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
-                               FD:'FRANCO DÍA', A:'AUSENTE', NF:'NO FICHÓ', CP:'COMIDA PERSO' };
+                               FD:'FRANCO DÍA', CP:'COMIDA PERSO' };
     const NOV_COLORS = { V:'#cfe2f3', ILT:'#fff2cc', E:'#fff2cc', L:'#d9ead3',
                          LSG:'#d9ead3', S:'#f4cccc', FT:'#ead1dc', FD:'#ead1dc',
-                         A:'#f4cccc', NF:'#f4cccc', CP:'#fce5cd' };
+                         CP:'#fce5cd' };
 
     const novByTipo = {};
     for (const n of _novedades) {
@@ -641,20 +662,17 @@ function renderGrilla() {
     for (const [tipo, emps] of Object.entries(novByTipo)) {
       const color = NOV_COLORS[tipo] || '#f3f3f3';
       const label = NOV_LABELS_GRID[tipo];
-      const empList = Object.values(emps);
-      // Una fila por empleado con novedad
-      for (const { emp, dias } of empList) {
-        const celdas = _dias.map(d => {
-          const esHoy = d === hoyStr;
-          const tiene = dias.has(d);
-          const nombre = tiene ? (emp.apellido || emp.nombre) : '';
-          return `<td class="col-dia${esHoy ? ' hoy' : ''}" style="background:${tiene ? color : ''};font-size:.78rem">${nombre}</td>`;
-        }).join('');
-        novedadesHtml += `<tr>
-          <td class="col-puesto" style="background:${color};font-size:.78rem;font-weight:bold">${label}</td>
-          ${celdas}
-        </tr>`;
-      }
+      const celdas = _dias.map(d => {
+        const esHoy = d === hoyStr;
+        const nombres = Object.values(emps)
+          .filter(({ dias }) => dias.has(d))
+          .map(({ emp }) => emp.apellido ? `${emp.apellido}, ${emp.nombre}` : emp.nombre);
+        return `<td class="col-dia${esHoy ? ' hoy' : ''}" style="background:${nombres.length ? color : ''};font-size:.78rem">${nombres.join('<br>')}</td>`;
+      }).join('');
+      novedadesHtml += `<tr>
+        <td class="col-puesto" style="background:${color};font-size:.78rem;font-weight:bold">${label}</td>
+        ${celdas}
+      </tr>`;
     }
 
     // Fila COMIDA DE PERSONAL
@@ -709,7 +727,9 @@ function abrirModal(puestoId, fecha) {
   const activePuestoIds = new Set(_puestos.map(p => p.id));
   const asignadosEnOtro = new Set(
     _detalles
-      .filter(x => x.fecha === fecha && x.puesto_id !== puestoId && !x.es_franco && x.empleado_id && activePuestoIds.has(x.puesto_id))
+      .filter(x => x.fecha === fecha && x.puesto_id !== puestoId && !x.es_franco && x.empleado_id
+               && activePuestoIds.has(x.puesto_id)
+               && !(_puestos.find(p => p.id === x.puesto_id)?.es_chef))
       .map(x => x.empleado_id)
   );
   const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
@@ -1142,10 +1162,14 @@ async function imprimirGrilla() {
   const DIAS_CORTOS = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
   const NOV_LABELS = { V:'VACACIONES', ILT:'ILT', E:'ENFERMEDAD', L:'LICENCIA',
                        LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
-                       FD:'FRANCO DÍA', A:'AUSENTE', NF:'NO FICHÓ', CP:'COMIDA PERSO' };
+                       FD:'FRANCO DÍA', CP:'COMIDA PERSO' };
 
-  // Una fila por puesto; nombres apilados por línea
-  const filasPuesto = _puestos.map(p => {
+  // Una fila por puesto; nombres apilados por línea (chef al final)
+  const puestosImpresion = [
+    ..._puestos.filter(p => !p.es_chef),
+    ..._puestos.filter(p => p.es_chef)
+  ];
+  const filasPuesto = puestosImpresion.map(p => {
     const dias = Object.fromEntries(_dias.map(d => {
       const nombres = _detalles
         .filter(x => x.puesto_id === p.id && x.fecha === d && !x.es_franco && x.empleado_id)
@@ -1154,7 +1178,7 @@ async function imprimirGrilla() {
       return [d, nombres.join('<br>')];
     }));
     const vacia = !Object.values(dias).some(v => v);
-    return vacia ? null : { label: p.nombre, dias };
+    return vacia ? null : { label: p.nombre, dias, esChef: !!p.es_chef };
   }).filter(Boolean);
 
   // Una sola fila FRANCO con todos los nombres apilados por día
@@ -1198,7 +1222,7 @@ async function imprimirGrilla() {
       ${_dias.map(d => `<td>${dias[d] || ''}</td>`).join('')}
     </tr>`;
 
-  const filasHTMLPuesto = filasPuesto.map(f => fila(f.label, f.dias)).join('');
+  const filasHTMLPuesto = filasPuesto.map(f => fila(f.label, f.dias, f.esChef ? 'fila-chef' : '')).join('');
   const filaHTMLFranco = hayFranco ? fila('FRANCO', francoDias, 'fila-off') : '';
   const filasHTMLNov = Object.entries(novByTipo).map(([tipo, diasMap]) => {
     const label = NOV_LABELS[tipo];
@@ -1230,8 +1254,10 @@ async function imprimirGrilla() {
   tr.fila-nov.fila-nov-s td { background: #ea9999; }
   tr.fila-comida td { background: #fce5cd; }
   tr.fila-comida td.col-puesto { background: #f6b26b; }
-  @page { size: legal landscape; margin: 8mm; }
-  @media print { body { padding: 0; } }
+  tr.fila-chef td { background: #f3e5f5; }
+  tr.fila-chef td.col-puesto { background: #e1bee7; color: #6a1b9a; }
+  @page { size: legal landscape; margin: 6mm; }
+  @media print { html { zoom: 0.85; } body { padding: 0; } }
 </style>
 </head>
 <body>
@@ -1289,6 +1315,8 @@ function abrirModalPuesto(puestoId = null) {
   const puesto = puestoId ? _puestos.find(p => p.id === puestoId) : null;
   document.getElementById('modal-puesto-titulo').textContent = puesto ? 'Editar puesto' : 'Nuevo puesto';
   document.getElementById('input-puesto-nombre').value = puesto ? puesto.nombre : '';
+  document.getElementById('input-puesto-turno').value = puesto?.turno || '';
+  document.getElementById('input-puesto-chef').checked = puesto ? !!puesto.es_chef : false;
   document.getElementById('overlay-puesto').classList.add('active');
   document.getElementById('input-puesto-nombre').focus();
 }
@@ -1307,16 +1335,20 @@ async function guardarPuesto() {
     let r;
     if (_puestoEditId) {
       const p = _puestos.find(x => x.id === _puestoEditId);
+      const es_chef = document.getElementById('input-puesto-chef').checked;
+      const turno = document.getElementById('input-puesto-turno').value || null;
       r = await fetch(`/api/distribucion/puestos/${_puestoEditId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, departamento_id: deptId, orden: p?.orden ?? orden, activo: true })
+        body: JSON.stringify({ nombre, departamento_id: deptId, orden: p?.orden ?? orden, activo: true, es_chef, turno })
       });
     } else {
+      const es_chef = document.getElementById('input-puesto-chef').checked;
+      const turno = document.getElementById('input-puesto-turno').value || null;
       r = await fetch('/api/distribucion/puestos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, departamento_id: deptId, orden, activo: true })
+        body: JSON.stringify({ nombre, departamento_id: deptId, orden, activo: true, es_chef, turno })
       });
     }
     if (!r.ok) { toast('Error al guardar puesto', true); return; }

@@ -117,7 +117,7 @@ def set_dia(data: PlanDiaIn, _user=Depends(require_permiso("planificacion", "edi
                 es_franco      = excluded.es_franco,
                 observacion    = excluded.observacion,
                 auto_generado  = 0,
-                creado_por     = excluded.creado_por,
+                modificado_por = excluded.creado_por,
                 modificado_en  = datetime('now','localtime')
             """,
             (data.empleado_id, data.fecha, data.horario_id,
@@ -182,9 +182,10 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
         if not bloques:
             raise HTTPException(400, "El horario no tiene bloques definidos")
 
+        uid_ft = int(_user.get("sub") or 0) or None
         conn.execute(
-            "UPDATE planificacion SET horario_id=?, auto_generado=0, modificado_en=datetime('now','localtime') WHERE empleado_id=? AND fecha=?",
-            (horario_id, empleado_id, fecha_str)
+            "UPDATE planificacion SET horario_id=?, auto_generado=0, modificado_por=?, modificado_en=datetime('now','localtime') WHERE empleado_id=? AND fecha=?",
+            (horario_id, uid_ft, empleado_id, fecha_str)
         )
 
         if fecha > date.today():

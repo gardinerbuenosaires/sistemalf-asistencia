@@ -587,6 +587,9 @@ def _migrate(conn):
         # Todo lo existente vino del generador automático — tratar como auto_generado
         conn.execute("UPDATE planificacion SET auto_generado = 1")
         logger.info("Migración: columna auto_generado agregada a planificacion")
+    if "modificado_por" not in cols_p:
+        conn.execute("ALTER TABLE planificacion ADD COLUMN modificado_por INTEGER REFERENCES usuarios(id)")
+        logger.info("Migración: columna modificado_por agregada a planificacion")
 
     # Tabla novedades — sin CHECK en tipo para poder incluir '@' (aliviada manual)
     conn.execute("""

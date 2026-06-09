@@ -1131,7 +1131,11 @@ function renderGrupo(grupo, dias, empleados) {
   const novsRegulares  = novedadesAgrupadas.filter(c => c.tipo !== 'CO');
   const novsComentarios = novedadesAgrupadas.filter(c => c.tipo === 'CO');
 
-  if (novsRegulares.length || novsComentarios.length) {
+  const cambiosPlan = empleados.flatMap(e =>
+    (e.cambios_plan || []).map(c => ({nombre: `${e.apellido}, ${e.nombre}`, ...c}))
+  ).sort((a,b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
+
+  if (novsRegulares.length || novsComentarios.length || cambiosPlan.length) {
     html += '<div class="informe-comentarios"><div class="informe-wrapper">';
 
     if (novsRegulares.length) {
@@ -1150,6 +1154,20 @@ function renderGrupo(grupo, dias, empleados) {
           <span class="informe-tipo" style="background:${(C[c.tipo]||{bg:'#eee'}).bg};color:${(C[c.tipo]||{txt:'#333'}).txt}">${c.tipo}</span>
           ${autor}
           <span class="informe-desc">${desc}</span>
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    if (cambiosPlan.length) {
+      html += '<div class="informe-col-plan" style="border-left:2px solid #e8f4fd;padding-left:16px;flex:0 0 340px">';
+      html += '<div class="informe-titulo">Cambios de planificación</div>';
+      cambiosPlan.forEach(c => {
+        html += `<div class="informe-fila">
+          <span class="informe-nombre">${escHtml(c.nombre)}</span>
+          <span class="informe-fecha">${_fmtD(c.fecha)}</span>
+          <span class="informe-co-texto">${escHtml(c.horario_nombre)}</span>
+          <span class="informe-autor">${escHtml(c.quien)}</span>
         </div>`;
       });
       html += '</div>';

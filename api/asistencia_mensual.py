@@ -557,6 +557,7 @@ def _asistencia_datos(mes: str) -> dict:
         })
 
     # Asignaciones manuales: eid_fecha → nombre del usuario que asignó el horario
+    # Cambios manuales de planificación: para informe central del mes
     with db_session() as conn:
         ph2 = ",".join("?" * len([r["id"] for r in emp_rows])) if emp_rows else "0"
         eids2 = [r["id"] for r in emp_rows] if emp_rows else []
@@ -567,7 +568,34 @@ def _asistencia_datos(mes: str) -> dict:
             f"AND p.auto_generado=0 AND p.creado_por IS NOT NULL",
             (*eids2, f0, f1)
         ).fetchall() if eids2 else []
+
+        cambios_rows = conn.execute(
+            f"SELECT p.empleado_id, p.fecha, h.nombre as horario_nombre, "
+            f"u.nombre as quien, COALESCE(p.modificado_en, p.creado_en) as cuando "
+            f"FROM planificacion p "
+            f"JOIN horarios h ON h.id = p.horario_id "
+            f"JOIN usuarios u ON u.id = COALESCE(p.modificado_por, p.creado_por) "
+            f"WHERE p.empleado_id IN ({ph2}) AND p.fecha>=? AND p.fecha<=? "
+            f"AND p.auto_generado=0 AND COALESCE(p.modificado_por, p.creado_por) IS NOT NULL "
+            f"ORDER BY cuando",
+            (*eids2, f0, f1)
+        ).fetchall() if eids2 else []
+
     asignaciones = {f"{r['empleado_id']}_{r['fecha']}": r['asignado_por'] for r in asig_rows}
+
+    cambios_map: dict = {}
+    for r in cambios_rows:
+        cambios_map.setdefault(r["empleado_id"], []).append({
+            "fecha":         r["fecha"],
+            "horario_nombre": r["horario_nombre"],
+            "quien":         r["quien"],
+            "cuando":        r["cuando"][:10] if r["cuando"] else None,
+        })
+
+    # Inyectar cambios_plan en cada empleado de cada grupo
+    for turno_emps in grupos.values():
+        for emp in turno_emps:
+            emp["cambios_plan"] = cambios_map.get(emp["id"], [])
 
     return {
         "mes":          mes,

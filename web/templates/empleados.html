@@ -486,7 +486,7 @@ function filtrar() {
   else if (categoria)             base = base.filter(e => e.categoria_id === parseInt(categoria));
   if (turno === "__vacio__")      base = base.filter(e => !e.turno_id);
   else if (turno)                 base = base.filter(e => e.turno_id === parseInt(turno));
-  if (q) base = base.filter(e => `${e.apellido} ${e.nombre} ${e.cargo||""} ${e.departamento||""} ${e.categoria||""}`.toLowerCase().includes(q));
+  if (q) base = base.filter(e => `${e.apellido} ${e.nombre} ${e.cargo||""} ${e.departamento||""} ${e.categoria||""} ${e.user_id||""}`.toLowerCase().includes(q));
 
   renderLista(base);
   _actualizarIndicadorFiltros();

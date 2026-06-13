@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -20,15 +20,16 @@
   .btn { width: 100%; padding: 11px; background: #2c3e50; color: white; border: none; border-radius: 6px; font-size: .95rem; font-weight: bold; cursor: pointer; margin-top: 8px; }
   .btn:hover { background: #3d5166; }
   .error { background: #f8d7da; color: #721c24; padding: 10px 14px; border-radius: 5px; font-size: .85rem; margin-bottom: 16px; display: none; }
-  .logo img { height: 72px; }
+  .logo img.logo-sistemalf { height: 72px; }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="logo">
-    <img src="/static/img/logo_icono.svg" alt="Sistemalf">
+    <img class="logo-sistemalf" src="/static/img/logo_icono.svg" alt="Sistemalf">
     <h1>Sistema de Fichaje</h1>
     <p id="nombre-empresa"></p>
+    <img id="logo-empresa" src="" alt="" style="display:none;height:60px;margin-top:12px;border-radius:6px">
   </div>
   <div class="error" id="error"></div>
   <div class="form-group">
@@ -72,11 +73,16 @@ function showError(msg) {
   el.style.display = "block";
 }
 
-fetch("/api/config/nombre-empresa").then(r => r.json()).then(d => {
-  const el = document.getElementById("nombre-empresa");
-  if (el && d.nombre) el.textContent = d.nombre;
+fetch("/api/config/brand").then(r => r.json()).then(d => {
+  if (d.nombre) {
+    const nombreEl = document.getElementById("nombre-empresa");
+    if (nombreEl) nombreEl.textContent = d.nombre;
+  }
+  if (d.logo_url) {
+    const logoEl = document.getElementById("logo-empresa");
+    if (logoEl) { logoEl.src = d.logo_url; logoEl.style.display = "inline-block"; }
+  }
 }).catch(() => {});
 </script>
 </body>
 </html>
-

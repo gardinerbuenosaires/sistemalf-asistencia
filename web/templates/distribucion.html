@@ -239,9 +239,32 @@
     </div>
     <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
     <a href="/manual-encargado" data-perm="asistencia:ver" target="_blank">Ayuda</a>
-    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px;cursor:pointer;text-decoration:underline dotted" onclick="abrirModalClave()" title="Cambiar contraseña"></span>
     <a href="#" onclick="logout()">Salir</a>
   </nav>
+
+  <div id="modal-clave" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:10px;padding:28px;width:340px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem;margin-bottom:16px">Cambiar contraseña</div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:.85rem;color:#555">Contraseña actual</label>
+        <input type="password" id="clave-actual" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:.85rem;color:#555">Nueva contraseña</label>
+        <input type="password" id="clave-nueva" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:.85rem;color:#555">Confirmar nueva contraseña</label>
+        <input type="password" id="clave-confirm" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box">
+      </div>
+      <div id="clave-error" style="color:#c00;font-size:.83rem;margin-bottom:10px;display:none"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="cerrarModalClave()" style="padding:7px 16px;border:1px solid #ccc;border-radius:6px;background:white;cursor:pointer">Cancelar</button>
+        <button onclick="guardarClave()" style="padding:7px 16px;background:#2c3e50;color:white;border:none;border-radius:6px;cursor:pointer">Guardar</button>
+      </div>
+    </div>
+  </div>
 </header>
 
 <div class="toolbar">
@@ -393,6 +416,38 @@ async function _loadPerms() {
 
 function logout() {
   fetch('/api/auth/logout', { method: 'POST' }).finally(() => { window.location.href = '/login'; });
+}
+
+function abrirModalClave() {
+  document.getElementById('clave-actual').value = '';
+  document.getElementById('clave-nueva').value = '';
+  document.getElementById('clave-confirm').value = '';
+  document.getElementById('clave-error').style.display = 'none';
+  document.getElementById('modal-clave').style.display = 'flex';
+}
+function cerrarModalClave() {
+  document.getElementById('modal-clave').style.display = 'none';
+}
+async function guardarClave() {
+  const actual   = document.getElementById('clave-actual').value;
+  const nueva    = document.getElementById('clave-nueva').value;
+  const confirm  = document.getElementById('clave-confirm').value;
+  const errEl    = document.getElementById('clave-error');
+  if (!actual || !nueva) { errEl.textContent = 'Completá todos los campos.'; errEl.style.display = ''; return; }
+  if (nueva !== confirm)  { errEl.textContent = 'Las contraseñas nuevas no coinciden.'; errEl.style.display = ''; return; }
+  const r = await fetch('/api/auth/cambiar-clave', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clave_actual: actual, clave_nueva: nueva }),
+  });
+  if (r.ok) {
+    cerrarModalClave();
+    toast('Contraseña actualizada correctamente');
+  } else {
+    const d = await r.json().catch(() => ({}));
+    errEl.textContent = d.detail || 'Error al cambiar la contraseña.';
+    errEl.style.display = '';
+  }
 }
 
 // ── Fecha util ────────────────────────────────────────────────────────────────

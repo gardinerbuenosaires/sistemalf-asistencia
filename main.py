@@ -404,6 +404,18 @@ def get_nombre_empresa():
     return {"nombre": row["valor"] if row else ""}
 
 
+@app.get("/api/config/brand", tags=["configuracion"])
+def get_brand():
+    from db.database import db_session
+    with db_session() as conn:
+        logo = conn.execute("SELECT valor FROM configuracion WHERE clave='logo_empresa'").fetchone()
+        nombre = conn.execute("SELECT valor FROM configuracion WHERE clave='nombre_empresa'").fetchone()
+    return {
+        "logo_url": logo["valor"] if logo else None,
+        "nombre":   nombre["valor"] if nombre else None,
+    }
+
+
 @app.post("/api/dispositivo/sincronizar-hora", tags=["dispositivo"])
 def sincronizar_hora_dispositivo(_user=Depends(require_permiso("usuarios", "editar"))):
     from sync.downloader import sync_time

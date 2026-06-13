@@ -360,7 +360,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
 <body>
 
 <header>
-  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf Check" style="height:44px"></a>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf Check" style="height:44px"></a><span id="nav-brand-empresa" style="display:none;margin-left:12px"></span>
   <nav style="display:flex;gap:16px;align-items:center">
     <div class="nav-group">
       <span class="nav-trigger">Programación ▾</span>
@@ -2254,7 +2254,7 @@ function reporteNF() {
     <h2>Reporte No Fichadas — ${periodo}</h2>
     <div class="sub">Solo empleados con NF &gt; 0</div>
     ${bloques}
-  </body></html>`);
+</body></html>`);
   win.document.close();
   win.focus();
   win.print();
@@ -2325,6 +2325,7 @@ async function guardarSaldoFrancos(i) {
   <a id="ctx-asistencia"    href="#">Asistencia</a>
   <a id="ctx-planificacion" href="#">Planificación</a>
 </div>
+<script src="/static/js/nav-brand.js"></script>
 </body>
 </html>
 

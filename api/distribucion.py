@@ -1049,13 +1049,9 @@ def set_escribe_planificacion(dept_id: int, body: UsaDistribucionIn,
                         "UPDATE empleados SET horario_habitual_id=? WHERE id=?",
                         (horario["horario_id"], emp["id"])
                     )
-            # Limpiar planificación auto-generada futura de todos los empleados del dpto
-            if emp_ids:
-                ph = ",".join("?" * len(emp_ids))
-                conn.execute(
-                    f"DELETE FROM planificacion WHERE auto_generado=1 AND fecha >= ? AND empleado_id IN ({ph})",
-                    [hoy] + emp_ids
-                )
+            # No se borra planificación aquí: la auto-generación ya excluye a estos
+            # empleados una vez activo el flag, y la confirmación de distribución
+            # limpia semana a semana cuando corresponde.
     return {"ok": True}
 
 

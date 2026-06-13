@@ -815,6 +815,61 @@ def get_empleados_dept(departamento_id: int, turno: str,
     return [dict(r) for r in rows]
 
 
+# ── Personal del departamento (horario habitual) ───────────────────────────────
+
+@router.get("/personal-dept")
+def get_personal_dept(departamento_id: int, user=Depends(require_permiso("distribucion", "editar"))):
+    """Empleados del departamento con nombre, cargo y horario habitual."""
+    with db_session() as conn:
+        depts_ok = _scope_departamentos(conn, user)
+        if departamento_id not in depts_ok:
+            raise HTTPException(403, "Sin acceso a este departamento")
+        rows = conn.execute(
+            """SELECT e.id, e.nombre, e.apellido,
+                      c.nombre AS cargo,
+                      e.horario_habitual_id,
+                      h.nombre AS horario_habitual_nombre
+               FROM empleados e
+               LEFT JOIN cargos c ON c.id = e.cargo_id
+               LEFT JOIN horarios h ON h.id = e.horario_habitual_id
+               WHERE e.activo = 1 AND e.tipo != 'acceso'
+                 AND c.departamento_id = ?
+               ORDER BY e.apellido, e.nombre""",
+            (departamento_id,)
+        ).fetchall()
+        horarios = conn.execute(
+            "SELECT id, nombre FROM horarios WHERE activo=1 ORDER BY nombre"
+        ).fetchall()
+    return {
+        "empleados": [dict(r) for r in rows],
+        "horarios":  [dict(h) for h in horarios],
+    }
+
+
+@router.patch("/personal-dept/{empleado_id}/horario-habitual")
+def set_horario_habitual_dept(empleado_id: int, body: dict,
+                              user=Depends(require_permiso("distribucion", "editar"))):
+    """Actualiza el horario habitual de un empleado del departamento."""
+    horario_id = body.get("horario_id")
+    with db_session() as conn:
+        # Verificar que el empleado pertenece a un departamento accesible
+        emp = conn.execute(
+            """SELECT e.id FROM empleados e
+               JOIN cargos c ON c.id = e.cargo_id
+               WHERE e.id = ? AND c.departamento_id IN ({})""".format(
+                ",".join("?" * len(_scope_departamentos(conn, user)))
+            ),
+            (empleado_id, *_scope_departamentos(conn, user))
+        ).fetchone()
+        if not emp:
+            raise HTTPException(403, "Sin acceso a este empleado")
+        conn.execute(
+            "UPDATE empleados SET horario_habitual_id=? WHERE id=?",
+            (horario_id, empleado_id)
+        )
+    return {"ok": True}
+
+
 # ── Administración: usuarios_distribucion ──────────────────────────────────────
 
 @router.get("/usuarios-acceso")

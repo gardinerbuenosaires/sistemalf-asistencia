@@ -263,6 +263,8 @@
   <button id="btn-imprimir" class="btn btn-secondary" onclick="imprimirGrilla()" style="display:none">🖨 Imprimir</button>
   <button id="btn-confirmar" class="btn btn-confirmar" data-perm="distribucion:confirmar"
     onclick="confirmarDistribucion()" style="margin-left:auto" disabled>Confirmar semana</button>
+  <button id="btn-personal" class="btn btn-secondary" data-perm="distribucion:editar"
+    onclick="togglePersonal()" style="display:none">Personal</button>
 </div>
 
 <main>
@@ -274,6 +276,20 @@
       <thead id="thead-dist"></thead>
       <tbody id="tbody-dist"></tbody>
       <tfoot id="tfoot-dist"></tfoot>
+    </table>
+  </div>
+
+  <div id="personal-wrap" style="display:none;max-width:700px;margin:24px auto">
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="background:#f4f6f9;text-align:left">
+          <th style="padding:10px 12px;border-bottom:2px solid #dee2e6">Empleado</th>
+          <th style="padding:10px 12px;border-bottom:2px solid #dee2e6">Cargo</th>
+          <th style="padding:10px 12px;border-bottom:2px solid #dee2e6">Horario habitual</th>
+          <th style="padding:10px 12px;border-bottom:2px solid #dee2e6"></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-personal"></tbody>
     </table>
   </div>
 </main>
@@ -437,12 +453,16 @@ function onDeptChange() {
 
 function mostrarVacio() {
   document.getElementById('grilla-wrap').style.display = 'none';
+  document.getElementById('personal-wrap').style.display = 'none';
   document.getElementById('empty-dept').style.display = '';
   document.getElementById('badge-estado').style.display = 'none';
   document.getElementById('btn-confirmar').disabled = true;
   document.getElementById('btn-imprimir').style.display = 'none';
+  const btnP = document.getElementById('btn-personal');
+  if (btnP) { btnP.style.display = 'none'; btnP.textContent = 'Personal'; }
   _distribucion = null;
   _editandoPuestos = false;
+  _mostrandoPersonal = false;
 }
 
 // ── Cargar grilla ─────────────────────────────────────────────────────────────
@@ -475,8 +495,12 @@ async function cargarGrilla() {
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderGrilla() {
   document.getElementById('empty-dept').style.display = 'none';
+  document.getElementById('personal-wrap').style.display = 'none';
   document.getElementById('grilla-wrap').style.display = '';
   document.getElementById('btn-imprimir').style.display = _distribucion ? '' : 'none';
+  const btnP = document.getElementById('btn-personal');
+  if (btnP) { btnP.style.display = ''; btnP.textContent = 'Personal'; }
+  _mostrandoPersonal = false;
 
   // Badge estado
   const badge = document.getElementById('badge-estado');
@@ -1425,6 +1449,74 @@ async function _recargarNovedades() {
       renderGrilla();
     }
   } catch { /* silencioso */ }
+}
+
+// ── Personal: horario habitual por empleado ────────────────────────────────────
+let _mostrandoPersonal = false;
+
+function togglePersonal() {
+  if (_mostrandoPersonal) {
+    _mostrandoPersonal = false;
+    document.getElementById('personal-wrap').style.display = 'none';
+    document.getElementById('grilla-wrap').style.display = '';
+    document.getElementById('btn-personal').textContent = 'Personal';
+  } else {
+    _mostrandoPersonal = true;
+    document.getElementById('grilla-wrap').style.display = 'none';
+    document.getElementById('personal-wrap').style.display = '';
+    document.getElementById('btn-personal').textContent = 'Volver a grilla';
+    cargarPersonal();
+  }
+}
+
+async function cargarPersonal() {
+  const deptId = document.getElementById('sel-departamento').value;
+  if (!deptId) return;
+  const tbody = document.getElementById('tbody-personal');
+  tbody.innerHTML = '<tr><td colspan="4" style="padding:16px;color:#888">Cargando...</td></tr>';
+  try {
+    const r = await fetch(`/api/distribucion/personal-dept?departamento_id=${deptId}`);
+    if (!r.ok) { tbody.innerHTML = '<tr><td colspan="4" style="padding:16px;color:#c00">Error al cargar</td></tr>'; return; }
+    const data = await r.json();
+    const optsHtml = '<option value="">— Sin asignar —</option>' +
+      data.horarios.map(h => `<option value="${h.id}">${h.nombre}</option>`).join('');
+    tbody.innerHTML = data.empleados.map(e => `
+      <tr id="per-row-${e.id}" style="border-bottom:1px solid #eee">
+        <td style="padding:10px 12px">${e.apellido}, ${e.nombre}</td>
+        <td style="padding:10px 12px;color:#666;font-size:.9rem">${e.cargo || '—'}</td>
+        <td style="padding:10px 12px">
+          <select id="per-sel-${e.id}" style="width:100%;padding:4px 6px;border:1px solid #ccc;border-radius:4px">
+            ${optsHtml}
+          </select>
+        </td>
+        <td style="padding:10px 12px">
+          <button class="btn btn-primary btn-sm" onclick="guardarHorarioHabitual(${e.id})">Guardar</button>
+          <span id="per-ok-${e.id}" style="color:green;font-size:.82rem;margin-left:6px;display:none">Guardado</span>
+        </td>
+      </tr>`).join('');
+    data.empleados.forEach(e => {
+      const sel = document.getElementById(`per-sel-${e.id}`);
+      if (sel && e.horario_habitual_id) sel.value = e.horario_habitual_id;
+    });
+  } catch { tbody.innerHTML = '<tr><td colspan="4" style="padding:16px;color:#c00">Error al cargar</td></tr>'; }
+}
+
+async function guardarHorarioHabitual(empId) {
+  const sel = document.getElementById(`per-sel-${empId}`);
+  const horarioId = sel.value ? parseInt(sel.value) : null;
+  const r = await fetch(`/api/distribucion/personal-dept/${empId}/horario-habitual`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ horario_id: horarioId }),
+  });
+  const ok = document.getElementById(`per-ok-${empId}`);
+  if (r.ok) {
+    ok.style.display = '';
+    setTimeout(() => { ok.style.display = 'none'; }, 2000);
+  } else {
+    ok.style.color = 'red'; ok.textContent = 'Error'; ok.style.display = '';
+    setTimeout(() => { ok.style.display = 'none'; ok.style.color = 'green'; ok.textContent = 'Guardado'; }, 3000);
+  }
 }
 </script>
 </body>

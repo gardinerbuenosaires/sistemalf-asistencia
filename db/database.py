@@ -976,12 +976,13 @@ def _migrate(conn):
         logger.info("Migración: columna escribe_planificacion agregada a departamentos")
 
     cols_puestos = {r[1] for r in conn.execute("PRAGMA table_info(puestos)").fetchall()}
-    if "es_chef" not in cols_puestos:
-        conn.execute("ALTER TABLE puestos ADD COLUMN es_chef INTEGER NOT NULL DEFAULT 0")
-        logger.info("Migración: columna es_chef agregada a puestos")
-    if "turno" not in cols_puestos:
-        conn.execute("ALTER TABLE puestos ADD COLUMN turno TEXT DEFAULT NULL")
-        logger.info("Migración: columna turno agregada a puestos")
+    if cols_puestos:
+        if "es_chef" not in cols_puestos:
+            conn.execute("ALTER TABLE puestos ADD COLUMN es_chef INTEGER NOT NULL DEFAULT 0")
+            logger.info("Migración: columna es_chef agregada a puestos")
+        if "turno" not in cols_puestos:
+            conn.execute("ALTER TABLE puestos ADD COLUMN turno TEXT DEFAULT NULL")
+            logger.info("Migración: columna turno agregada a puestos")
 
     # puestos de trabajo dentro de cada departamento
     conn.execute("""

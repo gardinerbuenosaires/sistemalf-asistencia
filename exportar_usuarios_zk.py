@@ -6,7 +6,7 @@ Copiar ese archivo al proyecto en la otra máquina.
 import json
 from zk import ZK
 
-DEVICE_IP = "192.168.1.201"
+DEVICE_IP = "192.168.0.201"
 DEVICE_PORT = 4370
 DEVICE_TIMEOUT = 10
 OUTPUT_FILE = "usuarios_zk.json"

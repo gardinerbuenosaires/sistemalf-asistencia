@@ -236,7 +236,7 @@ async function loadAltasBajasMes() {
   const hoy = new Date(today);
   const todos = await api("/api/empleados?todos=true&sin_acceso=true");
   const altas = todos.filter(e => e.fecha_ingreso && e.fecha_ingreso.startsWith(mesActual)).length;
-  const bajas = todos.filter(e => e.activo === 0 && e.fecha_egreso && e.fecha_egreso.startsWith(mesActual)).length;
+  const bajas = todos.filter(e => e.activo === 0 && e.fecha_ingreso && e.fecha_egreso && e.fecha_egreso.startsWith(mesActual)).length;
   const prueba = todos.filter(e => {
     if (!e.activo || !e.fecha_ingreso) return false;
     const dias = (hoy - new Date(e.fecha_ingreso)) / 86400000;

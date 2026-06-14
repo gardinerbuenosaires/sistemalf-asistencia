@@ -215,7 +215,7 @@ function toast(msg, ms = 3000) {
 }
 
 async function loadEmpleados() {
-  const empleados = await api("/api/empleados");
+  const empleados = await api("/api/empleados?sin_acceso=true");
   document.getElementById("cnt-empleados").textContent = empleados.length;
 }
 

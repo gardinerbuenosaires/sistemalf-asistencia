@@ -174,6 +174,30 @@ def restart_device() -> dict:
     return result
 
 
+def clear_attendance() -> dict:
+    """
+    Borra todos los registros de asistencia del dispositivo ZKTeco.
+    Solo llamar después de verificar que el sync trajo 0 registros nuevos.
+    """
+    result = {"ok": False, "error": None}
+    conn_zk = None
+    try:
+        conn_zk = _connect()
+        conn_zk.clear_attendance()
+        result["ok"] = True
+        logger.info("Registros de asistencia del dispositivo eliminados correctamente")
+    except Exception as exc:
+        result["error"] = str(exc)
+        logger.error("Error al limpiar registros del dispositivo: %s", exc)
+    finally:
+        if conn_zk:
+            try:
+                conn_zk.disconnect()
+            except Exception:
+                pass
+    return result
+
+
 def sync_users() -> dict:
     """
     Conecta al dispositivo, descarga la lista de usuarios y crea los empleados

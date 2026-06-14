@@ -24,6 +24,7 @@ _mes_ultimo_sync_feriados: str | None = None
 _fecha_ultimo_sync_hora: str | None = None
 _mes_ultimo_cierre_auto: str | None = None
 _fecha_ultimo_liberar_ids: str | None = None
+_fecha_ultima_limpieza_dispositivo: str | None = None
 
 
 def _run_sync():
@@ -373,6 +374,52 @@ def start_scheduler():
             _evaluar_catchall()
             time.sleep(300)  # cada 5 minutos
 
+def _limpiar_registros_dispositivo_auto():
+    """
+    Días 1 y 15 de cada mes, entre las 4 y las 7am.
+    Solo corre si limpiar_dispositivo_auto=1 en configuracion.
+    Sincroniza primero; solo borra si el sync trajo 0 registros nuevos.
+    """
+    global _fecha_ultima_limpieza_dispositivo
+    ahora = datetime.now()
+    hoy   = str(ahora.date())
+
+    if _fecha_ultima_limpieza_dispositivo == hoy:
+        return
+    if ahora.day not in (1, 15):
+        return
+    if ahora.hour not in (4, 5, 6):
+        return
+
+    try:
+        from db.database import db_session, get_config
+        with db_session() as conn:
+            activo = get_config(conn, "limpiar_dispositivo_auto", "0")
+        if activo != "1":
+            return
+    except Exception as e:
+        logger.warning("No se pudo leer config limpiar_dispositivo_auto: %s", e)
+        return
+
+    try:
+        from sync.downloader import sync_attendances, clear_attendance
+        result = sync_attendances()
+        if result.get("error"):
+            logger.warning("Limpieza automática abortada: sync falló — %s", result["error"])
+            return
+        if result.get("nuevos", 0) != 0:
+            logger.warning("Limpieza automática abortada: sync trajo %d registros nuevos, no es seguro borrar", result["nuevos"])
+            return
+        clear_result = clear_attendance()
+        if clear_result["ok"]:
+            _fecha_ultima_limpieza_dispositivo = hoy
+            logger.info("Limpieza automática del dispositivo completada (día %s)", hoy)
+        else:
+            logger.error("Error en limpieza automática del dispositivo: %s", clear_result["error"])
+    except Exception as e:
+        logger.error("Error en _limpiar_registros_dispositivo_auto: %s", e)
+
+
 def _liberar_ids_dispositivo():
     """
     Corre una vez por día a la madrugada.
@@ -434,6 +481,7 @@ def start_scheduler():
             _cerrar_periodo_auto()
             _evaluar_barrido_manana()
             _liberar_ids_dispositivo()
+            _limpiar_registros_dispositivo_auto()
             time.sleep(3600)
 
     threading.Thread(target=sync_loop, daemon=True, name="sync-scheduler").start()

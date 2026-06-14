@@ -569,6 +569,19 @@
             <td style="padding:10px 12px;color:#666">Día configurable de cada mes, madrugada</td>
             <td style="padding:10px 12px;color:#444">Cierra automáticamente el período de asistencia del mes anterior en la fecha configurada. <span style="color:#2c6fad;font-size:.8rem">⚙ El día se configura en <a href="#" onclick="switchCfgTab('sistema');return false;" style="color:#2c6fad">Parámetros del sistema → Día de cierre automático de período</a>.</span></td>
           </tr>
+          <tr style="border-bottom:1px solid #f0f0f0;background:#fafafa">
+            <td style="padding:10px 12px;font-weight:bold">Limpieza de registros del dispositivo</td>
+            <td style="padding:10px 12px;color:#666">Días 1 y 15 de cada mes, 4–7am</td>
+            <td style="padding:10px 12px;color:#444">
+              Sincroniza el dispositivo y, si no hay registros nuevos, borra el historial interno del lector. Mantiene el dispositivo liviano sin riesgo de perder datos.
+              <div style="margin-top:8px" data-perm="usuarios:editar">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem">
+                  <input type="checkbox" id="chk-limpiar-dispositivo" onchange="toggleLimpiarDispositivo(this.checked)">
+                  Activar limpieza automática
+                </label>
+              </div>
+            </td>
+          </tr>
           <tr>
             <td style="padding:10px 12px;font-weight:bold">Liberación de IDs del dispositivo</td>
             <td style="padding:10px 12px;color:#666">Una vez por día, madrugada</td>
@@ -615,6 +628,23 @@ function toast(msg, ms=3000) {
   el.textContent = msg;
   el.style.display = "block";
   setTimeout(() => el.style.display = "none", ms);
+}
+
+async function cargarLimpiarDispositivo() {
+  const res = await fetch("/api/configuracion");
+  const params = await res.json();
+  const val = params.find(p => p.clave === "limpiar_dispositivo_auto");
+  const chk = document.getElementById("chk-limpiar-dispositivo");
+  if (chk) chk.checked = val?.valor === "1";
+}
+
+async function toggleLimpiarDispositivo(activo) {
+  const res = await fetch("/api/configuracion/limpiar_dispositivo_auto", {
+    method: "PUT", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ valor: activo ? "1" : "0" }),
+  });
+  if (res.ok) toast(activo ? "Limpieza automática activada" : "Limpieza automática desactivada");
+  else toast("Error al guardar");
 }
 
 async function liberarIdsDispositivo() {
@@ -1785,6 +1815,7 @@ function switchCfgTab(tab) {
   document.querySelectorAll('.cfg-tab').forEach(t => t.classList.remove('activa'));
   document.getElementById(`panel-${tab}`)?.classList.add('activo');
   document.getElementById(`tab-${tab}`)?.classList.add('activa');
+  if (tab === 'automatico') cargarLimpiarDispositivo();
 }
 
 // ── Logo ──────────────────────────────────────────────────────────────────────

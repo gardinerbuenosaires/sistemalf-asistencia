@@ -224,16 +224,12 @@ def _save_users(users) -> dict:
         existentes = {
             row[0]
             for row in conn.execute(
-                "SELECT user_id FROM empleados WHERE user_id IS NOT NULL AND activo=1"
+                "SELECT user_id FROM empleados WHERE user_id IS NOT NULL"
             )
         }
         for uid in device_ids:
             if not uid or uid in existentes:
                 continue
-            # Si el UID pertenece a un empleado dado de baja, liberar el UID
-            conn.execute(
-                "UPDATE empleados SET user_id=NULL WHERE user_id=? AND activo=0", (uid,)
-            )
             conn.execute(
                 "INSERT OR IGNORE INTO empleados (user_id, nombre, apellido, activo) VALUES (?,?,?,1)",
                 (uid, uid, uid),

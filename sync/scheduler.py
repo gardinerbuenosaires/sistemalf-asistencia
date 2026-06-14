@@ -23,7 +23,6 @@ _fecha_barrido_manana: str | None = None
 _mes_ultimo_sync_feriados: str | None = None
 _fecha_ultimo_sync_hora: str | None = None
 _mes_ultimo_cierre_auto: str | None = None
-_fecha_ultimo_liberar_ids: str | None = None
 _fecha_ultima_limpieza_dispositivo: str | None = None
 
 
@@ -420,41 +419,6 @@ def _limpiar_registros_dispositivo_auto():
         logger.error("Error en _limpiar_registros_dispositivo_auto: %s", e)
 
 
-def _liberar_ids_dispositivo():
-    """
-    Corre una vez por día a la madrugada.
-    Libera el user_id de empleados dados de baja hace más de 48 horas,
-    para que el ID pueda ser reutilizado en el dispositivo.
-    """
-    global _fecha_ultimo_liberar_ids
-    ahora = datetime.now()
-    hoy   = str(ahora.date())
-
-    if _fecha_ultimo_liberar_ids == hoy:
-        return
-    if ahora.hour not in (1, 2, 3):
-        return
-
-    try:
-        from db.database import db_session
-        with db_session() as conn:
-            rows = conn.execute("""
-                SELECT id, user_id, nombre, apellido
-                FROM empleados
-                WHERE activo = 0
-                  AND user_id IS NOT NULL
-                  AND fecha_egreso IS NOT NULL
-                  AND (julianday('now','localtime') - julianday(fecha_egreso)) >= 2
-            """).fetchall()
-            if rows:
-                for r in rows:
-                    conn.execute("UPDATE empleados SET user_id=NULL, en_dispositivo=0 WHERE id=?", (r["id"],))
-                    logger.info("ID dispositivo liberado: %s %s (id=%s, user_id=%s)",
-                                r["apellido"], r["nombre"], r["id"], r["user_id"])
-        _fecha_ultimo_liberar_ids = hoy
-    except Exception as e:
-        logger.error("Error en _liberar_ids_dispositivo: %s", e)
-
 
 def start_scheduler():
     def sync_loop():
@@ -480,7 +444,6 @@ def start_scheduler():
             _sincronizar_hora_auto()
             _cerrar_periodo_auto()
             _evaluar_barrido_manana()
-            _liberar_ids_dispositivo()
             _limpiar_registros_dispositivo_auto()
             time.sleep(3600)
 

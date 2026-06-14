@@ -122,6 +122,10 @@
       <div class="value" id="cnt-empleados">—</div>
     </div>
     <div class="card">
+      <h3>Bajas este mes</h3>
+      <div class="value" id="cnt-bajas">—</div>
+    </div>
+    <div class="card">
       <h3>Última sincronización</h3>
       <div class="value" style="font-size:1rem;margin-top:4px" id="ultima-sync">—</div>
     </div>
@@ -217,6 +221,13 @@ function toast(msg, ms = 3000) {
 async function loadEmpleados() {
   const empleados = await api("/api/empleados?sin_acceso=true");
   document.getElementById("cnt-empleados").textContent = empleados.length;
+}
+
+async function loadBajasMes() {
+  const mesActual = today.slice(0, 7);
+  const todos = await api("/api/empleados?todos=true&sin_acceso=true");
+  const n = todos.filter(e => e.activo === 0 && e.fecha_egreso && e.fecha_egreso.startsWith(mesActual)).length;
+  document.getElementById("cnt-bajas").textContent = n;
 }
 
 async function loadCntHoy() {
@@ -360,7 +371,7 @@ async function loadPresencia() {
 }
 
 async function init() {
-  await Promise.all([loadEmpleados(), loadPresencia(), loadCntHoy(), loadSyncLog()]);
+  await Promise.all([loadEmpleados(), loadBajasMes(), loadPresencia(), loadCntHoy(), loadSyncLog()]);
 }
 
 init();

@@ -122,6 +122,10 @@
       <div class="value" id="cnt-empleados">—</div>
     </div>
     <div class="card">
+      <h3>Altas este mes</h3>
+      <div class="value" id="cnt-altas">—</div>
+    </div>
+    <div class="card">
       <h3>Bajas este mes</h3>
       <div class="value" id="cnt-bajas">—</div>
     </div>
@@ -223,11 +227,13 @@ async function loadEmpleados() {
   document.getElementById("cnt-empleados").textContent = empleados.length;
 }
 
-async function loadBajasMes() {
+async function loadAltasBajasMes() {
   const mesActual = today.slice(0, 7);
   const todos = await api("/api/empleados?todos=true&sin_acceso=true");
-  const n = todos.filter(e => e.activo === 0 && e.fecha_egreso && e.fecha_egreso.startsWith(mesActual)).length;
-  document.getElementById("cnt-bajas").textContent = n;
+  const altas = todos.filter(e => e.fecha_ingreso && e.fecha_ingreso.startsWith(mesActual)).length;
+  const bajas = todos.filter(e => e.activo === 0 && e.fecha_egreso && e.fecha_egreso.startsWith(mesActual)).length;
+  document.getElementById("cnt-altas").textContent = altas;
+  document.getElementById("cnt-bajas").textContent = bajas;
 }
 
 async function loadCntHoy() {
@@ -371,7 +377,7 @@ async function loadPresencia() {
 }
 
 async function init() {
-  await Promise.all([loadEmpleados(), loadBajasMes(), loadPresencia(), loadCntHoy(), loadSyncLog()]);
+  await Promise.all([loadEmpleados(), loadAltasBajasMes(), loadPresencia(), loadCntHoy(), loadSyncLog()]);
 }
 
 init();

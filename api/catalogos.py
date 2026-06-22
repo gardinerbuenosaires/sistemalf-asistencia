@@ -13,6 +13,7 @@ class ItemIn(BaseModel):
 
 class CargoUpdate(BaseModel):
     aplica_premio: bool | None = None
+    aplica_trapos: bool | None = None
     nombre: str | None = None
     departamento_id: int | None = None
 
@@ -23,7 +24,7 @@ class CargoUpdate(BaseModel):
 def list_cargos(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute(
-            """SELECT c.id, c.nombre, c.aplica_premio, c.departamento_id, d.nombre AS departamento_nombre
+            """SELECT c.id, c.nombre, c.aplica_premio, c.aplica_trapos, c.departamento_id, d.nombre AS departamento_nombre
                FROM cargos c LEFT JOIN departamentos d ON d.id = c.departamento_id
                ORDER BY c.nombre"""
         ).fetchall()
@@ -38,7 +39,7 @@ def create_cargo(data: ItemIn, _user=Depends(require_permiso("empleados", "edita
     with db_session() as conn:
         try:
             conn.execute("INSERT INTO cargos (nombre) VALUES (?)", (nombre,))
-            row = conn.execute("SELECT id, nombre, aplica_premio FROM cargos WHERE nombre=?", (nombre,)).fetchone()
+            row = conn.execute("SELECT id, nombre, aplica_premio, aplica_trapos FROM cargos WHERE nombre=?", (nombre,)).fetchone()
         except sqlite3.IntegrityError:
             raise HTTPException(409, "Ya existe un cargo con ese nombre")
     return dict(row)
@@ -59,10 +60,12 @@ def update_cargo(cid: int, data: CargoUpdate, _user=Depends(require_permiso("emp
                 raise HTTPException(409, "Ya existe un cargo con ese nombre")
         if data.aplica_premio is not None:
             conn.execute("UPDATE cargos SET aplica_premio=? WHERE id=?", (int(data.aplica_premio), cid))
+        if data.aplica_trapos is not None:
+            conn.execute("UPDATE cargos SET aplica_trapos=? WHERE id=?", (int(data.aplica_trapos), cid))
         if "departamento_id" in data.model_fields_set:
             conn.execute("UPDATE cargos SET departamento_id=? WHERE id=?", (data.departamento_id, cid))
         row = conn.execute(
-            """SELECT c.id, c.nombre, c.aplica_premio, c.departamento_id, d.nombre AS departamento_nombre
+            """SELECT c.id, c.nombre, c.aplica_premio, c.aplica_trapos, c.departamento_id, d.nombre AS departamento_nombre
                FROM cargos c LEFT JOIN departamentos d ON d.id = c.departamento_id
                WHERE c.id=?""", (cid,)
         ).fetchone()

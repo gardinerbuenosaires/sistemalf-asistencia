@@ -278,6 +278,12 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
             GROUP BY anio
         """, (empleado_id,)).fetchall()
 
+        vp_row = conn.execute("""
+            SELECT COALESCE(SUM(dias), 0) AS dias FROM vacaciones_pagadas
+            WHERE empleado_id=? AND CAST(substr(periodo, 1, 4) AS INTEGER) = ?
+        """, (empleado_id, anio + 1)).fetchone()
+        dias_vp = float(vp_row["dias"]) if vp_row else 0.0
+
     nov_map: dict = {}
     for r in nov_rows:
         # novedades del año N+1 corresponden al período N
@@ -290,13 +296,13 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
 
     if saldo:
         dias_correspondian = saldo["dias_correspondian"]
-        dias_tomados       = saldo["dias_tomados"] + dias_v
+        dias_tomados       = saldo["dias_tomados"] + dias_v + dias_vp
         arrastre           = 0.0
     else:
         arrastre           = _get_arrastre(empleado_id, anio, emp["fecha_ingreso"], saldos,
                                            {(empleado_id, anio + 1): {"01": dias_v} if dias_v else {}})
         dias_correspondian = dias_formula + arrastre
-        dias_tomados       = dias_v
+        dias_tomados       = dias_v + dias_vp
 
     dias_restan = round(dias_correspondian - dias_tomados, 1)
     return {
@@ -306,6 +312,41 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
         "dias_tomados":    dias_tomados,
         "dias_restan":     dias_restan,
     }
+
+
+@router.get("/vacaciones-pagadas")
+def get_vp_periodo(periodo: str, _user=Depends(require_permiso("vacaciones", "ver"))):
+    """Devuelve todos los registros VP del período (formato YYYY-MM)."""
+    with db_session() as conn:
+        rows = conn.execute(
+            "SELECT empleado_id, dias FROM vacaciones_pagadas WHERE periodo=?", (periodo,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+class VpIn(BaseModel):
+    dias: float
+
+
+@router.put("/vacaciones-pagadas/{empleado_id}/{periodo}", status_code=200)
+def upsert_vp(empleado_id: int, periodo: str, data: VpIn,
+              _user=Depends(require_permiso("vacaciones", "editar"))):
+    """Inserta o actualiza los días VP de un empleado para un período."""
+    with db_session() as conn:
+        if not conn.execute("SELECT id FROM empleados WHERE id=?", (empleado_id,)).fetchone():
+            raise HTTPException(404, "Empleado no encontrado")
+        if data.dias <= 0:
+            conn.execute(
+                "DELETE FROM vacaciones_pagadas WHERE empleado_id=? AND periodo=?",
+                (empleado_id, periodo)
+            )
+        else:
+            conn.execute("""
+                INSERT INTO vacaciones_pagadas (empleado_id, periodo, dias)
+                VALUES (?, ?, ?)
+                ON CONFLICT(empleado_id, periodo) DO UPDATE SET dias=excluded.dias
+            """, (empleado_id, periodo, data.dias))
+    return {"ok": True}
 
 
 @router.post("/saldo-inicial", status_code=200)

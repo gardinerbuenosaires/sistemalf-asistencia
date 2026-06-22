@@ -65,6 +65,7 @@ def _calcular(ev: dict, params: dict) -> dict:
         "deduccion_puntualidad": 0,
         "deduccion_bpm": 0,
         "deduccion_vacaciones": 0,
+        "deduccion_trapos": 0,
         "valor_bruto": 0,
         "valor_final": 0,
     }
@@ -123,7 +124,10 @@ def _calcular(ev: dict, params: dict) -> dict:
         deduccion_vacaciones = round((base / params["dias_base_vacaciones"]) * dias_vacacion)
     desglose["deduccion_vacaciones"] = deduccion_vacaciones
 
-    valor_bruto = max(0, base - deduccion_puntualidad - deduccion_bpm - deduccion_vacaciones)
+    deduccion_trapos = int(ev.get("deduccion_trapos") or 0)
+    desglose["deduccion_trapos"] = deduccion_trapos
+
+    valor_bruto = max(0, base - deduccion_puntualidad - deduccion_bpm - deduccion_vacaciones - deduccion_trapos)
     return _finalizar(desglose, valor_bruto, params)
 
 
@@ -393,8 +397,17 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
         fecha_desde = f"{anio}-{mes}-01"
         dias_min = int(params.get("dias_minimos_antiguedad", 90))
         diag = _diagnostico(conn, fecha_desde, dias_min)
+        trapos_cfg = conn.execute(
+            "SELECT valor FROM configuracion WHERE clave='trapos_cocina_activo'"
+        ).fetchone()
+        trapos_activo = trapos_cfg and trapos_cfg["valor"] == "1"
+        trapos_valor_cfg = conn.execute(
+            "SELECT valor FROM configuracion WHERE clave='trapos_cocina_valor'"
+        ).fetchone()
+        trapos_valor = int(trapos_valor_cfg["valor"]) if trapos_activo and trapos_valor_cfg else 0
+
         empleados = conn.execute("""
-            SELECT e.id FROM empleados e
+            SELECT e.id, c.aplica_trapos FROM empleados e
             JOIN cargos c ON c.id = e.cargo_id
             WHERE e.activo=1 AND e.tipo != 'acceso'
               AND c.aplica_premio = 1
@@ -422,6 +435,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
             ).fetchall()
         }
 
+        # Pasada 1: calcular todos sin trapos
         generados = 0
         for emp in empleados:
             eid = emp["id"]
@@ -429,14 +443,14 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
             bpm_actual = ev_existente.get("bpm") or ""
             monto_actual = ev_existente.get("monto_base") if ev_existente.get("monto_base_manual") else params["monto_base"]
             datos = _acumular_periodo(conn, eid, periodo)
-            desglose = _calcular({**datos, "bpm": bpm_actual, "desempenio": None, "monto_base": monto_actual}, params)
+            desglose = _calcular({**datos, "bpm": bpm_actual, "desempenio": None, "monto_base": monto_actual, "deduccion_trapos": 0}, params)
 
             conn.execute("""
                 INSERT INTO premios_evaluacion
                     (empleado_id, periodo, minutos_retardo, dias_tarde, no_fichadas, dias_vacacion,
                      dias_enfermo, dias_suspension, dias_ausente, bpm, monto_base,
-                     desglose_json, valor_calculado, valor_final)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     deduccion_trapos, desglose_json, valor_calculado, valor_final)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(empleado_id, periodo) DO UPDATE SET
                     minutos_retardo=excluded.minutos_retardo,
                     dias_tarde=excluded.dias_tarde,
@@ -446,6 +460,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
                     dias_suspension=excluded.dias_suspension,
                     dias_ausente=excluded.dias_ausente,
                     monto_base=CASE WHEN monto_base_manual=1 THEN monto_base ELSE excluded.monto_base END,
+                    deduccion_trapos=0,
                     desglose_json=excluded.desglose_json,
                     valor_calculado=excluded.valor_calculado,
                     valor_final=excluded.valor_final,
@@ -454,12 +469,41 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
                 eid, periodo,
                 datos["minutos_retardo"], datos["dias_tarde"], datos["no_fichadas"], datos["dias_vacacion"],
                 datos["dias_enfermo"], datos["dias_suspension"], datos["dias_ausente"],
-                bpm_actual, monto_actual,
+                bpm_actual, monto_actual, 0,
                 json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"]
             ))
             generados += 1
 
-    return {"ok": True, "generados": generados, "diagnostico": diag}
+        # Pasada 2: aplicar trapos proporcionalmente
+        trapos_distribucion = None
+        if trapos_activo and trapos_valor > 0:
+            elegibles = conn.execute("""
+                SELECT pe.id, pe.empleado_id, pe.bpm, pe.monto_base, pe.tolerar_nf,
+                       pe.tolerar_e, pe.tolerar_retardo, pe.minutos_retardo, pe.dias_tarde,
+                       pe.no_fichadas, pe.dias_vacacion, pe.dias_enfermo, pe.dias_suspension,
+                       pe.dias_ausente, pe.valor_calculado
+                FROM premios_evaluacion pe
+                JOIN empleados e ON e.id = pe.empleado_id
+                JOIN cargos c ON c.id = e.cargo_id
+                WHERE pe.periodo=? AND c.aplica_trapos=1 AND pe.valor_calculado > 0
+            """, (periodo,)).fetchall()
+
+            if elegibles:
+                count = len(elegibles)
+                deduccion_per_emp = round(trapos_valor / count)
+                trapos_distribucion = {"monto_total": trapos_valor, "count": count, "deduccion": deduccion_per_emp}
+                for ev in elegibles:
+                    ev_dict = dict(ev)
+                    ev_dict["deduccion_trapos"] = deduccion_per_emp
+                    desglose = _calcular(ev_dict, params)
+                    conn.execute("""
+                        UPDATE premios_evaluacion SET
+                            deduccion_trapos=?, desglose_json=?, valor_calculado=?, valor_final=?,
+                            modificado_en=datetime('now','localtime')
+                        WHERE id=?
+                    """, (deduccion_per_emp, json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"], ev["id"]))
+
+    return {"ok": True, "generados": generados, "diagnostico": diag, "trapos_distribucion": trapos_distribucion}
 
 
 @router.put("/evaluacion/{ev_id}")

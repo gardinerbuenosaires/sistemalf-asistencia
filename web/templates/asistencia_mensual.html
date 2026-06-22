@@ -186,6 +186,10 @@ table.planilla tbody td.col-dias { font-weight: bold; font-size: .78rem;
 table.planilla tbody td.col-dias.res-cero { color: #bbb; font-weight: normal; }
 table.planilla tbody td.saldo-neg { color: #c0392b; font-weight: bold; }
 table.planilla tbody td.saldo-pos { color: #27ae60; font-weight: bold; }
+table.planilla tbody td.col-vp { padding: 1px 2px; }
+table.planilla tbody td.col-vp .inp-vp { width: 34px; border: 1px solid #c8d0d8; border-radius: 3px; font-size: .72rem; text-align: center; padding: 1px 2px; background: #fffde7; color: #555; }
+table.planilla tbody td.col-vp .inp-vp:disabled { background: transparent; border-color: transparent; color: #ccc; }
+table.planilla tbody td.col-vp .inp-vp:focus { outline: none; border-color: #f0c070; background: #fff9e0; }
 
 /* Fila separador */
 table.planilla tr.fila-sep td {
@@ -706,15 +710,24 @@ let periodoCerrado = false;
 let ordenActual  = { TM: null, TN: null, CO: null };
 let ordenEdicion = { TM: null, TN: null, CO: null };  // copia durante edición
 let modoOrden = false;
+let _vpActivo = false;
+let _vpData = {};
 
 // ── Inicialización ────────────────────────────────────────────────────────────
 async function init() {
   const hoy = new Date();
   mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
   construirLeyenda();
-  await cargarOrdenes();
+  await Promise.all([cargarOrdenes(), cargarVpFlag()]);
   if (canDo('asistencia', 'ver_todos') && _miRol.toLowerCase() === 'contabilidad') tabActiva = 'TODOS';
   switchTab(tabActiva);
+}
+
+async function cargarVpFlag() {
+  try {
+    const cfg = await fetch('/api/configuracion').then(r => r.json());
+    _vpActivo = cfg.find(c => c.clave === 'vp_activo')?.valor === '1';
+  } catch {}
 }
 
 function construirLeyenda() {
@@ -745,12 +758,20 @@ async function cargar() {
   document.getElementById('mes-label').textContent = `${MESES_ES[m-1]} ${y}`;
   document.getElementById('loading-msg').textContent = 'Cargando...';
   try {
-    const [rData, rPeriodo] = await Promise.all([
+    const fetches = [
       fetch(`/api/asistencia/mensual?mes=${mesActual}`),
       fetch(`/api/periodos-cerrados/${y}/${m}`),
-    ]);
+    ];
+    if (_vpActivo) fetches.push(fetch(`/api/vacaciones/vacaciones-pagadas?periodo=${mesActual}`));
+    const [rData, rPeriodo, rVp] = await Promise.all(fetches);
     datosActuales = await rData.json();
     _asignaciones = datosActuales.asignaciones || {};
+    if (_vpActivo && rVp?.ok) {
+      const vpList = await rVp.json();
+      _vpData = Object.fromEntries(vpList.map(r => [r.empleado_id, r.dias]));
+    } else {
+      _vpData = {};
+    }
     const periodo = await rPeriodo.json();
     periodoCerrado = periodo.cerrado === true;
     actualizarBannerCerrado(y, m);
@@ -973,10 +994,10 @@ function renderGrupoTodos() {
     return;
   }
 
-  const resCols = ['saldo_francos','T','ILT','LSG','L','@','E','V','S','NF','FM','A','feriados_trabajados','dias'];
+  const resCols = ['saldo_francos','T','ILT','LSG','L','@','E','V',...(_vpActivo?['VP']:[]),'S','NF','FM','A','feriados_trabajados','dias'];
   const resLabels = {
     saldo_francos:'SALDO', T:'T', ILT:'ILT', LSG:'LSG',
-    L:'L', '@':'@', E:'E', V:'V', S:'S', NF:'NF', FM:'FM', A:'A',
+    L:'L', '@':'@', E:'E', V:'V', VP:'VP', S:'S', NF:'NF', FM:'FM', A:'A',
     feriados_trabajados:'FERI.', dias:'DÍAS'
   };
 
@@ -1020,6 +1041,7 @@ function renderGrupoTodos() {
     });
     html += '<td class="col-sep"></td>';
     resCols.forEach(col => {
+      if (col === 'VP') { html += vpCeldaHtml(emp.id); return; }
       const v = emp.totales[col] ?? 0;
       const esCero = v === 0 || v === '0';
       const cls = col === 'saldo_francos'
@@ -1069,11 +1091,11 @@ function renderGrupo(grupo, dias, empleados) {
   }
 
   const resCols = cortado
-    ? ['saldo_francos','T','ILT','LSG','L','@','E','V','S','NF','FM','A','feriados_trabajados','dias']
-    : ['saldo_francos','T','ILT','LSG','L','E','V','S','NF','FM','A','feriados_trabajados','dias'];
+    ? ['saldo_francos','T','ILT','LSG','L','@','E','V',...(_vpActivo?['VP']:[]),'S','NF','FM','A','feriados_trabajados','dias']
+    : ['saldo_francos','T','ILT','LSG','L','E','V',...(_vpActivo?['VP']:[]),'S','NF','FM','A','feriados_trabajados','dias'];
   const resLabels = {
     saldo_francos:'SALDO', T:'T', ILT:'ILT', LSG:'LSG',
-    L:'L', '@':'@', E:'E', V:'V', S:'S', NF:'NF', FM:'FM', A:'A',
+    L:'L', '@':'@', E:'E', V:'V', VP:'VP', S:'S', NF:'NF', FM:'FM', A:'A',
     feriados_trabajados:'FERI.', dias:'DÍAS'
   };
   const totalCols = 2 + dias.length + 1 + resCols.length + 1;
@@ -1256,6 +1278,7 @@ function filaHtmlSimple(emp, dias, resCols) {
   });
   h += '<td class="col-sep"></td>';
   resCols.forEach(col => {
+    if (col === 'VP') { h += vpCeldaHtml(emp.id); return; }
     const v = emp.totales[col] ?? 0;
     const esCero = v === 0 || v === '0';
     const cls = col === 'saldo_francos'
@@ -1282,6 +1305,7 @@ function filaHtmlCortado(emp, dias, resCols) {
   });
   h += '<td class="col-sep"></td>';
   resCols.forEach(col => {
+    if (col === 'VP') { h += vpCeldaHtml(emp.id); return; }
     const v = emp.totales[col] ?? 0;
     const esCero = v === 0 || v === '0';
     const cls = col === 'saldo_francos'
@@ -2298,6 +2322,81 @@ function renderSaldoFrancos() {
       </td>
     </tr>
   `).join('');
+}
+
+// ── VP (Vacaciones Pagadas) ───────────────────────────────────────────────────
+function vpCeldaHtml(eid) {
+  const val = _vpData[eid] || '';
+  const disabled = !canDo('vacaciones', 'editar') || periodoCerrado ? 'disabled' : '';
+  return `<td class="col-res col-vp">` +
+    `<input type="number" class="inp-vp" data-eid="${eid}" value="${val}" min="0" step="0.5" ${disabled}` +
+    ` onfocus="vpFocus(this)" onblur="vpBlur(this)" oninput="vpInput(this)">` +
+    `</td>`;
+}
+
+async function vpFocus(inp) {
+  const eid = parseInt(inp.dataset.eid);
+  const [y] = mesActual.split('-').map(Number);
+  const anio = y - 1;
+  try {
+    const d = await fetch(`/api/vacaciones/saldo-empleado?empleado_id=${eid}&anio=${anio}`).then(r => r.json());
+    inp._saldoBase = d.dias_restan + (_vpData[eid] || 0);
+    _mostrarVpPopup(inp, d.dias_restan, _vpData[eid] || 0);
+  } catch { inp._saldoBase = null; }
+}
+
+function vpInput(inp) {
+  if (inp._saldoBase == null) return;
+  const nuevo = parseFloat(inp.value) || 0;
+  const resta = Math.round((inp._saldoBase - nuevo) * 10) / 10;
+  _mostrarVpPopup(inp, resta, nuevo);
+}
+
+async function vpBlur(inp) {
+  _ocultarVpPopup();
+  const eid = parseInt(inp.dataset.eid);
+  const dias = parseFloat(inp.value) || 0;
+  const anterior = _vpData[eid] || 0;
+  if (dias === anterior) return;
+  const r = await fetch(`/api/vacaciones/vacaciones-pagadas/${eid}/${mesActual}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ dias }),
+  });
+  if (r.ok) {
+    if (dias > 0) _vpData[eid] = dias;
+    else delete _vpData[eid];
+    toast('VP guardado');
+  } else {
+    inp.value = anterior || '';
+    const err = await r.json().catch(() => ({}));
+    toast(err.detail || 'Error al guardar VP');
+  }
+}
+
+function _mostrarVpPopup(inp, restan, vp) {
+  let pop = document.getElementById('vp-saldo-pop');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'vp-saldo-pop';
+    pop.style.cssText = 'position:fixed;z-index:9999;padding:6px 12px;border-radius:6px;font-size:.8rem;pointer-events:none;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.15)';
+    document.body.appendChild(pop);
+  }
+  const ok = restan >= 0;
+  pop.style.background = ok ? '#eaf4ea' : '#fdecea';
+  pop.style.color = ok ? '#2d6a2d' : '#c0392b';
+  pop.style.border = `1px solid ${ok ? '#a3d9a3' : '#f5b7b1'}`;
+  pop.textContent = vp > 0
+    ? `VP: ${vp} día(s) · Disponibles luego: ${restan} día(s)`
+    : `Disponibles: ${restan} día(s)`;
+  const rect = inp.getBoundingClientRect();
+  pop.style.display = 'block';
+  pop.style.top = `${rect.bottom + 4 + window.scrollY}px`;
+  pop.style.left = `${rect.left + window.scrollX}px`;
+}
+
+function _ocultarVpPopup() {
+  const pop = document.getElementById('vp-saldo-pop');
+  if (pop) pop.style.display = 'none';
 }
 
 async function guardarSaldoFrancos(i) {

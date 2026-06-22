@@ -500,8 +500,23 @@ def _migrate(conn):
              'Si está en 1, los empleados con cargo vinculado a un departamento no generan planificación automática por calendarios'),
             ('limpiar_dispositivo_auto', '0',
              'Si está en 1, borra automáticamente los registros del dispositivo los días 1 y 15 de cada mes (previa sincronización)'),
+            ('trapos_cocina_activo', '0',
+             'Si está en 1, aplica descuento de trapos de cocina en el cálculo de premios (específico por restaurante)'),
+            ('trapos_cocina_valor', '0',
+             'Valor mensual de descuento por trapos de cocina ($). Solo se usa cuando trapos_cocina_activo=1'),
+            ('vp_activo', '0',
+             'Si está en 1, habilita la columna VP (vacaciones pagadas) en la planilla mensual (específico por restaurante)'),
         ]
     )
+
+    conn.execute("""CREATE TABLE IF NOT EXISTS vacaciones_pagadas (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        empleado_id  INTEGER NOT NULL,
+        periodo      TEXT NOT NULL,
+        dias         REAL NOT NULL DEFAULT 0,
+        creado_en    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')),
+        UNIQUE(empleado_id, periodo)
+    )""")
 
     conn.execute("""CREATE TABLE IF NOT EXISTS distribucion_aviso_config (
         turno       TEXT PRIMARY KEY,
@@ -608,6 +623,12 @@ def _migrate(conn):
         )
     """)
     # Si la tabla existente tiene el CHECK constraint que bloquea '@', la recreamos
+    # Primero limpiar residuo de migración previa fallida
+    old_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='novedades_old'"
+    ).fetchone()
+    if old_exists:
+        conn.execute("DROP TABLE novedades_old")
     try:
         conn.execute("INSERT INTO novedades (empleado_id, fecha, bloque, tipo) VALUES (0,'1900-01-01',99,'@')")
         conn.execute("DELETE FROM novedades WHERE bloque=99")
@@ -753,6 +774,9 @@ def _migrate(conn):
     if "departamento_id" not in cols_cargos:
         conn.execute("ALTER TABLE cargos ADD COLUMN departamento_id INTEGER REFERENCES departamentos(id)")
         logger.info("Migración: columna departamento_id agregada a cargos")
+    if "aplica_trapos" not in cols_cargos:
+        conn.execute("ALTER TABLE cargos ADD COLUMN aplica_trapos INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna aplica_trapos agregada a cargos")
     cols_emp_check = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
     if "departamento_id" in cols_emp_check:
         conn.execute("ALTER TABLE empleados DROP COLUMN departamento_id")
@@ -812,6 +836,10 @@ def _migrate(conn):
         desglose_json TEXT, valor_calculado INTEGER, valor_final INTEGER,
         generado_en TEXT DEFAULT (datetime('now','localtime')), modificado_en TEXT,
         UNIQUE(empleado_id, periodo))""")
+    cols_pe = {r[1] for r in conn.execute("PRAGMA table_info(premios_evaluacion)").fetchall()}
+    if "deduccion_trapos" not in cols_pe:
+        conn.execute("ALTER TABLE premios_evaluacion ADD COLUMN deduccion_trapos INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna deduccion_trapos agregada a premios_evaluacion")
     if conn.execute("SELECT COUNT(*) FROM premios_parametros").fetchone()[0] == 0:
         defaults = [
             ("monto_base",                   "88000", "entero",     "Monto base del premio ($)"),

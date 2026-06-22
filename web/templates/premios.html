@@ -195,6 +195,16 @@
     <div class="card"><div class="lbl">Total a pagar</div><div class="val" id="total-pagar" style="color:#2c3e50">—</div></div>
   </div>
 
+  <div id="trapos-panel" style="display:none;background:#fdf6ec;border:1px solid #f0c070;border-radius:8px;
+       padding:10px 16px;margin-bottom:12px;font-size:.88rem;color:#7d4900;align-items:center;gap:12px;flex-wrap:wrap">
+    <span style="font-weight:bold">Trapos de cocina</span>
+    <span>Total del mes ($):</span>
+    <input type="number" id="inp-trapos-total" min="0" step="1000"
+      style="width:120px;padding:4px 8px;border:1px solid #f0c070;border-radius:4px;font-size:.88rem;color:#333"
+      onchange="guardarTraposTotal(this.value)">
+    <span id="trapos-dist-info" style="font-size:.78rem;color:#a06000;font-style:italic"></span>
+  </div>
+
   <div id="banner-periodo-abierto" style="display:none;background:#fff8e1;border:1px solid #f9a825;border-radius:8px;
        padding:10px 16px;margin-bottom:16px;font-size:.88rem;color:#795500;align-items:center;gap:10px;flex-wrap:wrap">
     ⚠ <b>El período no está cerrado en asistencia</b> — los valores pueden cambiar si se modifican novedades o fichajes.
@@ -252,6 +262,8 @@ let _evaluaciones = [];
 const _debounceTimers = {};
 let _nombreEmpresa = "";
 let _periodoAbierto = false;
+let _traposActivo = false;
+let _traposDistribucion = null;
 
 async function _loadPerms() {
   try {
@@ -326,6 +338,7 @@ function _renderDesglose(d) {
     if (d.deduccion_puntualidad) rows.push(`<tr><td>Desc. puntualidad (${d.puntualidad_status})</td><td class="neg">−${_fmtPesos(d.deduccion_puntualidad)}</td></tr>`);
     if (d.deduccion_bpm)         rows.push(`<tr><td>Desc. BPM NO CONFORME</td><td class="neg">−${_fmtPesos(d.deduccion_bpm)}</td></tr>`);
     if (d.deduccion_vacaciones)  rows.push(`<tr><td>Desc. vacaciones</td><td class="neg">−${_fmtPesos(d.deduccion_vacaciones)}</td></tr>`);
+    if (d.deduccion_trapos)      rows.push(`<tr><td>Desc. trapos de cocina</td><td class="neg">−${_fmtPesos(d.deduccion_trapos)}</td></tr>`);
     rows.push(`<tr><td><b>Subtotal</b></td><td><b>${_fmtPesos(d.valor_bruto)}</b></td></tr>`);
     if (d.valor_bruto !== d.valor_final) rows.push(`<tr><td>Redondeo</td><td>${_fmtPesos(d.valor_final)}</td></tr>`);
   }
@@ -437,7 +450,8 @@ function _filaHtml(ev, editar, corregir) {
       ${bloqueado
         ? (!sinBpm ? `<div style="font-size:.78rem;color:#ccc;font-style:italic;margin-top:3px">${_fmtPesos(vfPantalla)}</div>` : '')
         : _fmtPesos(vfPantalla)}
-      ${_periodoAbierto && !bloqueado ? '<div style="font-size:.65rem;color:#b8860b;font-style:italic;line-height:1.1;margin-top:2px">a confirmar</div>' : ''}
+      ${_traposActivo && (d.deduccion_trapos > 0) ? `<div style="font-size:.65rem;color:#888;margin-top:2px">trapos −${_fmtPesos(d.deduccion_trapos)}</div>` : ''}
+  ${_periodoAbierto && !bloqueado ? '<div style="font-size:.65rem;color:#b8860b;font-style:italic;line-height:1.1;margin-top:2px">a confirmar</div>' : ''}
     </td>
     <td class="det-col">${chkAnula}</td>
     <td class="field-desempenio" style="min-width:160px">
@@ -663,6 +677,14 @@ async function cargar(spinner = true) {
   _renderTabla(data);
 }
 
+async function guardarTraposTotal(valor) {
+  await fetch("/api/configuracion/trapos_cocina_valor", {
+    method: "PUT", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ valor: String(parseInt(valor) || 0) })
+  });
+  await generarPeriodo();
+}
+
 async function generarPeriodo() {
   const periodo = document.getElementById("periodo-sel").value;
   if (!periodo) { toast("Seleccioná un período"); return; }
@@ -677,6 +699,15 @@ async function generarPeriodo() {
         (d.diagnostico.cargo_sin_premio||0) + (d.diagnostico.sin_fecha_ingreso||0) +
         (d.diagnostico.sin_antiguedad||0)
       : 0;
+    if (_traposActivo && d.trapos_distribucion) {
+      _traposDistribucion = d.trapos_distribucion;
+      const td = d.trapos_distribucion;
+      document.getElementById("trapos-dist-info").textContent =
+        `÷ ${td.count} empleados = ${_fmtPesos(td.deduccion)} c/u`;
+    } else {
+      _traposDistribucion = null;
+      document.getElementById("trapos-dist-info").textContent = "";
+    }
     toast(`Generados: ${d.generados}${excl ? ` · ${excl} excluidos` : ''}`);
     await cargar(false);
   } else {
@@ -690,13 +721,21 @@ _loadPerms().then(async () => {
   // Leer nombre empresa y día de corte
   let diaCorte = 10;
   try {
-    const [params, cfgNombre] = await Promise.all([
+    const [params, cfgNombre, cfgAll] = await Promise.all([
       fetch('/api/premios/parametros').then(r => r.json()),
-      fetch('/api/config/nombre-empresa').then(r => r.json()).catch(() => ({}))
+      fetch('/api/config/nombre-empresa').then(r => r.json()).catch(() => ({})),
+      fetch('/api/configuracion').then(r => r.json()).catch(() => [])
     ]);
     const p = params.find(p => p.clave === 'dia_corte_mes_anterior');
     if (p) diaCorte = parseInt(p.valor) || 10;
     if (cfgNombre.nombre) _nombreEmpresa = cfgNombre.nombre;
+    _traposActivo = cfgAll.find(c => c.clave === 'trapos_cocina_activo')?.valor === '1';
+    if (_traposActivo) {
+      const traposValor = cfgAll.find(c => c.clave === 'trapos_cocina_valor')?.valor || '0';
+      document.getElementById('inp-trapos-total').value = traposValor;
+      document.getElementById('inp-trapos-total').disabled = !canDo('premios', 'corregir');
+      document.getElementById('trapos-panel').style.display = 'flex';
+    }
   } catch(e) {}
 
   // Período por defecto: mes anterior hasta el día de corte, luego mes actual
@@ -735,6 +774,9 @@ async function toggleFormula() {
     `<b>Vacaciones:</b> −(base ÷ ${get('dias_base_vacaciones')}) × días de vacación`,
     `<b>Redondeo:</b> al múltiplo de ${get('redondeo') || '—'}`,
   ];
+  if (_traposActivo) {
+    pasos.push(`<b>Trapos de cocina:</b> el monto total del mes se divide en partes iguales entre los cargos con "aplica trapos" que tengan premio a cobrar (valor calculado > $0)`);
+  }
   document.getElementById("formula-pasos-premios").innerHTML =
     pasos.map(p => `<div style="padding:2px 0;border-bottom:1px solid #eee">${p}</div>`).join("");
   box.style.display = "block";

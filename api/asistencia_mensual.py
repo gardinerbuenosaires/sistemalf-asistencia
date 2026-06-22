@@ -862,16 +862,21 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
                   AND NOT (fecha=? AND bloque=?)
             """, (data.empleado_id, str(int(data.fecha[:4])),
                   data.fecha, data.bloque)).fetchone()[0] or 0.0
+            vp_row = conn.execute("""
+                SELECT COALESCE(SUM(dias), 0) AS dias FROM vacaciones_pagadas
+                WHERE empleado_id=? AND CAST(substr(periodo, 1, 4) AS INTEGER) = ?
+            """, (data.empleado_id, int(data.fecha[:4]))).fetchone()
+            dias_vp = float(vp_row["dias"]) if vp_row else 0.0
         fi = emp["fecha_ingreso"] if emp else None
         _, dias_formula = _calcular_dias_formula(fi, anio_periodo)
         saldo = saldos.get((data.empleado_id, anio_periodo))
         nueva = 0.5 if data.bloque > 0 else 1.0
         if saldo:
-            dias_restan = saldo["dias_correspondian"] - saldo["dias_tomados"] - dias_v_ya
+            dias_restan = saldo["dias_correspondian"] - saldo["dias_tomados"] - dias_v_ya - dias_vp
         else:
             arrastre = _get_arrastre(data.empleado_id, anio_periodo, fi, saldos,
                                      {(data.empleado_id, int(data.fecha[:4])): {"01": dias_v_ya} if dias_v_ya else {}})
-            dias_restan = dias_formula + arrastre - dias_v_ya
+            dias_restan = dias_formula + arrastre - dias_v_ya - dias_vp
         dias_restan = round(dias_restan, 1)
         if dias_restan < nueva:
             raise HTTPException(400, f"Sin días de vacaciones disponibles. Quedan {dias_restan:.1f} día(s).")

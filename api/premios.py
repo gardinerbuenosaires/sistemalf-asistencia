@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from db.database import db_session
-from auth.core import require_permiso, tiene_permiso
+from auth.core import require_permiso, tiene_permiso, verify_password
 from api.asistencia_mensual import get_control_estados_batch
 
 router = APIRouter(prefix="/api/premios", tags=["premios"])
@@ -25,6 +25,29 @@ class EvaluacionUpdate(BaseModel):
     tolerar_e: Optional[bool] = None
     tolerar_retardo: Optional[bool] = None
     anular_premio: Optional[bool] = None
+
+
+class PremiosPeriodoIn(BaseModel):
+    anio: int
+    mes:  int
+
+
+class PremiosReabrirIn(BaseModel):
+    password: str
+
+
+# ── Helpers de bloqueo de período ─────────────────────────────────────────────
+
+def es_premios_cerrado(conn, anio: int, mes: int) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM premios_periodos_cerrados WHERE anio=? AND mes=?", (anio, mes)
+    ).fetchone() is not None
+
+
+def check_premios_abierto(conn, periodo: str):
+    anio, mes = periodo.split("-")
+    if es_premios_cerrado(conn, int(anio), int(mes)):
+        raise HTTPException(409, f"El período {anio}-{mes} de premios está cerrado y no puede modificarse")
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -319,6 +342,52 @@ _QUERY_EVALUACIONES = """
 """
 
 
+@router.get("/periodos-cerrados/{anio}/{mes}")
+def get_premios_periodo(anio: int, mes: int, _user=Depends(require_permiso("premios", "ver"))):
+    with db_session() as conn:
+        row = conn.execute(
+            "SELECT ppc.*, COALESCE(u.nombre, 'Automático') as cerrado_por_nombre "
+            "FROM premios_periodos_cerrados ppc "
+            "LEFT JOIN usuarios u ON u.id = ppc.cerrado_por "
+            "WHERE ppc.anio=? AND ppc.mes=?",
+            (anio, mes)
+        ).fetchone()
+    if not row:
+        return {"cerrado": False}
+    return {**dict(row), "cerrado": True}
+
+
+@router.post("/periodos-cerrados", status_code=201)
+def cerrar_premios_periodo(data: PremiosPeriodoIn, user=Depends(require_permiso("premios", "cerrar"))):
+    if data.mes < 1 or data.mes > 12:
+        raise HTTPException(400, "Mes inválido")
+    with db_session() as conn:
+        if es_premios_cerrado(conn, data.anio, data.mes):
+            raise HTTPException(409, "El período de premios ya está cerrado")
+        conn.execute(
+            "INSERT INTO premios_periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,?)",
+            (data.anio, data.mes, user["id"])
+        )
+    return {"ok": True}
+
+
+@router.delete("/periodos-cerrados/{anio}/{mes}")
+def reabrir_premios_periodo(anio: int, mes: int, data: PremiosReabrirIn,
+                            user=Depends(require_permiso("premios", "reabrir"))):
+    with db_session() as conn:
+        u = conn.execute(
+            "SELECT password_hash FROM usuarios WHERE id=?", (user["id"],)
+        ).fetchone()
+        if not u or not verify_password(data.password, u["password_hash"]):
+            raise HTTPException(400, "Contraseña incorrecta")
+        if not es_premios_cerrado(conn, anio, mes):
+            raise HTTPException(404, "El período de premios no está cerrado")
+        conn.execute(
+            "DELETE FROM premios_periodos_cerrados WHERE anio=? AND mes=?", (anio, mes)
+        )
+    return {"ok": True}
+
+
 @router.get("/{periodo}")
 def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver"))):
     with db_session() as conn:
@@ -392,6 +461,7 @@ def diagnostico_periodo(periodo: str, _user=Depends(require_permiso("premios", "
 def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "editar"))):
     """Genera o actualiza filas para todos los empleados activos del período."""
     with db_session() as conn:
+        check_premios_abierto(conn, periodo)
         params = _get_params(conn)
         anio, mes = periodo.split("-")
         fecha_desde = f"{anio}-{mes}-01"
@@ -514,6 +584,7 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         if not ev:
             raise HTTPException(404, "Evaluación no encontrada")
         ev = dict(ev)
+        check_premios_abierto(conn, ev["periodo"])
 
         campos_corregir = [data.tolerar_nf, data.tolerar_e, data.tolerar_retardo, data.anular_premio]
         if any(v is not None for v in campos_corregir):
@@ -561,6 +632,7 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
 def recalcular_periodo(periodo: str, _user=Depends(require_permiso("premios", "editar"))):
     """Recalcula todas las evaluaciones del período con los parámetros actuales."""
     with db_session() as conn:
+        check_premios_abierto(conn, periodo)
         params = _get_params(conn)
         rows = conn.execute(
             "SELECT * FROM premios_evaluacion WHERE periodo=?", (periodo,)

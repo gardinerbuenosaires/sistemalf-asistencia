@@ -163,7 +163,7 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
                      SELECT 1 FROM novedades n
                      WHERE n.empleado_id = rd.empleado_id
                        AND n.fecha = rd.fecha
-                       AND n.tipo IN ('E','ILT','S','V')
+                       AND n.tipo IN ('E','ILT','S','V','L','LSG')
                  )
                 THEN COALESCE(rd.b1_minutos_tarde,0) + COALESCE(rd.b2_minutos_tarde,0)
                 ELSE 0
@@ -174,7 +174,7 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
                      SELECT 1 FROM novedades n
                      WHERE n.empleado_id = rd.empleado_id
                        AND n.fecha = rd.fecha
-                       AND n.tipo IN ('E','ILT','S','V')
+                       AND n.tipo IN ('E','ILT','S','V','L','LSG')
                  )
                  AND (COALESCE(rd.b1_minutos_tarde,0) + COALESCE(rd.b2_minutos_tarde,0)) > 0
                 THEN 1
@@ -186,7 +186,7 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
                          SELECT 1 FROM novedades n
                          WHERE n.empleado_id = rd.empleado_id
                            AND n.fecha = rd.fecha
-                           AND n.tipo IN ('E','ILT','S','V')
+                           AND n.tipo IN ('E','ILT','S','V','L','LSG')
                      )
                 ) OR (
                     rd.estado = 'ausente'
@@ -211,7 +211,7 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
             COUNT(DISTINCT fecha) FILTER (WHERE tipo='V')            AS dias_vacacion,
             COUNT(DISTINCT fecha) FILTER (WHERE tipo IN ('E','ILT')) AS dias_enfermo,
             COUNT(DISTINCT fecha) FILTER (WHERE tipo='S')            AS dias_suspension,
-            COUNT(DISTINCT fecha) FILTER (WHERE tipo='A')            AS dias_ausente
+            COUNT(DISTINCT fecha) FILTER (WHERE tipo IN ('A','L','LSG')) AS dias_ausente
         FROM novedades
         WHERE empleado_id=? AND fecha>=? AND fecha<?
     """, (empleado_id, fecha_desde, fecha_hasta)).fetchone()

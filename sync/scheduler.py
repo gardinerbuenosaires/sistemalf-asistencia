@@ -23,6 +23,7 @@ _fecha_barrido_manana: str | None = None
 _mes_ultimo_sync_feriados: str | None = None
 _fecha_ultimo_sync_hora: str | None = None
 _mes_ultimo_cierre_auto: str | None = None
+_mes_ultimo_cierre_premios_auto: str | None = None
 _fecha_ultima_limpieza_dispositivo: str | None = None
 
 
@@ -252,6 +253,52 @@ def _cerrar_periodo_auto():
         logger.error("Error en cierre automático de período: %s", e)
 
 
+def _get_dia_cierre_premios_auto() -> int:
+    """Lee el día de cierre automático de premios desde la DB."""
+    try:
+        from db.database import db_session, get_config
+        with db_session() as conn:
+            return max(1, min(28, int(get_config(conn, "dia_cierre_premios", "10"))))
+    except Exception:
+        return 10
+
+
+def _cerrar_premios_periodo_auto():
+    """
+    Cierra automáticamente el período de premios del mes anterior el día configurado de cada mes a la madrugada.
+    """
+    global _mes_ultimo_cierre_premios_auto
+    ahora = datetime.now()
+
+    if ahora.day != _get_dia_cierre_premios_auto() or ahora.hour not in (1, 2):
+        return
+
+    mes_actual = ahora.strftime("%Y-%m")
+    if _mes_ultimo_cierre_premios_auto == mes_actual:
+        return
+
+    primer_dia_mes = ahora.replace(day=1)
+    mes_anterior = primer_dia_mes - timedelta(days=1)
+    anio, mes = mes_anterior.year, mes_anterior.month
+
+    try:
+        from db.database import db_session
+        from api.premios import es_premios_cerrado
+        with db_session() as conn:
+            if es_premios_cerrado(conn, anio, mes):
+                logger.info("Cierre automático premios: período %d-%02d ya estaba cerrado", anio, mes)
+                _mes_ultimo_cierre_premios_auto = mes_actual
+                return
+            conn.execute(
+                "INSERT INTO premios_periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,NULL)",
+                (anio, mes)
+            )
+        _mes_ultimo_cierre_premios_auto = mes_actual
+        logger.info("Cierre automático premios: período %d-%02d cerrado correctamente", anio, mes)
+    except Exception as e:
+        logger.error("Error en cierre automático de premios: %s", e)
+
+
 def _get_sync_interval() -> int:
     """Lee el intervalo de sync de la DB; cae al valor de config.py si falla."""
     try:
@@ -443,6 +490,7 @@ def start_scheduler():
             _reiniciar_dispositivo_auto()
             _sincronizar_hora_auto()
             _cerrar_periodo_auto()
+            _cerrar_premios_periodo_auto()
             _evaluar_barrido_manana()
             _limpiar_registros_dispositivo_auto()
             time.sleep(3600)

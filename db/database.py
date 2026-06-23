@@ -496,6 +496,7 @@ def _migrate(conn):
             ('nombre_empresa',  '',              'Nombre del restaurante o empresa (aparece en login y reportes'),
             ('inactividad_minutos', '10',        'Minutos sin actividad antes de cerrar la sesión automáticamente'),
             ('dia_cierre_periodo', '6',          'Día del mes en que se cierra automáticamente el período anterior'),
+            ('dia_cierre_premios', '10',         'Día del mes en que se cierra automáticamente el período de premios del mes anterior'),
             ('distribucion_reemplaza_planificacion', '0',
              'Si está en 1, los empleados con cargo vinculado a un departamento no generan planificación automática por calendarios'),
             ('limpiar_dispositivo_auto', '0',

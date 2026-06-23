@@ -366,7 +366,7 @@ def cerrar_premios_periodo(data: PremiosPeriodoIn, user=Depends(require_permiso(
             raise HTTPException(409, "El período de premios ya está cerrado")
         conn.execute(
             "INSERT INTO premios_periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,?)",
-            (data.anio, data.mes, user["id"])
+            (data.anio, data.mes, int(user["sub"]))
         )
     return {"ok": True}
 
@@ -376,7 +376,7 @@ def reabrir_premios_periodo(anio: int, mes: int, data: PremiosReabrirIn,
                             user=Depends(require_permiso("premios", "reabrir"))):
     with db_session() as conn:
         u = conn.execute(
-            "SELECT password_hash FROM usuarios WHERE id=?", (user["id"],)
+            "SELECT password_hash FROM usuarios WHERE id=?", (int(user["sub"]),)
         ).fetchone()
         if not u or not verify_password(data.password, u["password_hash"]):
             raise HTTPException(400, "Contraseña incorrecta")

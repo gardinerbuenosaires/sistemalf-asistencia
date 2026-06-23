@@ -194,6 +194,7 @@
     <button class="cfg-tab" data-perm="empleados:ver" id="tab-catalogos" onclick="switchCfgTab('catalogos')">Cargos</button>
     <button class="cfg-tab" id="tab-usuarios"  onclick="switchCfgTab('usuarios')">Usuarios</button>
     <button class="cfg-tab" data-perm="premios:ver" id="tab-premios" onclick="switchCfgTab('premios')">Premios</button>
+    <button class="cfg-tab" id="tab-parking"   onclick="switchCfgTab('parking')">Parking</button>
     <button class="cfg-tab" id="tab-automatico" onclick="switchCfgTab('automatico')">Procesos automáticos</button>
   </div>
 
@@ -276,6 +277,39 @@
             <span style="font-size:.82rem;color:#666;display:block">Habilita la columna VP en la planilla mensual para registrar días de vacaciones pagadas sin ausencia. Solo aplica a este restaurante.</span>
           </span>
         </label>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Panel: Parking ── -->
+  <div class="cfg-panel" id="panel-parking">
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Configuración Parking</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Define la hora de corte entre el turno mañana y el turno noche para los empleados tipo Parking (valets externos).
+            Los fichajes anteriores a esta hora se cuentan como turno mañana; desde esta hora en adelante, como turno noche.
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:18px;display:flex;flex-direction:column;gap:16px" data-perm="usuarios:editar">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <label style="font-size:.9rem;font-weight:500;color:#333;min-width:200px">Hora de corte TM / TN</label>
+          <input type="time" id="input-parking-corte"
+                 style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:.9rem;width:130px">
+          <button class="btn btn-primary btn-sm" onclick="guardarParkingCorte()">Guardar</button>
+          <span style="font-size:.8rem;color:#888">Fichajes antes de este horario → TM · desde este horario → TN</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <label style="font-size:.9rem;font-weight:500;color:#333;min-width:200px">Corte de madrugada</label>
+          <input type="time" id="input-parking-madrugada"
+                 style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:.9rem;width:130px">
+          <button class="btn btn-primary btn-sm" onclick="guardarParkingMadrugada()">Guardar</button>
+          <span style="font-size:.8rem;color:#888">Fichajes antes de este horario se asignan al TN del día anterior (para turnos que cruzan medianoche)</span>
+        </div>
       </div>
     </div>
 
@@ -714,6 +748,41 @@ async function toggleVpActivo(activo) {
     body: JSON.stringify({ valor: activo ? "1" : "0" }),
   });
   if (res.ok) toast(activo ? "VP activado" : "VP desactivado");
+  else toast("Error al guardar");
+}
+
+async function cargarParkingCorte() {
+  const res = await fetch("/api/configuracion");
+  const params = await res.json();
+  const corte = params.find(p => p.clave === "parking_corte_turno");
+  const mad   = params.find(p => p.clave === "parking_corte_madrugada");
+  const inp = document.getElementById("input-parking-corte");
+  if (inp && corte?.valor) inp.value = corte.valor;
+  const inp2 = document.getElementById("input-parking-madrugada");
+  if (inp2 && mad?.valor) inp2.value = mad.valor;
+}
+
+async function guardarParkingCorte() {
+  const inp = document.getElementById("input-parking-corte");
+  const valor = inp?.value?.trim();
+  if (!valor) { toast("Ingresá una hora válida"); return; }
+  const res = await fetch("/api/configuracion/parking_corte_turno", {
+    method: "PUT", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ valor }),
+  });
+  if (res.ok) toast("Hora de corte guardada");
+  else toast("Error al guardar");
+}
+
+async function guardarParkingMadrugada() {
+  const inp = document.getElementById("input-parking-madrugada");
+  const valor = inp?.value?.trim();
+  if (!valor) { toast("Ingresá una hora válida"); return; }
+  const res = await fetch("/api/configuracion/parking_corte_madrugada", {
+    method: "PUT", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ valor }),
+  });
+  if (res.ok) toast("Corte de madrugada guardado");
   else toast("Error al guardar");
 }
 
@@ -1924,6 +1993,7 @@ function switchCfgTab(tab) {
   if (tab === 'automatico') cargarLimpiarDispositivo();
   if (tab === 'premios') cargarTraposCocina();
   if (tab === 'sistema') cargarVpActivo();
+  if (tab === 'parking') cargarParkingCorte();
 }
 
 // ── Logo ──────────────────────────────────────────────────────────────────────

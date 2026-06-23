@@ -976,6 +976,7 @@ function buildForm(e = {}, asignaciones = []) {
               <option value="normal"     ${(e.tipo||"normal")==="normal"     ? "selected" : ""}>Normal</option>
               <option value="jerarquico" ${(e.tipo||"normal")==="jerarquico" ? "selected" : ""}>Jerárquico (sin fichaje)</option>
               <option value="acceso"     ${(e.tipo||"normal")==="acceso"     ? "selected" : ""}>Solo acceso (excluir de planillas)</option>
+              <option value="parking"    ${(e.tipo||"normal")==="parking"    ? "selected" : ""}>Parking (valet externo)</option>
             </select>
           </div>
           <div class="form-group">

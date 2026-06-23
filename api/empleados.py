@@ -193,7 +193,7 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
             raise HTTPException(404, "Empleado no encontrado")
         anterior = conn.execute("SELECT activo, cargo_id FROM empleados WHERE id=?", (eid,)).fetchone()
         cargo_id_anterior = anterior["cargo_id"]
-        if data.tipo not in ("normal", "jerarquico", "acceso"):
+        if data.tipo not in ("normal", "jerarquico", "acceso", "parking"):
             raise HTTPException(400, "tipo inválido")
         conn.execute(
             """UPDATE empleados SET

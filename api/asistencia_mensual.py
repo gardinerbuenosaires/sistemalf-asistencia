@@ -351,7 +351,7 @@ def _asistencia_datos(mes: str) -> dict:
             FROM empleados e
             LEFT JOIN cargos c ON c.id = e.cargo_id
             LEFT JOIN freq u ON u.empleado_id = e.id AND u.rn = 1
-            WHERE e.tipo != 'acceso'
+            WHERE e.tipo NOT IN ('acceso', 'parking')
               AND (e.activo = 1
                OR (e.fecha_egreso > ? AND e.fecha_egreso <= ?))
             ORDER BY e.apellido, e.nombre

@@ -87,7 +87,7 @@ def init_db():
                 domicilio        TEXT,
                 activo           INTEGER NOT NULL DEFAULT 1,
                 tipo             TEXT NOT NULL DEFAULT 'normal'
-                                      CHECK(tipo IN ('normal','jerarquico','acceso')),
+                                      CHECK(tipo IN ('normal','jerarquico','acceso','parking')),
                 observaciones    TEXT,
                 creado_en        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 modificado_en    TEXT
@@ -506,6 +506,10 @@ def _migrate(conn):
              'Valor mensual de descuento por trapos de cocina ($). Solo se usa cuando trapos_cocina_activo=1'),
             ('vp_activo', '0',
              'Si está en 1, habilita la columna VP (vacaciones pagadas) en la planilla mensual (específico por restaurante)'),
+            ('parking_corte_turno', '16:00',
+             'Hora de corte entre turno mañana y turno noche para empleados tipo parking (formato HH:MM)'),
+            ('parking_corte_madrugada', '06:00',
+             'Fichajes antes de esta hora se asignan al TN del día anterior (para turnos noche que cruzan medianoche)'),
         ]
     )
 
@@ -747,6 +751,16 @@ def _migrate(conn):
     if "tipo" not in cols_emp:
         conn.execute("ALTER TABLE empleados ADD COLUMN tipo TEXT NOT NULL DEFAULT 'normal'")
         logger.info("Migración: columna tipo agregada a empleados")
+    # Actualizar CHECK de tipo para incluir 'parking' si todavía tiene la lista vieja
+    emp_schema = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='empleados'").fetchone()
+    if emp_schema and "CHECK(tipo IN ('normal','jerarquico','acceso'))" in (emp_schema["sql"] or ""):
+        conn.execute("PRAGMA writable_schema=ON")
+        conn.execute("""UPDATE sqlite_master SET sql=replace(sql,
+            "CHECK(tipo IN ('normal','jerarquico','acceso'))",
+            "CHECK(tipo IN ('normal','jerarquico','acceso','parking'))")
+            WHERE type='table' AND name='empleados'""")
+        conn.execute("PRAGMA writable_schema=OFF")
+        logger.info("Migración: tipo 'parking' agregado al CHECK de empleados")
     if "en_dispositivo" not in cols_emp:
         conn.execute("ALTER TABLE empleados ADD COLUMN en_dispositivo INTEGER NOT NULL DEFAULT 1")
         logger.info("Migración: columna en_dispositivo agregada a empleados")

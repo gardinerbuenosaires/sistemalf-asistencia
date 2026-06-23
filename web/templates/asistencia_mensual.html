@@ -360,6 +360,26 @@ tr[draggable="true"]:active { cursor: grabbing; }
 .modal-sf-box tr.row-ok td { background: #f0fff4; }
 .modal-sf-box input[type=number] { width: 80px; padding: 3px 6px;
   border: 1px solid #ced4da; border-radius: 4px; text-align: center; font-size: .82rem; }
+/* Tabla parking inline */
+table.parking-grid { border-collapse: collapse; font-size: .85rem; }
+table.parking-grid th, table.parking-grid td { border: 1px solid #3d5166; text-align: center; min-width: 36px; padding: 5px 3px; }
+table.parking-grid thead th { background: #2c3e50; color: white; font-weight: normal; padding: 0; border-right: 1px solid #3d5166; position: sticky; top: 0; z-index: 4; }
+table.parking-grid thead th.col-emp { min-width: 160px; text-align: left; padding-left: 10px; z-index: 6; position: sticky; left: 0; }
+table.parking-grid tbody td { border-color: #e8e8e8; }
+table.parking-grid td.col-nombre { text-align: left; font-size: .82rem; white-space: nowrap; padding: 5px 10px; background: #fafafa; min-width: 160px; max-width: 220px; position: sticky; left: 0; z-index: 1; overflow: hidden; text-overflow: ellipsis; border-color: #e8e8e8; }
+table.parking-grid td.turno-label { font-weight: bold; font-size: .85rem; background: #f9f9f9; min-width: 60px; position: sticky; left: 0; z-index: 1; padding: 5px 10px; border-color: #e8e8e8; }
+table.parking-grid td.turno-label.tm { color: #2c6fad; border-left: 3px solid #2c6fad; }
+table.parking-grid td.turno-label.tn { color: #7b4ea0; border-left: 3px solid #7b4ea0; }
+table.parking-grid td.count-zero { color: #ccc; }
+table.parking-grid td.count-tm { background: #eaf3fb; color: #1a5276; font-weight: bold; }
+table.parking-grid td.count-tn { background: #f5edfb; color: #5b2c8d; font-weight: bold; }
+table.parking-grid tr.sep-row td { background: #f0f0f0; height: 3px; padding: 0; border: none; }
+table.parking-grid td.p-tm { background: #dceefb; color: #1a5276; font-size: .72rem; font-weight: 600; }
+table.parking-grid td.p-tn { background: #ede0f7; color: #5b2c8d; font-size: .72rem; font-weight: 600; }
+table.parking-grid td.p-both { background: #e8f8e8; color: #1a6e2e; font-size: .72rem; font-weight: 600; }
+table.parking-grid td.p-empty { color: #ddd; font-size: .78rem; }
+table.parking-grid th.col-hoy { background: #e67e22 !important; }
+table.parking-grid td.col-hoy { background: #fffde7 !important; }
 </style>
 </head>
 <body>
@@ -480,8 +500,9 @@ tr[draggable="true"]:active { cursor: grabbing; }
 <div style="display:flex; border-bottom:2px solid #dee2e6; background:white; padding: 0 16px; gap:0">
   <button class="tab-btn" data-tab="TM" onclick="switchTab('TM')">Mañana</button>
   <button class="tab-btn" data-tab="TN" onclick="switchTab('TN')">Noche</button>
-  <button class="tab-btn"        data-tab="CO" onclick="switchTab('CO')">Cortado</button>
-  <button class="tab-btn"        data-tab="ST" onclick="switchTab('ST')">Sin turno</button>
+  <button class="tab-btn"        data-tab="CO"      onclick="switchTab('CO')">Cortado</button>
+  <button class="tab-btn"        data-tab="PARKING" onclick="switchTab('PARKING')">Parking</button>
+  <button class="tab-btn"        data-tab="ST"      onclick="switchTab('ST')">Sin turno</button>
   <button class="tab-btn"        data-tab="TODOS" data-perm="asistencia:ver_todos" onclick="switchTab('TODOS')">Todos</button>
   <span id="conteos" style="margin-left:auto;font-size:.78rem;color:#888;align-self:center"></span>
 </div>
@@ -498,6 +519,44 @@ tr[draggable="true"]:active { cursor: grabbing; }
     </button>
   </div>
   <div class="tabla-outer" id="tabla-TODOS"></div>
+</div>
+
+<div class="tab-panel" id="panel-PARKING">
+  <div id="parking-loading" style="padding:20px 16px;color:#888;font-size:.9rem"></div>
+  <div id="parking-info-corte" style="padding:6px 16px;font-size:.82rem;color:#666;display:none"></div>
+  <div class="tabla-outer"><table class="parking-grid" id="tabla-parking-inline" style="margin:8px 16px 16px"></table></div>
+</div>
+
+<!-- Modal fichajes parking -->
+<div id="pk-overlay" onclick="if(event.target===this)cerrarPkModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1500;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:10px;padding:24px;width:420px;max-width:96vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <div id="pk-modal-titulo" style="font-weight:bold;font-size:.95rem;color:#2c3e50"></div>
+        <div id="pk-modal-sub" style="font-size:.8rem;color:#888;margin-top:2px"></div>
+      </div>
+      <button onclick="cerrarPkModal()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#888;line-height:1">×</button>
+    </div>
+    <!-- Lista de fichajes -->
+    <div id="pk-lista" style="flex:1;overflow-y:auto;min-height:60px;margin-bottom:16px;border:1px solid #eee;border-radius:6px;padding:8px"></div>
+    <!-- Agregar fichaje -->
+    <div data-perm="asistencia:editar" id="pk-form" style="border-top:1px solid #eee;padding-top:14px">
+      <div style="font-size:.82rem;font-weight:600;color:#555;margin-bottom:8px">Registrar presencia manual</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="pk-input-turno" style="padding:6px 8px;border:1px solid #ccc;border-radius:5px;font-size:.85rem">
+          <option value="">-- Turno --</option>
+          <option value="TM">TM — Mañana</option>
+          <option value="TN">TN — Noche</option>
+        </select>
+        <input type="text" id="pk-input-motivo" placeholder="Motivo (opcional)"
+               style="flex:1;min-width:100px;padding:6px 8px;border:1px solid #ccc;border-radius:5px;font-size:.85rem">
+        <button onclick="agregarFichajeParking()"
+                style="background:#2c3e50;color:white;border:none;border-radius:5px;padding:6px 14px;font-size:.82rem;cursor:pointer;white-space:nowrap">
+          + Agregar
+        </button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Dialog de alerta bloqueante -->
@@ -876,7 +935,205 @@ function switchTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(p =>
     p.classList.toggle('active', p.id === `panel-${tab}`));
+  if (tab === 'PARKING') { cargarParking(); return; }
   cargar();
+}
+
+async function cargarParking() {
+  const [anio, mes] = mesActual.split('-').map(Number);
+  const loadEl = document.getElementById('parking-loading');
+  const infoEl = document.getElementById('parking-info-corte');
+  if (loadEl) loadEl.textContent = 'Cargando...';
+  if (infoEl) infoEl.style.display = 'none';
+  const res = await fetch(`/api/parking/mensual?anio=${anio}&mes=${mes}`);
+  if (!res.ok) { if (loadEl) loadEl.textContent = 'Error al cargar.'; return; }
+  const data = await res.json();
+  if (loadEl) loadEl.textContent = '';
+  if (infoEl) {
+    infoEl.innerHTML = `Hora de corte: <strong>${data.corte}</strong> — TM antes de las ${data.corte} hs · TN desde las ${data.corte} hs`;
+    infoEl.style.display = '';
+  }
+  _pkMadrugada = data.madrugada || '06:00';
+  _pkCorte     = data.corte     || '19:00';
+  renderParking(data, anio, mes);
+}
+
+const _DOW_SHORT = ['do','lu','ma','mi','ju','vi','sá'];
+function renderParking({ corte, n_dias, tm, tn, empleados, feriados }, anio, mes) {
+  const hoy = new Date();
+  const esEsteMes = hoy.getFullYear() === anio && (hoy.getMonth() + 1) === mes;
+  const hoyD = hoy.getDate();
+  const feriadoSet = new Set(feriados || []);
+
+  // Encabezado: columna nombre + días con día de semana
+  let h = '<thead><tr>';
+  h += '<th class="col-emp">Empleado</th>';
+  for (let d = 1; d <= n_dias; d++) {
+    const dow = _DOW_SHORT[new Date(anio, mes - 1, d).getDay()];
+    const domingo = dow === 'do';
+    const esFeriado = feriadoSet.has(d);
+    const hoyClass = esEsteMes && d === hoyD ? ' col-hoy' : '';
+    const cls = [esFeriado ? 'feriado' : (domingo ? 'domingo' : ''), hoyClass].filter(Boolean).join(' ');
+    h += `<th class="${cls}"><div class="dow-num"><span class="dow">${dow}</span><span class="num">${d}</span></div></th>`;
+  }
+  h += '</tr></thead><tbody>';
+
+  // Filas de totales
+  for (const { label, data, cls, lcls } of [
+    { label: 'TM', data: tm, cls: 'count-tm', lcls: 'tm' },
+    { label: 'TN', data: tn, cls: 'count-tn', lcls: 'tn' },
+  ]) {
+    h += `<tr><td class="turno-label ${lcls}" style="font-weight:bold;font-size:.85rem">${label}</td>`;
+    for (let d = 1; d <= n_dias; d++) {
+      const cnt = data[d] || 0;
+      const hc = esEsteMes && d === hoyD ? ' col-hoy' : '';
+      h += cnt === 0
+        ? `<td class="count-zero${hc}">–</td>`
+        : `<td class="${cls}${hc}">${cnt}</td>`;
+    }
+    h += '</tr>';
+  }
+
+  // Separador
+  h += `<tr class="sep-row"><td colspan="${n_dias + 1}"></td></tr>`;
+
+  // Filas por empleado
+  if (empleados && empleados.length > 0) {
+    for (const emp of empleados) {
+      const nEsc = emp.nombre.replace(/'/g, "\\'");
+      h += `<tr><td class="col-nombre" title="${emp.nombre}">${emp.nombre}</td>`;
+      for (let d = 1; d <= n_dias; d++) {
+        const info = emp.dias[d];
+        const hc = esEsteMes && d === hoyD ? ' col-hoy' : '';
+        const oc = `onclick="abrirParkingFichajes(${emp.id},'${nEsc}',${d},${anio},${mes})"`;
+        if (!info || info.turnos.length === 0) {
+          h += `<td class="p-empty${hc}" ${oc} style="cursor:pointer">–</td>`;
+        } else {
+          const turnos = info.turnos;
+          const tooltip = info.horas.join(' · ');
+          if (turnos.includes('TM') && turnos.includes('TN')) {
+            h += `<td class="p-both${hc}" title="${tooltip}" ${oc} style="cursor:pointer">DT</td>`;
+          } else if (turnos.includes('TM')) {
+            h += `<td class="p-tm${hc}" title="${tooltip}" ${oc} style="cursor:pointer">TM</td>`;
+          } else {
+            h += `<td class="p-tn${hc}" title="${tooltip}" ${oc} style="cursor:pointer">TN</td>`;
+          }
+        }
+      }
+      h += '</tr>';
+    }
+  } else {
+    h += `<tr><td colspan="${n_dias + 1}" style="color:#aaa;padding:12px;font-size:.85rem">Sin empleados tipo Parking registrados</td></tr>`;
+  }
+
+  h += '</tbody>';
+  document.getElementById('tabla-parking-inline').innerHTML = h;
+}
+
+// ── Parking: modal de fichajes ────────────────────────────────────────────────
+let _pkMadrugada = '06:00';
+let _pkCorte     = '19:00';
+let _pkCtx = null;
+
+function abrirParkingFichajes(eid, nombre, dia, anio, mes) {
+  _pkCtx = { eid, nombre, dia, anio, mes, madrugada: _pkMadrugada, corte: _pkCorte };
+  const _MESES = ['','enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  document.getElementById('pk-modal-titulo').textContent = nombre;
+  document.getElementById('pk-modal-sub').textContent = `${dia} de ${_MESES[mes]} de ${anio}`;
+  document.getElementById('pk-input-turno').value = '';
+  document.getElementById('pk-input-motivo').value = '';
+  document.getElementById('pk-overlay').style.display = 'flex';
+  cargarFichajesParking();
+}
+
+function cerrarPkModal() {
+  document.getElementById('pk-overlay').style.display = 'none';
+  _pkCtx = null;
+}
+
+async function cargarFichajesParking() {
+  if (!_pkCtx) return;
+  const { eid, dia, anio, mes, madrugada } = _pkCtx;
+  const mm = String(mes).padStart(2, '0');
+  const dd = String(dia).padStart(2, '0');
+  const fechaStr = `${anio}-${mm}-${dd}`;
+  // Fecha siguiente para capturar fichajes de madrugada (ej: TN que termina a las 02:00)
+  const nextDate = new Date(anio, mes - 1, dia + 1);
+  const nextStr = nextDate.toISOString().split('T')[0];
+
+  const listaEl = document.getElementById('pk-lista');
+  listaEl.innerHTML = '<span style="color:#aaa;font-size:.85rem">Cargando...</span>';
+  try {
+    const [r1, r2] = await Promise.all([
+      fetch(`/api/fichajes/dia?empleado_id=${eid}&fecha=${fechaStr}`).then(r => r.json()),
+      fetch(`/api/fichajes/dia?empleado_id=${eid}&fecha=${nextStr}`).then(r => r.json()),
+    ]);
+    // Incluir del día siguiente sólo los fichajes de madrugada (antes del corte)
+    const mad = madrugada + ':00';
+    const madFichs = r2.filter(f => f.timestamp.split(' ')[1] < mad);
+    const todos = [...r1, ...madFichs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    renderFichajesParking(todos, madrugada);
+  } catch(e) {
+    listaEl.innerHTML = '<span style="color:red;font-size:.85rem">Error al cargar fichajes</span>';
+  }
+}
+
+function renderFichajesParking(fichajes, madrugada) {
+  const listaEl = document.getElementById('pk-lista');
+  const puedeEditar = _perms.has('asistencia:editar');
+  if (!fichajes.length) {
+    listaEl.innerHTML = '<span style="color:#aaa;font-size:.85rem;padding:4px 0;display:block">Sin fichajes para este día</span>';
+    return;
+  }
+  let html = '';
+  const mad = madrugada + ':00';
+  for (const f of fichajes) {
+    const [fDate, fTime] = f.timestamp.split(' ');
+    const hora = fTime.substring(0, 5);
+    const esMad = fTime < mad;
+    const tagMad = esMad ? '<span style="font-size:.7rem;background:#1a3a5c;color:white;padding:1px 5px;border-radius:3px;margin-left:4px">madrugada</span>' : '';
+    const tagMan = f.es_manual ? '<span style="font-size:.7rem;background:#5d6d7e;color:white;padding:1px 5px;border-radius:3px;margin-left:4px">manual</span>' : '';
+    const btnDel = (f.es_manual && puedeEditar)
+      ? `<button onclick="eliminarFichajeParking(${f.id})" style="background:none;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;padding:2px 8px;font-size:.78rem;cursor:pointer">Eliminar</button>`
+      : '';
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px solid #f0f0f0">
+      <span style="font-size:.88rem">${fDate} <strong>${hora}</strong>${tagMad}${tagMan}</span>
+      ${btnDel}
+    </div>`;
+  }
+  listaEl.innerHTML = html;
+}
+
+async function agregarFichajeParking() {
+  if (!_pkCtx) return;
+  const turno  = document.getElementById('pk-input-turno').value;
+  const motivo = document.getElementById('pk-input-motivo').value.trim();
+  if (!turno) { alert('Seleccioná el turno'); return; }
+  const { eid, dia, anio, mes, madrugada, corte } = _pkCtx;
+  const mm   = String(mes).padStart(2, '0');
+  const dd   = String(dia).padStart(2, '0');
+  const hora = turno === 'TM' ? madrugada : corte;
+  const timestamp = `${anio}-${mm}-${dd} ${hora}:00`;
+  try {
+    const r = await fetch('/api/fichajes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ empleado_id: eid, timestamp, motivo_manual: motivo || null }),
+    });
+    if (!r.ok) { const err = await r.json(); alert(err.detail || 'Error al agregar fichaje'); return; }
+    document.getElementById('pk-input-turno').value = '';
+    document.getElementById('pk-input-motivo').value = '';
+    await Promise.all([cargarFichajesParking(), cargarParking()]);
+  } catch(e) { alert('Error al agregar fichaje'); }
+}
+
+async function eliminarFichajeParking(fid) {
+  if (!confirm('¿Eliminar este fichaje?')) return;
+  try {
+    const r = await fetch(`/api/fichajes/${fid}`, { method: 'DELETE' });
+    if (!r.ok) { const err = await r.json(); alert(err.detail || 'Error al eliminar'); return; }
+    await Promise.all([cargarFichajesParking(), cargarParking()]);
+  } catch(e) { alert('Error al eliminar'); }
 }
 
 // ── Modo edición de orden ─────────────────────────────────────────────────────

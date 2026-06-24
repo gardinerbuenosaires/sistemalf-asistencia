@@ -397,13 +397,17 @@ def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver
         f0 = f"{anio_i:04d}-{mes_i:02d}-01"
         f1 = f"{anio_i:04d}-{mes_i:02d}-{_cal.monthrange(anio_i, mes_i)[1]:02d}"
 
-        # Auto-refresh de contadores de asistencia para períodos abiertos
+        # Auto-refresh de contadores de asistencia solo si ambos períodos están abiertos
         cerrado = conn.execute(
             "SELECT 1 FROM periodos_cerrados WHERE anio=? AND mes=?",
             (anio_i, mes_i)
         ).fetchone()
+        premios_cerrado = conn.execute(
+            "SELECT 1 FROM premios_periodos_cerrados WHERE anio=? AND mes=?",
+            (anio_i, mes_i)
+        ).fetchone()
 
-        if not cerrado:
+        if not cerrado and not premios_cerrado:
             params = _get_params(conn)
             evs = conn.execute(
                 "SELECT id, empleado_id FROM premios_evaluacion WHERE periodo=?", (periodo,)

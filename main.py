@@ -82,6 +82,14 @@ def _get_inactividad_segundos() -> int:
     return segundos
 
 
+class NoCacheAPIMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+
 class SlidingSessionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -110,6 +118,7 @@ class SlidingSessionMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(SlidingSessionMiddleware)
+app.add_middleware(NoCacheAPIMiddleware)
 
 app.mount("/static", StaticFiles(directory="web/static"), name="static")
 app.include_router(horarios_router)

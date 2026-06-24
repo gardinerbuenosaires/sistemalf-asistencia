@@ -701,9 +701,10 @@ async function generarPeriodo() {
   const periodo = document.getElementById("periodo-sel").value;
   if (!periodo) { toast("Seleccioná un período"); return; }
   await _verificarPremiosCerrado(periodo);
-  if (_premiosCerrado) { toast("El período de premios está cerrado y no puede modificarse"); return; }
-  toast("Generando...", 10000);
+  if (_premiosCerrado) { await cargar(false); return; }
   await _verificarPeriodoCerrado(periodo);
+  if (!_periodoAbierto) { await cargar(false); return; }
+  toast("Generando...", 10000);
   const res = await fetch(`/api/premios/${periodo}/generar`, {method:"POST"});
   if (res.ok) {
     const d = await res.json();

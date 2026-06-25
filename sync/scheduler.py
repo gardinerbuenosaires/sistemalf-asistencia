@@ -30,9 +30,35 @@ _fecha_ultima_limpieza_dispositivo: str | None = None
 def _run_sync():
     from sync.downloader import sync_attendances
     from sync.processor import process_pending
+    from db.database import db_session
     logger.info("Iniciando ciclo de sincronización...")
     result = sync_attendances()
+
+    # Detectar fichajes tardíos: llegaron ahora pero son de fechas pasadas (tipo IS NULL aún)
+    hoy = str(datetime.now().date())
+    fechas_tardias: set[str] = set()
+    try:
+        with db_session() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT date(timestamp) AS fecha FROM fichajes "
+                "WHERE tipo IS NULL AND date(timestamp) < ?",
+                (hoy,)
+            ).fetchall()
+            fechas_tardias = {r["fecha"] for r in rows}
+    except Exception as e:
+        logger.warning("Error capturando fichajes tardíos: %s", e)
+
     process_pending()
+
+    if fechas_tardias:
+        try:
+            from sync.evaluador import evaluar_fecha
+            for fecha in sorted(fechas_tardias):
+                logger.info("Re-evaluando fecha con fichajes tardíos: %s", fecha)
+                evaluar_fecha(fecha)
+        except Exception as e:
+            logger.error("Error re-evaluando fechas tardías: %s", e)
+
     logger.info("Sincronización completada: %s", result)
 
 

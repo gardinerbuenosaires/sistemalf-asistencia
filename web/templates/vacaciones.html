@@ -353,7 +353,9 @@ function renderTabla(rows) {
       <td class="col-num" style="${e.arrastre > 0 ? 'background:#d4edda;color:#155724;font-weight:bold' : e.arrastre < 0 ? 'background:#f8d7da;color:#721c24;font-weight:bold' : 'color:#ccc'}">
         ${e.arrastre > 0 ? '↩ +' + fmt(e.arrastre) : e.arrastre < 0 ? '↩ ' + fmt(e.arrastre) : '—'}
       </td>
-      <td class="col-num${sin180 ? ' td-sin180' : prop ? ' td-proporcional' : ''}">${fmt(e.dias_correspondian)}</td>
+      <td class="col-num${sin180 ? ' td-sin180' : prop ? ' td-proporcional' : ''}">
+        ${e.arrastre > 0 ? fmt(e.dias_formula) + ' <span style="color:#6c757d;font-weight:normal">+</span> ' + fmt(e.arrastre) : fmt(e.dias_correspondian)}
+      </td>
       <td class="col-num">${fmt(e.dias_tomados)}</td>
       <td class="col-num ${clsR}">${fmt(r)}</td>
       ${mTds}

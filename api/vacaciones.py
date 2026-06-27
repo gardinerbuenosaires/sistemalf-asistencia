@@ -74,8 +74,10 @@ def _get_arrastre(eid: int, anio: int, fecha_ingreso_str: str | None,
         return 0.0
 
     saldo_prev = saldos.get((eid, prev))
-    # Las vacaciones del período prev se toman durante el año siguiente (anio)
-    meses_prev = nov_map.get((eid, anio), {})
+    # Consumo del período prev: dic de prev + ene-nov de anio (prev+1)
+    dic_prev    = {k: v for k, v in nov_map.get((eid, prev), {}).items() if k == "12"}
+    resto_anio  = {k: v for k, v in nov_map.get((eid, anio), {}).items() if k < "12"}
+    meses_prev  = {**dic_prev, **resto_anio}
     dias_v_prev = sum(meses_prev.values())
 
     if not saldo_prev and not meses_prev:
@@ -152,8 +154,10 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
         anios, dias_formula = _calcular_dias_formula(e["fecha_ingreso"], anio)
 
         saldo      = saldos.get((eid, anio))
-        # Las vacaciones del período anio se toman durante el año siguiente
-        meses_emp  = nov_map.get((eid, anio + 1), {})
+        # Consumo del período anio: dic de anio + ene-nov de anio+1
+        dic_anio   = {k: v for k, v in nov_map.get((eid, anio), {}).items() if k == "12"}
+        resto_sig  = {k: v for k, v in nov_map.get((eid, anio + 1), {}).items() if k < "12"}
+        meses_emp  = {**dic_anio, **resto_sig}
         dias_v     = sum(meses_emp.values())
 
         # Cálculo auxiliar proporcional a hoy:
@@ -272,35 +276,44 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
 
         nov_rows = conn.execute("""
             SELECT CAST(strftime('%Y', fecha) AS INTEGER) AS anio,
+                   strftime('%m', fecha) AS mes,
                    SUM(CASE WHEN bloque = 0 THEN 1.0 ELSE 0.5 END) AS dias
             FROM novedades
             WHERE tipo = 'V' AND empleado_id = ?
-            GROUP BY anio
+            GROUP BY anio, mes
         """, (empleado_id,)).fetchall()
 
         vp_row = conn.execute("""
             SELECT COALESCE(SUM(dias), 0) AS dias FROM vacaciones_pagadas
-            WHERE empleado_id=? AND CAST(substr(periodo, 1, 4) AS INTEGER) = ?
-        """, (empleado_id, anio + 1)).fetchone()
+            WHERE empleado_id=? AND (
+                periodo = ? OR (
+                    CAST(substr(periodo, 1, 4) AS INTEGER) = ? AND
+                    substr(periodo, 6, 2) < '12'
+                )
+            )
+        """, (empleado_id, f"{anio}-12", anio + 1)).fetchone()
         dias_vp = float(vp_row["dias"]) if vp_row else 0.0
 
     nov_map: dict = {}
     for r in nov_rows:
-        # novedades del año N+1 corresponden al período N
-        period = r["anio"] - 1
-        nov_map[period] = nov_map.get(period, 0.0) + r["dias"]
+        key = (empleado_id, r["anio"])
+        if key not in nov_map:
+            nov_map[key] = {}
+        nov_map[key][r["mes"]] = r["dias"]
 
     _, dias_formula = _calcular_dias_formula(emp["fecha_ingreso"], anio)
     saldo = saldos.get((empleado_id, anio))
-    dias_v = nov_map.get(anio, 0.0)
+    # Consumo del período anio: dic de anio + ene-nov de anio+1
+    dic_anio  = {k: v for k, v in nov_map.get((empleado_id, anio), {}).items() if k == "12"}
+    resto_sig = {k: v for k, v in nov_map.get((empleado_id, anio + 1), {}).items() if k < "12"}
+    dias_v = sum(dic_anio.values()) + sum(resto_sig.values())
 
     if saldo:
         dias_correspondian = saldo["dias_correspondian"]
         dias_tomados       = saldo["dias_tomados"] + dias_v + dias_vp
         arrastre           = 0.0
     else:
-        arrastre           = _get_arrastre(empleado_id, anio, emp["fecha_ingreso"], saldos,
-                                           {(empleado_id, anio + 1): {"01": dias_v} if dias_v else {}})
+        arrastre           = _get_arrastre(empleado_id, anio, emp["fecha_ingreso"], saldos, nov_map)
         dias_correspondian = dias_formula + arrastre
         dias_tomados       = dias_v + dias_vp
 

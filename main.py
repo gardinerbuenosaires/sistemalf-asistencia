@@ -146,11 +146,11 @@ def _page(request: Request, template: str, modulo: str, accion: str = "ver"):
         return RedirectResponse("/login")
     if not check_page_auth(token, modulo, accion):
         return RedirectResponse("/")
-    return FileResponse(template)
+    return FileResponse(template, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 @app.get("/login", include_in_schema=False)
-def page_login(): return FileResponse("web/templates/login.html")
+def page_login(): return FileResponse("web/templates/login.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/", include_in_schema=False)
 def root(request: Request):

@@ -54,8 +54,25 @@
   .matriz td.modulo-name { text-align: left; font-size: .85rem; font-weight: bold; }
   .matriz tr:hover td { background: #fafafa; }
 
-  .chk-perm { width: 18px; height: 18px; cursor: pointer; accent-color: #2c3e50; }
+  .chk-perm {
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; cursor: pointer;
+    border: 2px solid #adb5bd; border-radius: 3px;
+    background: #fff; vertical-align: middle; flex-shrink: 0;
+  }
+  .chk-perm:checked {
+    background: #2c3e50; border-color: #2c3e50;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 9'%3E%3Cpath d='M1 4l4 4 6-7' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center; background-size: 11px;
+  }
+  .chk-perm.jub-chk { border-color: #8e44ad; border-width: 2px; background: #f9f0ff; }
+  .chk-perm.jub-chk:checked { background: #8e44ad; border-color: #8e44ad;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 9'%3E%3Cpath d='M1 4l4 4 6-7' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: center; background-size: 11px;
+  }
   .col-all { background: #f0f4f8; }
+  .td-jubilacion { background: #ede0ff; border-left: 2px solid #c39bd3; border-right: 2px solid #c39bd3; }
+  .th-jubilacion { background: #8e44ad !important; color: white !important; }
 
   .btn { padding: 8px 16px; border: none; border-radius: 5px; cursor: pointer; font-size: .85rem; font-weight: bold; }
   .btn-primary   { background: #2c3e50; color: white; }
@@ -197,21 +214,27 @@ function renderEditor(rol={}) {
       <thead>
         <tr>
           <th class="col-modulo">Módulo</th>
-          ${acciones.map(a=>`<th>${ACCION_LABELS[a]||a}</th>`).join("")}
+          ${acciones.map(a=>`<th${a==='jubilacion'?' class="th-jubilacion"':''}>${ACCION_LABELS[a]||a}</th>`).join("")}
           <th class="col-all">Todo</th>
         </tr>
       </thead>
       <tbody>
         ${modulos.map(m => {
-          const todosCheck = acciones.every(a => permsActuales.has(`${m}|${a}`));
+          // acciones aplicables para este módulo (jubilacion solo en empleados)
+          const accionesM = acciones.filter(a => a !== 'jubilacion' || m === 'empleados');
+          const todosCheck = accionesM.every(a => permsActuales.has(`${m}|${a}`));
           return `<tr>
             <td class="modulo-name">${MODULO_LABELS[m]||m}</td>
-            ${acciones.map(a => `
-              <td>
-                <input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
+            ${acciones.map(a => {
+              if (a === 'jubilacion' && m !== 'empleados') return `<td class="td-jubilacion"></td>`;
+              const tdCls = (a === 'jubilacion' && m === 'empleados') ? ' class="td-jubilacion"' : '';
+              const chkCls = (a === 'jubilacion' && m === 'empleados') ? 'chk-perm jub-chk' : 'chk-perm';
+              return `<td${tdCls}>
+                <input type="checkbox" class="${chkCls}" data-m="${m}" data-a="${a}"
                   ${permsActuales.has(`${m}|${a}`)?" checked":""}
                   onchange="onPermChange(this)">
-              </td>`).join("")}
+              </td>`;
+            }).join("")}
             <td class="col-all">
               <input type="checkbox" class="chk-all" data-m="${m}"
                 ${todosCheck?" checked":""}
@@ -242,7 +265,10 @@ function onPermChange(chk) {
 
 function toggleModulo(chk, modulo) {
   const checked = chk.checked;
-  document.querySelectorAll(`.chk-perm[data-m="${modulo}"]`).forEach(c => c.checked = checked);
+  document.querySelectorAll(`.chk-perm[data-m="${modulo}"]`).forEach(c => {
+    if (c.dataset.a === 'jubilacion' && modulo !== 'empleados') return;
+    c.checked = checked;
+  });
 }
 
 function cancelar() {

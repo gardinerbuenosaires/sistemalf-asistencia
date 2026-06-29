@@ -51,6 +51,11 @@ class EmpleadoIn(BaseModel):
     dom_mapa: Optional[str] = None
 
 
+class JubilacionIn(BaseModel):
+    fecha_recontratacion: Optional[str] = None
+    vac_dias_jubilacion:  Optional[float] = None
+
+
 @router.get("")
 def list_empleados(todos: bool = False, sin_acceso: bool = False,
                    _user=Depends(require_permiso("empleados", "ver"))):
@@ -188,10 +193,14 @@ def set_horario_habitual(eid: int, body: dict, _user=Depends(require_permiso("em
 @router.put("/{eid}")
 def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("empleados", "editar"))):
     with db_session() as conn:
-        row = conn.execute("SELECT id FROM empleados WHERE id=?", (eid,)).fetchone()
+        row = conn.execute(
+            "SELECT id, activo, cargo_id, fecha_ingreso, fecha_recontratacion FROM empleados WHERE id=?", (eid,)
+        ).fetchone()
         if not row:
             raise HTTPException(404, "Empleado no encontrado")
-        anterior = conn.execute("SELECT activo, cargo_id FROM empleados WHERE id=?", (eid,)).fetchone()
+        if row["fecha_recontratacion"] and data.fecha_ingreso != row["fecha_ingreso"]:
+            raise HTTPException(409, "No se puede modificar fecha_ingreso cuando existe una recontratación por jubilación")
+        anterior = row
         cargo_id_anterior = anterior["cargo_id"]
         if data.tipo not in ("normal", "jerarquico", "acceso", "parking"):
             raise HTTPException(400, "tipo inválido")
@@ -326,4 +335,19 @@ def eliminar_foto(eid: int, _user=Depends(require_permiso("empleados", "editar")
         if row["foto_path"]:
             (FOTOS_DIR / Path(row["foto_path"]).name).unlink(missing_ok=True)
         conn.execute("UPDATE empleados SET foto_path=NULL WHERE id=?", (eid,))
+    return {"ok": True}
+
+
+@router.put("/{eid}/jubilacion", status_code=200)
+def set_jubilacion(eid: int, data: JubilacionIn,
+                   _user=Depends(require_permiso("empleados", "jubilacion"))):
+    if bool(data.fecha_recontratacion) != bool(data.vac_dias_jubilacion):
+        raise HTTPException(400, "Fecha de recontratación y días de vacaciones deben completarse juntos")
+    with db_session() as conn:
+        if not conn.execute("SELECT id FROM empleados WHERE id=?", (eid,)).fetchone():
+            raise HTTPException(404, "Empleado no encontrado")
+        conn.execute(
+            "UPDATE empleados SET fecha_recontratacion=?, vac_dias_jubilacion=? WHERE id=?",
+            (data.fecha_recontratacion, data.vac_dias_jubilacion, eid)
+        )
     return {"ok": True}

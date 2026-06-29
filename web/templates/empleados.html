@@ -962,9 +962,14 @@ function buildForm(e = {}, asignaciones = []) {
             </select>
           </div>
           <div class="form-group">
-            <label>Fecha de ingreso</label>
-            <input type="date" id="f-ingreso" value="${e.fecha_ingreso||""}">
+            <label>Fecha de ingreso${e.fecha_recontratacion ? ' <span style="color:#888;font-size:.8em">(original — bloqueada)</span>' : ''}</label>
+            <input type="date" id="f-ingreso" value="${e.fecha_ingreso||""}" ${e.fecha_recontratacion ? 'disabled style="background:#f8f9fa;color:#666"' : ''}>
           </div>
+          ${e.fecha_recontratacion ? `
+          <div class="form-group">
+            <label>Fecha de recontratación <span style="background:#8e44ad;color:white;font-size:.75em;padding:1px 6px;border-radius:4px">Jub.</span></label>
+            <input type="text" disabled value="${_fmtF(e.fecha_recontratacion)}" style="background:#f8f9fa;color:#555">
+          </div>` : ''}
           ${!e.activo && e.fecha_egreso ? `
           <div class="form-group">
             <label>Fecha de egreso</label>
@@ -1108,6 +1113,25 @@ function buildForm(e = {}, asignaciones = []) {
         </div>
       </div>
 
+      ${editandoId && canDo('empleados','jubilacion') ? `
+      <div style="border-top:2px solid #8e44ad;margin:16px 0 8px;padding-top:14px">
+        <div class="form-section-title" style="color:#8e44ad">Recontratación por jubilación</div>
+        <div class="form-grid cols-2">
+          <div class="form-group">
+            <label>Fecha de recontratación</label>
+            <input type="date" id="f-recontratacion" value="${e.fecha_recontratacion||""}">
+          </div>
+          <div class="form-group">
+            <label>Días de vacaciones asignados</label>
+            <input type="number" id="f-vac-jubilacion" value="${e.vac_dias_jubilacion||""}" min="1" max="35" step="1" placeholder="Ej: 21">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="guardarJubilacion(${e.id})">Guardar excepción</button>
+          ${e.fecha_recontratacion ? `<button type="button" class="btn btn-sm" style="color:#c0392b;background:#fdecea" onclick="limpiarJubilacion(${e.id})">Quitar excepción</button>` : ''}
+        </div>
+      </div>` : ''}
+
       ${e.activo && editandoId && canDo('empleados','editar') ? `
       <div id="baja-panel" style="display:none;margin-bottom:8px;padding:10px 14px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;width:fit-content;margin-left:auto">
         <div style="font-size:.78rem;font-weight:bold;color:#856404;margin-bottom:6px">Fecha de egreso</div>
@@ -1208,6 +1232,30 @@ function getFormData() {
       return x !== null ? JSON.stringify({x, y}) : null;
     })(),
   };
+}
+
+async function guardarJubilacion(eid) {
+  const fecha = document.getElementById('f-recontratacion').value;
+  const dias  = parseFloat(document.getElementById('f-vac-jubilacion').value);
+  if (!fecha || !dias || dias <= 0) { toast("Completá fecha y días de vacaciones"); return; }
+  const res = await fetch(`/api/empleados/${eid}/jubilacion`, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ fecha_recontratacion: fecha, vac_dias_jubilacion: dias })
+  });
+  if (!res.ok) { toast("Error al guardar excepción"); return; }
+  toast("Excepción guardada");
+  cargarEmpleado(eid);
+}
+
+async function limpiarJubilacion(eid) {
+  if (!confirm("¿Quitar la excepción de jubilación? Los días de vacaciones volverán a calcularse por fórmula.")) return;
+  const res = await fetch(`/api/empleados/${eid}/jubilacion`, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ fecha_recontratacion: null, vac_dias_jubilacion: null })
+  });
+  if (!res.ok) { toast("Error"); return; }
+  toast("Excepción eliminada");
+  cargarEmpleado(eid);
 }
 
 async function guardar() {

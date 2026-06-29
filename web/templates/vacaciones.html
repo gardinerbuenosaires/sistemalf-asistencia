@@ -335,7 +335,7 @@ function renderTabla(rows) {
       <td>${e.cargo || '—'}</td>
       <td>${e.fecha_ingreso ? e.fecha_ingreso.split('-').reverse().join('-') : '—'}</td>
       <td>${aniosStr}</td>
-      <td class="col-num">${fmt(e.dias_formula)}</td>
+      <td class="col-num">${fmt(e.dias_formula)}${e.es_jubilacion ? ' <span title="Excepción por jubilación" style="background:#8e44ad;color:white;font-size:.7em;padding:1px 5px;border-radius:3px;font-weight:normal">Jub.</span>' : ''}</td>
       <td class="col-num" style="${e.arrastre > 0 ? 'background:#d4edda;color:#155724;font-weight:bold' : e.arrastre < 0 ? 'background:#f8d7da;color:#721c24;font-weight:bold' : 'color:#ccc'}">
         ${e.arrastre > 0 ? '↩ +' + fmt(e.arrastre) : e.arrastre < 0 ? '↩ ' + fmt(e.arrastre) : '—'}
       </td>
@@ -379,7 +379,7 @@ function renderCI() {
       <td class="col-emp" style="background:inherit">${e.apellido}, ${e.nombre}</td>
       <td>${e.cargo || '—'}</td>
       <td>${e.fecha_ingreso ? e.fecha_ingreso.split('-').reverse().join('-') : '—'}</td>
-      <td class="col-num">${fmt(e.dias_formula)}</td>
+      <td class="col-num">${fmt(e.dias_formula)}${e.es_jubilacion ? ' <span title="Excepción por jubilación" style="background:#8e44ad;color:white;font-size:.7em;padding:1px 5px;border-radius:3px;font-weight:normal">Jub.</span>' : ''}</td>
       <td>
         <input type="number" min="0" max="200" step="0.5"
                value="${e.dias_tomados}" id="ci-tom-${i}">

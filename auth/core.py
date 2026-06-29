@@ -28,7 +28,7 @@ MODULOS = [
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
     "periodos", "distribucion",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion"]
 # corregir → asistencia:corregir (novedades en planilla)
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}

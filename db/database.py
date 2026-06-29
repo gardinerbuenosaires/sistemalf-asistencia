@@ -936,6 +936,8 @@ def _migrate(conn):
         "dom_mapa":                       "TEXT",
         "foto_path":                      "TEXT",
         "horario_habitual_id":            "INTEGER REFERENCES horarios(id)",
+        "fecha_recontratacion":           "TEXT",
+        "vac_dias_jubilacion":            "REAL",
     }
     # Migrar dom_entre_calles existente a los nuevos campos separados
     cols_after = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}

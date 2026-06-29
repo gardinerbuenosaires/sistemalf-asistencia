@@ -50,7 +50,9 @@ def _calcular_dias_formula(fecha_ingreso_str: str | None, anio: int) -> tuple[in
 
 
 def _get_arrastre(eid: int, anio: int, fecha_ingreso_str: str | None,
-                  saldos: dict, nov_map: dict, depth: int = 0) -> float:
+                  saldos: dict, nov_map: dict, depth: int = 0,
+                  vac_dias_jubilacion: float | None = None,
+                  fecha_recontratacion_anio: int | None = None) -> float:
     """
     Calcula recursivamente el sobrante del año anterior para usarlo como arrastre.
     Se detiene si:
@@ -88,8 +90,12 @@ def _get_arrastre(eid: int, anio: int, fecha_ingreso_str: str | None,
         dias_corr_prev = saldo_prev["dias_correspondian"]
         dias_tom_prev  = saldo_prev["dias_tomados"] + dias_v_prev
     else:
-        _, dias_formula_prev = _calcular_dias_formula(fecha_ingreso_str, prev)
-        arrastre_prev  = _get_arrastre(eid, prev, fecha_ingreso_str, saldos, nov_map, depth + 1)
+        if vac_dias_jubilacion and fecha_recontratacion_anio and prev >= fecha_recontratacion_anio:
+            dias_formula_prev = float(vac_dias_jubilacion)
+        else:
+            _, dias_formula_prev = _calcular_dias_formula(fecha_ingreso_str, prev)
+        arrastre_prev  = _get_arrastre(eid, prev, fecha_ingreso_str, saldos, nov_map, depth + 1,
+                                       vac_dias_jubilacion, fecha_recontratacion_anio)
         dias_corr_prev = dias_formula_prev + arrastre_prev
         dias_tom_prev  = dias_v_prev
 
@@ -116,6 +122,7 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
     with db_session() as conn:
         empleados = conn.execute(
             """SELECT e.id, e.nombre, e.apellido, e.fecha_ingreso,
+                      e.fecha_recontratacion, e.vac_dias_jubilacion,
                       c.nombre AS cargo, cat.nombre AS categoria
                FROM empleados e
                LEFT JOIN cargos c ON c.id = e.cargo_id
@@ -149,7 +156,16 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
     result = []
     for e in empleados:
         eid = e["id"]
-        anios, dias_formula = _calcular_dias_formula(e["fecha_ingreso"], anio)
+        vac_jub    = e["vac_dias_jubilacion"]
+        recont_str = e["fecha_recontratacion"]
+        anio_recont = date.fromisoformat(recont_str).year if recont_str else None
+        es_jubilacion = bool(vac_jub and anio_recont and anio >= anio_recont)
+
+        if es_jubilacion:
+            anios        = 0
+            dias_formula = float(vac_jub)
+        else:
+            anios, dias_formula = _calcular_dias_formula(e["fecha_ingreso"], anio)
 
         saldo      = saldos.get((eid, anio))
         # Consumo del período anio: dic de anio + ene-nov de anio+1
@@ -163,27 +179,31 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
             dias_tomados       = saldo["dias_tomados"] + dias_v
             arrastre           = 0.0
         else:
-            arrastre           = _get_arrastre(eid, anio, e["fecha_ingreso"], saldos, nov_map)
+            arrastre           = _get_arrastre(eid, anio, e["fecha_ingreso"], saldos, nov_map,
+                                               vac_dias_jubilacion=vac_jub,
+                                               fecha_recontratacion_anio=anio_recont)
             dias_correspondian = dias_formula + arrastre
             dias_tomados       = dias_v
 
         dias_restan = round(dias_correspondian - dias_tomados, 1)
 
         result.append({
-            "id":                  eid,
-            "apellido":            e["apellido"],
-            "nombre":              e["nombre"],
-            "cargo":               e["cargo"],
-            "categoria":           e["categoria"],
-            "fecha_ingreso":       e["fecha_ingreso"],
-            "anios_antiguedad":    anios,
-            "dias_formula":        dias_formula,
-            "arrastre":            arrastre,
-            "dias_correspondian":  dias_correspondian,
-            "dias_tomados":        dias_tomados,
-            "dias_restan":         dias_restan,
-            "meses":               {k: v for k, v in meses_emp.items()},
-            "tiene_saldo_inicial": saldo is not None,
+            "id":                   eid,
+            "apellido":             e["apellido"],
+            "nombre":               e["nombre"],
+            "cargo":                e["cargo"],
+            "categoria":            e["categoria"],
+            "fecha_ingreso":        e["fecha_ingreso"],
+            "fecha_recontratacion": recont_str,
+            "es_jubilacion":        es_jubilacion,
+            "anios_antiguedad":     anios,
+            "dias_formula":         dias_formula,
+            "arrastre":             arrastre,
+            "dias_correspondian":   dias_correspondian,
+            "dias_tomados":         dias_tomados,
+            "dias_restan":          dias_restan,
+            "meses":                {k: v for k, v in meses_emp.items()},
+            "tiene_saldo_inicial":  saldo is not None,
         })
 
     return result
@@ -234,7 +254,8 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
 
     with db_session() as conn:
         emp = conn.execute(
-            "SELECT fecha_ingreso FROM empleados WHERE id=?", (empleado_id,)
+            "SELECT fecha_ingreso, fecha_recontratacion, vac_dias_jubilacion FROM empleados WHERE id=?",
+            (empleado_id,)
         ).fetchone()
         if not emp:
             raise HTTPException(404, "Empleado no encontrado")
@@ -271,7 +292,16 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
             nov_map[key] = {}
         nov_map[key][r["mes"]] = r["dias"]
 
-    _, dias_formula = _calcular_dias_formula(emp["fecha_ingreso"], anio)
+    vac_jub     = emp["vac_dias_jubilacion"]
+    recont_str  = emp["fecha_recontratacion"]
+    anio_recont = date.fromisoformat(recont_str).year if recont_str else None
+    es_jubilacion = bool(vac_jub and anio_recont and anio >= anio_recont)
+
+    if es_jubilacion:
+        _, dias_formula = 0, float(vac_jub)
+    else:
+        _, dias_formula = _calcular_dias_formula(emp["fecha_ingreso"], anio)
+
     saldo = saldos.get((empleado_id, anio))
     # Consumo del período anio: dic de anio + ene-nov de anio+1
     dic_anio  = {k: v for k, v in nov_map.get((empleado_id, anio), {}).items() if k == "12"}
@@ -283,7 +313,9 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
         dias_tomados       = saldo["dias_tomados"] + dias_v + dias_vp
         arrastre           = 0.0
     else:
-        arrastre           = _get_arrastre(empleado_id, anio, emp["fecha_ingreso"], saldos, nov_map)
+        arrastre           = _get_arrastre(empleado_id, anio, emp["fecha_ingreso"], saldos, nov_map,
+                                           vac_dias_jubilacion=vac_jub,
+                                           fecha_recontratacion_anio=anio_recont)
         dias_correspondian = dias_formula + arrastre
         dias_tomados       = dias_v + dias_vp
 

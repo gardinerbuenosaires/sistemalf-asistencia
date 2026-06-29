@@ -146,8 +146,6 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
             nov_map[key] = {}
         nov_map[key][r["mes"]] = r["dias"]
 
-    hoy = date.today()
-
     result = []
     for e in empleados:
         eid = e["id"]
@@ -160,38 +158,13 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
         meses_emp  = {**dic_anio, **resto_sig}
         dias_v     = sum(meses_emp.values())
 
-        # Cálculo auxiliar proporcional a hoy:
-        #   - cuando fórmula = 0 (no estaba contratado al 31/12)
-        #   - cuando primer año y no llegó a 180 días al 31/12 (la fórmula da un valor parcial)
-        usa_proporcional = False
-        sin_180_aun      = False
-        dias_proporcional = 0.0
-        primer_anio_sin_180 = not saldo and anios == 0 and 0 < dias_formula < 14
-        if not saldo and (dias_formula == 0 or primer_anio_sin_180) and e["fecha_ingreso"]:
-            try:
-                fi = date.fromisoformat(e["fecha_ingreso"])
-                if fi <= hoy:
-                    dias_trabajados = (hoy - fi).days + 1
-                    anios_aux = math.trunc(dias_trabajados / 365.25)
-                    if anios_aux >= 20:   dias_proporcional = 35.0
-                    elif anios_aux >= 10: dias_proporcional = 28.0
-                    elif anios_aux >= 5:  dias_proporcional = 21.0
-                    elif anios_aux >= 1:  dias_proporcional = 14.0
-                    elif dias_trabajados >= 180: dias_proporcional = 14.0
-                    else: dias_proporcional = float(math.floor(dias_trabajados / 20 + 0.5))
-                    if dias_proporcional > 0:
-                        usa_proporcional = True
-                        sin_180_aun = dias_trabajados < 180
-            except ValueError:
-                pass
-
         if saldo:
             dias_correspondian = saldo["dias_correspondian"]
             dias_tomados       = saldo["dias_tomados"] + dias_v
             arrastre           = 0.0
         else:
             arrastre           = _get_arrastre(eid, anio, e["fecha_ingreso"], saldos, nov_map)
-            dias_correspondian = (dias_proporcional if usa_proporcional else dias_formula) + arrastre
+            dias_correspondian = dias_formula + arrastre
             dias_tomados       = dias_v
 
         dias_restan = round(dias_correspondian - dias_tomados, 1)
@@ -205,9 +178,6 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
             "fecha_ingreso":       e["fecha_ingreso"],
             "anios_antiguedad":    anios,
             "dias_formula":        dias_formula,
-            "dias_proporcional":   dias_proporcional,
-            "usa_proporcional":    usa_proporcional,
-            "sin_180_aun":         sin_180_aun,
             "arrastre":            arrastre,
             "dias_correspondian":  dias_correspondian,
             "dias_tomados":        dias_tomados,

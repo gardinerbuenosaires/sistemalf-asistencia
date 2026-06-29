@@ -46,10 +46,6 @@
   .restan-ok  { background: #d4edda !important; color: #155724; font-weight: bold; }
   .restan-neg { background: #f8d7da !important; color: #721c24; font-weight: bold; }
   .restan-cero { background: #fff3cd !important; color: #856404; font-weight: bold; }
-  .td-proporcional { background: #fff8e1 !important; color: #7c5a00; font-style: italic; }
-  tr.row-proporcional td.col-emp::after { content: ' ⚑'; color: #e67e22; font-size: .75rem; }
-  .td-sin180 { background: #fdecea !important; color: #922b21; font-style: italic; }
-  tr.row-sin180 td.col-emp::after { content: ' ⚑'; color: #c0392b; font-size: .75rem; }
   th.sortable { cursor: pointer; user-select: none; }
   th.sortable:hover { background: #e9ecef; }
   th.sort-asc::after  { content: ' ▲'; font-size: .65rem; }
@@ -334,26 +330,16 @@ function renderTabla(rows) {
       const d = e.meses?.[m];
       return `<td class="col-num">${d ? fmt(d) : ''}</td>`;
     }).join('');
-    const prop   = e.usa_proporcional && !e.sin_180_aun;
-    const sin180 = e.sin_180_aun;
-    const formulaCls = sin180 ? 'col-num td-sin180' : prop ? 'col-num td-proporcional' : 'col-num';
-    const formulaTitle = sin180
-      ? 'Aún no cumplió 180 días — sin derecho a vacaciones todavía'
-      : 'Cálculo auxiliar proporcional a hoy. No refleja la fórmula anual.';
-    const formulaVal = (prop || sin180)
-      ? `<span title="${formulaTitle}">~${fmt(e.dias_proporcional)}</span>`
-      : fmt(e.dias_formula);
-    const rowCls = sin180 ? ' class="row-sin180"' : prop ? ' class="row-proporcional"' : '';
-    return `<tr${rowCls}>
+    return `<tr>
       <td class="col-emp">${e.apellido}, ${e.nombre}</td>
       <td>${e.cargo || '—'}</td>
       <td>${e.fecha_ingreso ? e.fecha_ingreso.split('-').reverse().join('-') : '—'}</td>
       <td>${aniosStr}</td>
-      <td class="${formulaCls}">${formulaVal}</td>
+      <td class="col-num">${fmt(e.dias_formula)}</td>
       <td class="col-num" style="${e.arrastre > 0 ? 'background:#d4edda;color:#155724;font-weight:bold' : e.arrastre < 0 ? 'background:#f8d7da;color:#721c24;font-weight:bold' : 'color:#ccc'}">
         ${e.arrastre > 0 ? '↩ +' + fmt(e.arrastre) : e.arrastre < 0 ? '↩ ' + fmt(e.arrastre) : '—'}
       </td>
-      <td class="col-num${sin180 ? ' td-sin180' : prop ? ' td-proporcional' : ''}">
+      <td class="col-num">
         ${e.arrastre > 0 ? fmt(e.dias_formula) + ' <span style="color:#6c757d;font-weight:normal">+</span> ' + fmt(e.arrastre) : fmt(e.dias_correspondian)}
       </td>
       <td class="col-num">${fmt(e.dias_tomados)}</td>
@@ -389,18 +375,11 @@ async function cargarCI() {
 function renderCI() {
   const tb = document.getElementById('tbody-ci');
   tb.innerHTML = _ciData.map((e, i) => {
-    const prop   = e.usa_proporcional && !e.sin_180_aun;
-    const sin180 = e.sin_180_aun;
-    const corrVal = e.usa_proporcional ? e.dias_proporcional : e.dias_formula;
-    const corrDisp = (prop || sin180)
-      ? `<span title="Proporcional a hoy" style="font-style:italic">~${fmt(corrVal)}</span>`
-      : fmt(corrVal);
-    const corrCls = sin180 ? ' td-sin180' : prop ? ' td-proporcional' : '';
     return `<tr class="${e.tiene_saldo ? 'row-ok' : ''}">
       <td class="col-emp" style="background:inherit">${e.apellido}, ${e.nombre}</td>
       <td>${e.cargo || '—'}</td>
       <td>${e.fecha_ingreso ? e.fecha_ingreso.split('-').reverse().join('-') : '—'}</td>
-      <td class="col-num${corrCls}">${corrDisp}</td>
+      <td class="col-num">${fmt(e.dias_formula)}</td>
       <td>
         <input type="number" min="0" max="200" step="0.5"
                value="${e.dias_tomados}" id="ci-tom-${i}">

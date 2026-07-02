@@ -29,7 +29,7 @@
   .nav-dropdown a:hover { background: #f4f6f9; }
   [data-perm] { display: none !important; }
 
-  main { display: grid; grid-template-columns: 360px 1fr; gap: 20px; padding: 20px; max-width: 1300px; margin: 0 auto; align-items: stretch; flex: 1; min-height: 0; width: 100%; }
+  main { display: grid; grid-template-columns: 460px 1fr; gap: 20px; padding: 20px; max-width: 1300px; margin: 0 auto; align-items: stretch; flex: 1; min-height: 0; width: 100%; }
 
   .panel { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid #eee; }
@@ -140,6 +140,33 @@
   .manzana-v { width: 26px; height: 150px; writing-mode: vertical-rl; }
   .manzana-v-left { transform: rotate(180deg); }
 
+  /* ── Modo Planilla ───────────────────────────────────────── */
+  body.modo-planilla main { display: none; }
+  #planilla-view { display: none; flex-direction: column; flex: 1; min-height: 0; padding: 20px; gap: 0; }
+  body.modo-planilla #planilla-view { display: flex; }
+  #planilla-view .panel { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .pl-wrap { overflow: auto; flex: 1; min-height: 0; }
+  .pl-tbl { border-collapse: collapse; white-space: nowrap; font-size: .8rem; }
+  .pl-tbl th { position: sticky; top: 0; background: #2c3e50; color: #fff; padding: 7px 10px; text-align: left; font-size: .7rem; text-transform: uppercase; letter-spacing: .03em; z-index: 3; border-right: 1px solid #3d5166; }
+  .pl-tbl td { padding: 5px 9px; border-bottom: 1px solid #eee; border-right: 1px solid #f0f0f0; vertical-align: middle; cursor: pointer; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+  .pl-tbl tr:nth-child(even) td { background: #dce8f5; }
+  .pl-tbl tr:hover td { background: #e8f0fe !important; }
+  .pl-tbl tr.pl-inactivo td { color: #aaa; font-style: italic; }
+  .pl-col-s1 { position: sticky; left: 0; z-index: 2 !important; background: #fff; box-shadow: 2px 0 4px rgba(0,0,0,.06); min-width: 140px; }
+  .pl-col-s2 { position: sticky; left: 140px; z-index: 2 !important; background: #fff; border-right: 2px solid #dee2e6 !important; min-width: 130px; }
+  .pl-tbl th.pl-col-s1 { z-index: 4 !important; background: #2c3e50; }
+  .pl-tbl th.pl-col-s2 { z-index: 4 !important; background: #2c3e50; }
+  .pl-tbl tr:nth-child(even) .pl-col-s1, .pl-tbl tr:nth-child(even) .pl-col-s2 { background: #dce8f5; }
+  .pl-tbl tr:hover .pl-col-s1, .pl-tbl tr:hover .pl-col-s2 { background: #e8f0fe !important; }
+  .pl-tbl tr.pl-inactivo .pl-col-s1, .pl-tbl tr.pl-inactivo .pl-col-s2 { background: #fafafa !important; }
+  .pl-cell-edit { background: #fffde7 !important; padding: 2px 4px !important; }
+  .pl-cell-edit input, .pl-cell-edit select { border: 1px solid #f9a825; border-radius: 3px; background: #fffde7; font-size: .8rem; font-family: inherit; width: 100%; min-width: 80px; outline: none; padding: 2px 4px; }
+  .pl-readonly { cursor: default !important; color: #999; }
+  #pl-estado { font-size: .75rem; font-style: italic; }
+  #pl-estado.pl-saving { color: #888; }
+  #pl-estado.pl-saved  { color: #27ae60; }
+  #pl-estado.pl-error  { color: #e74c3c; }
+
 </style>
 </head>
 <body>
@@ -182,11 +209,14 @@
 <main>
   <!-- Lista -->
   <div class="panel">
-    <div class="panel-header">
+    <div class="panel-header" style="flex-direction:column;align-items:flex-start;gap:8px">
       <h2 id="panel-titulo">Personal (<span id="cnt">0</span>)</h2>
-      <button class="btn btn-secondary btn-sm" data-perm="sync:procesar" onclick="importarDesdeDispositivo()" id="btn-importar">Importar desde dispositivo</button>
-      <a href="/empleados/listado" class="btn btn-secondary btn-sm" style="text-decoration:none">Listado imprimible</a>
-      <button class="btn btn-secondary btn-sm" data-perm="empleados:editar" onclick="abrirQrFotos()" title="QR para subir fotos desde el celular">📷 QR fotos</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" data-perm="sync:procesar" onclick="importarDesdeDispositivo()" id="btn-importar">⬇️ Importar</button>
+        <a href="/empleados/listado" class="btn btn-secondary btn-sm" style="text-decoration:none">🖨️ Imprimir</a>
+        <button class="btn btn-secondary btn-sm" data-perm="empleados:editar" onclick="abrirQrFotos()" title="QR para subir fotos desde el celular">📷 QR fotos</button>
+        <button class="btn btn-secondary btn-sm" onclick="switchModo('planilla')" title="Vista planilla editable">📋 Planilla</button>
+      </div>
     </div>
     <div class="tabs">
       <button class="tab-btn activo" id="tab-personal" onclick="cambiarTab('personal')">Personal</button>
@@ -281,6 +311,24 @@
     </div>
   </div>
 </main>
+
+<div id="planilla-view">
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Planilla de personal</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="pl-estado"></span>
+        <button class="btn btn-secondary btn-sm" onclick="switchModo('lista')">← Vista normal</button>
+      </div>
+    </div>
+    <div class="pl-wrap">
+      <table class="pl-tbl" id="pl-tbl">
+        <thead><tr id="pl-head"></tr></thead>
+        <tbody id="pl-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
 <div id="toast"></div>
 
@@ -1615,6 +1663,160 @@ init().then(async () => {
     document.getElementById(`emp-item-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 });
+
+// ── Vista Planilla ────────────────────────────────────────────────────
+let planillaData = {};
+
+const PL_COLS = [
+  { campo: 'apellido',                      label: 'Apellido',         tipo: 'text',     sticky: 1 },
+  { campo: 'nombre',                        label: 'Nombre',           tipo: 'text',     sticky: 2 },
+  { campo: 'dni',                           label: 'DNI',              tipo: 'text'    },
+  { campo: 'cuil',                          label: 'CUIL',             tipo: 'text'    },
+  { campo: 'fecha_nacimiento',              label: 'Nacimiento',       tipo: 'date'    },
+  { campo: 'fecha_ingreso',                 label: 'Ingreso',          tipo: 'date'    },
+  { campo: 'departamento',                  label: 'Dpto.',            tipo: 'readonly'},
+  { campo: 'cargo_id',                      label: 'Cargo',            tipo: 'select', opts: () => cargosOpts    },
+  { campo: 'categoria_id',                  label: 'Categoría',        tipo: 'select', opts: () => categoriasOpts},
+  { campo: 'turno_id',                      label: 'Turno',            tipo: 'select', opts: () => turnosLegajoOpts   },
+  { campo: 'sector_id',                     label: 'Sector',           tipo: 'select', opts: () => sectoresLegajoOpts },
+  { campo: 'nivel_estudio_id',              label: 'Nivel estudio',    tipo: 'select', opts: () => nivelesEstudioOpts },
+  { campo: 'domicilio',                     label: 'Domicilio',        tipo: 'text'    },
+  { campo: 'telefono',                      label: 'Teléfono',         tipo: 'text'    },
+  { campo: 'email',                         label: 'Email',            tipo: 'text'    },
+  { campo: 'contacto_emergencia_nombre',    label: 'Emerg. nombre',    tipo: 'text'    },
+  { campo: 'contacto_emergencia_telefono',  label: 'Emerg. tel.',      tipo: 'text'    },
+  { campo: 'contacto_emergencia_parentesco',label: 'Emerg. parent.',   tipo: 'text'    },
+  { campo: 'observaciones',                 label: 'Observaciones',    tipo: 'text'    },
+];
+
+function switchModo(modo) {
+  document.body.classList.toggle('modo-planilla', modo === 'planilla');
+  if (modo === 'planilla') cargarPlanilla();
+}
+
+async function cargarPlanilla() {
+  const res = await fetch('/api/empleados?sin_acceso=true');
+  const lista = await res.json();
+  planillaData = {};
+  lista.forEach(e => { planillaData[e.id] = e; });
+  renderPlanilla(lista);
+}
+
+function _plDisplayVal(col, rawVal) {
+  if (col.tipo === 'readonly') return rawVal || '—';
+  if (col.tipo === 'date') return _fmtF(rawVal) || '';
+  if (col.tipo === 'select' && col.opts) {
+    const opts = col.opts();
+    const found = opts.find(o => String(o.id) === String(rawVal));
+    return found ? found.nombre : (rawVal ? String(rawVal) : '—');
+  }
+  return rawVal != null && rawVal !== '' ? String(rawVal) : '';
+}
+
+function renderPlanilla(lista) {
+  const head = document.getElementById('pl-head');
+  const body = document.getElementById('pl-body');
+  const puedeEditar = canDo('empleados', 'editar');
+
+  head.innerHTML = PL_COLS.map(c => {
+    const cls = c.sticky === 1 ? 'pl-col-s1' : c.sticky === 2 ? 'pl-col-s2' : '';
+    return `<th class="${cls}">${c.label}</th>`;
+  }).join('');
+
+  body.innerHTML = lista.map(e => {
+    const cells = PL_COLS.map(c => {
+      const cls = [
+        c.sticky === 1 ? 'pl-col-s1' : c.sticky === 2 ? 'pl-col-s2' : '',
+        (c.tipo === 'readonly' || !puedeEditar) ? 'pl-readonly' : ''
+      ].join(' ').trim();
+      const display = _plDisplayVal(c, e[c.campo]);
+      const click = (puedeEditar && c.tipo !== 'readonly')
+        ? `onclick="plEditarCelda(this,${e.id},'${c.campo}','${c.tipo}')"`
+        : '';
+      return `<td class="${cls}" ${click}>${display}</td>`;
+    }).join('');
+    return `<tr class="${e.activo ? '' : 'pl-inactivo'}" data-eid="${e.id}">${cells}</tr>`;
+  }).join('');
+}
+
+function plEditarCelda(td, eid, campo, tipo) {
+  if (td.classList.contains('pl-cell-edit')) return;
+  const emp = planillaData[eid];
+  if (!emp) return;
+
+  td.classList.add('pl-cell-edit');
+  const valActual = emp[campo];
+  let input;
+
+  if (tipo === 'select') {
+    const col = PL_COLS.find(c => c.campo === campo);
+    const opts = col.opts();
+    input = document.createElement('select');
+    input.innerHTML = `<option value="">—</option>` +
+      opts.map(o => `<option value="${o.id}" ${String(o.id) === String(valActual) ? 'selected' : ''}>${o.nombre}</option>`).join('');
+  } else if (tipo === 'date') {
+    input = document.createElement('input');
+    input.type = 'date';
+    input.value = valActual || '';
+  } else {
+    input = document.createElement('input');
+    input.type = 'text';
+    input.value = valActual || '';
+  }
+
+  const prevDisplay = td.textContent;
+  td.textContent = '';
+  td.appendChild(input);
+  input.focus();
+  if (input.type === 'text') input.select();
+
+  const commit = async () => {
+    const nuevo = input.value;
+    td.classList.remove('pl-cell-edit');
+    const col = PL_COLS.find(c => c.campo === campo);
+    if (String(nuevo) === String(valActual ?? '')) {
+      td.textContent = prevDisplay;
+      return;
+    }
+    const nuevoVal = (tipo === 'select' && nuevo !== '')
+      ? (isNaN(nuevo) ? nuevo : parseInt(nuevo))
+      : (nuevo === '' ? null : nuevo);
+    planillaData[eid][campo] = nuevoVal;
+    td.textContent = _plDisplayVal(col, nuevoVal);
+    await plGuardarEmpleado(eid);
+  };
+
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.value = valActual ?? ''; input.removeEventListener('blur', commit); td.classList.remove('pl-cell-edit'); td.textContent = prevDisplay; }
+  });
+}
+
+async function plGuardarEmpleado(eid) {
+  const estado = document.getElementById('pl-estado');
+  estado.className = 'pl-saving'; estado.textContent = 'Guardando…';
+  const emp = { ...planillaData[eid] };
+  ['cargo_id','categoria_id','turno_id','sector_id','nivel_estudio_id'].forEach(f => {
+    if (emp[f] !== null && emp[f] !== undefined && emp[f] !== '') {
+      emp[f] = parseInt(emp[f]) || null;
+    } else {
+      emp[f] = null;
+    }
+  });
+  try {
+    const res = await fetch(`/api/empleados/${eid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(emp)
+    });
+    if (!res.ok) throw new Error();
+    estado.className = 'pl-saved'; estado.textContent = 'Guardado ✓';
+    setTimeout(() => { estado.textContent = ''; estado.className = ''; }, 2500);
+  } catch {
+    estado.className = 'pl-error'; estado.textContent = 'Error al guardar';
+  }
+}
 </script>
 <script src="/static/js/nav-brand.js"></script>
 </body>

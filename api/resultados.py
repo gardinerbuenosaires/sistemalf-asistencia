@@ -74,6 +74,11 @@ def procesar(
         return evaluar_fecha(fecha, respetar_correcciones=respetar_correcciones,
                              solo_empleado_id=empleado_id)
     if fecha_desde and fecha_hasta:
+        from datetime import date
+        hoy_str = str(date.today())
+        fecha_hasta = min(fecha_hasta, hoy_str)
+        if fecha_desde > fecha_hasta:
+            return {"procesados": 0, "nota": "Rango completamente futuro — nada que evaluar"}
         with db_session() as conn:
             check_rango_abierto(conn, fecha_desde, fecha_hasta)
         return evaluar_rango(fecha_desde, fecha_hasta, respetar_correcciones=respetar_correcciones)

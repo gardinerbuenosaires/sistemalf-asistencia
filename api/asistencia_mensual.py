@@ -27,7 +27,7 @@ _EST_B2 = {
     "nf": "NF", "duda": "!",
 }
 
-CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "@", "NF"}
+CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "NF"}
 LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "F", "@", "NF", "A", "CP", "CO"}
 DIAS_SEMANA   = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]
 
@@ -481,7 +481,7 @@ def _asistencia_datos(mes: str) -> dict:
                 for b in (b1, b2):
                     l = b["letra"]
                     if l and b["tipo"] == "normal" and l != "A!!!":
-                        tots[l] += 0.5
+                        tots[l] += (1 if l == "@" else 0.5)
                         if l in CONTABLES:
                             tots["dias"] += 0.5
                     elif b["tipo"] in ("mt", "mt_trabajado"):
@@ -506,7 +506,7 @@ def _asistencia_datos(mes: str) -> dict:
                     for b in (b1, b2):
                         l = b["letra"]
                         if l and b["tipo"] == "normal" and l != "A!!!":
-                            tots[l] += 0.5
+                            tots[l] += (1 if l == "@" else 0.5)
                             if l in CONTABLES:
                                 tots["dias"] += 0.5
                         elif b["tipo"] in ("mt", "mt_trabajado"):

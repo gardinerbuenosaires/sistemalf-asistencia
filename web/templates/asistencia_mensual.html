@@ -650,9 +650,26 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
     <div id="mpanel-bloqueado-franco" style="display:none;margin-top:10px;font-size:.82rem;color:#555">
       Excepción: este bloque tiene fichaje pero corresponde asignarle franco.
     </div>
+    <div id="mpanel-bloqueado-aliviada" style="display:none;margin-top:10px;font-size:.82rem;color:#555">
+      Excepción: este bloque tiene fichaje pero el empleado fue aliviado.
+    </div>
     <div class="modal-actions">
-      <button id="btn-bloqueado-franco" style="display:none" class="btn-guardar" onclick="abrirPanelFranco()">Asignar franco al bloque</button>
+      <button id="btn-bloqueado-franco"   style="display:none" class="btn-guardar" onclick="abrirPanelFranco()">Asignar franco al bloque</button>
+      <button id="btn-bloqueado-aliviada" style="display:none;background:#e67e22" class="btn-guardar" onclick="abrirPanelAliviada()">Aplicar aliviada</button>
       <button class="btn-cancelar" onclick="cerrarModal()">Cerrar</button>
+    </div>
+  </div>
+
+  <!-- Panel confirmación aliviada con fichaje -->
+  <div id="mpanel-aliviada" style="display:none">
+    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:12px;font-size:.85rem;color:#7d5a00;margin-bottom:14px">
+      ⚠ Este bloque ya tiene fichaje registrado.<br>
+      Aplicar la aliviada va a sobreescribir la presencia.<br>
+      El fichaje no se elimina — quedará registrado pero no afectará el resultado.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-guardar" onclick="confirmarAliviada()">Confirmar aliviada</button>
+      <button class="btn-cancelar" onclick="modalTabPlani('bloqueado')">Cancelar</button>
     </div>
   </div>
 
@@ -1772,6 +1789,7 @@ function modalTabPlani(tab) {
   document.getElementById('mpanel-ft').style.display         = tab === 'ft'         ? 'block' : 'none';
   document.getElementById('mpanel-franco').style.display     = tab === 'franco'     ? 'block' : 'none';
   document.getElementById('mpanel-bloqueado').style.display  = tab === 'bloqueado'  ? 'block' : 'none';
+  document.getElementById('mpanel-aliviada').style.display   = tab === 'aliviada'   ? 'block' : 'none';
   document.getElementById('mpanel-ausente-sc').style.display = tab === 'ausente-sc' ? 'block' : 'none';
   document.getElementById('mtab-nov').className    = 'modal-tab-btn' + (tab === 'nov'    ? ' activo' : '');
   document.getElementById('mtab-fm').className     = 'modal-tab-btn' + (tab === 'fm'     ? ' activo' : '');
@@ -1831,6 +1849,11 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
       && canDo('planificacion','editar') && letraActual !== 'F';
     document.getElementById('mpanel-bloqueado-franco').style.display = puedeExcepcionFranco ? '' : 'none';
     document.getElementById('btn-bloqueado-franco').style.display    = puedeExcepcionFranco ? '' : 'none';
+    // Cortado + bloque específico: permitir aplicar aliviada como excepción
+    const puedeExcepcionAliviada = esCortado && bloqueInicial > 0 && !periodoCerrado
+      && canDo('asistencia','corregir') && letraActual === 'I';
+    document.getElementById('mpanel-bloqueado-aliviada').style.display = puedeExcepcionAliviada ? '' : 'none';
+    document.getElementById('btn-bloqueado-aliviada').style.display    = puedeExcepcionAliviada ? '' : 'none';
   } else if (letraActual === 'A!!!') {
     document.getElementById('asc-comentario').value = '';
     document.getElementById('asc-aviso-turno').style.display = fecha === _localDateStr() ? 'block' : 'none';
@@ -2279,6 +2302,29 @@ async function asignarFranco() {
   }
   await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, {method:'POST'}).catch(()=>{});
   toast('Franco asignado');
+  cerrarModal();
+  cargar();
+}
+
+// ── Aliviada sobre bloque con presencia ──────────────────────────────────────
+function abrirPanelAliviada() {
+  modalTabPlani('aliviada');
+}
+
+async function confirmarAliviada() {
+  const { eid, fecha, bloqueActivo } = modalCtx;
+  const res = await fetch('/api/asistencia/novedades', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({empleado_id: eid, fecha, bloque: bloqueActivo, tipo: '@'}),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(()=>({}));
+    toast('Error: ' + (e.detail || res.status));
+    return;
+  }
+  await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, {method:'POST'}).catch(()=>{});
+  toast('Aliviada aplicada');
   cerrarModal();
   cargar();
 }

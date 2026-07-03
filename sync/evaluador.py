@@ -375,7 +375,8 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                 if excluir_antes is None and len(fichajes_franco) == 1:
                     if datetime.fromisoformat(fichajes_franco[0]["timestamp"]).hour < 6:
                         fichajes_ayer = [f for f in fich_map.get(eid, []) if f["timestamp"][:10] == str(fecha - timedelta(days=1))]
-                        if any(f["timestamp"][11:16] >= "17:00" for f in fichajes_ayer):
+                        dia_ant_sin_salida = res_ant and res_ant["b1_salida"] is None and res_ant["b2_salida"] is None
+                        if any(f["timestamp"][11:16] >= "17:00" for f in fichajes_ayer) or dia_ant_sin_salida:
                             fichajes_franco = []
                 if fichajes_franco:
                     hid_ft = p.get("horario_id")  # NULL hasta que el encargado lo asigne

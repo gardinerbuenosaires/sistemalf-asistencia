@@ -562,7 +562,29 @@ async function guardarDeterminante(id, campo, valor) {
 
 function guardarDesempenioDebounce(id) {
   clearTimeout(_debounceTimers[id]);
-  _debounceTimers[id] = setTimeout(() => guardarFila(id), 600);
+  _debounceTimers[id] = setTimeout(() => guardarDesempenio(id), 600);
+}
+
+async function guardarDesempenio(id) {
+  if (_premiosCerrado) return;
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  const textarea = row?.querySelector(".field-desempenio textarea");
+  if (!textarea) return;
+  const valor = textarea.value;
+  const res = await fetch(`/api/premios/evaluacion/${id}`, {
+    method: "PUT", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ desempenio: valor })
+  });
+  if (res.ok) {
+    const ev = await res.json();
+    const idx = _evaluaciones.findIndex(e => e.id === id);
+    if (idx !== -1) _evaluaciones[idx] = {..._evaluaciones[idx], ...ev};
+    textarea.style.transition = "outline .15s";
+    textarea.style.outline = "2px solid #86efac";
+    setTimeout(() => { textarea.style.outline = ""; }, 700);
+  } else {
+    toast("Error al guardar desempeño");
+  }
 }
 
 async function guardarFila(id) {

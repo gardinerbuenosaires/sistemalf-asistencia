@@ -352,10 +352,11 @@ def _asistencia_datos(mes: str) -> dict:
             LEFT JOIN cargos c ON c.id = e.cargo_id
             LEFT JOIN freq u ON u.empleado_id = e.id AND u.rn = 1
             WHERE e.tipo NOT IN ('acceso', 'parking')
+              AND (e.fecha_ingreso IS NULL OR e.fecha_ingreso <= ?)
               AND (e.activo = 1
                OR (e.fecha_egreso > ? AND e.fecha_egreso <= ?))
             ORDER BY e.apellido, e.nombre
-        """, (f0, f1, f0, f1)).fetchall()
+        """, (f0, f1, f1, f0, f1)).fetchall()
 
         if not emp_rows:
             return {"mes": mes, "dias": _build_dias(fechas, feriados),

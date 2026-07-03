@@ -1804,7 +1804,9 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
 
   // Mostrar pestañas según permiso y estado de la celda
   const tabBar = document.getElementById('modal-tab-bar');
-  const bloqueado = _esBloqueado(celda, esCortado, bloqueInicial);
+  const esJerarquico = emp?.tipo === 'jerarquico';
+  const bloqueado = _esBloqueado(celda, esCortado, bloqueInicial)
+                    && !(esJerarquico && canDo('asistencia', 'corregir'));
   tabBar.style.display = (!bloqueado && canDo('asistencia','corregir')) ? 'flex' : 'none';
 
   const letraActual = esCortado

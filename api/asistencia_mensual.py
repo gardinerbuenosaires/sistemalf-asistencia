@@ -347,6 +347,7 @@ def _asistencia_datos(mes: str) -> dict:
             )
             SELECT e.id, e.user_id, e.nombre, e.apellido, c.nombre AS cargo,
                    e.fecha_ingreso, e.fecha_egreso, e.en_dispositivo, e.activo,
+                   e.tipo AS tipo_emp,
                    u.tipo AS hipo, u.turno_nombre
             FROM empleados e
             LEFT JOIN cargos c ON c.id = e.cargo_id
@@ -543,6 +544,7 @@ def _asistencia_datos(mes: str) -> dict:
             "nombre":     emp["nombre"],
             "apellido":   emp["apellido"],
             "cargo":      emp["cargo"] or "",
+            "tipo":       emp["tipo_emp"] or "normal",
             "fecha_ingreso": f_ing or None,
             "fecha_egreso": f_egr or None,
             "celdas":     celdas,

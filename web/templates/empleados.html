@@ -220,6 +220,7 @@
     </div>
     <div class="tabs">
       <button class="tab-btn activo" id="tab-personal" onclick="cambiarTab('personal')">Personal</button>
+      <button class="tab-btn" id="tab-parking" onclick="cambiarTab('parking')">Parking (<span id="cnt-parking">0</span>)</button>
       <button class="tab-btn" id="tab-accesos" onclick="cambiarTab('accesos')">Accesos (<span id="cnt-accesos">0</span>)</button>
     </div>
     <div class="buscar-zona">
@@ -244,7 +245,6 @@
             <option value="">Todos</option>
             <option value="normal">Normal</option>
             <option value="jerarquico">Jerárquico</option>
-            <option value="parking">Parking</option>
           </select>
         </div>
         <div class="fg">
@@ -464,6 +464,7 @@ async function eliminarFoto() {
 function cambiarTab(tab) {
   tabActiva = tab;
   document.getElementById("tab-personal").classList.toggle("activo", tab === "personal");
+  document.getElementById("tab-parking").classList.toggle("activo", tab === "parking");
   document.getElementById("tab-accesos").classList.toggle("activo", tab === "accesos");
   document.querySelectorAll(".solo-personal").forEach(el => el.style.display = tab === "personal" ? "" : "none");
   document.getElementById("buscar").value = "";
@@ -512,6 +513,13 @@ function filtrar() {
     return;
   }
 
+  if (tabActiva === "parking") {
+    let base = todos.filter(e => e.tipo === "parking");
+    if (q) base = base.filter(e => `${e.apellido} ${e.nombre} ${e.user_id||""}`.toLowerCase().includes(q));
+    renderListaParking(base);
+    return;
+  }
+
   const estado    = document.getElementById("f-estado").value;
   const tipo      = document.getElementById("f-tipo-filtro").value;
   const cargo     = document.getElementById("f-cargo-filtro").value;
@@ -520,7 +528,7 @@ function filtrar() {
   const turno     = document.getElementById("f-turno-filtro").value;
   const datos     = document.getElementById("f-datos-filtro").value;
 
-  let base = todos.filter(e => e.tipo !== "acceso");
+  let base = todos.filter(e => e.tipo !== "acceso" && e.tipo !== "parking");
   if (filtroImportadosIds) base = base.filter(e => filtroImportadosIds.has(e.id));
   if (estado === "activo")        base = base.filter(e => e.activo);
   if (estado === "inactivo")      base = base.filter(e => !e.activo);
@@ -572,6 +580,22 @@ function renderListaAccesos(lista) {
       <div class="emp-info">
         <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}</div>
         <div class="emp-sub">Código: ${e.user_id || "—"}</div>
+      </div>
+    </div>`).join("");
+}
+
+function renderListaParking(lista) {
+  const cont = document.getElementById("emp-list");
+  if (!lista.length) {
+    cont.innerHTML = '<div class="empty-state">Sin personal de parking.</div>';
+    return;
+  }
+  cont.innerHTML = lista.map(e => `
+    <div class="emp-item${e.id === editandoId ? " activo" : ""}" id="emp-item-${e.id}" onclick="editarEmpleado(${e.id})">
+      <div class="emp-avatar" style="background:#1a6b3c">${iniciales(e.apellido, e.nombre)}</div>
+      <div class="emp-info">
+        <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}</div>
+        <div class="emp-sub">${e.cargo || "Sin cargo asignado"}</div>
       </div>
     </div>`).join("");
 }
@@ -644,7 +668,8 @@ async function importarDesdeDispositivo() {
 async function cargar() {
   const res = await fetch("/api/empleados?todos=true");
   todos = await res.json();
-  document.getElementById("cnt").textContent = todos.filter(e => e.activo && e.tipo !== "acceso").length;
+  document.getElementById("cnt").textContent = todos.filter(e => e.activo && e.tipo !== "acceso" && e.tipo !== "parking").length;
+  document.getElementById("cnt-parking").textContent = todos.filter(e => e.tipo === "parking").length;
   document.getElementById("cnt-accesos").textContent = todos.filter(e => e.tipo === "acceso").length;
   filtrar();
 }

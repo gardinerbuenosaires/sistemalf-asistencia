@@ -859,10 +859,17 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
             saldos = {(r["empleado_id"], r["anio"]): dict(r)
                       for r in conn.execute("SELECT * FROM vacaciones_saldo_inicial").fetchall()}
             dias_v_ya = conn.execute("""
-                SELECT SUM(CASE WHEN bloque=0 THEN 1.0 ELSE 0.5 END)
-                FROM novedades
-                WHERE tipo='V' AND empleado_id=? AND strftime('%Y',fecha)=?
-                  AND NOT (fecha=? AND bloque=?)
+                SELECT COALESCE(SUM(dias_fecha), 0)
+                FROM (
+                    SELECT fecha,
+                           CASE WHEN SUM(bloque=0) > 0 THEN 1.0
+                                ELSE SUM(CASE WHEN bloque IN (1,2) THEN 0.5 ELSE 0 END)
+                           END AS dias_fecha
+                    FROM novedades
+                    WHERE tipo='V' AND empleado_id=? AND strftime('%Y',fecha)=?
+                      AND NOT (fecha=? AND bloque=?)
+                    GROUP BY fecha
+                )
             """, (data.empleado_id, str(int(data.fecha[:4])),
                   data.fecha, data.bloque)).fetchone()[0] or 0.0
             vp_row = conn.execute("""

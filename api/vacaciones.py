@@ -136,13 +136,23 @@ def get_vacaciones(anio: int = 0, _user=Depends(require_permiso("vacaciones", "v
             saldos[(r["empleado_id"], r["anio"])] = dict(r)
 
         # Novedades V agrupadas por empleado, año y mes (todos los años)
+        # Primero agrupa por fecha para replicar la lógica de _resolver:
+        # bloque=0 cubre el día completo (1.0); si no hay bloque=0, suma 0.5 por bloque específico.
+        # Así, bloque=0 + bloque=1 coexistentes cuentan como 1.0 (no 1.5).
         nov_rows = conn.execute("""
             SELECT empleado_id,
                    CAST(strftime('%Y', fecha) AS INTEGER) AS anio,
                    strftime('%m', fecha)                  AS mes,
-                   SUM(CASE WHEN bloque = 0 THEN 1.0 ELSE 0.5 END) AS dias
-            FROM novedades
-            WHERE tipo = 'V'
+                   SUM(dias_fecha)                        AS dias
+            FROM (
+                SELECT empleado_id, fecha,
+                       CASE WHEN SUM(bloque = 0) > 0 THEN 1.0
+                            ELSE SUM(CASE WHEN bloque IN (1,2) THEN 0.5 ELSE 0 END)
+                       END AS dias_fecha
+                FROM novedades
+                WHERE tipo = 'V'
+                GROUP BY empleado_id, fecha
+            )
             GROUP BY empleado_id, anio, mes
         """).fetchall()
 
@@ -268,9 +278,16 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
         nov_rows = conn.execute("""
             SELECT CAST(strftime('%Y', fecha) AS INTEGER) AS anio,
                    strftime('%m', fecha) AS mes,
-                   SUM(CASE WHEN bloque = 0 THEN 1.0 ELSE 0.5 END) AS dias
-            FROM novedades
-            WHERE tipo = 'V' AND empleado_id = ?
+                   SUM(dias_fecha)       AS dias
+            FROM (
+                SELECT fecha,
+                       CASE WHEN SUM(bloque = 0) > 0 THEN 1.0
+                            ELSE SUM(CASE WHEN bloque IN (1,2) THEN 0.5 ELSE 0 END)
+                       END AS dias_fecha
+                FROM novedades
+                WHERE tipo = 'V' AND empleado_id = ?
+                GROUP BY fecha
+            )
             GROUP BY anio, mes
         """, (empleado_id,)).fetchall()
 

@@ -224,7 +224,8 @@ def get_saldo_inicial(anio: int, _user=Depends(require_permiso("vacaciones", "ca
     """Devuelve todos los empleados activos con sus datos de saldo inicial (para edición)."""
     with db_session() as conn:
         empleados = conn.execute(
-            """SELECT e.id, e.nombre, e.apellido, e.fecha_ingreso, c.nombre AS cargo
+            """SELECT e.id, e.nombre, e.apellido, e.fecha_ingreso,
+                      e.fecha_recontratacion, e.vac_dias_jubilacion, c.nombre AS cargo
                FROM empleados e
                LEFT JOIN cargos c ON c.id = e.cargo_id
                WHERE e.activo = 1 AND e.tipo NOT IN ('acceso','parking') ORDER BY e.apellido COLLATE NOCASE, e.nombre COLLATE NOCASE"""
@@ -239,7 +240,16 @@ def get_saldo_inicial(anio: int, _user=Depends(require_permiso("vacaciones", "ca
 
     result = []
     for e in empleados:
-        _, dias_formula = _calcular_dias_formula(e["fecha_ingreso"], anio)
+        vac_jub    = e["vac_dias_jubilacion"]
+        recont_str = e["fecha_recontratacion"]
+        anio_recont = date.fromisoformat(recont_str).year if recont_str else None
+        es_jubilacion = bool(vac_jub and anio_recont and anio >= anio_recont)
+
+        if es_jubilacion:
+            dias_formula = float(vac_jub)
+        else:
+            _, dias_formula = _calcular_dias_formula(e["fecha_ingreso"], anio)
+
         saldo = saldos.get(e["id"])
         result.append({
             "empleado_id":      e["id"],
@@ -247,6 +257,7 @@ def get_saldo_inicial(anio: int, _user=Depends(require_permiso("vacaciones", "ca
             "nombre":           e["nombre"],
             "cargo":            e["cargo"],
             "fecha_ingreso":    e["fecha_ingreso"],
+            "es_jubilacion":    es_jubilacion,
             "dias_formula":     dias_formula,
             "dias_correspondian": saldo["dias_correspondian"] if saldo else dias_formula,
             "dias_tomados":     saldo["dias_tomados"] if saldo else 0.0,

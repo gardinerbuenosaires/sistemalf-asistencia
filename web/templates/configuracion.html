@@ -161,6 +161,7 @@
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
         <a href="/distribucion" data-perm="distribucion:ver">Horarios Cocina</a>
+        <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -341,8 +342,8 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarDepto()">+ Nuevo departamento</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:130px;text-align:center">Módulo activo</th><th style="width:160px;text-align:center">Escribe planif.</th><th style="width:160px">Acciones</th></tr></thead>
-        <tbody id="tabla-deptos"><tr><td colspan="4" style="color:#aaa">Cargando...</td></tr></tbody>
+        <thead><tr><th>Nombre</th><th style="width:200px;text-align:center">Módulo activo</th><th style="width:160px">Acciones</th></tr></thead>
+        <tbody id="tabla-deptos"><tr><td colspan="3" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
 
@@ -462,7 +463,7 @@
     <div class="section wide" data-perm="distribucion:editar">
       <div class="section-header">
         <div>
-          <div class="section-title">Accesos a Distribución</div>
+          <div class="section-title">Accesos a Cocineros</div>
           <div class="section-desc" style="margin-bottom:0">
             Define qué departamento y turno planifica cada usuario. Con un solo acceso asignado,
             la grilla abre automáticamente sin que el responsable tenga que elegir.
@@ -1556,88 +1557,75 @@ function _renderDeptos(lista) {
   _catStore["tabla-deptos"] = { lista, eliminarFn: "eliminarDepto" };
   const tbody = document.getElementById("tabla-deptos");
   if (!lista.length) {
-    tbody.innerHTML = `<tr><td colspan="4" style="color:#aaa">Sin registros</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" style="color:#aaa">Sin registros</td></tr>`;
     return;
   }
-  const puedeDistrib = canDo('distribucion','editar');
-  const puedeEmp     = canDo('empleados','editar');
+  const puedeEmp = canDo('empleados','editar');
   tbody.innerHTML = lista.map(item => {
-    const usaDist  = item.usa_distribucion;
-    const escribe  = item.escribe_planificacion;
-    const btnDist = puedeDistrib
-      ? `<br><button class="btn btn-sm ${usaDist ? 'btn-secondary' : 'btn-primary'}" style="margin-top:4px"
-           onclick="toggleUsaDistribucion(${item.id})">${usaDist ? 'Desactivar' : 'Activar'}</button>`
-      : '';
-    const btnEscribe = puedeDistrib && usaDist
-      ? `<br><button class="btn btn-sm ${escribe ? 'btn-secondary' : 'btn-primary'}" style="margin-top:4px"
-           onclick="toggleEscribePlanificacion(${item.id})">${escribe ? 'Desactivar' : 'Activar'}</button>`
-      : (escribe ? _deptBadge(true) : `<span style="font-size:.78rem;color:#aaa">—</span>`);
+    const moduloText = item.usa_distribucion ? 'Cocineros' : item.usa_mozos ? 'Mozos' : '<span style="color:#aaa">—</span>';
     return `<tr id="tabla-deptos-${item.id}">
       <td><strong>${item.nombre}</strong></td>
-      <td style="text-align:center">${_deptBadge(usaDist)}${btnDist}</td>
-      <td style="text-align:center">${_deptBadge(escribe)}${btnEscribe}</td>
+      <td style="text-align:center;padding:6px 4px">${moduloText}</td>
       <td>
         ${puedeEmp ? `
-          <button class="btn btn-sm btn-secondary" onclick="_editarItemCatalogo('tabla-deptos',${item.id})">Editar</button>
+          <button class="btn btn-sm btn-secondary" onclick="editarDepto(${item.id})">Editar</button>
           <button class="btn btn-sm btn-danger" style="margin-left:4px" onclick="eliminarDepto(${item.id},'${item.nombre.replace(/'/g,"\\'")}')">Eliminar</button>` : ''}
       </td>
     </tr>`;
   }).join("");
 }
 
-async function toggleUsaDistribucion(deptId) {
-  const dept = deptos.find(d => d.id === deptId);
-  if (!dept) return;
-  const activando = !dept.usa_distribucion;
-  if (activando) {
-    const prev = await fetch(`/api/distribucion/departamentos/${deptId}/usa-distribucion-preview`).then(r => r.json());
-    const empMsg = `${prev.empleados_en_dept} empleado${prev.empleados_en_dept !== 1 ? 's' : ''} en el departamento.`;
-    if (!confirm(`¿Activar el módulo de distribución para "${prev.nombre}"?\n\n${empMsg}\n\nPodrás crear grillas de horarios sin que afecten la planificación hasta que actives "Escribe planif."`)) return;
-  } else {
-    if (!confirm(`¿Desactivar el módulo de distribución para "${dept.nombre}"?\n\nTambién se desactivará "Escribe planif." si estaba activo.`)) return;
-  }
-  const res = await fetch(`/api/distribucion/departamentos/${deptId}/usa-distribucion`, {
-    method: "PUT", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ value: activando })
+function editarDepto(id) {
+  const lista = (_catStore["tabla-deptos"] || {}).lista || [];
+  const item = lista.find(i => i.id === id);
+  if (!item) return;
+  const modulo = item.usa_distribucion ? 'cocineros' : item.usa_mozos ? 'mozos' : 'ninguno';
+  const tr = document.getElementById(`tabla-deptos-${id}`);
+  tr.className = "fila-edit";
+  tr.innerHTML = `
+    <td><input type="text" id="tabla-deptos-edit-nombre-${id}" value="${item.nombre.replace(/"/g,'&quot;')}" style="width:100%"></td>
+    <td>
+      <select id="tabla-deptos-edit-modulo-${id}" style="width:100%;padding:4px 6px;border:1px solid #ced4da;border-radius:4px">
+        <option value="ninguno" ${modulo==='ninguno'?'selected':''}>Ninguno</option>
+        <option value="cocineros" ${modulo==='cocineros'?'selected':''}>Cocineros</option>
+        <option value="mozos" ${modulo==='mozos'?'selected':''}>Mozos</option>
+      </select>
+    </td>
+    <td>
+      <button class="btn btn-sm btn-primary" onclick="guardarDepto(${id})">Guardar</button>
+      <button class="btn btn-sm btn-secondary" style="margin-left:4px" onclick="_renderDeptos(deptos)">Cancelar</button>
+    </td>`;
+  document.getElementById(`tabla-deptos-edit-nombre-${id}`).focus();
+}
+
+async function guardarDepto(id) {
+  const nombre = document.getElementById(`tabla-deptos-edit-nombre-${id}`)?.value.trim();
+  if (!nombre) { toast("Ingresá el nombre"); return; }
+  const modulo = document.getElementById(`tabla-deptos-edit-modulo-${id}`)?.value || 'ninguno';
+  const res = await fetch(`/api/departamentos/${id}`, {
+    method: "PATCH", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      nombre,
+      usa_distribucion: modulo === 'cocineros' ? 1 : 0,
+      usa_mozos: modulo === 'mozos' ? 1 : 0
+    })
   });
   if (res.ok) {
-    dept.usa_distribucion = activando ? 1 : 0;
-    if (!activando) dept.escribe_planificacion = 0;
+    const updated = await res.json();
+    const item = deptos.find(d => d.id === id);
+    if (item) {
+      item.nombre = updated.nombre;
+      item.usa_distribucion = updated.usa_distribucion;
+      item.usa_mozos = updated.usa_mozos;
+    }
     _renderDeptos(deptos);
-    toast(activando ? "Módulo de distribución activado" : "Módulo de distribución desactivado");
+    toast("Departamento actualizado");
   } else {
     const e = await res.json().catch(()=>({}));
     toast("Error: " + (e.detail || "desconocido"));
   }
 }
 
-async function toggleEscribePlanificacion(deptId) {
-  const dept = deptos.find(d => d.id === deptId);
-  if (!dept) return;
-  const activando = !dept.escribe_planificacion;
-  if (activando) {
-    const prev = await fetch(`/api/distribucion/departamentos/${deptId}/escribe-planificacion-preview`).then(r => r.json());
-    let msg = `¿Activar "Escribe planificación" para "${prev.nombre}"?\n\n` +
-      `• A partir de ahora el calendario automático deja de generar planificación para estos empleados.\n` +
-      `• Confirmar una semana en distribución sobreescribirá la planificación de esa semana.\n` +
-      `• Se cargará el horario habitual de cada empleado desde su calendario vigente.`;
-    if (!confirm(msg)) return;
-  } else {
-    if (!confirm(`¿Desactivar "Escribe planificación" para "${dept.nombre}"?\n\nEl calendario automático volverá a gestionar la planificación.`)) return;
-  }
-  const res = await fetch(`/api/distribucion/departamentos/${deptId}/escribe-planificacion`, {
-    method: "PUT", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ value: activando })
-  });
-  if (res.ok) {
-    dept.escribe_planificacion = activando ? 1 : 0;
-    _renderDeptos(deptos);
-    toast(activando ? "Escribe planificación activado" : "Escribe planificación desactivado");
-  } else {
-    const e = await res.json().catch(()=>({}));
-    toast("Error: " + (e.detail || "desconocido"));
-  }
-}
 
 async function cargarCatalogos() {
   const [cRes, dRes, catRes, tlRes, slRes, nlRes, cfgRes] = await Promise.all([
@@ -1702,7 +1690,13 @@ function agregarDepto() {
   tr.className = "fila-edit";
   tr.innerHTML = `
     <td><input type="text" id="tabla-deptos-nuevo-nombre" placeholder="Ej: Cocina"></td>
-    <td></td><td></td>
+    <td>
+      <select id="tabla-deptos-nuevo-modulo" style="width:100%;padding:4px 6px;border:1px solid #ced4da;border-radius:4px">
+        <option value="ninguno">Ninguno</option>
+        <option value="cocineros">Cocineros</option>
+        <option value="mozos">Mozos</option>
+      </select>
+    </td>
     <td>
       <button class="btn btn-sm btn-primary" onclick="crearDepto()">Guardar</button>
       <button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="document.getElementById('tabla-deptos-nueva').remove()">Cancelar</button>
@@ -1722,7 +1716,15 @@ async function crearCargo() {
 async function crearDepto() {
   const nombre = document.getElementById("tabla-deptos-nuevo-nombre").value.trim();
   if (!nombre) { toast("Ingresá el nombre"); return; }
-  const res = await fetch("/api/departamentos", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({nombre}) });
+  const modulo = document.getElementById("tabla-deptos-nuevo-modulo")?.value || 'ninguno';
+  const res = await fetch("/api/departamentos", {
+    method: "POST", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      nombre,
+      usa_distribucion: modulo === 'cocineros' ? 1 : 0,
+      usa_mozos: modulo === 'mozos' ? 1 : 0
+    })
+  });
   if (res.ok) { toast("Departamento creado"); await cargarCatalogos(); }
   else { const e = await res.json().catch(()=>({})); toast("Error: " + (e.detail || "desconocido")); }
 }
@@ -2074,7 +2076,7 @@ async function subirLogo() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-// ── Accesos a Distribución ─────────────────────────────────────────────────────
+// ── Accesos a Cocineros ─────────────────────────────────────────────────────────
 let _distAccesos = [], _distDepts = [], _distUsuarios = [];
 
 async function cargarAccesosDist() {

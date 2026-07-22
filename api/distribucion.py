@@ -4,8 +4,11 @@ from typing import Optional
 from datetime import date, timedelta, datetime
 from db.database import db_session
 from auth.core import require_permiso, get_current_user
+from api.vacaciones import _calcular_dias_formula, _get_arrastre
 
 router = APIRouter(prefix="/api/distribucion", tags=["distribucion"])
+
+NOVEDADES_BLOQUEANTES = frozenset({'ILT', 'LSG', 'L', 'E', 'V', 'S'})
 
 
 # ── Modelos ────────────────────────────────────────────────────────────────────
@@ -23,6 +26,12 @@ class DistribucionIn(BaseModel):
     departamento_id: int
     turno: str  # "TM" | "TN" | "CO"
     semana_inicio: str  # ISO date — lunes de la semana
+
+
+class CopiarSemanaIn(BaseModel):
+    departamento_id: int
+    turno: str
+    semana_inicio: str  # lunes de la semana NUEVA a poblar
 
 
 class DetalleIn(BaseModel):
@@ -77,6 +86,67 @@ def _scope_turnos(conn, user: dict, departamento_id: int) -> list[str]:
         (uid, departamento_id)
     ).fetchall()
     return [r["turno"] for r in rows]
+
+
+def _vac_balance_bulk(conn, emp_ids: list[int]) -> dict[int, float]:
+    """Remaining vacation days (current period) for a list of employee IDs."""
+    if not emp_ids:
+        return {}
+    anio = date.today().year - 1
+    ph = ",".join("?" * len(emp_ids))
+    emps = conn.execute(
+        f"SELECT id, fecha_ingreso, fecha_recontratacion, vac_dias_jubilacion FROM empleados WHERE id IN ({ph})",
+        emp_ids
+    ).fetchall()
+    saldos = {
+        (r["empleado_id"], r["anio"]): dict(r)
+        for r in conn.execute("SELECT * FROM vacaciones_saldo_inicial").fetchall()
+    }
+    nov_rows = conn.execute(f"""
+        SELECT empleado_id,
+               CAST(strftime('%Y', fecha) AS INTEGER) AS anio,
+               strftime('%m', fecha) AS mes,
+               SUM(dias_fecha) AS dias
+        FROM (
+            SELECT empleado_id, fecha,
+                   CASE WHEN SUM(bloque = 0) > 0 THEN 1.0
+                        ELSE SUM(CASE WHEN bloque IN (1,2) THEN 0.5 ELSE 0 END)
+                   END AS dias_fecha
+            FROM novedades
+            WHERE tipo = 'V' AND empleado_id IN ({ph})
+            GROUP BY empleado_id, fecha
+        )
+        GROUP BY empleado_id, anio, mes
+    """, emp_ids).fetchall()
+    nov_map: dict = {}
+    for r in nov_rows:
+        key = (r["empleado_id"], r["anio"])
+        if key not in nov_map:
+            nov_map[key] = {}
+        nov_map[key][r["mes"]] = r["dias"]
+    result = {}
+    for emp in emps:
+        eid = emp["id"]
+        vac_jub = emp["vac_dias_jubilacion"]
+        recont_str = emp["fecha_recontratacion"]
+        anio_recont = date.fromisoformat(recont_str).year if recont_str else None
+        es_jubilacion = bool(vac_jub and anio_recont and anio >= anio_recont)
+        if es_jubilacion:
+            dias_formula = float(vac_jub)
+        else:
+            _, dias_formula = _calcular_dias_formula(emp["fecha_ingreso"], anio)
+        saldo = saldos.get((eid, anio))
+        dic_anio = {k: v for k, v in nov_map.get((eid, anio), {}).items() if k == "12"}
+        resto_sig = {k: v for k, v in nov_map.get((eid, anio + 1), {}).items() if k < "12"}
+        dias_v = sum(dic_anio.values()) + sum(resto_sig.values())
+        if saldo:
+            dias_disp = saldo["dias_correspondian"] - saldo["dias_tomados"] - dias_v
+        else:
+            arrastre = _get_arrastre(eid, anio, emp["fecha_ingreso"], saldos, nov_map,
+                                     vac_dias_jubilacion=vac_jub, fecha_recontratacion_anio=anio_recont)
+            dias_disp = dias_formula + arrastre - dias_v
+        result[eid] = round(max(0.0, dias_disp), 1)
+    return result
 
 
 # ── Departamentos ──────────────────────────────────────────────────────────────
@@ -201,6 +271,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         detalles = []
         francos = []
         comida_personal = []
+        vac_dist = []
         if dist:
             detalles = conn.execute(
                 """SELECT dd.*, e.nombre AS emp_nombre, e.apellido AS emp_apellido,
@@ -231,6 +302,10 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    ORDER BY df.fecha, e.apellido, e.nombre""",
                 (dist["id"],)
             ).fetchall()
+            vac_dist = conn.execute(
+                "SELECT id, empleado_id, fecha FROM distribucion_vacacion WHERE distribucion_id=?",
+                (dist["id"],)
+            ).fetchall()
 
         dept_info = conn.execute(
             "SELECT usa_distribucion FROM departamentos WHERE id=?", (departamento_id,)
@@ -259,17 +334,15 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                 params: list = [lunes_str, lunes_str] + cargo_ids
                 empleados = conn.execute(
                     f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
-                           COALESCE(
-                             e.horario_habitual_id,
-                             (SELECT COALESCE(a.horario_id,
-                                  (SELECT cd.horario_id FROM calendarios_dias cd
-                                   WHERE cd.calendario_id = a.calendario_id
-                                     AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
-                                   LIMIT 1))
-                              FROM asignaciones a
-                              WHERE a.empleado_id = e.id
-                                AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
-                              ORDER BY a.fecha_desde DESC LIMIT 1)
+                           (SELECT COALESCE(a.horario_id,
+                                (SELECT cd.horario_id FROM calendarios_dias cd
+                                 WHERE cd.calendario_id = a.calendario_id
+                                   AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
+                                 LIMIT 1))
+                            FROM asignaciones a
+                            WHERE a.empleado_id = e.id
+                              AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
+                            ORDER BY a.fecha_desde DESC LIMIT 1
                            ) AS horario_actual_id
                        FROM empleados e
                        LEFT JOIN turnos t ON t.id = e.turno_id
@@ -332,27 +405,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                ORDER BY COALESCE(t.hora_desde,'00:00'), h.nombre"""
         ).fetchall()
 
-        # Francos de planificacion regular para empleados del dept (visible pero no quitables)
         emp_ids_list = [e["id"] for e in empleados]
-        if emp_ids_list:
-            ph_e = ",".join("?" * len(emp_ids_list))
-            plan_francos = conn.execute(
-                f"""SELECT p.empleado_id, p.fecha,
-                           e.nombre AS emp_nombre, e.apellido AS emp_apellido
-                    FROM planificacion p
-                    JOIN empleados e ON e.id = p.empleado_id
-                    WHERE p.es_franco=1 AND p.fecha>=? AND p.fecha<=?
-                    AND p.empleado_id IN ({ph_e})""",
-                [dias[0], dias[6]] + emp_ids_list
-            ).fetchall()
-            dist_franco_keys = {(f["empleado_id"], f["fecha"]) for f in francos}
-            francos = list(francos) + [
-                {"id": None, "empleado_id": r["empleado_id"], "fecha": r["fecha"],
-                 "emp_nombre": r["emp_nombre"], "emp_apellido": r["emp_apellido"],
-                 "from_planificacion": True}
-                for r in plan_francos
-                if (r["empleado_id"], r["fecha"]) not in dist_franco_keys
-            ]
 
         # Novedades de la semana — excluye CO (observaciones, no bloquean asignación)
         novedades_rows = conn.execute(
@@ -364,6 +417,19 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         ).fetchall()
         novedades = [dict(r) for r in novedades_rows]
 
+        # Plan base desde planificacion — para pre-poblar cuando no hay borrador
+        plan_base = []
+        if emp_ids_list:
+            ph = ",".join("?" * len(emp_ids_list))
+            plan_rows = conn.execute(
+                f"""SELECT empleado_id, fecha, es_franco, horario_id
+                    FROM planificacion
+                    WHERE fecha >= ? AND fecha <= ? AND empleado_id IN ({ph})""",
+                [dias[0], dias[6]] + emp_ids_list
+            ).fetchall()
+            plan_base = [dict(r) for r in plan_rows]
+
+        vac_balance = _vac_balance_bulk(conn, emp_ids_list)
 
     return {
         "distribucion": dict(dist) if dist else None,
@@ -371,10 +437,13 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         "empleados": [dict(r) for r in empleados],
         "detalles": [dict(r) for r in detalles],
         "francos": [dict(r) for r in francos],
+        "vac_dist": [dict(r) for r in vac_dist],
         "comida_personal": [dict(r) for r in comida_personal],
         "horarios": [dict(r) for r in horarios],
         "novedades": novedades,
+        "plan_base": plan_base,
         "dias": dias,
+        "vacaciones_balance": vac_balance,
     }
 
 
@@ -402,6 +471,128 @@ def create_semana(body: DistribucionIn, user=Depends(require_permiso("distribuci
             if existing:
                 return {"id": existing["id"]}
             raise
+
+
+@router.post("/semana/copiar-anterior", status_code=200)
+def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("distribucion", "editar"))):
+    """Copia las asignaciones de la semana anterior a la semana indicada."""
+    lunes_nuevo = _lunes(body.semana_inicio)
+    lunes_ant   = lunes_nuevo - timedelta(days=7)
+    uid = int(user["sub"])
+
+    with db_session() as conn:
+        turnos_ok = _scope_turnos(conn, user, body.departamento_id)
+        if body.turno not in turnos_ok:
+            raise HTTPException(403, "Sin acceso a este turno/departamento")
+
+        # Semana anterior
+        dist_ant = conn.execute(
+            "SELECT id FROM distribucion_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
+            (body.departamento_id, body.turno, str(lunes_ant))
+        ).fetchone()
+        if not dist_ant:
+            raise HTTPException(404, "No hay semana anterior para copiar")
+
+        # Verificar que la nueva semana no esté confirmada
+        dist_nueva = conn.execute(
+            "SELECT id, estado FROM distribucion_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
+            (body.departamento_id, body.turno, str(lunes_nuevo))
+        ).fetchone()
+        if dist_nueva and dist_nueva["estado"] == "confirmado":
+            raise HTTPException(409, "La semana de destino ya está confirmada")
+
+        # Crear borrador si no existe
+        if not dist_nueva:
+            cur = conn.execute(
+                """INSERT INTO distribucion_semana
+                   (departamento_id, turno, semana_inicio, estado, creado_por, creado_en)
+                   VALUES (?,?,?,'borrador',?,datetime('now'))""",
+                (body.departamento_id, body.turno, str(lunes_nuevo), uid)
+            )
+            nueva_id = cur.lastrowid
+        else:
+            nueva_id = dist_nueva["id"]
+
+        # Empleados activos del dept/turno
+        dias_nuevos = [str(lunes_nuevo + timedelta(days=i)) for i in range(7)]
+        emp_activos = {r["id"] for r in conn.execute(
+            "SELECT e.id FROM empleados e WHERE e.activo=1 AND e.tipo != 'acceso'"
+        ).fetchall()}
+
+        # Novedades de la semana nueva (bloquean copia)
+        nov_bloq = {(r["empleado_id"], r["fecha"]) for r in conn.execute(
+            """SELECT empleado_id, fecha FROM novedades
+               WHERE fecha >= ? AND fecha <= ? AND bloque = 0 AND tipo != 'CO'""",
+            (dias_nuevos[0], dias_nuevos[6])
+        ).fetchall()}
+
+        # Detalles de la semana anterior (solo asignaciones a puesto, sin is_comida_personal)
+        detalles_ant = conn.execute(
+            """SELECT empleado_id, puesto_id, fecha, horario_id
+               FROM distribucion_detalle
+               WHERE distribucion_id=? AND puesto_id IS NOT NULL AND es_comida_personal=0""",
+            (dist_ant["id"],)
+        ).fetchall()
+
+        # Francos de la semana anterior
+        francos_ant = conn.execute(
+            "SELECT empleado_id, fecha FROM distribucion_franco WHERE distribucion_id=?",
+            (dist_ant["id"],)
+        ).fetchall()
+
+        copiados_det = 0
+        omitidos_det = 0
+        copiados_fr  = 0
+        omitidos_fr  = 0
+
+        for det in detalles_ant:
+            fecha_nueva = str(date.fromisoformat(det["fecha"]) + timedelta(days=7))
+            if fecha_nueva not in dias_nuevos:
+                continue
+            emp_id = det["empleado_id"]
+            if emp_id not in emp_activos or (emp_id, fecha_nueva) in nov_bloq:
+                omitidos_det += 1
+                continue
+            # Evitar duplicado
+            dup = conn.execute(
+                """SELECT id FROM distribucion_detalle
+                   WHERE distribucion_id=? AND empleado_id=? AND puesto_id=? AND fecha=? AND es_comida_personal=0""",
+                (nueva_id, emp_id, det["puesto_id"], fecha_nueva)
+            ).fetchone()
+            if not dup:
+                conn.execute(
+                    """INSERT INTO distribucion_detalle
+                       (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
+                       VALUES (?,?,?,?,0,?,?,datetime('now'))""",
+                    (nueva_id, emp_id, det["puesto_id"], fecha_nueva, det["horario_id"], uid)
+                )
+                copiados_det += 1
+
+        for fr in francos_ant:
+            fecha_nueva = str(date.fromisoformat(fr["fecha"]) + timedelta(days=7))
+            if fecha_nueva not in dias_nuevos:
+                continue
+            emp_id = fr["empleado_id"]
+            if emp_id not in emp_activos or (emp_id, fecha_nueva) in nov_bloq:
+                omitidos_fr += 1
+                continue
+            dup = conn.execute(
+                "SELECT id FROM distribucion_franco WHERE distribucion_id=? AND empleado_id=? AND fecha=?",
+                (nueva_id, emp_id, fecha_nueva)
+            ).fetchone()
+            if not dup:
+                conn.execute(
+                    "INSERT INTO distribucion_franco (distribucion_id, empleado_id, fecha) VALUES (?,?,?)",
+                    (nueva_id, emp_id, fecha_nueva)
+                )
+                copiados_fr += 1
+
+    return {
+        "semana_id": nueva_id,
+        "copiados_asignaciones": copiados_det,
+        "copiados_francos": copiados_fr,
+        "omitidos": omitidos_det + omitidos_fr,
+    }
 
 
 # ── Detalles de distribución ───────────────────────────────────────────────────
@@ -517,6 +708,70 @@ def delete_franco(dist_id: int, fid: int, user=Depends(require_permiso("distribu
     return {"ok": True}
 
 
+# ── Vacaciones desde distribución ─────────────────────────────────────────────
+
+class VacDistIn(BaseModel):
+    empleado_id: int
+    fecha: str
+
+
+@router.post("/semana/{dist_id}/vacaciones")
+def add_vac_dist(dist_id: int, body: VacDistIn,
+                 user=Depends(require_permiso("distribucion", "editar"))):
+    uid = int(user["sub"])
+    with db_session() as conn:
+        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        if not dist:
+            raise HTTPException(404, "Distribución no encontrada")
+        if dist["estado"] == "confirmado":
+            raise HTTPException(409, "Los horarios ya están confirmados")
+        turnos_ok = _scope_turnos(conn, user, dist["departamento_id"])
+        if dist["turno"] not in turnos_ok:
+            raise HTTPException(403, "Sin acceso")
+        # Bloquear si ya existe una novedad real (no-V bloquea, V real ya cubre)
+        existing_nov = conn.execute(
+            "SELECT tipo FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=0",
+            (body.empleado_id, body.fecha)
+        ).fetchone()
+        if existing_nov:
+            raise HTTPException(409, f"Ya existe novedad {existing_nov['tipo']} para ese día")
+        conn.execute(
+            """INSERT OR IGNORE INTO distribucion_vacacion
+               (distribucion_id, empleado_id, fecha, creado_por, creado_en)
+               VALUES (?,?,?,?,datetime('now'))""",
+            (dist_id, body.empleado_id, body.fecha, uid)
+        )
+        conn.execute(
+            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            (uid, dist_id)
+        )
+    return {"ok": True}
+
+
+@router.delete("/semana/{dist_id}/vacaciones/{fecha}/{emp_id}")
+def del_vac_dist(dist_id: int, fecha: str, emp_id: int,
+                 user=Depends(require_permiso("distribucion", "editar"))):
+    with db_session() as conn:
+        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        if not dist:
+            raise HTTPException(404, "Distribución no encontrada")
+        if dist["estado"] == "confirmado":
+            raise HTTPException(409, "Los horarios ya están confirmados")
+        turnos_ok = _scope_turnos(conn, user, dist["departamento_id"])
+        if dist["turno"] not in turnos_ok:
+            raise HTTPException(403, "Sin acceso")
+        conn.execute(
+            "DELETE FROM distribucion_vacacion WHERE distribucion_id=? AND empleado_id=? AND fecha=?",
+            (dist_id, emp_id, fecha)
+        )
+        # Fallback: borrar V novedades escritas por el código anterior directamente en novedades
+        conn.execute(
+            "DELETE FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=0 AND tipo='V' AND descripcion='Desde distribución'",
+            (emp_id, fecha)
+        )
+    return {"ok": True}
+
+
 # ── Confirmar distribución → escribe en planificacion ─────────────────────────
 
 @router.post("/semana/{dist_id}/confirmar")
@@ -540,99 +795,99 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
         francos = conn.execute(
             "SELECT * FROM distribucion_franco WHERE distribucion_id=?", (dist_id,)
         ).fetchall()
+        vac_staged = conn.execute(
+            "SELECT * FROM distribucion_vacacion WHERE distribucion_id=?", (dist_id,)
+        ).fetchall()
 
-        dept_row = conn.execute(
-            "SELECT usa_distribucion, escribe_planificacion FROM departamentos WHERE id=?",
-            (dist["departamento_id"],)
-        ).fetchone()
-        escribe_planificacion = bool(dept_row and dept_row["escribe_planificacion"])
+        lunes_str = dist["semana_inicio"]
+        domingo_str = str(date.fromisoformat(lunes_str) + timedelta(days=6))
 
-        if escribe_planificacion:
-            # Limpiar planificacion auto-generada de la semana para los empleados afectados
-            emp_ids = list({det["empleado_id"] for det in detalles} | {fr["empleado_id"] for fr in francos})
-            if emp_ids:
-                lunes_str = dist["semana_inicio"]
-                domingo_str = str(date.fromisoformat(lunes_str) + timedelta(days=6))
-                ph = ",".join("?" * len(emp_ids))
+        emp_ids = list(
+            {det["empleado_id"] for det in detalles}
+            | {fr["empleado_id"] for fr in francos}
+            | {v["empleado_id"] for v in vac_staged}
+        )
+
+        # Novedades bloqueantes reales de la semana (no tocamos planificacion de esos días)
+        bloqueantes: set[tuple] = set()
+        if emp_ids:
+            ph = ",".join("?" * len(emp_ids))
+            nov_bloq = conn.execute(
+                f"""SELECT empleado_id, fecha FROM novedades
+                    WHERE fecha >= ? AND fecha <= ? AND bloque = 0
+                    AND tipo IN ('ILT','LSG','L','E','V','S')
+                    AND empleado_id IN ({ph})""",
+                [lunes_str, domingo_str] + emp_ids
+            ).fetchall()
+            bloqueantes = {(r["empleado_id"], r["fecha"]) for r in nov_bloq}
+
+            # Borrar TODA la planificacion del turno en la semana, excepto días bloqueantes
+            all_plan = conn.execute(
+                f"""SELECT id, empleado_id, fecha FROM planificacion
+                    WHERE fecha >= ? AND fecha <= ? AND empleado_id IN ({ph})""",
+                [lunes_str, domingo_str] + emp_ids
+            ).fetchall()
+            ids_borrar = [r["id"] for r in all_plan
+                          if (r["empleado_id"], r["fecha"]) not in bloqueantes]
+            if ids_borrar:
+                ph2 = ",".join("?" * len(ids_borrar))
+                conn.execute(f"DELETE FROM planificacion WHERE id IN ({ph2})", ids_borrar)
+
+        # Días de vacaciones staged (no escribimos planificacion en esos días)
+        vac_dias: set[tuple] = {(v["empleado_id"], v["fecha"]) for v in vac_staged}
+
+        for fr in francos:
+            if (fr["empleado_id"], fr["fecha"]) in bloqueantes:
+                continue
+            conn.execute(
+                """INSERT INTO planificacion (empleado_id, fecha, es_franco, origen)
+                   VALUES (?,?,1,'distribucion')""",
+                (fr["empleado_id"], fr["fecha"])
+            )
+
+        for det in detalles:
+            if (det["empleado_id"], det["fecha"]) in bloqueantes:
+                continue
+            if (det["empleado_id"], det["fecha"]) in vac_dias:
+                continue
+            if det["es_franco"]:
                 conn.execute(
-                    f"DELETE FROM planificacion WHERE fecha >= ? AND fecha <= ?"
-                    f" AND auto_generado = 1 AND empleado_id IN ({ph})",
-                    [lunes_str, domingo_str] + emp_ids
+                    """INSERT INTO planificacion (empleado_id, fecha, es_franco, origen)
+                       VALUES (?,?,1,'distribucion')""",
+                    (det["empleado_id"], det["fecha"])
+                )
+            else:
+                horario_id = det["horario_id"]
+                if not horario_id:
+                    asig = conn.execute(
+                        """SELECT COALESCE(a.horario_id,
+                               (SELECT cd.horario_id FROM calendarios_dias cd
+                                WHERE cd.calendario_id = a.calendario_id
+                                  AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
+                                LIMIT 1)) AS horario_id
+                           FROM asignaciones a
+                           WHERE a.empleado_id = ? AND a.fecha_desde <= ?
+                             AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
+                           ORDER BY a.fecha_desde DESC LIMIT 1""",
+                        (det["empleado_id"], det["fecha"], det["fecha"])
+                    ).fetchone()
+                    horario_id = asig["horario_id"] if asig else None
+                conn.execute(
+                    """INSERT INTO planificacion (empleado_id, fecha, es_franco, horario_id, origen)
+                       VALUES (?,?,0,?,'distribucion')""",
+                    (det["empleado_id"], det["fecha"], horario_id)
                 )
 
-        if escribe_planificacion:
-            for fr in francos:
-                existing_plan = conn.execute(
-                    "SELECT id FROM planificacion WHERE empleado_id=? AND fecha=?",
-                    (fr["empleado_id"], fr["fecha"])
-                ).fetchone()
-                if existing_plan:
-                    conn.execute(
-                        """UPDATE planificacion
-                           SET es_franco=1, horario_id=NULL, origen='distribucion'
-                           WHERE id=?""",
-                        (existing_plan["id"],)
-                    )
-                else:
-                    conn.execute(
-                        """INSERT INTO planificacion
-                           (empleado_id, fecha, es_franco, origen)
-                           VALUES (?,?,1,'distribucion')""",
-                        (fr["empleado_id"], fr["fecha"])
-                    )
-
-            for det in detalles:
-                existing_plan = conn.execute(
-                    "SELECT id FROM planificacion WHERE empleado_id=? AND fecha=?",
-                    (det["empleado_id"], det["fecha"])
-                ).fetchone()
-
-                if det["es_franco"]:
-                    if existing_plan:
-                        conn.execute(
-                            """UPDATE planificacion
-                               SET es_franco=1, horario_id=NULL, origen='distribucion'
-                               WHERE id=?""",
-                            (existing_plan["id"],)
-                        )
-                    else:
-                        conn.execute(
-                            """INSERT INTO planificacion
-                               (empleado_id, fecha, es_franco, origen)
-                               VALUES (?,?,1,'distribucion')""",
-                            (det["empleado_id"], det["fecha"])
-                        )
-                else:
-                    horario_id = det["horario_id"]
-                    if not horario_id:
-                        asig = conn.execute(
-                            """SELECT COALESCE(a.horario_id,
-                                   (SELECT cd.horario_id FROM calendarios_dias cd
-                                    WHERE cd.calendario_id = a.calendario_id
-                                      AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
-                                    LIMIT 1)) AS horario_id
-                               FROM asignaciones a
-                               WHERE a.empleado_id = ? AND a.fecha_desde <= ?
-                                 AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
-                               ORDER BY a.fecha_desde DESC LIMIT 1""",
-                            (det["empleado_id"], det["fecha"], det["fecha"])
-                        ).fetchone()
-                        horario_id = asig["horario_id"] if asig else None
-
-                    if existing_plan:
-                        conn.execute(
-                            """UPDATE planificacion
-                               SET es_franco=0, horario_id=?, origen='distribucion'
-                               WHERE id=?""",
-                            (horario_id, existing_plan["id"])
-                        )
-                    else:
-                        conn.execute(
-                            """INSERT INTO planificacion
-                               (empleado_id, fecha, es_franco, horario_id, origen)
-                               VALUES (?,?,0,?,'distribucion')""",
-                            (det["empleado_id"], det["fecha"], horario_id)
-                        )
+        # Escribir vacaciones staged a novedades (si no hay novedad real bloqueante)
+        for v in vac_staged:
+            if (v["empleado_id"], v["fecha"]) in bloqueantes:
+                continue
+            conn.execute(
+                """INSERT OR IGNORE INTO novedades
+                   (empleado_id, fecha, bloque, tipo, descripcion, creado_por)
+                   VALUES (?,?,0,'V','Desde distribución',?)""",
+                (v["empleado_id"], v["fecha"], v["creado_por"])
+            )
 
         conn.execute(
             "UPDATE distribucion_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
@@ -681,6 +936,16 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                        (distribucion_id, empleado_id, fecha, creado_por, creado_en)
                        VALUES (?,?,?,?,datetime('now'))""",
                     (dist_fut_id, fr["empleado_id"], fecha_fut, uid)
+                )
+            for v in vac_staged:
+                fecha_orig = date.fromisoformat(v["fecha"])
+                dow = fecha_orig.weekday()
+                fecha_fut = str(lunes_fut + timedelta(days=dow))
+                conn.execute(
+                    """INSERT OR IGNORE INTO distribucion_vacacion
+                       (distribucion_id, empleado_id, fecha, creado_por, creado_en)
+                       VALUES (?,?,?,?,datetime('now'))""",
+                    (dist_fut_id, v["empleado_id"], fecha_fut, uid)
                 )
 
     return {"ok": True}
@@ -949,110 +1214,8 @@ def set_usa_distribucion(dept_id: int, body: UsaDistribucionIn,
             "UPDATE departamentos SET usa_distribucion=? WHERE id=?",
             (int(body.value), dept_id)
         )
-        if not body.value:
-            # Al desactivar visibilidad también se desactiva escritura en planificación
-            conn.execute(
-                "UPDATE departamentos SET escribe_planificacion=0 WHERE id=?", (dept_id,)
-            )
     return {"ok": True}
 
-
-@router.get("/departamentos/{dept_id}/escribe-planificacion-preview")
-def preview_escribe_planificacion(dept_id: int, _user=Depends(require_permiso("distribucion", "editar"))):
-    """Devuelve cuántas entradas de planificación auto-generada futura se eliminarían al activar."""
-    hoy = str(date.today())
-    with db_session() as conn:
-        dept = conn.execute(
-            "SELECT id, nombre, escribe_planificacion FROM departamentos WHERE id=?", (dept_id,)
-        ).fetchone()
-        if not dept:
-            raise HTTPException(404, "Departamento no encontrado")
-        emp_rows = conn.execute(
-            """SELECT e.id FROM empleados e
-               JOIN cargos c ON c.id = e.cargo_id
-               WHERE c.departamento_id = ? AND e.activo = 1""",
-            (dept_id,)
-        ).fetchall()
-        emp_ids = [r[0] for r in emp_rows]
-        plan_count, emp_afectados = 0, 0
-        if emp_ids:
-            ph = ",".join("?" * len(emp_ids))
-            plan_rows = conn.execute(
-                f"""SELECT empleado_id, COUNT(*) AS n FROM planificacion
-                    WHERE auto_generado = 1 AND fecha >= ? AND empleado_id IN ({ph})
-                    GROUP BY empleado_id""",
-                [hoy] + emp_ids
-            ).fetchall()
-            emp_afectados = len(plan_rows)
-            plan_count = sum(r["n"] for r in plan_rows)
-    return {
-        "departamento_id": dept_id,
-        "nombre": dept["nombre"],
-        "escribe_planificacion": bool(dept["escribe_planificacion"]),
-        "empleados_en_dept": len(emp_ids),
-        "emp_afectados": emp_afectados,
-        "plan_auto_futuras": plan_count,
-    }
-
-
-@router.put("/departamentos/{dept_id}/escribe-planificacion")
-def set_escribe_planificacion(dept_id: int, body: UsaDistribucionIn,
-                              _user=Depends(require_permiso("distribucion", "editar"))):
-    """
-    Activa o desactiva que las distribuciones confirmadas escriban en planificación.
-    El borrado de planificación ocurre solo al confirmar cada semana, no aquí.
-    """
-    with db_session() as conn:
-        dept = conn.execute(
-            "SELECT id, usa_distribucion FROM departamentos WHERE id=?", (dept_id,)
-        ).fetchone()
-        if not dept:
-            raise HTTPException(404, "Departamento no encontrado")
-        if body.value and not dept["usa_distribucion"]:
-            raise HTTPException(400, "Activá primero el módulo de distribución para este departamento")
-        conn.execute(
-            "UPDATE departamentos SET escribe_planificacion=? WHERE id=?",
-            (int(body.value), dept_id)
-        )
-        if body.value:
-            # Al activar: poblar horario_habitual_id de los empleados que no lo tienen,
-            # tomando el horario de su asignación de calendario vigente
-            hoy = str(date.today())
-            emp_rows = conn.execute(
-                """SELECT e.id FROM empleados e
-                   JOIN cargos c ON c.id = e.cargo_id
-                   WHERE c.departamento_id = ? AND e.activo = 1""",
-                (dept_id,)
-            ).fetchall()
-            emp_ids = [e["id"] for e in emp_rows]
-            for emp in emp_rows:
-                if not conn.execute(
-                    "SELECT horario_habitual_id FROM empleados WHERE id=? AND horario_habitual_id IS NULL",
-                    (emp["id"],)
-                ).fetchone():
-                    continue
-                horario = conn.execute(
-                    """SELECT COALESCE(a.horario_id,
-                           (SELECT cd.horario_id FROM calendarios_dias cd
-                            WHERE cd.calendario_id = a.calendario_id
-                              AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
-                            LIMIT 1)) AS horario_id
-                       FROM asignaciones a
-                       WHERE a.empleado_id = ?
-                         AND a.fecha_desde <= ?
-                         AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
-                       ORDER BY a.fecha_desde DESC LIMIT 1""",
-                    (emp["id"], hoy, hoy)
-                ).fetchone()
-                if horario and horario["horario_id"]:
-                    conn.execute(
-                        "UPDATE empleados SET horario_habitual_id=? WHERE id=?",
-                        (horario["horario_id"], emp["id"])
-                    )
-            # No se borra planificación aquí: la auto-generación ya excluye a estos
-            # empleados una vez activo el flag, y la confirmación de distribución
-            # limpia semana a semana cuando corresponde.
-    return {"ok": True}
 
 
 # ── Config de avisos por turno ────────────────────────────────────────────────

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-<title>Distribución Semanal — Sistema de Fichaje</title>
+<title>Cocineros — Sistema de Fichaje</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem;
@@ -218,6 +218,7 @@
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
         <a href="/distribucion" class="activo" data-perm="distribucion:ver">Horarios Cocina</a>
+        <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -274,7 +275,7 @@
     <button class="btn btn-nav" onclick="cambiarSemana(7)">&#8594;</button>
     <button class="btn btn-nav" onclick="irHoy()">Hoy</button>
   </div>
-  <select id="sel-departamento" onchange="onDeptChange()" style="min-width:160px">
+  <select id="sel-departamento" onchange="onDeptChange()" style="display:none">
     <option value="">— Departamento —</option>
   </select>
   <select id="sel-turno" onchange="cargarGrilla()">
@@ -283,11 +284,11 @@
   <span id="badge-estado" class="badge badge-nuevo" style="display:none"></span>
   <button id="btn-editar" class="btn btn-secondary" data-perm="distribucion:confirmar"
     onclick="desconfirmarDistribucion()" style="display:none">Editar</button>
+  <button id="btn-copiar" class="btn btn-secondary" data-perm="distribucion:editar"
+    onclick="copiarSemanaAnterior()" style="display:none" title="Copiar asignaciones de la semana anterior">⧉ Copiar semana anterior</button>
   <button id="btn-imprimir" class="btn btn-secondary" onclick="imprimirGrilla()" style="display:none">🖨 Imprimir</button>
   <button id="btn-confirmar" class="btn btn-confirmar" data-perm="distribucion:confirmar"
     onclick="confirmarDistribucion()" style="margin-left:auto" disabled>Confirmar semana</button>
-  <button id="btn-personal" class="btn btn-secondary" data-perm="distribucion:editar"
-    onclick="togglePersonal()" style="display:none">Personal</button>
 </div>
 
 <main>
@@ -299,20 +300,6 @@
       <thead id="thead-dist"></thead>
       <tbody id="tbody-dist"></tbody>
       <tfoot id="tfoot-dist"></tfoot>
-    </table>
-  </div>
-
-  <div id="personal-wrap" style="display:none;max-width:700px;margin:24px auto">
-    <table style="width:100%;border-collapse:collapse">
-      <thead>
-        <tr style="background:#f4f6f9;text-align:left">
-          <th style="padding:10px 12px;border-bottom:2px solid #dee2e6">Empleado</th>
-          <th style="padding:10px 12px;border-bottom:2px solid #dee2e6">Cargo</th>
-          <th style="padding:10px 12px;border-bottom:2px solid #dee2e6">Horario habitual</th>
-          <th style="padding:10px 12px;border-bottom:2px solid #dee2e6"></th>
-        </tr>
-      </thead>
-      <tbody id="tbody-personal"></tbody>
     </table>
   </div>
 </main>
@@ -377,6 +364,10 @@ let _misAccesos = { departamentos: [] };
 let _francos = [];         // [{id, empleado_id, fecha, emp_nombre, emp_apellido}]
 let _comidaPersonal = [];  // [{id, empleado_id, fecha, emp_apellido, emp_nombre}]
 let _horarios = [];  // [{id, nombre, tipo, turno_nombre}]
+let _vacBalance = {};    // {empleado_id: dias_disponibles}
+let _vacDist = [];       // [{id, empleado_id, fecha}] — staging, antes de confirmar
+let _planBase  = [];     // [{empleado_id, fecha, es_franco, horario_id}] desde planificacion auto
+let _planFrancoHide = new Set(); // "empId_fecha" — plan francos quitados manualmente esta sesión
 let _francoMode = false; // true cuando el modal de empleado es para la fila FRANCO
 let _editandoPuestos = false; // modo edición estructural de puestos
 let _editando = null; // { puesto_id, fecha } — celda abierta
@@ -508,16 +499,12 @@ function onDeptChange() {
 
 function mostrarVacio() {
   document.getElementById('grilla-wrap').style.display = 'none';
-  document.getElementById('personal-wrap').style.display = 'none';
   document.getElementById('empty-dept').style.display = '';
   document.getElementById('badge-estado').style.display = 'none';
   document.getElementById('btn-confirmar').disabled = true;
   document.getElementById('btn-imprimir').style.display = 'none';
-  const btnP = document.getElementById('btn-personal');
-  if (btnP) { btnP.style.display = 'none'; btnP.textContent = 'Personal'; }
   _distribucion = null;
   _editandoPuestos = false;
-  _mostrandoPersonal = false;
 }
 
 // ── Cargar grilla ─────────────────────────────────────────────────────────────
@@ -540,7 +527,11 @@ async function cargarGrilla() {
     _comidaPersonal = data.comida_personal || [];
     _horarios       = data.horarios || [];
     _novedades      = data.novedades || [];
+    _vacDist        = data.vac_dist || [];
+    _planBase       = data.plan_base || [];
+    _planFrancoHide = new Set();
     _dias           = data.dias || [];
+    _vacBalance     = data.vacaciones_balance || {};
     renderGrilla();
   } catch(e) {
     toast('Error de conexión', true);
@@ -550,12 +541,10 @@ async function cargarGrilla() {
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderGrilla() {
   document.getElementById('empty-dept').style.display = 'none';
-  document.getElementById('personal-wrap').style.display = 'none';
   document.getElementById('grilla-wrap').style.display = '';
   document.getElementById('btn-imprimir').style.display = _distribucion ? '' : 'none';
-  const btnP = document.getElementById('btn-personal');
-  if (btnP) { btnP.style.display = ''; btnP.textContent = 'Personal'; }
-  _mostrandoPersonal = false;
+  const puedeCopiar = canDo('distribucion','editar') && (!_distribucion || _distribucion.estado !== 'confirmado');
+  document.getElementById('btn-copiar').style.display = puedeCopiar ? '' : 'none';
 
   // Badge estado
   const badge = document.getElementById('badge-estado');
@@ -577,10 +566,24 @@ function renderGrilla() {
   }
 
   // Botones confirmar / editar
+  const sinCalendario = new Set(_empleados.filter(e => !e.horario_actual_id).map(e => e.id));
   const btnConf  = document.getElementById('btn-confirmar');
   const btnEditar = document.getElementById('btn-editar');
   const confirmado = _distribucion && _distribucion.estado === 'confirmado';
-  btnConf.disabled = confirmado || !_distribucion;
+  const todosAsignados = _dias.every(d => {
+    const novIds = new Set([
+      ..._novedades.filter(n => n.fecha === d).map(n => n.empleado_id),
+      ..._vacDist.filter(v => v.fecha === d).map(v => v.empleado_id)
+    ]);
+    const presentes = _empleados.filter(e => !novIds.has(e.id) && !sinCalendario.has(e.id));
+    const asignadosIds = new Set(_detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
+    const francoIds = new Set([
+      ..._francos.filter(f => f.fecha === d).map(f => f.empleado_id),
+      ..._planBase.filter(p => p.es_franco && p.fecha === d && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)).map(p => p.empleado_id)
+    ]);
+    return presentes.every(e => asignadosIds.has(e.id) || francoIds.has(e.id));
+  });
+  btnConf.disabled = confirmado || !_distribucion || !todosAsignados;
   btnConf.textContent = 'Confirmar semana';
   btnEditar.style.display = confirmado && canDo('distribucion', 'confirmar') ? '' : 'none';
 
@@ -599,13 +602,22 @@ function renderGrilla() {
 
   const contadores = _dias.map((d, i) => {
     const esHoy = d === hoyStr;
-    const novedades = new Set(_novedades.filter(n => n.fecha === d).map(n => n.empleado_id));
-    // Base: empleados presentes (excluye ausentes por novedad)
-    const presentes = _empleados.filter(e => !novedades.has(e.id));
+    const novedades = new Set([
+      ..._novedades.filter(n => n.fecha === d).map(n => n.empleado_id),
+      ..._vacDist.filter(v => v.fecha === d).map(v => v.empleado_id)
+    ]);
+    // Excluye ausentes por novedad y cocineros sin calendario asignado
+    const presentes = _empleados.filter(e => !novedades.has(e.id) && !sinCalendario.has(e.id));
     const asignados = new Set(
       _detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id)
     );
-    const francos = new Set(_francos.filter(f => f.fecha === d).map(f => f.empleado_id));
+    const asignadosHoy = new Set(_detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
+    const francos = new Set([
+      ..._francos.filter(f => f.fecha === d).map(f => f.empleado_id),
+      ..._planBase.filter(p => p.es_franco && p.fecha === d
+        && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)
+        && !asignadosHoy.has(p.empleado_id)).map(p => p.empleado_id)
+    ]);
     const sinAsignar = presentes.filter(e => !asignados.has(e.id) && !francos.has(e.id)).length;
     const tag = (presentes.length === 0 || sinAsignar > 0)
       ? `<span class="tag-pendiente">${sinAsignar} sin asignar</span>`
@@ -698,18 +710,33 @@ function renderGrilla() {
       const enFranco = _francos.filter(f => f.fecha === d);
       const badges = enFranco.map(f => {
         const nombre = f.emp_apellido ? `${f.emp_apellido}, ${f.emp_nombre}` : '?';
-        if (f.from_planificacion) {
-          return `<span class="badge-franco" style="background:#e0e0e0;color:#555;border-color:#bbb" title="Franco de planificación">${nombre}</span>`;
-        }
         if (puedoEditar) {
           return `<span class="badge-franco removable" title="Quitar franco" onclick="quitarFranco(${f.id})">${nombre} ✕</span>`;
         }
         return `<span class="badge-franco">${nombre}</span>`;
       }).join('');
+      // Francos del plan automático no cubiertos por franco manual, no quitados y sin detalle
+      const planFrancoIds = new Set(enFranco.map(f => f.empleado_id));
+      const asignadosEsteDay = new Set(_detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
+      const badgesPlan = _planBase
+        .filter(p => p.es_franco && p.fecha === d
+          && !planFrancoIds.has(p.empleado_id)
+          && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)
+          && !asignadosEsteDay.has(p.empleado_id))
+        .map(p => {
+          const emp = _empleados.find(e => e.id === p.empleado_id);
+          if (!emp) return '';
+          const nombre = `${emp.apellido}, ${emp.nombre}`;
+          if (puedoEditar) {
+            return `<span class="badge-franco removable" style="opacity:.75" title="Franco según planificación automática — clic ✕ para quitar" onclick="quitarPlanFranco(${p.empleado_id},'${p.fecha}')">${nombre} ✕</span>`;
+          }
+          return `<span class="badge-franco" style="opacity:.65" title="Franco según planificación automática">${nombre}</span>`;
+        }).join('');
       const addBtn = puedoEditar
         ? `<button class="btn-add-franco" onclick="abrirModalFranco('${d}')">+ Franco</button>`
         : '';
-      const badgesWrap = badges ? `<div class="celda-franco-badges">${badges}</div>` : '';
+      const allBadges = badges + badgesPlan;
+      const badgesWrap = allBadges ? `<div class="celda-franco-badges">${allBadges}</div>` : '';
       return `<td class="col-dia${esHoy ? ' hoy' : ''}">
         <div class="celda-franco-wrap">${badgesWrap}${addBtn}</div>
       </td>`;
@@ -719,11 +746,49 @@ function renderGrilla() {
       ${francoCeldas}
     </tr>`;
 
-    // Filas de novedades
-    const NOV_LABELS_GRID = { V:'VACACIONES', ILT:'ILT', E:'ENFERMEDAD', L:'LICENCIA',
+    // Fila VACACIONES (staged=_vacDist con ✕; reales de novedades sin ✕)
+    const vacCeldas = _dias.map(d => {
+      const esHoy = d === hoyStr;
+      const stagedHoy = _vacDist.filter(v => v.fecha === d);
+      const stagedIds = new Set(stagedHoy.map(v => v.empleado_id));
+      const realVHoy = _novedades.filter(n => n.fecha === d && n.tipo === 'V' && !stagedIds.has(n.empleado_id));
+      const badgesStaged = stagedHoy.map(v => {
+        const emp = _empleados.find(e => e.id === v.empleado_id);
+        const nombre = emp ? `${emp.apellido}, ${emp.nombre}` : '?';
+        if (puedoEditar) {
+          return `<span class="badge-franco" style="background:#d0e8f8;color:#1a3a5c;border-color:#95B3D7;cursor:pointer" onclick="quitarVacaciones('${d}', ${v.empleado_id})" title="Quitar vacaciones">${nombre} ✕</span>`;
+        }
+        return `<span class="badge-franco" style="background:#d0e8f8;color:#1a3a5c;border-color:#95B3D7">${nombre}</span>`;
+      }).join('');
+      const badgesReal = realVHoy.flatMap(n => {
+        const emp = _empleados.find(e => e.id === n.empleado_id);
+        if (!emp) return [];  // ignorar empleados fuera de esta distribución
+        const nombre = `${emp.apellido}, ${emp.nombre}`;
+        if (puedoEditar && n.descripcion === 'Desde distribución') {
+          // V escrita por el código anterior — se puede quitar
+          return [`<span class="badge-franco" style="background:#d0e8f8;color:#1a3a5c;border-color:#95B3D7;cursor:pointer" onclick="quitarVacaciones('${d}', ${n.empleado_id})" title="Quitar vacaciones">${nombre} ✕</span>`];
+        }
+        return [`<span class="badge-franco" style="background:#b8d8f0;color:#1a3a5c;border-color:#7aabcc;opacity:.8" title="Vacaciones registradas en RRHH">${nombre}</span>`];
+      }).join('');
+      const addBtn = puedoEditar
+        ? `<button class="btn-add-franco" style="border-color:#95B3D7;color:#1a3a5c" onclick="abrirModalVacaciones('${d}')">+ Vac</button>`
+        : '';
+      const allBadges = badgesStaged + badgesReal;
+      const badgesWrap = allBadges ? `<div class="celda-franco-badges">${allBadges}</div>` : '';
+      return `<td class="col-dia${esHoy ? ' hoy' : ''}">
+        <div class="celda-franco-wrap">${badgesWrap}${addBtn}</div>
+      </td>`;
+    }).join('');
+    const vacRow = `<tr style="background:#eaf4fb;border-top:2px solid #95B3D7">
+      <td class="col-puesto" style="color:#1a3a5c;font-weight:bold">VACACIONES</td>
+      ${vacCeldas}
+    </tr>`;
+
+    // Filas de novedades (excluye V — tiene fila propia)
+    const NOV_LABELS_GRID = { ILT:'ILT', E:'ENFERMEDAD', L:'LICENCIA',
                                LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
                                FD:'FRANCO DÍA', CP:'COMIDA PERSO' };
-    const NOV_COLORS = { V:'#cfe2f3', ILT:'#fff2cc', E:'#fff2cc', L:'#d9ead3',
+    const NOV_COLORS = { ILT:'#fff2cc', E:'#fff2cc', L:'#d9ead3',
                          LSG:'#d9ead3', S:'#f4cccc', FT:'#ead1dc', FD:'#ead1dc',
                          CP:'#fce5cd' };
 
@@ -770,7 +835,7 @@ function renderGrilla() {
       ${comidaCeldas}
     </tr>`;
 
-    tbody.innerHTML = puestosHtml + francoRow + novedadesHtml + comidaRow;
+    tbody.innerHTML = puestosHtml + francoRow + vacRow + novedadesHtml + comidaRow;
   }
 
   // Pie
@@ -811,7 +876,14 @@ function abrirModal(puestoId, fecha) {
                && !(_puestos.find(p => p.id === x.puesto_id)?.es_chef))
       .map(x => x.empleado_id)
   );
-  const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
+  const asignadosModal = new Set(_detalles.filter(x => x.fecha === fecha && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
+  const francoHoy = new Set([
+    ..._francos.filter(f => f.fecha === fecha).map(f => f.empleado_id),
+    ..._planBase.filter(p => p.es_franco && p.fecha === fecha
+      && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)
+      && !asignadosModal.has(p.empleado_id)).map(p => p.empleado_id)
+  ]);
+  const vacStagedModal = new Set(_vacDist.filter(v => v.fecha === fecha).map(v => v.empleado_id));
 
   const lista = document.getElementById('lista-opciones');
   lista.innerHTML = '';
@@ -847,7 +919,10 @@ function abrirModal(puestoId, fecha) {
     opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
     const nov = _novedad(e.id, fecha);
     const nombre = `${e.apellido}, ${e.nombre}`;
-    if (nov) {
+    if (vacStagedModal.has(e.id)) {
+      opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#d0e8f8;color:#1a3a5c">Vacaciones</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#95B3D7';
+    } else if (nov) {
       const label = NOV_LABEL[nov.tipo] || nov.tipo;
       opt.innerHTML = `${nombre} <span class="nov-badge">${label}</span>`;
       opt.classList.add(`nov-${nov.tipo in NOV_LABEL ? nov.tipo : 'otro'}`);
@@ -855,12 +930,16 @@ function abrirModal(puestoId, fecha) {
     } else if (francoHoy.has(e.id)) {
       opt.innerHTML = `${nombre} <span class="nov-badge">Franco</span>`;
       opt.classList.add('nov-F');
+    } else if (!e.horario_actual_id) {
+      opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#f8d7da;color:#721c24">Sin calendario</span>`;
+      opt.style.cssText = 'opacity:.6;cursor:default;pointer-events:none';
     } else if (asignadosEnOtro.has(e.id)) {
       opt.textContent = `${nombre}  ·  ya en otro puesto`;
       opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
     } else {
       opt.textContent = nombre;
-      opt.onclick = () => asignar(puestoId, fecha, e.id, false, e.horario_actual_id || null);
+      const planHorario = _planBase.find(p => p.empleado_id === e.id && p.fecha === fecha)?.horario_id;
+      opt.onclick = () => asignar(puestoId, fecha, e.id, false, planHorario || e.horario_actual_id || null);
     }
     lista.appendChild(opt);
   });
@@ -901,10 +980,9 @@ async function abrirModalFranco(fecha) {
   document.getElementById('modal-subtitulo').textContent = labelDia;
   document.getElementById('modal-search').value = '';
 
-  const asignadosHoy = new Set(
-    _detalles.filter(x => x.fecha === fecha && !x.es_franco && x.empleado_id).map(x => x.empleado_id)
-  );
   const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
+  const novHoy = new Map(_novedades.filter(n => n.fecha === fecha).map(n => [n.empleado_id, n]));
+  const vacStagedFranco = new Set(_vacDist.filter(v => v.fecha === fecha).map(v => v.empleado_id));
 
   const lista = document.getElementById('lista-opciones');
   lista.innerHTML = '';
@@ -913,20 +991,98 @@ async function abrirModalFranco(fecha) {
     const opt = document.createElement('div');
     opt.className = 'opcion';
     opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
-    const nov = _novedad(e.id, fecha);
+    const nombre = `${e.apellido}, ${e.nombre}`;
     if (francoHoy.has(e.id)) {
-      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ya en franco`;
+      opt.innerHTML = `${nombre} <span class="nov-badge">Ya en franco</span>`;
       opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ffc107;color:#856404';
-    } else if (nov) {
-      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ${NOV_LABEL[nov.tipo] || nov.tipo}`;
-      opt.style.cssText = 'opacity:.55;font-style:italic;cursor:default;pointer-events:none;border-color:#ccc';
-      opt.title = nov.descripcion || NOV_LABEL[nov.tipo] || nov.tipo;
-    } else if (asignadosHoy.has(e.id)) {
-      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ya asignado`;
-      opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
+    } else if (vacStagedFranco.has(e.id)) {
+      opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#d0e8f8;color:#1a3a5c">Vacaciones</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#95B3D7';
+    } else if (novHoy.has(e.id)) {
+      const nov = novHoy.get(e.id);
+      const label = nov.tipo === 'V' ? 'Vacaciones' : (NOV_LABEL[nov.tipo] || nov.tipo);
+      opt.innerHTML = `${nombre} <span class="nov-badge">${label}</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ccc';
+    } else if (!e.horario_actual_id) {
+      opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#f8d7da;color:#721c24">Sin calendario</span>`;
+      opt.style.cssText = 'opacity:.6;cursor:default;pointer-events:none';
     } else {
-      opt.textContent = `${e.apellido}, ${e.nombre}`;
+      opt.classList.add('franco-opt');
+      opt.textContent = nombre;
       opt.onclick = () => agregarFranco(fecha, e.id);
+    }
+    lista.appendChild(opt);
+  });
+
+  document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('modal-search').focus();
+}
+
+// ── Fila VACACIONES ───────────────────────────────────────────────────────────
+function abrirModalVacaciones(fecha) {
+  _francoMode = false;
+  _editando = null;
+  const d = new Date(fecha + 'T12:00:00');
+  const labelDia = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('modal-titulo').textContent = 'Vacaciones';
+  document.getElementById('modal-subtitulo').textContent = labelDia;
+  document.getElementById('modal-search').value = '';
+
+  const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
+  const vacStagedHoy = new Set(_vacDist.filter(v => v.fecha === fecha).map(v => v.empleado_id));
+  const vacRealHoy = new Set(_novedades.filter(n => n.fecha === fecha && n.tipo === 'V').map(n => n.empleado_id));
+  const otraNovHoy = new Map(_novedades.filter(n => n.fecha === fecha && n.tipo !== 'V').map(n => [n.empleado_id, n]));
+  const asignadoHoy = new Set(
+    _detalles.filter(x => x.fecha === fecha && x.empleado_id && !x.es_franco).map(x => x.empleado_id)
+  );
+
+  const lista = document.getElementById('lista-opciones');
+  lista.innerHTML = '';
+
+  _empleados.forEach(e => {
+    const opt = document.createElement('div');
+    opt.className = 'opcion';
+    opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
+    const nombre = `${e.apellido}, ${e.nombre}`;
+    const dias = _vacBalance[e.id] ?? null;
+    const diasLabel = dias !== null ? ` (${dias} día${dias !== 1 ? 's' : ''})` : '';
+
+    if (vacStagedHoy.has(e.id)) {
+      // Vacación asignada desde distribución — se puede quitar
+      opt.style.cssText = 'background:#d0e8f8;border-color:#95B3D7;display:flex;justify-content:space-between;align-items:center;cursor:pointer';
+      opt.innerHTML = `<span>${nombre} · Vacaciones${diasLabel}</span><span style="color:#c0392b;font-weight:bold" title="Quitar">✕</span>`;
+      opt.onclick = () => quitarVacaciones(fecha, e.id);
+    } else if (vacRealHoy.has(e.id)) {
+      const novReal = _novedades.find(n => n.fecha === fecha && n.tipo === 'V' && n.empleado_id === e.id);
+      if (novReal && novReal.descripcion === 'Desde distribución') {
+        // V escrita por el código anterior — se puede quitar
+        opt.style.cssText = 'background:#d0e8f8;border-color:#95B3D7;display:flex;justify-content:space-between;align-items:center;cursor:pointer';
+        opt.innerHTML = `<span>${nombre} · Vacaciones${diasLabel}</span><span style="color:#c0392b;font-weight:bold" title="Quitar">✕</span>`;
+        opt.onclick = () => quitarVacaciones(fecha, e.id);
+      } else {
+        opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#b8d8f0;color:#1a3a5c">Vac. RRHH</span>`;
+        opt.style.cssText = 'opacity:.6;cursor:default;pointer-events:none';
+      }
+    } else if (otraNovHoy.has(e.id)) {
+      const nov = otraNovHoy.get(e.id);
+      opt.innerHTML = `${nombre} <span class="nov-badge">${NOV_LABEL[nov.tipo] || nov.tipo}</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ccc';
+    } else if (francoHoy.has(e.id)) {
+      opt.innerHTML = `${nombre} <span class="nov-badge" style="border-color:#ffc107;color:#856404">Franco</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none';
+    } else if (asignadoHoy.has(e.id)) {
+      opt.innerHTML = `${nombre} <span class="nov-badge">En sector</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
+    } else if (!e.horario_actual_id) {
+      opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#f8d7da;color:#721c24">Sin calendario</span>`;
+      opt.style.cssText = 'opacity:.6;cursor:default;pointer-events:none';
+    } else if (dias !== null && dias <= 0) {
+      opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#f8d7da;color:#721c24">Sin saldo</span>`;
+      opt.style.cssText = 'opacity:.55;cursor:default;pointer-events:none';
+    } else {
+      opt.style.cssText = 'background:#d0e8f8;border-color:#95B3D7;color:#004085;cursor:pointer';
+      opt.innerHTML = `${nombre}${diasLabel}`;
+      opt.onclick = () => asignarVacaciones(fecha, e.id);
     }
     lista.appendChild(opt);
   });
@@ -1025,6 +1181,11 @@ async function agregarFranco(fecha, empleadoId) {
   }
 }
 
+function quitarPlanFranco(empId, fecha) {
+  _planFrancoHide.add(`${empId}_${fecha}`);
+  renderGrilla();
+}
+
 async function quitarFranco(francoId) {
   if (!_distribucion) return;
   if (_distribucion.estado === 'confirmado') { toast('No se puede modificar horarios confirmados', true); return; }
@@ -1033,6 +1194,37 @@ async function quitarFranco(francoId) {
     if (!r.ok) { toast('Error al quitar franco', true); return; }
     await cargarGrilla();
     toast('Franco quitado');
+  } catch(e) {
+    toast('Error', true);
+  }
+}
+
+async function asignarVacaciones(fecha, empleadoId) {
+  cerrarModal();
+  try {
+    const distId = await _asegurarDistribucion();
+    const r = await fetch(`/api/distribucion/semana/${distId}/vacaciones`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ empleado_id: empleadoId, fecha })
+    });
+    if (!r.ok) { const e = await r.json().catch(()=>({})); toast('Error: ' + (e.detail || r.status), true); return; }
+    await cargarGrilla();
+    toast('Vacaciones asignadas');
+  } catch(e) {
+    toast('Error: ' + e.message, true);
+  }
+}
+
+async function quitarVacaciones(fecha, empleadoId) {
+  cerrarModal();
+  if (!_distribucion) return;
+  if (_distribucion.estado === 'confirmado') { toast('No se puede modificar horarios confirmados', true); return; }
+  try {
+    const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/vacaciones/${fecha}/${empleadoId}`, { method: 'DELETE' });
+    if (!r.ok) { toast('Error al quitar vacaciones', true); return; }
+    await cargarGrilla();
+    toast('Vacaciones quitadas');
   } catch(e) {
     toast('Error', true);
   }
@@ -1365,15 +1557,38 @@ async function imprimirGrilla() {
   w.addEventListener('load', () => { w.print(); URL.revokeObjectURL(url); });
 }
 
+async function copiarSemanaAnterior() {
+  const deptId = parseInt(document.getElementById('sel-departamento').value);
+  const turno  = document.getElementById('sel-turno').value;
+  if (!deptId || !turno) return;
+  if (_distribucion && _detalles.length > 0) {
+    if (!confirm('Ya hay asignaciones en esta semana. Se agregarán las de la semana anterior sin pisar las existentes. ¿Continuás?')) return;
+  }
+  try {
+    const r = await fetch('/api/distribucion/semana/copiar-anterior', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ departamento_id: deptId, turno, semana_inicio: fmtDate(_lunes) })
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      toast(e.detail || 'Error al copiar', true);
+      return;
+    }
+    const res = await r.json();
+    await cargarGrilla();
+    const msg = `Copiadas ${res.copiados_asignaciones} asignaciones y ${res.copiados_francos} francos`
+      + (res.omitidos ? ` · ${res.omitidos} omitidos por novedad` : '');
+    toast(msg);
+  } catch(e) {
+    toast('Error de conexión', true);
+  }
+}
+
 async function confirmarDistribucion() {
   if (!_distribucion) { toast('Primero guardá alguna asignación', true); return; }
   const deptId = parseInt(document.getElementById('sel-departamento').value);
-  const dept = _misAccesos.departamentos.find(d => d.id === deptId);
-  const escribe = dept && dept.escribe_planificacion;
-  const msg = escribe
-    ? '¿Confirmás los horarios de cocina? Esto sobreescribirá la planificación semanal para este departamento/turno.'
-    : '¿Confirmás los horarios de cocina? Los horarios quedan guardados pero no modifican la planificación ("Escribe planif." está desactivado para este departamento).';
-  if (!confirm(msg)) return;
+  if (!confirm('¿Confirmás los horarios de cocina? Esto sobreescribirá la planificación semanal para este departamento/turno.')) return;
   try {
     const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/confirmar`, { method: 'POST' });
     if (!r.ok) {
@@ -1492,7 +1707,8 @@ async function _recargarNovedades() {
   if (!deptId || !turno) return;
   try {
     const qs = `departamento_id=${deptId}&turno=${turno}&semana_inicio=${fmtDate(_lunes)}`;
-    const r = await fetch(`/api/distribucion/semana?${qs}`);
+    const r = await fetch(`/api/distribucion/semana?${qs}`, { headers: { 'X-Poll': '1' } });
+    if (r.status === 401) { location.href = '/login'; return; }
     if (!r.ok) return;
     const data = await r.json();
     const nuevasNovedades = data.novedades || [];
@@ -1506,73 +1722,6 @@ async function _recargarNovedades() {
   } catch { /* silencioso */ }
 }
 
-// ── Personal: horario habitual por empleado ────────────────────────────────────
-let _mostrandoPersonal = false;
-
-function togglePersonal() {
-  if (_mostrandoPersonal) {
-    _mostrandoPersonal = false;
-    document.getElementById('personal-wrap').style.display = 'none';
-    document.getElementById('grilla-wrap').style.display = '';
-    document.getElementById('btn-personal').textContent = 'Personal';
-  } else {
-    _mostrandoPersonal = true;
-    document.getElementById('grilla-wrap').style.display = 'none';
-    document.getElementById('personal-wrap').style.display = '';
-    document.getElementById('btn-personal').textContent = 'Volver a grilla';
-    cargarPersonal();
-  }
-}
-
-async function cargarPersonal() {
-  const deptId = document.getElementById('sel-departamento').value;
-  if (!deptId) return;
-  const tbody = document.getElementById('tbody-personal');
-  tbody.innerHTML = '<tr><td colspan="4" style="padding:16px;color:#888">Cargando...</td></tr>';
-  try {
-    const r = await fetch(`/api/distribucion/personal-dept?departamento_id=${deptId}`);
-    if (!r.ok) { tbody.innerHTML = '<tr><td colspan="4" style="padding:16px;color:#c00">Error al cargar</td></tr>'; return; }
-    const data = await r.json();
-    const optsHtml = '<option value="">— Sin asignar —</option>' +
-      data.horarios.map(h => `<option value="${h.id}">${h.nombre}</option>`).join('');
-    tbody.innerHTML = data.empleados.map(e => `
-      <tr id="per-row-${e.id}" style="border-bottom:1px solid #eee">
-        <td style="padding:10px 12px">${e.apellido}, ${e.nombre}</td>
-        <td style="padding:10px 12px;color:#666;font-size:.9rem">${e.cargo || '—'}</td>
-        <td style="padding:10px 12px">
-          <select id="per-sel-${e.id}" style="width:100%;padding:4px 6px;border:1px solid #ccc;border-radius:4px">
-            ${optsHtml}
-          </select>
-        </td>
-        <td style="padding:10px 12px">
-          <button class="btn btn-primary btn-sm" onclick="guardarHorarioHabitual(${e.id})">Guardar</button>
-          <span id="per-ok-${e.id}" style="color:green;font-size:.82rem;margin-left:6px;display:none">Guardado</span>
-        </td>
-      </tr>`).join('');
-    data.empleados.forEach(e => {
-      const sel = document.getElementById(`per-sel-${e.id}`);
-      if (sel && e.horario_habitual_id) sel.value = e.horario_habitual_id;
-    });
-  } catch { tbody.innerHTML = '<tr><td colspan="4" style="padding:16px;color:#c00">Error al cargar</td></tr>'; }
-}
-
-async function guardarHorarioHabitual(empId) {
-  const sel = document.getElementById(`per-sel-${empId}`);
-  const horarioId = sel.value ? parseInt(sel.value) : null;
-  const r = await fetch(`/api/distribucion/personal-dept/${empId}/horario-habitual`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ horario_id: horarioId }),
-  });
-  const ok = document.getElementById(`per-ok-${empId}`);
-  if (r.ok) {
-    ok.style.display = '';
-    setTimeout(() => { ok.style.display = 'none'; }, 2000);
-  } else {
-    ok.style.color = 'red'; ok.textContent = 'Error'; ok.style.display = '';
-    setTimeout(() => { ok.style.display = 'none'; ok.style.color = 'green'; ok.textContent = 'Guardado'; }, 3000);
-  }
-}
 </script>
 <script src="/static/js/nav-brand.js"></script>
 </body>

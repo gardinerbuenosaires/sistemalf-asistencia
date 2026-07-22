@@ -26,7 +26,7 @@ INACTIVITY_TTL  = 600  # segundos — 10 minutos sin actividad desloguea
 MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
-    "periodos", "distribucion",
+    "periodos", "distribucion", "mozos",
 ]
 ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion"]
 # corregir → asistencia:corregir (novedades en planilla)
@@ -160,6 +160,7 @@ PERMISOS_DEFAULT = {
         "vacaciones":    ["ver"],
         "periodos":      ["ver","cerrar","reabrir"],
         "distribucion":  ["ver","editar","confirmar"],
+        "mozos":         ["ver","editar","confirmar"],
     },
     "administracion": {
         "dashboard":     ["ver"],
@@ -179,6 +180,7 @@ PERMISOS_DEFAULT = {
         "planificacion": ["ver","editar"],
         "asistencia":    ["ver"],
         "distribucion":  ["ver","editar","confirmar"],
+        "mozos":         ["ver","editar","confirmar"],
     },
 }
 

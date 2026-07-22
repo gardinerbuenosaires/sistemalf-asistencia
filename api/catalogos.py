@@ -11,6 +11,12 @@ class ItemIn(BaseModel):
     nombre: str
 
 
+class DepartamentoIn(BaseModel):
+    nombre: str
+    usa_distribucion: int | None = None
+    usa_mozos: int | None = None
+
+
 class CargoUpdate(BaseModel):
     aplica_premio: bool | None = None
     aplica_trapos: bool | None = None
@@ -90,27 +96,35 @@ def delete_cargo(cid: int, _user=Depends(require_permiso("empleados", "editar"))
 def list_departamentos(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute(
-            "SELECT id, nombre, usa_distribucion, escribe_planificacion FROM departamentos ORDER BY nombre"
+            "SELECT id, nombre, usa_distribucion, usa_mozos, escribe_planificacion FROM departamentos ORDER BY nombre"
         ).fetchall()
     return [dict(r) for r in rows]
 
 
 @router.post("/api/departamentos", status_code=201)
-def create_departamento(data: ItemIn, _user=Depends(require_permiso("empleados", "editar"))):
+def create_departamento(data: DepartamentoIn, _user=Depends(require_permiso("empleados", "editar"))):
     nombre = data.nombre.strip()
     if not nombre:
         raise HTTPException(400, "Nombre requerido")
+    usa_dist   = int(data.usa_distribucion or 0)
+    usa_mozos  = int(data.usa_mozos or 0)
     with db_session() as conn:
         try:
-            conn.execute("INSERT INTO departamentos (nombre) VALUES (?)", (nombre,))
-            row = conn.execute("SELECT id, nombre FROM departamentos WHERE nombre=?", (nombre,)).fetchone()
+            conn.execute(
+                "INSERT INTO departamentos (nombre, usa_distribucion, usa_mozos) VALUES (?,?,?)",
+                (nombre, usa_dist, usa_mozos)
+            )
+            row = conn.execute(
+                "SELECT id, nombre, usa_distribucion, usa_mozos FROM departamentos WHERE nombre=?",
+                (nombre,)
+            ).fetchone()
         except sqlite3.IntegrityError:
             raise HTTPException(409, "Ya existe un departamento con ese nombre")
     return dict(row)
 
 
 @router.patch("/api/departamentos/{did}", status_code=200)
-def update_departamento(did: int, data: ItemIn, _user=Depends(require_permiso("empleados", "editar"))):
+def update_departamento(did: int, data: DepartamentoIn, _user=Depends(require_permiso("empleados", "editar"))):
     nombre = data.nombre.strip()
     if not nombre:
         raise HTTPException(400, "Nombre requerido")
@@ -118,8 +132,19 @@ def update_departamento(did: int, data: ItemIn, _user=Depends(require_permiso("e
         if not conn.execute("SELECT id FROM departamentos WHERE id=?", (did,)).fetchone():
             raise HTTPException(404, "Departamento no encontrado")
         try:
-            conn.execute("UPDATE departamentos SET nombre=? WHERE id=?", (nombre, did))
-            row = conn.execute("SELECT id, nombre FROM departamentos WHERE id=?", (did,)).fetchone()
+            if data.usa_distribucion is not None or data.usa_mozos is not None:
+                usa_dist  = int(data.usa_distribucion or 0)
+                usa_moz   = int(data.usa_mozos or 0)
+                conn.execute(
+                    "UPDATE departamentos SET nombre=?, usa_distribucion=?, usa_mozos=? WHERE id=?",
+                    (nombre, usa_dist, usa_moz, did)
+                )
+            else:
+                conn.execute("UPDATE departamentos SET nombre=? WHERE id=?", (nombre, did))
+            row = conn.execute(
+                "SELECT id, nombre, usa_distribucion, usa_mozos FROM departamentos WHERE id=?",
+                (did,)
+            ).fetchone()
         except sqlite3.IntegrityError:
             raise HTTPException(409, "Ya existe un departamento con ese nombre")
     return dict(row)

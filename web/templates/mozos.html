@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<title>Horarios Mozos Salón — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px;
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+    background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none !important; }
+
+  .toolbar { background: white; border-bottom: 1px solid #e0e0e0; flex-shrink: 0;
+    display: flex; align-items: stretch; overflow: hidden; }
+  .toolbar select { padding: 5px 10px; border-radius: 4px; border: 1px solid #ced4da;
+    font-size: .85rem; outline: none; }
+  .btn { border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: .85rem; font-weight: bold; }
+  .btn-nav { background: #2c3e50; color: white; }
+  .btn-nav:hover { background: #3d5166; }
+  .btn-confirmar { background: #27ae60; color: white; }
+  .btn-confirmar:hover { background: #219a52; }
+  .btn-confirmar:disabled { background: #95a5a6; cursor: default; }
+  .btn-editar { background: #e67e22; color: white; }
+  .btn-editar:hover { background: #d35400; }
+  .nav-semana { display: flex; align-items: center; gap: 8px; }
+  .nav-semana span { font-size: .9rem; font-weight: bold; min-width: 220px; text-align: center; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: .75rem; font-weight: bold; }
+  .badge-borrador { background: #fff3cd; color: #856404; }
+  .badge-confirmado { background: #d4edda; color: #155724; }
+  .badge-nuevo { background: #e2e3e5; color: #383d41; }
+
+  main { padding: 12px 16px; overflow: hidden; flex: 1; display: flex; flex-direction: column; }
+
+  /* ── Tabla Mozos ── */
+  .tabla-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1);
+    overflow: auto; flex: 1; min-height: 0; }
+  table.mozos { border-collapse: collapse; width: auto; }
+  table.mozos th, table.mozos td { border: 1px solid #dee2e6; text-align: center; }
+  table.mozos thead th { background: #2c3e50; color: white; font-size: .72rem;
+    padding: 3px 3px; position: sticky; top: 0; z-index: 10; white-space: nowrap; }
+  table.mozos thead th.th-emp { background: #1a252f; text-align: left; padding-left: 10px;
+    width: 180px; min-width: 180px; max-width: 180px; position: sticky; left: 0; z-index: 20; }
+  table.mozos thead tr.tr-dias th { border-bottom: none; }
+  table.mozos thead tr.tr-turnos th { font-size: .65rem; background: #34495e; border-top: none; top: 0; }
+  table.mozos thead tr.tr-turnos th.th-emp { background: #1a252f; }
+  /* Columna vacía entre semanas */
+  table.mozos th.col-sep, table.mozos td.col-sep {
+    background: #f4f6f9 !important; border-color: #f4f6f9 !important;
+    width: 38px; min-width: 38px; max-width: 38px; padding: 0;
+  }
+  /* Separadores visuales */
+  table.mozos .dia-sep { border-left: 1px solid #dee2e6 !important; }
+  table.mozos .hoy-col { background: #fffde7; }
+  table.mozos thead th.hoy-col { background: #f39c12 !important; }
+  table.mozos thead th.feriado { background: #7d3c27 !important; }
+  table.mozos td.celda-feriado { box-shadow: inset 0 3px 0 #FFAA00 !important; }
+  /* Semana 2 — color distinto en cabecera y cuerpo */
+  table.mozos thead tr.tr-dias th.sem2   { background: #0b5345; }
+  table.mozos thead tr.tr-turnos th.sem2 { background: #117a65; }
+  table.mozos td.celda.sem2 { box-shadow: inset 0 0 0 1000px rgba(11,83,69,0.07); }
+  table.mozos tfoot td.sem2 { box-shadow: inset 0 0 0 1000px rgba(11,83,69,0.07); }
+
+  /* Semana no confirmada — overlay gris */
+  table.mozos td.sem-nc { box-shadow: inset 0 0 0 1000px rgba(0,0,0,0.18) !important; }
+  table.mozos thead th.sem-nc { filter: brightness(0.68); }
+  table.mozos tfoot td.sem-nc { box-shadow: inset 0 0 0 1000px rgba(0,0,0,0.18) !important; }
+  tr.tr-grupo td.sem-nc { filter: brightness(0.72); }
+
+  /* Bordes de estado por semana */
+  table.mozos thead th.sem-nc  { border-top: 3px solid #e74c3c !important; }
+  table.mozos thead th.sem-conf { border-top: 3px solid #27ae60 !important; }
+  table.mozos tfoot tr:last-child td.sem-nc   { border-bottom: 3px solid #e74c3c !important; }
+  table.mozos tfoot tr:last-child td.sem-conf  { border-bottom: 3px solid #27ae60 !important; }
+  table.mozos .sem-nc-l  { border-left:  3px solid #e74c3c !important; }
+  table.mozos .sem-nc-r  { border-right: 3px solid #e74c3c !important; }
+  table.mozos .sem-conf-l { border-left:  3px solid #27ae60 !important; }
+  table.mozos .sem-conf-r { border-right: 3px solid #27ae60 !important; }
+
+  /* Nombre empleado */
+  table.mozos td.td-emp { font-size: .72rem; text-align: left; padding: 2px 6px;
+    background: white; position: sticky; left: 0; z-index: 5; white-space: nowrap;
+    width: 180px; min-width: 180px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+  table.mozos tr:hover td.td-emp { background: #f8f9fa; }
+
+  /* Secciones */
+  tr.tr-grupo td { background: #2c3e50; color: white; font-weight: bold;
+    font-size: .65rem; padding: 2px 6px; letter-spacing: .05em; text-align: center; }
+  tr.tr-grupo.cortados td { background: #7f4f24; }
+  tr.tr-grupo.dia td { background: #1a6b2a; }
+  tr.tr-grupo.noche td { background: #1a3a6b; }
+  tr.tr-grupo td.td-emp { text-align: left; }
+  tr.tr-grupo.cortados td.sem2 { background: #5c3a1a; }
+  tr.tr-grupo.dia     td.sem2 { background: #145220; }
+  tr.tr-grupo.noche   td.sem2 { background: #142d52; }
+
+  /* Celdas de estado */
+  table.mozos td.celda { width: 28px; min-width: 28px; max-width: 28px; height: 22px;
+    cursor: pointer; font-size: .72rem; font-weight: bold; padding: 0; transition: filter .1s; }
+  table.mozos td.celda:hover { filter: brightness(.88); }
+  table.mozos td.celda.bloqueada { cursor: default; filter: none; opacity: .7; }
+  table.mozos td.celda.confirmada { cursor: default; }
+
+  table.mozos td.celda-F  { background: #27ae60; color: #ffffff; }
+  table.mozos td.celda-P  { background: #f0fff0; color: #1b5e20; }
+  table.mozos td.celda-FT { background: #fff3e0; color: #e65100; }
+  table.mozos td.celda-FD { background: #e3f2fd; color: #0d47a1; }
+  table.mozos td.celda-V   { background: #95B3D7; color: #000000; }
+  table.mozos td.celda-E   { background: #FABF8F; color: #000000; }
+  table.mozos td.celda-ILT { background: #C4D79B; color: #000000; }
+  table.mozos td.celda-LSG { background: #B1A0C7; color: #000000; }
+  table.mozos td.celda-L   { background: #92CDDC; color: #000000; }
+  table.mozos td.celda-S   { background: #DA9694; color: #000000; }
+  table.mozos td.celda-nov { background: #eee; color: #333; font-size: .7rem; }
+  .celda-base { opacity: 1; }
+
+  /* Totales */
+  tfoot tr td { background: #ecf0f1; font-weight: bold; font-size: .72rem; padding: 2px 0; }
+  tfoot tr.tfoot-label td { background: #bdc3c7; font-size: .65rem; color: #2c3e50; padding: 1px 0; }
+  tfoot td.td-emp { text-align: left; padding-left: 8px; position: sticky; left: 0; }
+
+  /* Modal novedad */
+  .mozos-tipo-btn { padding: 8px 4px; border: 2px solid #dee2e6; border-radius: 6px;
+    cursor: pointer; font-size: .75rem; font-weight: bold; text-align: center;
+    background: white; transition: all .15s; line-height: 1.3; }
+  .mozos-tipo-btn:hover { filter: brightness(1.12); }
+  .mozos-tipo-btn.selected { outline: 3px solid #2c3e50; outline-offset: 2px; }
+
+  /* Resumen semanal vertical */
+  .resumen-sem { border-collapse: collapse; font-size: .8rem; background: white;
+    border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.1); overflow: hidden; }
+  .resumen-sem caption { font-weight: bold; font-size: .78rem; padding: 5px 10px;
+    text-align: left; color: white; }
+  .resumen-sem.sem1 caption { background: #2c3e50; }
+  .resumen-sem.sem2 caption { background: #0b5345; }
+  .resumen-sem th, .resumen-sem td { border: 1px solid #dee2e6; padding: 4px 10px; }
+  .resumen-sem thead th { background: #f4f6f9; color: #333; font-size: .75rem;
+    text-align: center; white-space: nowrap; }
+  .resumen-sem thead th:first-child { text-align: left; }
+  .resumen-sem td { text-align: center; }
+  .resumen-sem td:first-child { text-align: left; color: #555; white-space: nowrap; }
+  .resumen-sem tr:nth-child(even) td { background: #f9fafb; }
+  .resumen-sem.sem2 tr:nth-child(even) td { background: #f4fbf8; }
+  .resumen-wrap.sem-nc { filter: brightness(0.82); }
+  .resumen-wrap.sem-nc  .resumen-sem { box-shadow: 0 0 0 3px #e74c3c, 0 1px 3px rgba(0,0,0,.1); }
+  .resumen-wrap.sem-conf .resumen-sem { box-shadow: 0 0 0 3px #27ae60, 0 1px 3px rgba(0,0,0,.1); }
+
+  /* Nomenclatura */
+  .nomenclatura { margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; flex-shrink: 0; }
+
+  /* ── Impresión — solo semana 1 ── */
+  @media print {
+    @page { size: portrait; margin: 0.8cm; }
+
+    /* Forzar colores de fondo (novedades, sem2, etc.) */
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+    /* Reset layout de página */
+    body { height: auto !important; overflow: visible !important; display: block !important; background: white !important; }
+    header, .toolbar, .nomenclatura, .resumen-wrap.sem2, .resumen-sep { display: none !important; }
+    main { overflow: visible !important; flex: none !important; display: block !important; padding: 0 !important; }
+    .tabla-wrap { overflow: visible !important; flex: none !important; min-height: auto !important;
+      height: auto !important; border-radius: 0 !important; box-shadow: none !important; }
+
+    /* Ocultar semana 2 */
+    .sem2, .col-sep { display: none !important; }
+
+    /* Quitar resaltado de hoy (sin !important para que los estados de celda ganen) */
+    table.mozos .hoy-col { background: white; }
+    table.mozos thead tr.tr-dias th.hoy-col { background: #2c3e50 !important; }
+    table.mozos thead tr.tr-turnos th.hoy-col { background: #34495e !important; }
+
+    /* Quitar sticky */
+    table.mozos thead th, table.mozos td.td-emp, table.mozos thead th.th-emp,
+    tfoot td.td-emp { position: static !important; }
+
+    /* Comprimir cabecera */
+    table.mozos thead th { padding: 2px 3px !important; font-size: 7pt !important; }
+
+    /* Zoom para rellenar la hoja sin distorsionar columnas */
+    .tabla-wrap { zoom: 1.33; }
+
+    /* Comprimir filas de empleados */
+    table.mozos td { padding: 1px 2px !important; font-size: 7pt !important; }
+    table.mozos td.celda { height: auto !important; min-height: 0 !important; font-size: 6.5pt !important; }
+    table.mozos td.td-emp { padding: 1px 4px !important; font-size: 7pt !important; }
+
+    /* Comprimir separadores de grupo */
+    tr.tr-grupo td { padding: 2px 6px !important; font-size: 6.5pt !important; }
+
+    /* Comprimir tfoot */
+    tfoot tr td { padding: 1px 0 !important; font-size: 7pt !important; }
+    tfoot tr.tfoot-label td { padding: 1px 0 !important; font-size: 6pt !important; }
+
+    /* Resumen */
+    #resumen-semanas { display: flex !important; padding-left: 120px !important; }
+    .resumen-wrap { width: auto !important; filter: none !important; }
+    .resumen-sem { font-size: 7pt !important; box-shadow: 0 0 0 1px #dee2e6 !important; }
+    .resumen-sem caption { padding: 3px 6px !important; font-size: 7pt !important; }
+    .resumen-sem th, .resumen-sem td { padding: 2px 8px !important; }
+
+    /* Quitar bordes de estado de semana (verde/rojo) */
+    table.mozos .sem-conf-l, table.mozos .sem-nc-l { border-left: 1px solid #dee2e6 !important; }
+    table.mozos .sem-conf-r, table.mozos .sem-nc-r { border-right: 1px solid #dee2e6 !important; }
+    table.mozos thead th.sem-conf, table.mozos thead th.sem-nc { border-top: none !important; }
+    table.mozos tfoot tr:last-child td.sem-conf,
+    table.mozos tfoot tr:last-child td.sem-nc { border-bottom: 1px solid #dee2e6 !important; }
+
+    /* Aviso de semana sin confirmar */
+    #print-aviso { display: none; }
+    body.print-bloqueado header, body.print-bloqueado .toolbar,
+    body.print-bloqueado main, body.print-bloqueado .nomenclatura,
+    body.print-bloqueado #toast { display: none !important; }
+    body.print-bloqueado #print-aviso {
+      display: flex !important; flex-direction: column; align-items: center;
+      justify-content: center; text-align: center; position: fixed; inset: 0;
+      background: white; padding: 40px; gap: 8px;
+    }
+  }
+  .nom-item { display: flex; align-items: center; gap: 5px; font-size: .78rem; }
+  .nom-box { width: 22px; height: 18px; border-radius: 3px; border: 1px solid #dee2e6;
+    display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: bold; }
+
+  #print-aviso { display: none; }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #2c3e50; color: white; padding: 10px 20px; border-radius: 6px;
+    font-size: .85rem; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 9999; }
+  #toast.show { opacity: 1; }
+  #toast.error { background: #c0392b; }
+
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a><span id="nav-brand-empresa" style="display:none;margin-left:12px"></span>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group activo">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios" data-perm="horarios:ver">Horarios</a>
+        <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/distribucion" data-perm="distribucion:ver">Horarios Cocina</a>
+        <a href="/mozos" class="activo" data-perm="mozos:ver">Horarios Mozos Salón</a>
+        <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia" data-perm="asistencia:ver">Asistencia</a>
+        <a href="/fichajes" data-perm="asistencia:ver">Fichajes</a>
+        <a href="/asistencia-mensual" data-perm="asistencia:ver">Planilla</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados" data-perm="empleados:ver">Listado</a>
+        <a href="/premios" data-perm="premios:ver">Premios</a>
+        <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
+      </div>
+    </div>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <a href="/manual-encargado" data-perm="asistencia:ver" target="_blank">Ayuda</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px;cursor:pointer;text-decoration:underline dotted" onclick="abrirModalClave()" title="Cambiar contraseña"></span>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
+
+  <div id="modal-clave" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:white;border-radius:10px;padding:28px;width:340px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem;margin-bottom:16px">Cambiar contraseña</div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:.85rem;color:#555">Contraseña actual</label>
+        <input type="password" id="clave-actual" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:.85rem;color:#555">Nueva contraseña</label>
+        <input type="password" id="clave-nueva" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:.85rem;color:#555">Confirmar nueva contraseña</label>
+        <input type="password" id="clave-confirm" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box">
+      </div>
+      <div id="clave-error" style="color:#c00;font-size:.83rem;margin-bottom:10px;display:none"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="cerrarModalClave()" style="padding:7px 16px;border:1px solid #ccc;border-radius:6px;background:white;cursor:pointer">Cancelar</button>
+        <button onclick="guardarClave()" style="padding:7px 16px;background:#2c3e50;color:white;border:none;border-radius:6px;cursor:pointer">Guardar</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="toolbar">
+  <!-- Navegación: mismo ancho que columna nombres (180px) + padding izquierdo de main (16px) -->
+  <div style="width:196px;min-width:196px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:5px 8px;border-right:1px solid #e0e0e0">
+    <span id="label-semana" style="font-size:.72rem;color:#666;white-space:nowrap;text-align:center">—</span>
+    <div style="display:flex;gap:4px">
+      <button class="btn btn-nav" style="padding:3px 9px" onclick="semanaAnterior()">◀</button>
+      <button class="btn" style="background:#546e7a;color:white;font-size:.75rem;padding:3px 9px" onclick="irAHoy()">Hoy</button>
+      <button class="btn btn-nav" style="padding:3px 9px" onclick="semanaProxima()">▶</button>
+    </div>
+  </div>
+  <!-- Controles de semana: 392px sem1 + 38px sep + 392px sem2 = 822px -->
+  <div id="semana-controles" style="width:822px;min-width:822px;flex-shrink:0;display:flex;align-items:center;"></div>
+  <!-- Utilidades -->
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px;padding:0 12px;border-left:1px solid #e0e0e0;flex-shrink:0">
+    <button id="btn-excluir" class="btn" style="background:#7f8c8d;color:white" data-perm="mozos:editar" onclick="abrirExcluir()" title="Configurar empleados excluidos del conteo">Excluir del conteo</button>
+    <button id="btn-print" class="btn" style="background:#546e7a;color:white;display:none" onclick="imprimirMozos()" title="Imprimir semana 1">⎙ Imprimir S1</button>
+  </div>
+</div>
+
+<!-- Modal excluir del conteo -->
+<div id="modal-excluir" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:10px;padding:20px 24px;width:360px;max-width:96vw;max-height:80vh;display:flex;flex-direction:column;gap:12px">
+    <div style="font-weight:bold;font-size:1rem;color:#2c3e50">Excluir del conteo de mozos</div>
+    <div style="font-size:.78rem;color:#888">Los empleados marcados no se sumarán en el total de MOZOS.</div>
+    <div id="excluir-lista" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;max-height:340px;padding-right:4px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+      <button class="btn" style="background:#ecf0f1;color:#333" onclick="cerrarExcluir()">Cancelar</button>
+      <button class="btn" style="background:#2c3e50;color:white" onclick="guardarExcluir()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<main>
+  <div class="tabla-wrap" id="tabla-wrap">
+    <table class="mozos" id="tabla-mozos">
+      <thead id="thead-mozos"></thead>
+      <tbody id="tbody-mozos"></tbody>
+      <tfoot id="tfoot-mozos"></tfoot>
+    </table>
+    <div id="resumen-semanas" style="display:flex;padding:12px 0 16px 180px;"></div>
+  </div>
+  <div class="nomenclatura" id="nomenclatura">
+    <div class="nom-item"><div class="nom-box celda-P">|</div> Presente</div>
+    <div class="nom-item"><div class="nom-box" style="background:#27ae60;color:white">F</div> Franco</div>
+    <div class="nom-item"><div class="nom-box celda-FT">FT</div> Trabaja en franco</div>
+    <div class="nom-item"><div class="nom-box celda-FD">FD</div> Franco devuelto</div>
+    <div class="nom-item"><div class="nom-box celda-V">V</div> Vacaciones</div>
+    <div class="nom-item"><div class="nom-box celda-E">E</div> Enfermedad</div>
+    <div class="nom-item"><div class="nom-box celda-ILT">ILT</div> Accidente</div>
+    <div class="nom-item"><div class="nom-box celda-L">L</div> Licencia</div>
+    <div class="nom-item"><div class="nom-box celda-LSG">LSG</div> Lic. sin sueldo</div>
+    <div class="nom-item"><div class="nom-box celda-S">S</div> Suspendido</div>
+  </div>
+</main>
+
+<!-- Modal novedad -->
+<div id="nov-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:10px;padding:22px;width:390px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+    <div style="margin-bottom:14px">
+      <div id="nov-modal-titulo" style="font-weight:bold;font-size:.95rem"></div>
+      <div id="nov-modal-subtitulo" style="font-size:.76rem;color:#888"></div>
+    </div>
+    <div id="nov-tipos-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px"></div>
+    <div id="nov-vac-info" style="display:none;border-radius:6px;padding:7px 12px;font-size:.83rem;margin-bottom:10px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div>
+        <label style="font-size:.72rem;color:#666;font-weight:bold;display:block;margin-bottom:3px">Desde</label>
+        <input type="date" id="nov-modal-desde" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="font-size:.72rem;color:#666;font-weight:bold;display:block;margin-bottom:3px">Hasta <span style="font-weight:normal;color:#aaa">(opcional)</span></label>
+        <input type="date" id="nov-modal-hasta" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button onclick="revertirNovModal()" style="padding:6px 12px;border:1px solid #e74c3c;color:#e74c3c;border-radius:6px;background:white;cursor:pointer;font-size:.82rem;margin-right:auto">↩ Revertir</button>
+      <button onclick="cerrarNovModal()" style="padding:7px 14px;border:1px solid #ccc;border-radius:6px;background:white;cursor:pointer;font-size:.85rem">Cancelar</button>
+      <button id="nov-modal-guardar" onclick="guardarNovModal()" style="padding:7px 14px;background:#2c3e50;color:white;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:bold">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="print-aviso">
+  <div style="font-size:56px;line-height:1;color:#e74c3c">⚠</div>
+  <h2 style="margin:0;color:#c0392b;font-size:22px">No se puede imprimir</h2>
+  <p id="print-aviso-msg" style="margin:0;color:#555;font-size:15px"></p>
+  <p style="margin:0;color:#888;font-size:13px">Confirmá la semana antes de imprimir.</p>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Estado ────────────────────────────────────────────────────────────────────
+let _perms = new Set();
+let _lunes = null;          // Date — lunes de la primera semana visible
+let _deptId = null;         // departamento seleccionado
+let _semanas = [null, null]; // [{id, estado}, {id, estado}]
+let _grupos = {};           // {CORTADOS:[...], DIA:[...], NOCHE:[...]}
+let _detalles = [];         // [{empleado_id, fecha, turno, estado}]
+let _novedades = [];        // [{empleado_id, fecha, tipo}]
+let _planBase = {};         // {`${empId}_${fecha}`: {es_franco}}
+let _dias = [];             // ['2026-06-29', ...]
+let _feriados = new Set();  // Set de fechas feriado 'YYYY-MM-DD'
+let _excluirConteo = new Set(); // IDs excluidos del conteo de mozos
+let _periodosCerrados = new Set(); // {'2026-06', ...}
+let _guardando = false;
+
+const MESES_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const ESTADOS_RANGO  = new Set(['V','E','ILT','LSG','L','S']);
+const ESTADOS_LABELS = { P:'Presente', F:'Franco', FT:'Trabaja en franco', FD:'Franco devuelto',
+  V:'Vacaciones', E:'Enfermedad', ILT:'Accidente', L:'Licencia', LSG:'Lic. sin sueldo', S:'Suspendido' };
+const DIAS_CORTOS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const GRUPOS_ORDEN = ['CORTADOS', 'DIA', 'NOCHE'];
+const GRUPO_LABEL = { CORTADOS: 'CORTADOS', DIA: 'DÍA', NOCHE: 'NOCHE' };
+const GRUPO_CSS = { CORTADOS: 'cortados', DIA: 'dia', NOCHE: 'noche' };
+const NOV_BLOQUEA = new Set(['ILT','LSG','L','E','V','S']);
+const NOV_COLORES = {
+  ILT: {bg:'#C4D79B', txt:'#000000'},
+  LSG: {bg:'#B1A0C7', txt:'#000000'},
+  L:   {bg:'#92CDDC', txt:'#000000'},
+  E:   {bg:'#FABF8F', txt:'#000000'},
+  V:   {bg:'#95B3D7', txt:'#000000'},
+  S:   {bg:'#DA9694', txt:'#000000'},
+};
+
+function hoyISO() {
+  return new Date().toISOString().slice(0,10);
+}
+
+function lunesToDate(d) {
+  const dt = new Date(d);
+  const dow = dt.getDay() === 0 ? 6 : dt.getDay() - 1;
+  dt.setDate(dt.getDate() - dow);
+  return dt;
+}
+
+function toISO(d) {
+  return d.toISOString().slice(0,10);
+}
+
+function lunesDeISO(fecha) {
+  const d = new Date(fecha + 'T12:00:00');
+  const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
+  d.setDate(d.getDate() - dow);
+  return toISO(d);
+}
+
+function fmtLabel(d) {
+  return `${DIAS_CORTOS[d.getDay() === 0 ? 6 : d.getDay()-1]} ${d.getDate()} ${MESES_ES[d.getMonth()]}`;
+}
+
+function fmtSemana(lunes) {
+  const dom = new Date(lunes); dom.setDate(dom.getDate() + 13);
+  return `lun ${lunes.getDate()} ${MESES_ES[lunes.getMonth()]} – dom ${dom.getDate()} ${MESES_ES[dom.getMonth()]}`;
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function initAuth() {
+  try {
+    const r = await fetch('/api/auth/me');
+    if (!r.ok) { window.location.href = '/login'; return; }
+    const d = await r.json();
+    _perms = new Set((d.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    document.querySelectorAll('[data-perm]').forEach(el => {
+      const [m, a] = el.dataset.perm.split(':');
+      if (_perms.has(`${m}:${a}`)) el.removeAttribute('data-perm');
+    });
+    const ui = document.getElementById('user-info');
+    if (ui) ui.textContent = d.nombre || '';
+  } catch { window.location.href = '/login'; }
+}
+
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
+
+function logout() {
+  fetch('/api/auth/logout', { method: 'POST' }).finally(() => { window.location.href = '/login'; });
+}
+
+// ── Navegación semana ─────────────────────────────────────────────────────────
+function semanaAnterior() {
+  _lunes.setDate(_lunes.getDate() - 7);
+  cargar();
+}
+
+function semanaProxima() {
+  _lunes.setDate(_lunes.getDate() + 7);
+  cargar();
+}
+
+function irAHoy() {
+  _lunes = lunesToDate(new Date());
+  cargar();
+}
+
+
+// ── Carga de datos ────────────────────────────────────────────────────────────
+async function cargar() {
+  if (!_deptId || !_lunes) return;
+  document.getElementById('label-semana').textContent = fmtSemana(_lunes);
+  // Cargar exclusiones del conteo para este departamento
+  try {
+    const rc = await fetch(`/api/mozos/config?departamento_id=${_deptId}`);
+    if (rc.ok) {
+      const cfg = await rc.json();
+      _excluirConteo = new Set(cfg.excluir_conteo || []);
+    }
+  } catch {}
+  try {
+    const url = `/api/mozos/semana?departamento_id=${_deptId}&semana_inicio=${toISO(_lunes)}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    _semanas         = data.semanas || [null, null];
+    _grupos          = data.grupos || {};
+    _detalles        = data.detalles || [];
+    _novedades       = data.novedades || [];
+    _periodosCerrados = new Set((data.periodos_cerrados || []).map(p => `${p.anio}-${String(p.mes).padStart(2,'0')}`));
+    _planBase  = {};
+    (data.plan_base || []).forEach(r => { _planBase[`${r.empleado_id}_${r.fecha}`] = r; });
+    _dias      = data.dias || [];
+    _feriados  = new Set(data.feriados || []);
+    renderGrilla();
+  } catch(e) {
+    toast('Error al cargar', true);
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function getEstado(empId, fecha, turno) {
+  const d = _detalles.find(x => x.empleado_id === empId && x.fecha === fecha && x.turno === turno);
+  return d ? d.estado : null;
+}
+
+function getNovedad(empId, fecha) {
+  return _novedades.find(n => n.empleado_id === empId && n.fecha === fecha) || null;
+}
+
+function esFechaCerrada(fecha) {
+  return _periodosCerrados.has(fecha.slice(0, 7));
+}
+
+function badgeEstado(s) {
+  if (!s) return { cls: 'badge-nuevo', txt: 'Planificación automática' };
+  return s.estado === 'confirmado'
+    ? { cls: 'badge-confirmado', txt: 'Confirmado' }
+    : { cls: 'badge-borrador',   txt: 'Borrador' };
+}
+
+function renderGrilla() {
+  const puedeConfirmar = canDo('mozos', 'confirmar');
+  const hoy = hoyISO();
+
+  // Badge y botones globales (ambas semanas juntas)
+  const s1 = _semanas[0], s2 = _semanas[1];
+  const c1 = s1 && s1.estado === 'confirmado';
+  const c2 = s2 && s2.estado === 'confirmado';
+  const ambosConfirmados = c1 && c2;
+  const algoBorrador = !c1 || !c2;
+  const sem1Cerrada = _dias.length > 0 && esFechaCerrada(_dias[0]);
+  const sem2Cerrada = _dias.length > 7 && esFechaCerrada(_dias[7]);
+  // Hay algo borrador que no está en período cerrado → se puede confirmar
+  const hayBorradorAbierto = (!c1 && !sem1Cerrada) || (!c2 && !sem2Cerrada);
+  // Hay algo confirmado que no está en período cerrado → se puede editar
+  const hayConfirmadoAbierto = (c1 && !sem1Cerrada) || (c2 && !sem2Cerrada);
+  let badgeCls, badgeTxt;
+  if (ambosConfirmados)  { badgeCls = 'badge-confirmado'; badgeTxt = 'Confirmado'; }
+  else if (!s1 && !s2)   { badgeCls = 'badge-nuevo';      badgeTxt = 'Planificación automática'; }
+  else                    { badgeCls = 'badge-borrador';   badgeTxt = 'Borrador'; }
+  const estadosMixtos = hayBorradorAbierto && hayConfirmadoAbierto;
+  const ctrl = document.getElementById('semana-controles');
+  const centrado = `width:100%;display:flex;justify-content:center;align-items:center;gap:8px`;
+  if (!puedeConfirmar) {
+    ctrl.innerHTML = `<div style="${centrado}">${badgeHtml(badgeCls, badgeTxt)}</div>`;
+  } else if (!estadosMixtos) {
+    let btn = '';
+    if (hayBorradorAbierto) btn = `<button class="btn btn-confirmar" onclick="confirmar()">Confirmar</button>`;
+    if (hayConfirmadoAbierto) btn = `<button class="btn btn-editar" onclick="desconfirmar()">✎ Editar</button>`;
+    ctrl.innerHTML = `<div style="${centrado}">${badgeHtml(badgeCls, badgeTxt)}${btn}</div>`;
+  } else {
+    // Estados mixtos → cada semana centrada en sus 392px exactos, con 38px de separador
+    const sem = `width:392px;flex-shrink:0;display:flex;justify-content:center;align-items:center`;
+    ctrl.innerHTML = `<div style="${sem}">${semanaCtrl(0, c1, sem1Cerrada)}</div>`
+      + `<div style="width:38px;flex-shrink:0"></div>`
+      + `<div style="${sem}">${semanaCtrl(1, c2, sem2Cerrada)}</div>`;
+  }
+  document.getElementById('btn-print').style.display = _dias.length > 0 ? '' : 'none';
+
+  // ── Cabecera ──
+  const thead = document.getElementById('thead-mozos');
+  let thDias = '<tr class="tr-dias"><th class="th-emp" rowspan="2">Empleado</th>';
+  let thTurnos = '<tr class="tr-turnos">';
+  _dias.forEach((d, i) => {
+    if (i === 7) { thDias += '<th class="col-sep"></th>'; thTurnos += '<th class="col-sep"></th>'; }
+    const esHoy = d === hoy;
+    const esFeriado = _feriados.has(d);
+    const dt = new Date(d + 'T12:00:00');
+    const label = `${DIAS_CORTOS[i % 7]} ${dt.getDate()}/${dt.getMonth()+1}`;
+    const sep  = i > 0 && i !== 7 ? 'dia-sep' : '';
+    const sem2 = i >= 7 ? 'sem2' : '';
+    const semIdx = i >= 7 ? 1 : 0;
+    const nc = [!c1, !c2][semIdx] ? 'sem-nc' : 'sem-conf';
+    const isFirst = i === 0 || i === 7;
+    const isLast  = i === 6 || i === 13;
+    const clsDia = [sep, sem2, nc, isFirst ? nc+'-l' : '', isLast ? nc+'-r' : '', esHoy ? 'hoy-col' : '', esFeriado ? 'feriado' : ''].filter(Boolean).join(' ');
+    const clsTm  = [sep, sem2, nc, isFirst ? nc+'-l' : '', esHoy ? 'hoy-col' : '', esFeriado ? 'feriado' : ''].filter(Boolean).join(' ');
+    const clsTn  = [sem2, nc, isLast ? nc+'-r' : '', esHoy ? 'hoy-col' : '', esFeriado ? 'feriado' : ''].filter(Boolean).join(' ');
+    thDias    += `<th colspan="2"${clsDia ? ` class="${clsDia}"` : ''}>${label}</th>`;
+    thTurnos  += `<th${clsTm ? ` class="${clsTm}"` : ''}>TM</th><th${clsTn ? ` class="${clsTn}"` : ''}>TN</th>`;
+  });
+  thead.innerHTML = thDias + '</tr>' + thTurnos + '</tr>';
+  // Fijar top de la fila de turnos (TM/TN) = altura de la fila de fechas
+  requestAnimationFrame(() => {
+    const trDias = thead.querySelector('tr.tr-dias');
+    if (trDias) {
+      const h = trDias.getBoundingClientRect().height;
+      thead.querySelectorAll('tr.tr-turnos th').forEach(th => th.style.top = h + 'px');
+    }
+  });
+
+  // Mapa inverso emp.id → grupo (para inferir bloques en plan_base)
+  const empGroup = {};
+  Object.entries(_grupos).forEach(([g, emps]) => emps.forEach(e => { empGroup[e.id] = g; }));
+
+  // ── Cuerpo ──
+  let html = '';
+  GRUPOS_ORDEN.forEach(grupo => {
+    const emps = (_grupos[grupo] || []);
+    if (!emps.length) return;
+    const css = GRUPO_CSS[grupo];
+    const label = GRUPO_LABEL[grupo];
+    html += `<tr class="tr-grupo ${css}"><td class="td-emp">${label}</td><td colspan="14">${label}</td><td class="col-sep"></td><td colspan="14" class="sem2">${label}</td></tr>`;
+    emps.forEach(emp => {
+      html += `<tr>`;
+      html += `<td class="td-emp" title="${emp.apellido}, ${emp.nombre}">${emp.apellido}, ${emp.nombre}</td>`;
+      _dias.forEach((fecha, di) => {
+        if (di === 7) html += '<td class="col-sep"></td>';
+        ['TM','TN'].forEach((turno, ti) => {
+          const semIdx    = di < 7 ? 0 : 1;
+          const confirmado = _semanas[semIdx] && _semanas[semIdx].estado === 'confirmado';
+          const puedoEditar = canDo('mozos', 'editar') && !confirmado && !esFechaCerrada(fecha);
+          const esSep = di > 0 && di !== 7 && ti === 0;
+          const esHoy = fecha === hoy;
+          const nov = getNovedad(emp.id, fecha);
+          const estado = getEstado(emp.id, fecha, turno);
+
+          const esFeriado = _feriados.has(fecha);
+          const ncState = [!c1, !c2][semIdx] ? 'sem-nc' : 'sem-conf';
+          const esNc = [!c1, !c2][semIdx] ? ' sem-nc' : '';
+          const isFirstCol = (di === 0 || di === 7) && ti === 0;
+          const isLastCol  = (di === 6 || di === 13) && ti === 1;
+          const borderL = isFirstCol ? ` ${ncState}-l` : '';
+          const borderR = isLastCol  ? ` ${ncState}-r` : '';
+          const sepCls = esSep ? ' dia-sep' : '';
+          let cls = `celda${sepCls}${esHoy?' hoy-col':''}${esFeriado?' celda-feriado':''}${esNc}${borderL}${borderR}`;
+          let label = '';
+          let cellStyle = '';
+          let bloqueada = false;
+
+          if (nov && NOV_BLOQUEA.has(nov.tipo)) {
+            const nc = NOV_COLORES[nov.tipo] || {bg:'#eee', txt:'#333'};
+            cls += ' bloqueada';
+            cellStyle = `background:${nc.bg};color:${nc.txt}`;
+            label = nov.tipo;
+            bloqueada = true;
+          } else if (estado) {
+            cls += ` celda-${estado}`;
+            label = estado === 'P' ? '|' : estado;
+          } else {
+            // Sin mozos_detalle: mostrar planificacion confirmada como base
+            const base = _planBase[`${emp.id}_${fecha}`];
+            if (base) {
+              if (base.es_franco) {
+                cls += ' celda-F celda-base';
+                label = 'F';
+              } else {
+                // Inferir bloques según grupo: CORTADOS trabaja TM+TN, DIA solo TM, NOCHE solo TN
+                const g = empGroup[emp.id] || 'DIA';
+                const mostrar = (turno === 'TM' && g !== 'NOCHE') || (turno === 'TN' && g !== 'DIA');
+                if (mostrar) {
+                  cls += ' celda-P celda-base';
+                  label = '|';
+                }
+              }
+            }
+          }
+
+          if (confirmado) cls += ' confirmada';
+          if (di >= 7) cls += ' sem2';
+
+          const styleAttr = cellStyle ? ` style="${cellStyle}"` : '';
+          if (!bloqueada && puedoEditar) {
+            html += `<td class="${cls}"${styleAttr} onclick="abrirPopup(${emp.id},'${fecha}','${turno}')">${label}</td>`;
+          } else {
+            html += `<td class="${cls}"${styleAttr}>${label}</td>`;
+          }
+        });
+      });
+      html += `</tr>`;
+    });
+  });
+  document.getElementById('tbody-mozos').innerHTML = html;
+
+  // ── Totales ──
+  let tfHtml = '<tr class="tfoot-label"><td class="td-emp">TURNO</td>';
+  _dias.forEach((_, i) => {
+    if (i === 7) tfHtml += '<td class="col-sep"></td>';
+    const ncTlState = [!c1, !c2][i >= 7 ? 1 : 0] ? 'sem-nc' : 'sem-conf';
+    const ncTl = [!c1, !c2][i >= 7 ? 1 : 0] ? 'sem-nc' : '';
+    const isFTl = i === 0 || i === 7; const isLTl = i === 6 || i === 13;
+    const cls = [i > 0 && i !== 7 ? 'dia-sep' : '', i >= 7 ? 'sem2' : '', ncTl, isFTl ? ncTlState+'-l' : ''].filter(Boolean).join(' ');
+    const clsTn = [i >= 7 ? 'sem2' : '', ncTl, isLTl ? ncTlState+'-r' : ''].filter(Boolean).join(' ');
+    tfHtml += `<td${cls?` class="${cls}"`:''}>TM</td><td${clsTn ? ` class="${clsTn}"` : ''}>TN</td>`;
+  });
+  tfHtml += '</tr>';
+
+  // Empleados excluidos del conteo de mozos (cargado desde DB)
+  const EXCLUIR_CONTEO = _excluirConteo;
+
+  // Contar P+FT por (fecha, turno) — desde detalles explícitos
+  const counts = {};
+  _detalles.forEach(d => {
+    if (EXCLUIR_CONTEO.has(d.empleado_id)) return;
+    if (d.estado === 'P' || d.estado === 'FT') {
+      const k = `${d.fecha}_${d.turno}`;
+      counts[k] = (counts[k] || 0) + 1;
+    }
+  });
+  // Sumar celdas base (planificacion confirmada) que no tienen detalle explícito
+  Object.entries(_planBase).forEach(([key, base]) => {
+    if (base.es_franco) return;
+    const sep = key.indexOf('_');
+    const empId = parseInt(key.slice(0, sep));
+    if (EXCLUIR_CONTEO.has(empId)) return;
+    const fecha = key.slice(sep + 1);
+    const g = empGroup[parseInt(empId)] || 'DIA';
+    const hasDetalleTM = _detalles.some(d => d.empleado_id === parseInt(empId) && d.fecha === fecha && d.turno === 'TM');
+    const hasDetalleTN = _detalles.some(d => d.empleado_id === parseInt(empId) && d.fecha === fecha && d.turno === 'TN');
+    if (g !== 'NOCHE' && !hasDetalleTM) counts[`${fecha}_TM`] = (counts[`${fecha}_TM`] || 0) + 1;
+    if (g !== 'DIA'   && !hasDetalleTN) counts[`${fecha}_TN`] = (counts[`${fecha}_TN`] || 0) + 1;
+  });
+
+  tfHtml += '<tr><td class="td-emp">MOZOS</td>';
+  _dias.forEach((fecha, i) => {
+    if (i === 7) tfHtml += '<td class="col-sep"></td>';
+    const tm = counts[`${fecha}_TM`] || 0;
+    const tn = counts[`${fecha}_TN`] || 0;
+    const ncTf = [!c1, !c2][i >= 7 ? 1 : 0] ? 'sem-nc' : 'sem-conf';
+    const isFTf = i === 0 || i === 7; const isLTf = i === 6 || i === 13;
+    const clsTm = [i > 0 && i !== 7 ? 'dia-sep' : '', i >= 7 ? 'sem2' : '', ncTf, isFTf ? ncTf+'-l' : ''].filter(Boolean).join(' ');
+    const clsTn = [i >= 7 ? 'sem2' : '', ncTf, isLTf ? ncTf+'-r' : ''].filter(Boolean).join(' ');
+    tfHtml += `<td${clsTm ? ` class="${clsTm}"` : ''}>${tm || ''}</td><td${clsTn ? ` class="${clsTn}"` : ''}>${tn || ''}</td>`;
+  });
+  tfHtml += '</tr>';
+
+  document.getElementById('tfoot-mozos').innerHTML = tfHtml;
+
+  // ── Resumen vertical por semana ──
+  const DIAS_ES = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo'];
+  function buildResumen(diasSlice, cls, confirmado) {
+    const lunes = new Date(diasSlice[0] + 'T12:00:00');
+    const dom   = new Date(diasSlice[6] + 'T12:00:00');
+    const cap   = `${lunes.getDate()} ${MESES_ES[lunes.getMonth()]} – ${dom.getDate()} ${MESES_ES[dom.getMonth()]}`;
+    const ncCls = confirmado ? 'sem-conf' : 'sem-nc';
+    let rows = '';
+    diasSlice.forEach((fecha, i) => {
+      const dt = new Date(fecha + 'T12:00:00');
+      const dia = `${DIAS_ES[i]} ${dt.getDate()}`;
+      const tm = counts[`${fecha}_TM`] || 0;
+      const tn = counts[`${fecha}_TN`] || 0;
+      rows += `<tr><td>${dia}</td><td>${tm || ''}</td><td>${tn || ''}</td></tr>`;
+    });
+    return `<div class="resumen-wrap ${cls} ${ncCls}" style="width:392px;display:flex;justify-content:center;"><table class="resumen-sem ${cls}">
+      <caption>Mozos — ${cap}</caption>
+      <thead><tr><th>Día</th><th>Mañana</th><th>Noche</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  }
+  const resEl = document.getElementById('resumen-semanas');
+  if (_dias.length === 14) {
+    resEl.innerHTML = buildResumen(_dias.slice(0,7), 'sem1', c1)
+      + '<div class="resumen-sep" style="width:38px;flex-shrink:0;"></div>'
+      + buildResumen(_dias.slice(7,14), 'sem2', c2);
+  }
+}
+
+// ── Modal novedad ─────────────────────────────────────────────────────────────
+const MOZOS_COLORES = {
+  P:   { bg: '#f0fff0', txt: '#1b5e20' },
+  F:   { bg: '#27ae60', txt: '#ffffff' },
+  FT:  { bg: '#fff3e0', txt: '#e65100' },
+  FD:  { bg: '#e3f2fd', txt: '#0d47a1' },
+  V:   { bg: '#95B3D7', txt: '#000000' },
+  E:   { bg: '#FABF8F', txt: '#000000' },
+  ILT: { bg: '#C4D79B', txt: '#000000' },
+  L:   { bg: '#92CDDC', txt: '#000000' },
+  LSG: { bg: '#B1A0C7', txt: '#000000' },
+  S:   { bg: '#DA9694', txt: '#000000' },
+};
+const TIPOS_MOZOS = ['P', 'F', 'FT', 'FD', 'V', 'E', 'ILT', 'L', 'LSG', 'S'];
+
+let _novTipoSel = null;
+let _novCell    = null;
+
+function abrirPopup(empId, fecha, turno) {
+  if (_guardando) return;
+  _novTipoSel = null;
+  _novCell = { empId, fecha, turno };
+
+  let empNombre = '';
+  for (const emps of Object.values(_grupos)) {
+    const e = emps.find(e => e.id === empId);
+    if (e) { empNombre = `${e.apellido}, ${e.nombre}`; break; }
+  }
+
+  document.getElementById('nov-modal-titulo').textContent = empNombre;
+  const dt = new Date(fecha + 'T12:00:00');
+  document.getElementById('nov-modal-subtitulo').textContent =
+    `${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()} — ${turno}`;
+
+  const grid = document.getElementById('nov-tipos-grid');
+  grid.innerHTML = TIPOS_MOZOS.map(t => {
+    const c = MOZOS_COLORES[t];
+    const lbl = t === 'P' ? '|' : t;
+    return `<button class="mozos-tipo-btn" data-tipo="${t}" onclick="selTipoNov('${t}')"
+      style="background:${c.bg};color:${c.txt};border-color:${c.bg}">
+      <div style="font-size:.82rem">${lbl}</div>
+      <div style="font-size:.62rem;font-weight:normal;margin-top:2px">${ESTADOS_LABELS[t]||''}</div>
+    </button>`;
+  }).join('');
+
+  document.getElementById('nov-vac-info').style.display = 'none';
+  document.getElementById('nov-modal-desde').value = fecha;
+  document.getElementById('nov-modal-hasta').value = '';
+  document.getElementById('nov-modal').style.display = 'flex';
+}
+
+function selTipoNov(t) {
+  _novTipoSel = t;
+  document.querySelectorAll('.mozos-tipo-btn').forEach(b =>
+    b.classList.toggle('selected', b.dataset.tipo === t));
+  actualizarVacInfo(_novCell.empId, _novCell.fecha, t);
+}
+
+function actualizarVacInfo(empId, fecha, tipo) {
+  const el = document.getElementById('nov-vac-info');
+  if (tipo !== 'V') { el.style.display = 'none'; return; }
+  const anio = parseInt(fecha.slice(0, 4)) - 1;
+  el.textContent = '…'; el.style.display = '';
+  el.style.background = '#f0f4f8'; el.style.color = '#555';
+  fetch(`/api/vacaciones/saldo-empleado?empleado_id=${empId}&anio=${anio}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      if (!d) { el.style.display = 'none'; return; }
+      const ok = d.dias_restan > 0;
+      el.textContent      = `Vacaciones disponibles: ${d.dias_restan} día(s)`;
+      el.style.background = ok ? '#eaf4ea' : '#fdecea';
+      el.style.color      = ok ? '#2d6a2d' : '#c0392b';
+    })
+    .catch(() => { el.style.display = 'none'; });
+}
+
+function cerrarNovModal() {
+  document.getElementById('nov-modal').style.display = 'none';
+  _novTipoSel = null;
+  _novCell    = null;
+}
+
+async function _guardarRango(estado) {
+  const desdeVal = document.getElementById('nov-modal-desde').value;
+  const hastaVal = document.getElementById('nov-modal-hasta').value || desdeVal;
+  if (!desdeVal) { toast('Completá la fecha desde', true); return false; }
+  if (desdeVal > hastaVal) { toast('"Desde" no puede ser posterior a "hasta"', true); return false; }
+
+  const fechas = [];
+  let d = new Date(desdeVal + 'T00:00:00');
+  while (toISO(d) <= hastaVal) { fechas.push(toISO(d)); d.setDate(d.getDate() + 1); }
+
+  // Absencias de día completo → ambos turnos; estados de turno → solo el clickeado
+  const turnos = ESTADOS_RANGO.has(estado) ? ['TM', 'TN'] : [_novCell.turno];
+
+  _guardando = true;
+  document.getElementById('nov-modal-guardar').disabled = true;
+  try {
+    for (const fecha of fechas) {
+      for (const turno of turnos) {
+        const r = await fetch('/api/mozos/celda', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            departamento_id: _deptId,
+            semana_inicio: lunesDeISO(fecha),
+            empleado_id: _novCell.empId,
+            fecha, turno, estado
+          })
+        });
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          toast(e.detail || 'Error al guardar', true);
+          return false;
+        }
+      }
+    }
+    return fechas.length;
+  } catch { toast('Error al guardar', true); return false; }
+  finally {
+    _guardando = false;
+    document.getElementById('nov-modal-guardar').disabled = false;
+  }
+}
+
+async function guardarNovModal() {
+  if (!_novCell || _guardando) return;
+  if (!_novTipoSel) { toast('Seleccioná un tipo', true); return; }
+  const n = await _guardarRango(_novTipoSel);
+  if (n === false) return;
+  cerrarNovModal();
+  await cargar();
+  toast(n > 1 ? `${ESTADOS_LABELS[_novTipoSel] || _novTipoSel} guardado (${n} días)` : 'Guardado');
+}
+
+async function revertirNovModal() {
+  if (!_novCell || _guardando) return;
+  const n = await _guardarRango(null);
+  if (n === false) return;
+  cerrarNovModal();
+  await cargar();
+  toast('Revertido');
+}
+
+// ── Helpers de controles de semana ───────────────────────────────────────────
+function badgeHtml(cls, txt) {
+  return `<span class="badge ${cls}">${txt}</span>`;
+}
+
+function semanaCtrl(idx, confirmado, cerrada) {
+  const label = `S${idx + 1}`;
+  if (cerrada) return `<span style="font-size:.78rem;color:#888">${label}: cerrado</span>`;
+  if (confirmado) {
+    return `<span style="display:flex;align-items:center;gap:5px">
+      <span style="font-size:.78rem;color:#888">${label}:</span>
+      ${badgeHtml('badge-confirmado', 'Confirmado')}
+      <button class="btn btn-editar" style="padding:4px 10px;font-size:.78rem" onclick="desconfirmarIdx(${idx})">✎ Editar</button>
+    </span>`;
+  }
+  return `<span style="display:flex;align-items:center;gap:5px">
+    <span style="font-size:.78rem;color:#888">${label}:</span>
+    ${badgeHtml('badge-borrador', 'Borrador')}
+    <button class="btn btn-confirmar" style="padding:4px 10px;font-size:.78rem" onclick="confirmarIdx(${idx})">Confirmar</button>
+  </span>`;
+}
+
+// ── Confirmar / Desconfirmar ──────────────────────────────────────────────────
+async function confirmar() {
+  if (!confirm('¿Confirmar ambas semanas? Se escribirá la planificación.')) return;
+  try {
+    for (let idx = 0; idx < 2; idx++) {
+      const s = _semanas[idx];
+      if (s && s.estado === 'confirmado') continue;
+      if (esFechaCerrada(_dias[idx * 7])) continue;
+      let r;
+      if (s) {
+        r = await fetch(`/api/mozos/semana/${s.id}/confirmar`, { method: 'POST' });
+      } else {
+        const semInicio = new Date(_lunes);
+        if (idx === 1) semInicio.setDate(semInicio.getDate() + 7);
+        r = await fetch('/api/mozos/confirmar-por-fecha', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ departamento_id: _deptId, semana_inicio: toISO(semInicio) })
+        });
+      }
+      if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return; }
+    }
+    await cargar();
+    toast('Semanas confirmadas');
+  } catch { toast('Error', true); }
+}
+
+async function desconfirmar() {
+  if (!confirm('¿Volver ambas semanas a borrador?')) return;
+  try {
+    for (let idx = 0; idx < 2; idx++) {
+      const s = _semanas[idx];
+      if (!s || s.estado !== 'confirmado') continue;
+      if (esFechaCerrada(_dias[idx * 7])) continue;
+      const r = await fetch(`/api/mozos/semana/${s.id}/desconfirmar`, { method: 'POST' });
+      if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return; }
+    }
+    await cargar();
+    toast('Abiertas para edición');
+  } catch { toast('Error', true); }
+}
+
+async function confirmarIdx(idx) {
+  const s = _semanas[idx];
+  const label = `Semana ${idx + 1}`;
+  if (!confirm(`¿Confirmar ${label}? Se escribirá la planificación.`)) return;
+  try {
+    let r;
+    if (s) {
+      r = await fetch(`/api/mozos/semana/${s.id}/confirmar`, { method: 'POST' });
+    } else {
+      const semInicio = new Date(_lunes);
+      if (idx === 1) semInicio.setDate(semInicio.getDate() + 7);
+      r = await fetch('/api/mozos/confirmar-por-fecha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ departamento_id: _deptId, semana_inicio: toISO(semInicio) })
+      });
+    }
+    if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return; }
+    await cargar();
+    toast(`${label} confirmada`);
+  } catch { toast('Error', true); }
+}
+
+async function desconfirmarIdx(idx) {
+  const s = _semanas[idx];
+  if (!s) return;
+  const label = `Semana ${idx + 1}`;
+  if (!confirm(`¿Volver ${label} a borrador?`)) return;
+  try {
+    const r = await fetch(`/api/mozos/semana/${s.id}/desconfirmar`, { method: 'POST' });
+    if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return; }
+    await cargar();
+    toast(`${label} abierta para edición`);
+  } catch { toast('Error', true); }
+}
+
+// ── Imprimir ──────────────────────────────────────────────────────────────────
+function imprimirMozos() {
+  const s1 = _semanas[0];
+  if (!s1 || s1.estado !== 'confirmado') {
+    toast('No se puede imprimir: la Semana 1 no está confirmada', true);
+    return;
+  }
+  window.print();
+}
+
+window.addEventListener('beforeprint', () => {
+  const s1 = _semanas[0];
+  if (!s1 || s1.estado !== 'confirmado') {
+    document.getElementById('print-aviso-msg').textContent = 'La Semana 1 no está confirmada.';
+    document.body.classList.add('print-bloqueado');
+  }
+});
+
+window.addEventListener('afterprint', () => {
+  document.body.classList.remove('print-bloqueado');
+});
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let _toastTimer = null;
+function toast(msg, err = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (err ? ' error' : '');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.className = ''; }, 3000);
+}
+
+// ── Modal clave ───────────────────────────────────────────────────────────────
+function abrirModalClave() { document.getElementById('modal-clave').style.display = 'flex'; }
+function cerrarModalClave() { document.getElementById('modal-clave').style.display = 'none'; }
+async function guardarClave() {
+  const actual = document.getElementById('clave-actual').value;
+  const nueva  = document.getElementById('clave-nueva').value;
+  const conf   = document.getElementById('clave-confirm').value;
+  const errEl  = document.getElementById('clave-error');
+  if (!actual || !nueva) { errEl.textContent='Completá todos los campos.'; errEl.style.display='block'; return; }
+  if (nueva !== conf) { errEl.textContent='Las contraseñas nuevas no coinciden.'; errEl.style.display='block'; return; }
+  const r = await fetch('/api/auth/cambiar-clave', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ clave_actual: actual, clave_nueva: nueva })
+  });
+  if (r.ok) { cerrarModalClave(); toast('Contraseña actualizada'); }
+  else { const d = await r.json().catch(()=>({})); errEl.textContent = d.detail || 'Error'; errEl.style.display='block'; }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  await initAuth();
+  _lunes = lunesToDate(new Date());
+  document.getElementById('label-semana').textContent = fmtSemana(_lunes);
+
+  try {
+    const r = await fetch('/api/mozos/departamentos');
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    poblarDeptSelect(data.departamentos || []);
+  } catch {
+    toast('Error al cargar departamentos', true);
+  }
+}
+
+function poblarDeptSelect(depts) {
+  if (!depts.length) return;
+  _deptId = depts[0].id;
+  cargar();
+}
+
+window.addEventListener('DOMContentLoaded', init);
+
+// ── Excluir del conteo ────────────────────────────────────────────────────────
+function abrirExcluir() {
+  const todos = Object.values(_grupos).flat();
+  if (!todos.length) { alert('Cargá una semana primero.'); return; }
+  const lista = document.getElementById('excluir-lista');
+  lista.innerHTML = todos
+    .sort((a, b) => a.apellido.localeCompare(b.apellido))
+    .map(e => `
+      <label style="display:flex;align-items:center;gap:8px;font-size:.85rem;cursor:pointer;padding:4px 6px;border-radius:4px;hover:background:#f8f9fa">
+        <input type="checkbox" value="${e.id}" ${_excluirConteo.has(e.id) ? 'checked' : ''}>
+        ${e.apellido}, ${e.nombre}
+      </label>`).join('');
+  const modal = document.getElementById('modal-excluir');
+  modal.style.display = 'flex';
+}
+
+function cerrarExcluir() {
+  document.getElementById('modal-excluir').style.display = 'none';
+}
+
+async function guardarExcluir() {
+  const checks = document.querySelectorAll('#excluir-lista input[type=checkbox]');
+  const ids = [...checks].filter(c => c.checked).map(c => parseInt(c.value));
+  const r = await fetch('/api/mozos/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ departamento_id: _deptId, excluir_conteo: ids })
+  });
+  if (!r.ok) { alert('Error al guardar'); return; }
+  _excluirConteo = new Set(ids);
+  cerrarExcluir();
+  renderGrilla();
+}
+</script>
+<script src="/static/js/nav-brand.js"></script>
+</body>
+</html>

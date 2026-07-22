@@ -410,6 +410,7 @@ def init_db():
                 id                    INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre                TEXT    NOT NULL UNIQUE,
                 usa_distribucion      INTEGER NOT NULL DEFAULT 0,
+                usa_mozos             INTEGER NOT NULL DEFAULT 0,
                 escribe_planificacion INTEGER NOT NULL DEFAULT 0
             );
 
@@ -1030,6 +1031,9 @@ def _migrate(conn):
     if "usa_distribucion" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN usa_distribucion INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna usa_distribucion agregada a departamentos")
+    if "usa_mozos" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN usa_mozos INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna usa_mozos agregada a departamentos")
     if "escribe_planificacion" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN escribe_planificacion INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna escribe_planificacion agregada a departamentos")
@@ -1105,6 +1109,63 @@ def _migrate(conn):
             creado_por      INTEGER REFERENCES usuarios(id),
             creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
             UNIQUE(distribucion_id, empleado_id, fecha)
+        )
+    """)
+
+    # vacaciones staging por empleado — se pasan a novedades al confirmar
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS distribucion_vacacion (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            distribucion_id INTEGER NOT NULL REFERENCES distribucion_semana(id) ON DELETE CASCADE,
+            empleado_id     INTEGER NOT NULL REFERENCES empleados(id),
+            fecha           TEXT    NOT NULL,
+            creado_por      INTEGER REFERENCES usuarios(id),
+            creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(distribucion_id, empleado_id, fecha)
+        )
+    """)
+
+    # ── Módulo Mozos ──────────────────────────────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS mozos_semana (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id),
+            semana_inicio   TEXT    NOT NULL,
+            estado          TEXT    NOT NULL DEFAULT 'borrador',
+            creado_por      INTEGER REFERENCES usuarios(id),
+            creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            modificado_por  INTEGER REFERENCES usuarios(id),
+            modificado_en   TEXT,
+            UNIQUE(departamento_id, semana_inicio)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS mozos_detalle (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            semana_id   INTEGER NOT NULL REFERENCES mozos_semana(id) ON DELETE CASCADE,
+            empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+            fecha       TEXT    NOT NULL,
+            turno       TEXT    NOT NULL,
+            estado      TEXT    NOT NULL,
+            creado_por  INTEGER REFERENCES usuarios(id),
+            creado_en   TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(semana_id, empleado_id, fecha, turno)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS usuarios_mozos (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id      INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id) ON DELETE CASCADE,
+            UNIQUE(usuario_id, departamento_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS mozos_config (
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id) ON DELETE CASCADE,
+            clave           TEXT NOT NULL,
+            valor           TEXT,
+            PRIMARY KEY (departamento_id, clave)
         )
     """)
 

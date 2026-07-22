@@ -180,6 +180,7 @@
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
         <a href="/distribucion" data-perm="distribucion:ver">Horarios Cocina</a>
+        <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -691,7 +692,7 @@ function _getCargoUsaDistribucion(cargoId) {
   const cargo = cargosOpts.find(c => c.id === parseInt(cargoId));
   if (!cargo || !cargo.departamento_id) return false;
   const dept = deptosOpts.find(d => d.id === cargo.departamento_id);
-  return !!(dept && dept.usa_distribucion && dept.escribe_planificacion);
+  return !!(dept && dept.usa_distribucion);
 }
 
 async function onCargoChange() {

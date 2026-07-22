@@ -29,6 +29,7 @@ from api.vacaciones import router as vacaciones_router
 from api.francos import router as francos_router
 from api.periodos_cerrados import router as periodos_cerrados_router
 from api.distribucion import router as distribucion_router
+from api.mozos import router as mozos_router
 from api.parking import router as parking_router
 from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
 
@@ -109,10 +110,11 @@ class SlidingSessionMiddleware(BaseHTTPMiddleware):
                     resp.delete_cookie("session")
                     return resp
                 response = await call_next(request)
-                response.set_cookie(
-                    "session", refresh_token(payload),
-                    httponly=True, samesite="lax", max_age=timeout
-                )
+                if request.headers.get("X-Poll") != "1":
+                    response.set_cookie(
+                        "session", refresh_token(payload),
+                        httponly=True, samesite="lax", max_age=timeout
+                    )
                 return response
 
         return await call_next(request)
@@ -137,6 +139,7 @@ app.include_router(vacaciones_router)
 app.include_router(francos_router)
 app.include_router(periodos_cerrados_router)
 app.include_router(distribucion_router)
+app.include_router(mozos_router)
 app.include_router(parking_router)
 
 
@@ -228,6 +231,10 @@ def page_legajo_imprimible(eid: int, request: Request):
 @app.get("/distribucion", include_in_schema=False)
 def page_distribucion(request: Request):
     return _page(request, "web/templates/distribucion.html", "distribucion")
+
+@app.get("/mozos", include_in_schema=False)
+def page_mozos(request: Request):
+    return _page(request, "web/templates/mozos.html", "mozos")
 
 @app.get("/manual-encargado", include_in_schema=False)
 def page_manual_encargado(request: Request):

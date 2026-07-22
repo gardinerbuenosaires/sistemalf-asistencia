@@ -281,6 +281,11 @@ def serve_foto(filename: str):
 
 # --- Rutas de la API (se expanden en etapas siguientes) ---
 
+@app.get("/api/ping", tags=["auth"])
+def api_ping(_user=Depends(get_current_user)):
+    return {"ok": True}
+
+
 @app.get("/api/sync/now", tags=["sync"])
 def sync_now(_user=Depends(require_permiso("sync", "procesar"))):
     """Fuerza una sincronización inmediata con el dispositivo."""

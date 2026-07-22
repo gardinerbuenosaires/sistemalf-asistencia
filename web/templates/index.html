@@ -215,8 +215,9 @@ fetch("/api/auth/me").then(r=>r.ok?r.json():null).then(u=>{
   }
 });
 
-async function api(path) {
-  const r = await fetch(path);
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (r.status === 401) { location.href = '/login'; return null; }
   return r.json();
 }
 
@@ -248,14 +249,16 @@ async function loadAltasBajasMes() {
   document.getElementById("cnt-prueba").textContent = prueba;
 }
 
-async function loadCntHoy() {
-  const fichajes = await api(`/api/fichajes?fecha=${today}&limit=1000`);
+async function loadCntHoy(opts = {}) {
+  const fichajes = await api(`/api/fichajes?fecha=${today}&limit=1000`, opts);
+  if (!fichajes) return;
   document.getElementById("cnt-hoy").textContent = fichajes.length;
 }
 
 
-async function loadSyncLog() {
-  const logs = await api("/api/sync/log?limit=1");
+async function loadSyncLog(opts = {}) {
+  const logs = await api("/api/sync/log?limit=1", opts);
+  if (!logs) return;
   if (!logs.length) return;
   const l = logs[0];
   const ts = l.finalizado_en || l.iniciado_en;
@@ -302,8 +305,9 @@ function renderGrupos(personas, container) {
   `).join("");
 }
 
-async function loadPresencia() {
-  const data           = await api("/api/presencia/hoy");
+async function loadPresencia(opts = {}) {
+  const data           = await api("/api/presencia/hoy", opts);
+  if (!data) return;
   const conPlan        = data.con_planificacion  || [];
   const sinPlan        = data.sin_planificacion  || [];
   const ausentes       = data.ausentes           || [];
@@ -393,8 +397,10 @@ async function init() {
 }
 
 init();
-setInterval(() => { loadPresencia(); loadCntHoy(); loadSyncLog(); }, 120000);
+const _POLL = { headers: { 'X-Poll': '1' } };
+setInterval(() => { loadPresencia(_POLL); loadCntHoy(_POLL); loadSyncLog(_POLL); }, 120000);
 </script>
+<script src="/static/js/session-guard.js"></script>
 <script src="/static/js/nav-brand.js"></script>
 </body>
 </html>

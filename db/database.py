@@ -411,7 +411,11 @@ def init_db():
                 nombre                TEXT    NOT NULL UNIQUE,
                 usa_distribucion      INTEGER NOT NULL DEFAULT 0,
                 usa_mozos             INTEGER NOT NULL DEFAULT 0,
-                escribe_planificacion INTEGER NOT NULL DEFAULT 0
+                usa_barmans           INTEGER NOT NULL DEFAULT 0,
+                escribe_planificacion INTEGER NOT NULL DEFAULT 0,
+                horario_tm_id         INTEGER REFERENCES horarios(id),
+                horario_tn_id         INTEGER REFERENCES horarios(id),
+                horario_cortado_id    INTEGER REFERENCES horarios(id)
             );
 
             CREATE TABLE IF NOT EXISTS categorias (
@@ -1034,9 +1038,21 @@ def _migrate(conn):
     if "usa_mozos" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN usa_mozos INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna usa_mozos agregada a departamentos")
+    if "usa_barmans" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN usa_barmans INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna usa_barmans agregada a departamentos")
     if "escribe_planificacion" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN escribe_planificacion INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna escribe_planificacion agregada a departamentos")
+    if "horario_tm_id" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN horario_tm_id INTEGER REFERENCES horarios(id)")
+        logger.info("Migración: columna horario_tm_id agregada a departamentos")
+    if "horario_tn_id" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN horario_tn_id INTEGER REFERENCES horarios(id)")
+        logger.info("Migración: columna horario_tn_id agregada a departamentos")
+    if "horario_cortado_id" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN horario_cortado_id INTEGER REFERENCES horarios(id)")
+        logger.info("Migración: columna horario_cortado_id agregada a departamentos")
 
     cols_puestos = {r[1] for r in conn.execute("PRAGMA table_info(puestos)").fetchall()}
     if cols_puestos:
@@ -1166,6 +1182,42 @@ def _migrate(conn):
             clave           TEXT NOT NULL,
             valor           TEXT,
             PRIMARY KEY (departamento_id, clave)
+        )
+    """)
+
+    # ── Módulo Barmans ────────────────────────────────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS barmans_semana (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id),
+            semana_inicio   TEXT    NOT NULL,
+            estado          TEXT    NOT NULL DEFAULT 'borrador',
+            creado_por      INTEGER REFERENCES usuarios(id),
+            creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            modificado_por  INTEGER REFERENCES usuarios(id),
+            modificado_en   TEXT,
+            UNIQUE(departamento_id, semana_inicio)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS barmans_detalle (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            semana_id   INTEGER NOT NULL REFERENCES barmans_semana(id) ON DELETE CASCADE,
+            empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+            fecha       TEXT    NOT NULL,
+            turno       TEXT    NOT NULL,
+            valor       TEXT    NOT NULL,
+            creado_por  INTEGER REFERENCES usuarios(id),
+            creado_en   TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(semana_id, empleado_id, fecha, turno)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS usuarios_barmans (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id      INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id) ON DELETE CASCADE,
+            UNIQUE(usuario_id, departamento_id)
         )
     """)
 

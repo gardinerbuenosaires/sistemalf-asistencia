@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<title>Horarios Barra — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  header { background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px;
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger, .nav-group.activo .nav-trigger { opacity: 1; }
+  .nav-group.activo .nav-trigger { font-weight: bold; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0;
+    background: white; border: 1px solid #D3D1C7; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none !important; }
+
+  .toolbar { background: white; border-bottom: 1px solid #e0e0e0; flex-shrink: 0;
+    display: flex; align-items: stretch; overflow: hidden; }
+  .btn { border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: .85rem; font-weight: bold; }
+  .btn-nav  { background: #2c3e50; color: white; }
+  .btn-nav:hover  { background: #3d5166; }
+  .btn-confirmar  { background: #27ae60; color: white; }
+  .btn-confirmar:hover { background: #219a52; }
+  .btn-confirmar:disabled { background: #95a5a6; cursor: default; }
+  .btn-editar { background: #e67e22; color: white; }
+  .btn-editar:hover { background: #d35400; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: .75rem; font-weight: bold; }
+  .badge-borrador   { background: #fff3cd; color: #856404; }
+  .badge-confirmado { background: #d4edda; color: #155724; }
+  .badge-nuevo      { background: #e2e3e5; color: #383d41; }
+
+  main { padding: 12px 16px; overflow: hidden; flex: 1; display: flex; flex-direction: column; gap: 10px; }
+
+  /* ── Tabla ── */
+  .tabla-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1);
+    overflow: auto; flex: 1; min-height: 0; }
+  table.barmans { border-collapse: collapse; width: auto; }
+  table.barmans th, table.barmans td { border: 1px solid #dee2e6; text-align: center; }
+  table.barmans thead th { background: #2c3e50; color: white; font-size: .72rem;
+    padding: 3px 3px; position: sticky; top: 0; z-index: 10; white-space: nowrap; }
+  table.barmans thead th.th-emp { background: #1a252f; text-align: left; padding-left: 10px;
+    width: 180px; min-width: 180px; max-width: 180px; position: sticky; left: 0; z-index: 20; }
+  table.barmans thead tr.tr-dias   th { border-bottom: none; }
+  table.barmans thead tr.tr-turnos th { font-size: .65rem; background: #34495e; border-top: none; }
+  table.barmans thead tr.tr-turnos th.th-emp { background: #1a252f; }
+
+  /* Separador entre semanas */
+  table.barmans th.col-sep, table.barmans td.col-sep {
+    background: #f4f6f9 !important; border-color: #f4f6f9 !important;
+    width: 38px; min-width: 38px; max-width: 38px; padding: 0;
+  }
+
+  /* Semana 2 — tono diferente */
+  table.barmans thead tr.tr-dias   th.sem2 { background: #0b5345; }
+  table.barmans thead tr.tr-turnos th.sem2 { background: #117a65; }
+  table.barmans td.celda.sem2 { box-shadow: inset 0 0 0 1000px rgba(11,83,69,0.07); }
+  table.barmans tfoot td.sem2 { box-shadow: inset 0 0 0 1000px rgba(11,83,69,0.07); }
+
+  /* Hoy / feriado */
+  table.barmans .hoy-col { background: #fffde7; }
+  table.barmans thead th.hoy-col { background: #f39c12 !important; }
+  table.barmans thead th.feriado  { background: #7d3c27 !important; }
+  table.barmans td.celda-feriado  { box-shadow: inset 0 3px 0 #FFAA00 !important; }
+
+  /* No confirmada — overlay */
+  table.barmans td.sem-nc          { box-shadow: inset 0 0 0 1000px rgba(0,0,0,0.18) !important; }
+  table.barmans thead th.sem-nc    { filter: brightness(0.68); }
+  table.barmans tfoot td.sem-nc    { box-shadow: inset 0 0 0 1000px rgba(0,0,0,0.18) !important; }
+
+  /* Bordes de estado por semana */
+  table.barmans thead th.sem-nc   { border-top: 3px solid #e74c3c !important; }
+  table.barmans thead th.sem-conf { border-top: 3px solid #27ae60 !important; }
+  table.barmans tfoot tr:last-child td.sem-nc   { border-bottom: 3px solid #e74c3c !important; }
+  table.barmans tfoot tr:last-child td.sem-conf { border-bottom: 3px solid #27ae60 !important; }
+  table.barmans .sem-nc-l   { border-left:  3px solid #e74c3c !important; }
+  table.barmans .sem-nc-r   { border-right: 3px solid #e74c3c !important; }
+  table.barmans .sem-conf-l { border-left:  3px solid #27ae60 !important; }
+  table.barmans .sem-conf-r { border-right: 3px solid #27ae60 !important; }
+
+  /* Nombre empleado */
+  table.barmans td.td-emp { font-size: .72rem; text-align: left; padding: 2px 6px;
+    background: white; position: sticky; left: 0; z-index: 5; white-space: nowrap;
+    width: 180px; min-width: 180px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+  table.barmans tr:hover td.td-emp { background: #f8f9fa; }
+
+  /* Celdas */
+  table.barmans td.celda { width: 28px; min-width: 28px; max-width: 28px; height: 22px;
+    cursor: pointer; font-size: .72rem; font-weight: bold; padding: 0; transition: filter .1s; }
+  table.barmans td.celda:hover { filter: brightness(.88); }
+  table.barmans td.celda.confirmada { cursor: default; }
+  table.barmans td.celda-1   { background: #f0fff0; color: #1b5e20; }
+  table.barmans td.celda-F   { background: #27ae60; color: white; }
+  table.barmans td.celda-FT  { background: #fff3e0; color: #e65100; }
+  table.barmans td.celda-FD  { background: #e3f2fd; color: #0d47a1; }
+  table.barmans td.celda-V   { background: #95B3D7; color: #000; }
+  table.barmans td.celda-E   { background: #FABF8F; color: #000; }
+  table.barmans td.celda-ILT { background: #C4D79B; color: #000; }
+  table.barmans td.celda-L   { background: #92CDDC; color: #000; }
+  table.barmans td.celda-LSG { background: #B1A0C7; color: #000; }
+  table.barmans td.celda-S   { background: #DA9694; color: #000; }
+  table.barmans td.celda-P   { background: #d5f5e3; color: #1e8449; }
+  table.barmans td.celda-base { opacity: .55; }
+
+  .bar-tipo-btn { padding: 12px 6px; border: 2px solid #dee2e6; border-radius: 6px;
+    cursor: pointer; text-align: center; font-weight: bold; transition: filter .1s; width: 100%; }
+  .bar-tipo-btn:hover { filter: brightness(1.12); }
+  .bar-tipo-btn.selected { outline: 3px solid #2c3e50; outline-offset: 2px; }
+
+  /* Totales */
+  tfoot tr td { background: #ecf0f1; font-weight: bold; font-size: .72rem; padding: 2px 0; }
+  tfoot tr.tfoot-label td { background: #bdc3c7; font-size: .65rem; color: #2c3e50; padding: 1px 0; }
+  tfoot td.td-emp { text-align: left; padding-left: 8px; position: sticky; left: 0; }
+
+  /* Resumen */
+  .resumen-sem { border-collapse: collapse; font-size: .8rem; background: white;
+    border-radius: 6px; overflow: hidden; }
+  .resumen-sem caption { font-weight: bold; font-size: .78rem; padding: 5px 10px;
+    text-align: left; color: white; }
+  .resumen-sem.sem1 caption { background: #2c3e50; }
+  .resumen-sem.sem2 caption { background: #0b5345; }
+  .resumen-sem th, .resumen-sem td { border: 1px solid #dee2e6; padding: 4px 10px; }
+  .resumen-sem thead th { background: #f4f6f9; color: #333; font-size: .75rem;
+    text-align: center; white-space: nowrap; }
+  .resumen-sem thead th:first-child { text-align: left; }
+  .resumen-sem td { text-align: center; }
+  .resumen-sem td:first-child { text-align: left; color: #555; white-space: nowrap; }
+  .resumen-sem tr:nth-child(even) td { background: #f9fafb; }
+  .resumen-sem.sem2 tr:nth-child(even) td { background: #f4fbf8; }
+  .resumen-wrap.sem-nc   { filter: brightness(0.82); }
+  .resumen-wrap.sem-nc   .resumen-sem { box-shadow: 0 0 0 3px #e74c3c, 0 1px 3px rgba(0,0,0,.1); }
+  .resumen-wrap.sem-conf .resumen-sem { box-shadow: 0 0 0 3px #27ae60, 0 1px 3px rgba(0,0,0,.1); }
+  .resumen-sep { width: 38px; flex-shrink: 0; }
+
+  /* ── Print ── */
+  @media print {
+    @page { size: landscape; margin: 0.8cm; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body { height: auto !important; overflow: visible !important; display: block !important; background: white !important; }
+    header, .toolbar { display: none !important; }
+    main { overflow: visible !important; flex: none !important; display: block !important; padding: 0 !important; gap: 4px !important; }
+    .tabla-wrap { overflow: visible !important; flex: none !important; min-height: auto !important;
+      height: auto !important; border-radius: 0 !important; box-shadow: none !important; }
+    .sem2, .col-sep { display: none !important; }
+    table.barmans thead th, table.barmans td.td-emp, tfoot td.td-emp { position: static !important; }
+    table.barmans thead th { padding: 2px 3px !important; font-size: 7pt !important; }
+    table.barmans td { padding: 1px 2px !important; font-size: 7pt !important; }
+    table.barmans td.celda { height: auto !important; min-height: 0 !important; font-size: 6.5pt !important; }
+    table.barmans td.td-emp { padding: 1px 4px !important; font-size: 7pt !important; }
+    tfoot tr td { padding: 1px 0 !important; font-size: 7pt !important; }
+    #resumen-semanas { display: flex !important; padding-left: 180px !important; }
+    .resumen-wrap { width: auto !important; filter: none !important; }
+    .resumen-wrap.sem2 { display: none !important; }
+    .resumen-sep { display: none !important; }
+    .resumen-sem { font-size: 7pt !important; box-shadow: 0 0 0 1px #dee2e6 !important; }
+    .resumen-sem caption { padding: 3px 6px !important; font-size: 7pt !important; }
+    .resumen-sem th, .resumen-sem td { padding: 2px 8px !important; }
+    table.barmans .sem-conf-l, table.barmans .sem-nc-l { border-left:  1px solid #dee2e6 !important; }
+    table.barmans .sem-conf-r, table.barmans .sem-nc-r { border-right: 1px solid #dee2e6 !important; }
+    table.barmans thead th.sem-conf, table.barmans thead th.sem-nc { border-top: none !important; }
+    table.barmans tfoot tr:last-child td.sem-conf,
+    table.barmans tfoot tr:last-child td.sem-nc { border-bottom: 1px solid #dee2e6 !important; }
+    #print-aviso { display: none; }
+    body.print-bloqueado header, body.print-bloqueado .toolbar,
+    body.print-bloqueado main, body.print-bloqueado #toast { display: none !important; }
+    body.print-bloqueado #print-aviso {
+      display: flex !important; flex-direction: column; align-items: center;
+      justify-content: center; text-align: center; position: fixed; inset: 0;
+      background: white; padding: 40px; gap: 8px;
+    }
+  }
+
+  #print-aviso { display: none; }
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #2c3e50; color: white; padding: 10px 20px; border-radius: 6px;
+    font-size: .85rem; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 9999; }
+  #toast.show { opacity: 1; }
+  #toast.error { background: #c0392b; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a><span id="nav-brand-empresa" style="display:none;margin-left:12px"></span>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group activo">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios" data-perm="horarios:ver">Horarios</a>
+        <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/distribucion" data-perm="distribucion:ver">Horarios Cocina</a>
+        <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
+        <a href="/barmans" class="activo" data-perm="barmans:ver">Horarios Barra</a>
+        <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia" data-perm="asistencia:ver">Asistencia</a>
+        <a href="/fichajes" data-perm="asistencia:ver">Fichajes</a>
+        <a href="/asistencia-mensual" data-perm="asistencia:ver">Planilla</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados" data-perm="empleados:ver">Listado</a>
+        <a href="/premios" data-perm="premios:ver">Premios</a>
+        <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
+      </div>
+    </div>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <a href="/manual-encargado" data-perm="asistencia:ver" target="_blank">Ayuda</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
+</header>
+
+<!-- Toolbar: nav=196px (16px padding + 180px td-emp), controles=822px (392+38+392) -->
+<div class="toolbar">
+  <div style="width:196px;min-width:196px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:5px 8px;border-right:1px solid #e0e0e0">
+    <span id="label-semana" style="font-size:.72rem;color:#666;white-space:nowrap;text-align:center">—</span>
+    <div style="display:flex;gap:4px">
+      <button class="btn btn-nav" style="padding:3px 9px" onclick="semanaAnterior()">◀</button>
+      <button class="btn" style="background:#546e7a;color:white;font-size:.75rem;padding:3px 9px" onclick="irAHoy()">Hoy</button>
+      <button class="btn btn-nav" style="padding:3px 9px" onclick="semanaProxima()">▶</button>
+    </div>
+  </div>
+  <div id="semana-controles" style="width:822px;min-width:822px;flex-shrink:0;display:flex;align-items:center;"></div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:8px;padding:0 12px;border-left:1px solid #e0e0e0;flex-shrink:0">
+    <select id="sel-dept" onchange="onDeptChange()" style="display:none;padding:5px 10px;border-radius:4px;border:1px solid #ced4da;font-size:.85rem"></select>
+    <button id="btn-print" class="btn" style="background:#546e7a;color:white;display:none" onclick="imprimirBarmans()" title="Imprimir semana 1">⎙ Imprimir S1</button>
+  </div>
+</div>
+
+<main>
+  <div class="tabla-wrap">
+    <table class="barmans" id="tabla-barmans">
+      <thead id="thead-barmans"></thead>
+      <tbody id="tbody-barmans"></tbody>
+      <tfoot id="tfoot-barmans"></tfoot>
+    </table>
+  </div>
+  <div id="resumen-semanas" style="display:flex;padding-left:180px;gap:0"></div>
+</main>
+
+<div id="bar-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:10px;padding:22px;width:320px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+    <div style="margin-bottom:14px">
+      <div id="bar-modal-titulo" style="font-weight:bold;font-size:.95rem"></div>
+      <div id="bar-modal-subtitulo" style="font-size:.76rem;color:#888"></div>
+    </div>
+    <div id="bar-modal-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px"></div>
+    <div id="bar-vac-info" style="display:none;border-radius:6px;padding:7px 12px;font-size:.83rem;margin-bottom:10px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div>
+        <label style="font-size:.72rem;color:#666;font-weight:bold;display:block;margin-bottom:3px">Desde</label>
+        <input type="date" id="bar-modal-desde" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+      </div>
+      <div>
+        <label style="font-size:.72rem;color:#666;font-weight:bold;display:block;margin-bottom:3px">Hasta <span style="font-weight:normal;color:#aaa">(opcional)</span></label>
+        <input type="date" id="bar-modal-hasta" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button onclick="revertirModal()" style="padding:6px 12px;border:1px solid #e74c3c;color:#e74c3c;border-radius:6px;background:white;cursor:pointer;font-size:.82rem;margin-right:auto">↩ Revertir</button>
+      <button onclick="cerrarModal()" style="padding:7px 14px;border:1px solid #ccc;border-radius:6px;background:white;cursor:pointer;font-size:.85rem">Cancelar</button>
+      <button id="bar-modal-guardar" onclick="guardarModal()" style="padding:7px 14px;background:#2c3e50;color:white;border:none;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:bold">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="print-aviso">
+  <div style="font-size:56px;line-height:1;color:#e74c3c">⚠</div>
+  <h2 style="margin:0;color:#c0392b;font-size:22px">No se puede imprimir</h2>
+  <p id="print-aviso-msg" style="margin:0;color:#555;font-size:15px"></p>
+  <p style="margin:0;color:#888;font-size:13px">Confirmá la semana antes de imprimir.</p>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const DIAS_CORTOS  = ['LUN','MAR','MIÉ','JUE','VIE','SÁB','DOM'];
+const DIAS_NOMBRES = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO','DOMINGO'];
+const TURNOS = ['TM','TN'];
+const BARMANS_COLORES = {
+  '1':  { bg: '#f0fff0', txt: '#1b5e20' },
+  F:    { bg: '#27ae60', txt: '#ffffff' },
+  FT:   { bg: '#fff3e0', txt: '#e65100' },
+  FD:   { bg: '#e3f2fd', txt: '#0d47a1' },
+  V:    { bg: '#95B3D7', txt: '#000000' },
+  E:    { bg: '#FABF8F', txt: '#000000' },
+  ILT:  { bg: '#C4D79B', txt: '#000000' },
+  L:    { bg: '#92CDDC', txt: '#000000' },
+  LSG:  { bg: '#B1A0C7', txt: '#000000' },
+  S:    { bg: '#DA9694', txt: '#000000' },
+};
+const TIPOS_BARMANS   = ['1', 'F', 'FT', 'FD', 'V', 'E', 'ILT', 'L', 'LSG', 'S'];
+const ESTADOS_RANGO_BAR = new Set(['V', 'E', 'ILT', 'LSG', 'L', 'S']);
+const ESTADOS_LABELS_BAR = {
+  '1': 'Presente', F: 'Franco', FT: 'Trabaja en franco', FD: 'Franco devuelto',
+  V: 'Vacaciones', E: 'Enfermedad', ILT: 'Accidente', L: 'Licencia',
+  LSG: 'Lic. sin sueldo', S: 'Suspendido',
+};
+
+let _perms        = new Set();
+let _depts        = [];
+let _deptId       = null;
+let _semanaInicio = null;
+let _data         = null;
+let _planBase     = {};
+let _grupoEmp     = {};
+let _guardando    = false;
+let _modalTipoSel = null;
+let _modalCell    = null;
+let _vacSaldo     = null;
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+async function logout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  location.href = '/login';
+}
+
+fetch('/api/auth/me').then(r => r.ok ? r.json() : null).then(u => {
+  if (!u) return;
+  document.getElementById('user-info').textContent = u.nombre || u.username || '';
+  _perms = new Set((u.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    const [m, a] = el.dataset.perm.split(':');
+    if (_perms.has(`${m}:${a}`)) el.removeAttribute('data-perm');
+    else el.style.display = 'none';
+  });
+  init();
+});
+
+// ── Fecha helpers ──────────────────────────────────────────────────────────
+function lunes(fecha) {
+  const d = new Date(fecha + 'T00:00:00');
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  return d.toISOString().slice(0, 10);
+}
+
+function hoy() { return new Date().toISOString().slice(0, 10); }
+
+function formatSemana(lunesStr) {
+  const d  = new Date(lunesStr + 'T00:00:00');
+  const d2 = new Date(lunesStr + 'T00:00:00'); d2.setDate(d2.getDate() + 13);
+  const M  = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return `${d.getDate()} ${M[d.getMonth()]} — ${d2.getDate()} ${M[d2.getMonth()]} ${d2.getFullYear()}`;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+async function init() {
+  const res = await fetch('/api/barmans/departamentos');
+  if (res.status === 401) { location.href = '/login'; return; }
+  const json = await res.json();
+  _depts = json.departamentos || [];
+
+  const sel = document.getElementById('sel-dept');
+  if (_depts.length > 1) {
+    sel.innerHTML = _depts.map(d => `<option value="${d.id}">${d.nombre}</option>`).join('');
+    sel.style.display = '';
+    _deptId = _depts[0].id;
+  } else if (_depts.length === 1) {
+    _deptId = _depts[0].id;
+  } else {
+    document.getElementById('tbody-barmans').innerHTML =
+      '<tr><td colspan="30" style="padding:20px;color:#888;text-align:center">No hay departamentos de barra configurados.</td></tr>';
+    return;
+  }
+
+  _semanaInicio = lunes(hoy());
+  await cargar();
+}
+
+function onDeptChange() {
+  _deptId = parseInt(document.getElementById('sel-dept').value);
+  cargar();
+}
+
+// ── Navegación ─────────────────────────────────────────────────────────────
+function semanaAnterior() {
+  const d = new Date(_semanaInicio + 'T00:00:00'); d.setDate(d.getDate() - 7);
+  _semanaInicio = d.toISOString().slice(0, 10); cargar();
+}
+function semanaProxima() {
+  const d = new Date(_semanaInicio + 'T00:00:00'); d.setDate(d.getDate() + 7);
+  _semanaInicio = d.toISOString().slice(0, 10); cargar();
+}
+function irAHoy() { _semanaInicio = lunes(hoy()); cargar(); }
+
+// ── Carga ──────────────────────────────────────────────────────────────────
+async function cargar() {
+  document.getElementById('label-semana').textContent = formatSemana(_semanaInicio);
+  const r = await fetch(`/api/barmans/semana?departamento_id=${_deptId}&semana_inicio=${_semanaInicio}`);
+  if (r.status === 401) { location.href = '/login'; return; }
+  if (!r.ok) { toast('Error al cargar', true); return; }
+  _data = await r.json();
+  _planBase = {};
+  (_data.plan_base || []).forEach(r => { _planBase[`${r.empleado_id}_${r.fecha}`] = r; });
+  _grupoEmp = _data.grupo_emp || {};
+  renderToolbar();
+  renderTabla();
+  renderResumen();
+  document.getElementById('btn-print').style.display = _perms.has('barmans:ver') ? '' : 'none';
+}
+
+// ── Toolbar ────────────────────────────────────────────────────────────────
+function badgeHtml(cls, txt) {
+  return `<span class="badge ${cls}">${txt}</span>`;
+}
+
+function semCtrl(idx, confirmado, cerrada) {
+  const sem = _data.semanas[idx];
+  let badgeCls, badgeTxt;
+  if (!sem)          { badgeCls = 'badge-nuevo';      badgeTxt = 'Sin datos'; }
+  else if (confirmado) { badgeCls = 'badge-confirmado'; badgeTxt = 'Confirmada'; }
+  else               { badgeCls = 'badge-borrador';   badgeTxt = 'Borrador'; }
+
+  const puedeConf = _perms.has('barmans:confirmar') && !cerrada;
+  let btn = '';
+  if (puedeConf) {
+    if (!confirmado) btn = `<button class="btn btn-confirmar" onclick="confirmar(${idx})">Confirmar</button>`;
+    else             btn = `<button class="btn btn-editar"    onclick="desconfirmar(${idx})">✎ Editar</button>`;
+  }
+  return `${badgeHtml(badgeCls, badgeTxt)} ${btn}`;
+}
+
+function renderToolbar() {
+  const [s1, s2] = _data.semanas;
+  const c1 = s1?.estado === 'confirmado';
+  const c2 = s2?.estado === 'confirmado';
+  const d1 = new Date(_semanaInicio + 'T00:00:00');
+  const d2 = new Date(_semanaInicio + 'T00:00:00'); d2.setDate(d2.getDate() + 7);
+  const cerrada1 = _data.periodos_cerrados?.some(p => p.anio === d1.getFullYear() && p.mes === (d1.getMonth() + 1));
+  const cerrada2 = _data.periodos_cerrados?.some(p => p.anio === d2.getFullYear() && p.mes === (d2.getMonth() + 1));
+  const ctrl = document.getElementById('semana-controles');
+  const sem = `width:392px;flex-shrink:0;display:flex;justify-content:center;align-items:center;gap:8px`;
+  ctrl.innerHTML =
+    `<div style="${sem}">${semCtrl(0, c1, cerrada1)}</div>` +
+    `<div style="width:38px;flex-shrink:0"></div>` +
+    `<div style="${sem}">${semCtrl(1, c2, cerrada2)}</div>`;
+}
+
+// ── Render tabla ───────────────────────────────────────────────────────────
+function renderTabla() {
+  const { empleados, detalles, dias, feriados, semanas } = _data;
+  const [s1, s2] = semanas;
+  const c1 = s1?.estado === 'confirmado';
+  const c2 = s2?.estado === 'confirmado';
+  const hoyStr = hoy();
+
+  // mapa de valores explícitos
+  const vals = {};
+  for (const d of detalles) vals[`${d.empleado_id}|${d.fecha}|${d.turno}`] = d.valor;
+
+  // ── Thead ──
+  let r1 = `<tr class="tr-dias"><th class="th-emp" rowspan="2">${_data.dept_nombre || 'BARRA'}</th>`;
+  let r2 = `<tr class="tr-turnos">`;
+
+  for (let i = 0; i < 14; i++) {
+    if (i === 7) {
+      // separador entre semanas
+      r1 += `<th class="col-sep" rowspan="2"></th>`;
+    }
+    const semIdx = i >= 7 ? 1 : 0;
+    const di = i % 7;
+    const fecha = dias[i];
+    const esHoy = fecha === hoyStr;
+    const esFer = feriados.includes(fecha);
+    const nc = [!c1, !c2][semIdx] ? 'sem-nc' : 'sem-conf';
+    const sem2cls = semIdx === 1 ? ' sem2' : '';
+    const isFirst = di === 0, isLast = di === 6;
+    const ncL = isFirst ? ` ${nc}-l` : '';
+    const ncR = isLast  ? ` ${nc}-r` : '';
+    const hoyC = esHoy ? ' hoy-col' : '';
+    const ferC = esFer ? ' feriado' : '';
+
+    // Fila días (colspan=2 por TM+TN)
+    if (i % 7 === 0 || i === 7) {
+      // primer día del bloque — ya insertamos th arriba, aquí nada extra
+    }
+    const d = new Date(fecha + 'T00:00:00');
+    r1 += `<th colspan="2" class="${nc}${sem2cls}${ncL}${ncR}${hoyC}${ferC}">${DIAS_CORTOS[di]} ${d.getDate()}</th>`;
+
+    // Fila turnos
+    r2 += `<th class="${nc}${sem2cls}${ncL}${hoyC}">TM</th>`;
+    r2 += `<th class="${nc}${sem2cls}${ncR}${hoyC}">TN</th>`;
+  }
+  r1 += '</tr>'; r2 += '</tr>';
+  document.getElementById('thead-barmans').innerHTML = r1 + r2;
+
+  // ── Tbody ──
+  if (!empleados.length) {
+    document.getElementById('tbody-barmans').innerHTML =
+      `<tr><td class="td-emp" colspan="30" style="padding:12px;color:#888;text-align:center">Sin empleados</td></tr>`;
+    document.getElementById('tfoot-barmans').innerHTML = '';
+    return;
+  }
+
+  let rows = '';
+  for (const emp of empleados) {
+    let row = `<tr><td class="td-emp">${emp.apellido}${emp.nombre ? ', ' + emp.nombre : ''}</td>`;
+    for (let i = 0; i < 14; i++) {
+      if (i === 7) row += `<td class="col-sep"></td>`;
+      const semIdx = i >= 7 ? 1 : 0;
+      const di = i % 7;
+      const fecha = dias[i];
+      const confirmado = [c1, c2][semIdx];
+      const nc = [!c1, !c2][semIdx] ? 'sem-nc' : 'sem-conf';
+      const sem2cls = semIdx === 1 ? ' sem2' : '';
+      const isFirst = di === 0, isLast = di === 6;
+      const esFer = feriados.includes(fecha);
+      for (let ti = 0; ti < 2; ti++) {
+        const turno = TURNOS[ti];
+        const val = vals[`${emp.id}|${fecha}|${turno}`] || null;
+        const ncL = (isFirst && ti === 0) ? ` ${nc}-l` : '';
+        const ncR = (isLast  && ti === 1) ? ` ${nc}-r` : '';
+        const ferCls  = esFer ? ' celda-feriado' : '';
+        const confCls = confirmado ? ' confirmada' : '';
+
+        let valCls = '', display = '';
+        if (val && val !== 'N') {
+          valCls  = ` celda-${val}`;
+          display = val === '1' ? '|' : val;
+        } else if (!val) {
+          const base = _planBase[`${emp.id}_${fecha}`];
+          if (base) {
+            if (base.es_franco) {
+              valCls = ' celda-F celda-base'; display = 'F';
+            } else {
+              // Usar el grupo real del día (no histórico): DIA→TM, NOCHE→TN, AMBOS→ambos
+              const g = base.grupo || 'DIA';
+              const mostrar = (turno === 'TM' && g !== 'NOCHE') || (turno === 'TN' && g !== 'DIA');
+              if (mostrar) { valCls = ' celda-P celda-base'; display = '|'; }
+            }
+          }
+        }
+
+        const cls = `celda ${nc}${sem2cls}${ncL}${ncR}${ferCls}${valCls}${confCls}`;
+        const onclick = confirmado ? '' : `onclick="abrirModal(${emp.id},'${fecha}','${turno}')"`;
+        row += `<td class="${cls}" data-eid="${emp.id}" data-fecha="${fecha}" data-turno="${turno}" ${onclick}>${display}</td>`;
+      }
+    }
+    row += '</tr>';
+    rows += row;
+  }
+  document.getElementById('tbody-barmans').innerHTML = rows;
+
+  // ── Counts: detalles explícitos + plan_base (igual que mozos) ──
+  const counts = {};
+  for (const d of detalles) {
+    if (d.valor === '1') counts[`${d.fecha}_${d.turno}`] = (counts[`${d.fecha}_${d.turno}`] || 0) + 1;
+  }
+  // Celdas con N bloquean plan_base — no contar plan_base para ese (fecha, turno)
+  const detalleNKeys = new Set(detalles.filter(d => d.valor === 'N').map(d => `${d.fecha}_${d.turno}`));
+  // Sumar plan_base no-franco donde no hay detalle explícito, respetando grupo real del día
+  Object.entries(_planBase).forEach(([key, base]) => {
+    if (base.es_franco) return;
+    const sep  = key.indexOf('_');
+    const eid  = parseInt(key.slice(0, sep));
+    const fecha = key.slice(sep + 1);
+    const g = base.grupo || 'DIA';
+    for (const t of TURNOS) {
+      if (detalleNKeys.has(`${fecha}_${t}`)) continue;
+      const hasDetalle = detalles.some(d => d.empleado_id === eid && d.fecha === fecha && d.turno === t);
+      if (hasDetalle) continue;
+      const cuenta = (t === 'TM' && g !== 'NOCHE') || (t === 'TN' && g !== 'DIA');
+      if (cuenta) counts[`${fecha}_${t}`] = (counts[`${fecha}_${t}`] || 0) + 1;
+    }
+  });
+
+  // ── Tfoot ──
+  let tf1 = `<tr class="tfoot-label"><td class="td-emp">Total</td>`;
+  let tf2 = `<tr><td class="td-emp"></td>`;
+  for (let i = 0; i < 14; i++) {
+    if (i === 7) { tf1 += `<td class="col-sep"></td>`; tf2 += `<td class="col-sep"></td>`; }
+    const semIdx = i >= 7 ? 1 : 0;
+    const di = i % 7;
+    const fecha = dias[i];
+    const nc = [!c1, !c2][semIdx] ? 'sem-nc' : 'sem-conf';
+    const sem2cls = semIdx === 1 ? ' sem2' : '';
+    const isFirst = di === 0, isLast = di === 6;
+    const ncL1 = isFirst ? ` ${nc}-l` : '';
+    const ncR1 = isLast  ? ` ${nc}-r` : '';
+    tf1 += `<td class="${nc}${sem2cls}${ncL1}${ncR1}" colspan="2"></td>`;
+    for (let ti = 0; ti < 2; ti++) {
+      const turno = TURNOS[ti];
+      const ncL = (isFirst && ti === 0) ? ` ${nc}-l` : '';
+      const ncR = (isLast  && ti === 1) ? ` ${nc}-r` : '';
+      const cnt = counts[`${fecha}_${turno}`] || 0;
+      tf2 += `<td class="${nc}${sem2cls}${ncL}${ncR}">${cnt || ''}</td>`;
+    }
+  }
+  tf1 += '</tr>'; tf2 += '</tr>';
+  document.getElementById('tfoot-barmans').innerHTML = tf1 + tf2;
+
+  // ── Resumen (usa los mismos counts) ──
+  function buildResumen(diasSlice, semCls, confirmado) {
+    const wrapNc = confirmado ? 'sem-conf' : 'sem-nc';
+    let rows = '';
+    for (let di = 0; di < 7; di++) {
+      const fecha = diasSlice[di];
+      const tm = counts[`${fecha}_TM`] || 0;
+      const tn = counts[`${fecha}_TN`] || 0;
+      rows += `<tr><td>${DIAS_NOMBRES[di]}</td><td>${tm || ''}</td><td>${tn || ''}</td></tr>`;
+    }
+    const titulo = semCls === 'sem1' ? 'Semana 1' : 'Semana 2';
+    return `<div class="resumen-wrap ${wrapNc}" style="width:392px;flex-shrink:0">
+      <table class="resumen-sem ${semCls}">
+        <caption>${_data.dept_nombre || 'BARRA'} — ${titulo}</caption>
+        <thead><tr><th></th><th>TM</th><th>TN</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }
+
+  const [rs1, rs2] = _data.semanas;
+  document.getElementById('resumen-semanas').innerHTML =
+    buildResumen(dias.slice(0, 7),  'sem1', rs1?.estado === 'confirmado') +
+    `<div class="resumen-sep"></div>` +
+    buildResumen(dias.slice(7, 14), 'sem2', rs2?.estado === 'confirmado');
+}
+
+function renderResumen() {
+  // renderTabla ya genera el resumen — esta función queda por si se llama desde otro lado
+}
+
+// ── Modal novedad ──────────────────────────────────────────────────────────
+function lunesDeStr(fechaStr) {
+  const d = new Date(fechaStr + 'T00:00:00');
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  return d.toISOString().slice(0, 10);
+}
+
+function abrirModal(eid, fecha, turno) {
+  if (_guardando) return;
+  _modalTipoSel = null;
+  _modalCell = { eid, fecha, turno };
+
+  const emp = _data.empleados.find(e => e.id === eid);
+  document.getElementById('bar-modal-titulo').textContent =
+    emp ? `${emp.apellido}${emp.nombre ? ', ' + emp.nombre : ''}` : '';
+  const dt = new Date(fecha + 'T12:00:00');
+  document.getElementById('bar-modal-subtitulo').textContent =
+    `${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()} — ${turno}`;
+
+  const grid = document.getElementById('bar-modal-grid');
+  grid.innerHTML = TIPOS_BARMANS.map(v => {
+    const c = BARMANS_COLORES[v];
+    const lbl = v === '1' ? '|' : v;
+    return `<button class="bar-tipo-btn" data-val="${v}" onclick="selTipoBar('${v}')"
+      style="background:${c.bg};color:${c.txt};border-color:${c.bg}">
+      <div style="font-size:.82rem">${lbl}</div>
+      <div style="font-size:.62rem;font-weight:normal;margin-top:2px">${ESTADOS_LABELS_BAR[v] || ''}</div>
+    </button>`;
+  }).join('') +
+  `<button class="bar-tipo-btn" data-val="N" onclick="selTipoBar('N')"
+    style="background:#f0f0f0;color:#888;border-color:#ccc;grid-column:span 2">
+    <div style="font-size:.82rem">—</div>
+    <div style="font-size:.62rem;font-weight:normal;margin-top:2px">Sin turno</div>
+  </button>`;
+
+  document.getElementById('bar-vac-info').style.display = 'none';
+  _vacSaldo = null;
+  document.getElementById('bar-modal-desde').value = fecha;
+  document.getElementById('bar-modal-hasta').value = '';
+
+  // Pre-seleccionar valor actual si existe
+  const actual = _data.detalles.find(d => d.empleado_id === eid && d.fecha === fecha && d.turno === turno);
+  if (actual?.valor) selTipoBar(actual.valor);
+
+  document.getElementById('bar-modal').style.display = 'flex';
+}
+
+function selTipoBar(v) {
+  _modalTipoSel = v;
+  document.querySelectorAll('.bar-tipo-btn').forEach(b =>
+    b.classList.toggle('selected', b.dataset.val === v));
+  actualizarVacInfoBar(_modalCell.eid, _modalCell.fecha, v);
+}
+
+function actualizarVacInfoBar(eid, fecha, tipo) {
+  const el = document.getElementById('bar-vac-info');
+  _vacSaldo = null;
+  if (tipo !== 'V') { el.style.display = 'none'; return; }
+  const anio = parseInt(fecha.slice(0, 4)) - 1;
+  el.textContent = '…'; el.style.display = '';
+  el.style.background = '#f0f4f8'; el.style.color = '#555';
+  fetch(`/api/vacaciones/saldo-empleado?empleado_id=${eid}&anio=${anio}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      if (!d) { el.style.display = 'none'; return; }
+      _vacSaldo = d.dias_restan;
+      const ok = d.dias_restan > 0;
+      el.textContent      = `Vacaciones disponibles: ${d.dias_restan} día(s)`;
+      el.style.background = ok ? '#eaf4ea' : '#fdecea';
+      el.style.color      = ok ? '#2d6a2d' : '#c0392b';
+    })
+    .catch(() => { el.style.display = 'none'; });
+}
+
+function cerrarModal() {
+  document.getElementById('bar-modal').style.display = 'none';
+  _modalTipoSel = null;
+  _modalCell = null;
+}
+
+async function _guardarRangoBar(valor) {
+  const desdeVal = document.getElementById('bar-modal-desde').value;
+  const hastaVal = document.getElementById('bar-modal-hasta').value || desdeVal;
+  if (!desdeVal) { toast('Completá la fecha desde', true); return false; }
+  if (desdeVal > hastaVal) { toast('"Desde" no puede ser posterior a "hasta"', true); return false; }
+
+  const fechas = [];
+  let d = new Date(desdeVal + 'T00:00:00');
+  while (true) {
+    const iso = d.toISOString().slice(0, 10);
+    fechas.push(iso);
+    if (iso >= hastaVal) break;
+    d.setDate(d.getDate() + 1);
+  }
+
+  const turnos = hastaVal > desdeVal ? ['TM', 'TN'] : [_modalCell.turno];
+
+  _guardando = true;
+  document.getElementById('bar-modal-guardar').disabled = true;
+  try {
+    for (const fecha of fechas) {
+      for (const turno of turnos) {
+        const r = await fetch('/api/barmans/celda', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            departamento_id: _deptId,
+            semana_inicio: lunesDeStr(fecha),
+            empleado_id: _modalCell.eid,
+            fecha, turno, valor
+          })
+        });
+        if (r.status === 401) { location.href = '/login'; return false; }
+        if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return false; }
+      }
+    }
+    return fechas.length;
+  } catch { toast('Error al guardar', true); return false; }
+  finally {
+    _guardando = false;
+    document.getElementById('bar-modal-guardar').disabled = false;
+  }
+}
+
+async function guardarModal() {
+  if (!_modalCell || _guardando) return;
+  if (!_modalTipoSel) { toast('Seleccioná un tipo', true); return; }
+  if (_modalTipoSel === 'V' && _vacSaldo !== null && _vacSaldo <= 0) {
+    toast('Sin días de vacaciones disponibles', true); return;
+  }
+  const n = await _guardarRangoBar(_modalTipoSel);
+  if (n === false) return;
+  cerrarModal();
+  await cargar();
+  toast(n > 1 ? `${ESTADOS_LABELS_BAR[_modalTipoSel] || _modalTipoSel} guardado (${n} días)` : 'Guardado');
+}
+
+async function revertirModal() {
+  if (!_modalCell || _guardando) return;
+  const n = await _guardarRangoBar(null);
+  if (n === false) return;
+  cerrarModal();
+  await cargar();
+  toast(n > 1 ? `Revertido (${n} días)` : 'Revertido');
+}
+
+// ── Confirmar / desconfirmar ───────────────────────────────────────────────
+async function _confirmar(semIdx) {
+  const d = new Date(_semanaInicio + 'T00:00:00');
+  d.setDate(d.getDate() + semIdx * 7);
+  const r = await fetch('/api/barmans/confirmar-por-fecha', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ departamento_id: _deptId, semana_inicio: d.toISOString().slice(0, 10) })
+  });
+  if (r.status === 401) { location.href = '/login'; return false; }
+  if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return false; }
+  return true;
+}
+
+async function _desconfirmar(semIdx) {
+  const sem = _data.semanas[semIdx];
+  if (!sem?.id) return true;
+  const r = await fetch(`/api/barmans/semana/${sem.id}/desconfirmar`, { method: 'POST' });
+  if (r.status === 401) { location.href = '/login'; return false; }
+  if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return false; }
+  return true;
+}
+
+async function confirmar(idx) {
+  if (!confirm('¿Confirmar semana? Se escribirá la planificación.')) return;
+  if (await _confirmar(idx)) { toast('Semana confirmada'); await cargar(); }
+}
+async function desconfirmar(idx) {
+  if (!confirm('¿Volver la semana a borrador?')) return;
+  if (await _desconfirmar(idx)) { toast('Semana vuelta a borrador'); await cargar(); }
+}
+async function confirmarAmbas() {
+  if (!confirm('¿Confirmar ambas semanas? Se escribirá la planificación.')) return;
+  if (await _confirmar(0) && await _confirmar(1)) { toast('Ambas semanas confirmadas'); await cargar(); }
+}
+async function desconfirmarAmbas() {
+  if (!confirm('¿Volver ambas semanas a borrador?')) return;
+  if (await _desconfirmar(0) && await _desconfirmar(1)) { toast('Ambas semanas en borrador'); await cargar(); }
+}
+
+// ── Print ──────────────────────────────────────────────────────────────────
+function imprimirBarmans() {
+  const s1 = _data.semanas[0];
+  if (!s1 || s1.estado !== 'confirmado') { toast('Semana 1 no está confirmada', true); return; }
+  window.print();
+}
+window.addEventListener('beforeprint', () => {
+  const s1 = _data?.semanas?.[0];
+  if (!s1 || s1.estado !== 'confirmado') {
+    document.getElementById('print-aviso-msg').textContent = 'La Semana 1 no está confirmada.';
+    document.body.classList.add('print-bloqueado');
+  }
+});
+window.addEventListener('afterprint', () => document.body.classList.remove('print-bloqueado'));
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function toast(msg, err = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (err ? ' error' : '');
+  setTimeout(() => { el.className = ''; }, 3000);
+}
+</script>
+<script src="/static/js/session-guard.js"></script>
+<script src="/static/js/nav-brand.js"></script>
+</body>
+</html>

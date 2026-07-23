@@ -415,6 +415,7 @@ let _feriados = new Set();  // Set de fechas feriado 'YYYY-MM-DD'
 let _excluirConteo = new Set(); // IDs excluidos del conteo de mozos
 let _periodosCerrados = new Set(); // {'2026-06', ...}
 let _guardando = false;
+let _vacSaldo  = null;
 
 const MESES_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const ESTADOS_RANGO  = new Set(['V','E','ILT','LSG','L','S']);
@@ -684,8 +685,8 @@ function renderGrilla() {
                 cls += ' celda-F celda-base';
                 label = 'F';
               } else {
-                // Inferir bloques según grupo: CORTADOS trabaja TM+TN, DIA solo TM, NOCHE solo TN
-                const g = empGroup[emp.id] || 'DIA';
+                // Usar grupo real del día desde planificacion: DIA→TM, NOCHE→TN, AMBOS→ambos
+                const g = base.grupo || 'DIA';
                 const mostrar = (turno === 'TM' && g !== 'NOCHE') || (turno === 'TN' && g !== 'DIA');
                 if (mostrar) {
                   cls += ' celda-P celda-base';
@@ -840,6 +841,7 @@ function abrirPopup(empId, fecha, turno) {
   }).join('');
 
   document.getElementById('nov-vac-info').style.display = 'none';
+  _vacSaldo = null;
   document.getElementById('nov-modal-desde').value = fecha;
   document.getElementById('nov-modal-hasta').value = '';
   document.getElementById('nov-modal').style.display = 'flex';
@@ -854,6 +856,7 @@ function selTipoNov(t) {
 
 function actualizarVacInfo(empId, fecha, tipo) {
   const el = document.getElementById('nov-vac-info');
+  _vacSaldo = null;
   if (tipo !== 'V') { el.style.display = 'none'; return; }
   const anio = parseInt(fecha.slice(0, 4)) - 1;
   el.textContent = '…'; el.style.display = '';
@@ -862,6 +865,7 @@ function actualizarVacInfo(empId, fecha, tipo) {
     .then(r => r.ok ? r.json() : null)
     .then(d => {
       if (!d) { el.style.display = 'none'; return; }
+      _vacSaldo = d.dias_restan;
       const ok = d.dias_restan > 0;
       el.textContent      = `Vacaciones disponibles: ${d.dias_restan} día(s)`;
       el.style.background = ok ? '#eaf4ea' : '#fdecea';
@@ -886,8 +890,7 @@ async function _guardarRango(estado) {
   let d = new Date(desdeVal + 'T00:00:00');
   while (toISO(d) <= hastaVal) { fechas.push(toISO(d)); d.setDate(d.getDate() + 1); }
 
-  // Absencias de día completo → ambos turnos; estados de turno → solo el clickeado
-  const turnos = ESTADOS_RANGO.has(estado) ? ['TM', 'TN'] : [_novCell.turno];
+  const turnos = hastaVal > desdeVal ? ['TM', 'TN'] : [_novCell.turno];
 
   _guardando = true;
   document.getElementById('nov-modal-guardar').disabled = true;
@@ -922,6 +925,9 @@ async function _guardarRango(estado) {
 async function guardarNovModal() {
   if (!_novCell || _guardando) return;
   if (!_novTipoSel) { toast('Seleccioná un tipo', true); return; }
+  if (_novTipoSel === 'V' && _vacSaldo !== null && _vacSaldo <= 0) {
+    toast('Sin días de vacaciones disponibles', true); return;
+  }
   const n = await _guardarRango(_novTipoSel);
   if (n === false) return;
   cerrarNovModal();

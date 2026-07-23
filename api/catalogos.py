@@ -15,6 +15,10 @@ class DepartamentoIn(BaseModel):
     nombre: str
     usa_distribucion: int | None = None
     usa_mozos: int | None = None
+    usa_barmans: int | None = None
+    horario_tm_id: int | None = None
+    horario_tn_id: int | None = None
+    horario_cortado_id: int | None = None
 
 
 class CargoUpdate(BaseModel):
@@ -96,7 +100,9 @@ def delete_cargo(cid: int, _user=Depends(require_permiso("empleados", "editar"))
 def list_departamentos(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute(
-            "SELECT id, nombre, usa_distribucion, usa_mozos, escribe_planificacion FROM departamentos ORDER BY nombre"
+            """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans, escribe_planificacion,
+                      horario_tm_id, horario_tn_id, horario_cortado_id
+               FROM departamentos ORDER BY nombre"""
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -106,16 +112,19 @@ def create_departamento(data: DepartamentoIn, _user=Depends(require_permiso("emp
     nombre = data.nombre.strip()
     if not nombre:
         raise HTTPException(400, "Nombre requerido")
-    usa_dist   = int(data.usa_distribucion or 0)
-    usa_mozos  = int(data.usa_mozos or 0)
+    usa_dist    = int(data.usa_distribucion or 0)
+    usa_mozos   = int(data.usa_mozos or 0)
+    usa_barmans = int(data.usa_barmans or 0)
     with db_session() as conn:
         try:
             conn.execute(
-                "INSERT INTO departamentos (nombre, usa_distribucion, usa_mozos) VALUES (?,?,?)",
-                (nombre, usa_dist, usa_mozos)
+                "INSERT INTO departamentos (nombre, usa_distribucion, usa_mozos, usa_barmans) VALUES (?,?,?,?)",
+                (nombre, usa_dist, usa_mozos, usa_barmans)
             )
             row = conn.execute(
-                "SELECT id, nombre, usa_distribucion, usa_mozos FROM departamentos WHERE nombre=?",
+                """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans,
+                          horario_tm_id, horario_tn_id, horario_cortado_id
+                   FROM departamentos WHERE nombre=?""",
                 (nombre,)
             ).fetchone()
         except sqlite3.IntegrityError:
@@ -132,17 +141,24 @@ def update_departamento(did: int, data: DepartamentoIn, _user=Depends(require_pe
         if not conn.execute("SELECT id FROM departamentos WHERE id=?", (did,)).fetchone():
             raise HTTPException(404, "Departamento no encontrado")
         try:
-            if data.usa_distribucion is not None or data.usa_mozos is not None:
-                usa_dist  = int(data.usa_distribucion or 0)
-                usa_moz   = int(data.usa_mozos or 0)
-                conn.execute(
-                    "UPDATE departamentos SET nombre=?, usa_distribucion=?, usa_mozos=? WHERE id=?",
-                    (nombre, usa_dist, usa_moz, did)
-                )
-            else:
-                conn.execute("UPDATE departamentos SET nombre=? WHERE id=?", (nombre, did))
+            conn.execute(
+                """UPDATE departamentos
+                   SET nombre=?, usa_distribucion=?, usa_mozos=?, usa_barmans=?,
+                       horario_tm_id=?, horario_tn_id=?, horario_cortado_id=?
+                   WHERE id=?""",
+                (nombre,
+                 int(data.usa_distribucion or 0),
+                 int(data.usa_mozos or 0),
+                 int(data.usa_barmans or 0),
+                 data.horario_tm_id,
+                 data.horario_tn_id,
+                 data.horario_cortado_id,
+                 did)
+            )
             row = conn.execute(
-                "SELECT id, nombre, usa_distribucion, usa_mozos FROM departamentos WHERE id=?",
+                """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans,
+                          horario_tm_id, horario_tn_id, horario_cortado_id
+                   FROM departamentos WHERE id=?""",
                 (did,)
             ).fetchone()
         except sqlite3.IntegrityError:

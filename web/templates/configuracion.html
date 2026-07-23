@@ -162,6 +162,7 @@
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
         <a href="/distribucion" data-perm="distribucion:ver">Horarios Cocina</a>
         <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
+        <a href="/barmans" data-perm="barmans:ver">Horarios Barra</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -1166,6 +1167,7 @@ const MODULO_ACCIONES_VALIDAS = {
   periodos:      ["ver","cerrar","reabrir"],
   distribucion:  ["ver","editar","confirmar"],
   mozos:         ["ver","editar","confirmar"],
+  barmans:       ["ver","editar","confirmar"],
 };
 
 let rolesList = [], modulos = [], acciones = [], rolEditandoId = null;
@@ -1563,7 +1565,7 @@ function _renderDeptos(lista) {
   }
   const puedeEmp = canDo('empleados','editar');
   tbody.innerHTML = lista.map(item => {
-    const moduloText = item.usa_distribucion ? 'Cocineros' : item.usa_mozos ? 'Mozos' : '<span style="color:#aaa">—</span>';
+    const moduloText = item.usa_distribucion ? 'Cocineros' : item.usa_mozos ? 'Mozos' : item.usa_barmans ? 'Barmans' : '<span style="color:#aaa">—</span>';
     return `<tr id="tabla-deptos-${item.id}">
       <td><strong>${item.nombre}</strong></td>
       <td style="text-align:center;padding:6px 4px">${moduloText}</td>
@@ -1576,21 +1578,40 @@ function _renderDeptos(lista) {
   }).join("");
 }
 
+function _horarioOpts(selectedId) {
+  const nil = `<option value="">— Sin definir —</option>`;
+  return nil + _horarios.map(h =>
+    `<option value="${h.id}" ${h.id === selectedId ? 'selected' : ''}>${h.nombre}</option>`
+  ).join('');
+}
+
 function editarDepto(id) {
   const lista = (_catStore["tabla-deptos"] || {}).lista || [];
   const item = lista.find(i => i.id === id);
   if (!item) return;
-  const modulo = item.usa_distribucion ? 'cocineros' : item.usa_mozos ? 'mozos' : 'ninguno';
+  const modulo = item.usa_distribucion ? 'cocineros' : item.usa_mozos ? 'mozos' : item.usa_barmans ? 'barmans' : 'ninguno';
+  const usaHorarios = modulo === 'mozos' || modulo === 'barmans';
+  const sel = (fld, label) => `
+    <div style="margin-top:6px;font-size:.8rem;color:#555">${label}</div>
+    <select id="tabla-deptos-edit-${fld}-${id}" style="width:100%;padding:3px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
+      ${_horarioOpts(item[fld])}
+    </select>`;
   const tr = document.getElementById(`tabla-deptos-${id}`);
   tr.className = "fila-edit";
   tr.innerHTML = `
     <td><input type="text" id="tabla-deptos-edit-nombre-${id}" value="${item.nombre.replace(/"/g,'&quot;')}" style="width:100%"></td>
     <td>
-      <select id="tabla-deptos-edit-modulo-${id}" style="width:100%;padding:4px 6px;border:1px solid #ced4da;border-radius:4px">
+      <select id="tabla-deptos-edit-modulo-${id}" style="width:100%;padding:4px 6px;border:1px solid #ced4da;border-radius:4px" onchange="_toggleHorariosDepto(${id})">
         <option value="ninguno" ${modulo==='ninguno'?'selected':''}>Ninguno</option>
         <option value="cocineros" ${modulo==='cocineros'?'selected':''}>Cocineros</option>
         <option value="mozos" ${modulo==='mozos'?'selected':''}>Mozos</option>
+        <option value="barmans" ${modulo==='barmans'?'selected':''}>Barmans</option>
       </select>
+      <div id="tabla-deptos-edit-horarios-${id}" style="display:${usaHorarios?'block':'none'}">
+        ${sel('horario_tm_id','Horario TM (mañana)')}
+        ${sel('horario_tn_id','Horario TN (noche)')}
+        ${sel('horario_cortado_id','Horario cortado')}
+      </div>
     </td>
     <td>
       <button class="btn btn-sm btn-primary" onclick="guardarDepto(${id})">Guardar</button>
@@ -1599,26 +1620,36 @@ function editarDepto(id) {
   document.getElementById(`tabla-deptos-edit-nombre-${id}`).focus();
 }
 
+function _toggleHorariosDepto(id) {
+  const modulo = document.getElementById(`tabla-deptos-edit-modulo-${id}`)?.value;
+  const div = document.getElementById(`tabla-deptos-edit-horarios-${id}`);
+  if (div) div.style.display = (modulo === 'mozos' || modulo === 'barmans') ? 'block' : 'none';
+}
+
 async function guardarDepto(id) {
   const nombre = document.getElementById(`tabla-deptos-edit-nombre-${id}`)?.value.trim();
   if (!nombre) { toast("Ingresá el nombre"); return; }
   const modulo = document.getElementById(`tabla-deptos-edit-modulo-${id}`)?.value || 'ninguno';
+  const usaHorarios = modulo === 'mozos' || modulo === 'barmans';
+  const tmVal  = document.getElementById(`tabla-deptos-edit-horario_tm_id-${id}`)?.value;
+  const tnVal  = document.getElementById(`tabla-deptos-edit-horario_tn_id-${id}`)?.value;
+  const ctVal  = document.getElementById(`tabla-deptos-edit-horario_cortado_id-${id}`)?.value;
   const res = await fetch(`/api/departamentos/${id}`, {
     method: "PATCH", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({
       nombre,
       usa_distribucion: modulo === 'cocineros' ? 1 : 0,
-      usa_mozos: modulo === 'mozos' ? 1 : 0
+      usa_mozos: modulo === 'mozos' ? 1 : 0,
+      usa_barmans: modulo === 'barmans' ? 1 : 0,
+      horario_tm_id:      usaHorarios && tmVal ? parseInt(tmVal) : null,
+      horario_tn_id:      usaHorarios && tnVal ? parseInt(tnVal) : null,
+      horario_cortado_id: usaHorarios && ctVal ? parseInt(ctVal) : null,
     })
   });
   if (res.ok) {
     const updated = await res.json();
     const item = deptos.find(d => d.id === id);
-    if (item) {
-      item.nombre = updated.nombre;
-      item.usa_distribucion = updated.usa_distribucion;
-      item.usa_mozos = updated.usa_mozos;
-    }
+    if (item) Object.assign(item, updated);
     _renderDeptos(deptos);
     toast("Departamento actualizado");
   } else {
@@ -1628,14 +1659,17 @@ async function guardarDepto(id) {
 }
 
 
+let _horarios = [];
+
 async function cargarCatalogos() {
-  const [cRes, dRes, catRes, tlRes, slRes, nlRes, cfgRes] = await Promise.all([
+  const [cRes, dRes, catRes, tlRes, slRes, nlRes, cfgRes, hRes] = await Promise.all([
     fetch("/api/cargos"), fetch("/api/departamentos"), fetch("/api/categorias"),
     fetch("/api/turnos-legajo"), fetch("/api/sectores-legajo"), fetch("/api/niveles-estudio"),
-    fetch("/api/configuracion")
+    fetch("/api/configuracion"), fetch("/api/horarios")
   ]);
   cargos = await cRes.json();
   deptos = await dRes.json();
+  _horarios = await hRes.json();
   categorias = await catRes.json();
   const cfgParams = await cfgRes.json();
   _traposActivo = cfgParams.find(p => p.clave === "trapos_cocina_activo")?.valor === "1";
@@ -1696,6 +1730,7 @@ function agregarDepto() {
         <option value="ninguno">Ninguno</option>
         <option value="cocineros">Cocineros</option>
         <option value="mozos">Mozos</option>
+        <option value="barmans">Barmans</option>
       </select>
     </td>
     <td>
@@ -1723,7 +1758,8 @@ async function crearDepto() {
     body: JSON.stringify({
       nombre,
       usa_distribucion: modulo === 'cocineros' ? 1 : 0,
-      usa_mozos: modulo === 'mozos' ? 1 : 0
+      usa_mozos: modulo === 'mozos' ? 1 : 0,
+      usa_barmans: modulo === 'barmans' ? 1 : 0,
     })
   });
   if (res.ok) { toast("Departamento creado"); await cargarCatalogos(); }

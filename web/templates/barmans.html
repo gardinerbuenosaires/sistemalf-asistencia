@@ -53,9 +53,14 @@
     padding: 3px 3px; position: sticky; top: 0; z-index: 10; white-space: nowrap; }
   table.barmans thead th.th-emp { background: #1a252f; text-align: left; padding-left: 10px;
     width: 180px; min-width: 180px; max-width: 180px; position: sticky; left: 0; z-index: 20; }
-  table.barmans thead tr.tr-dias   th { border-bottom: none; }
+  table.barmans thead tr.tr-semana th { border-bottom: none; }
+  table.barmans thead tr.tr-semana th.sem2 { background: #0b5345; }
+  table.barmans thead tr.tr-dias   th { border-bottom: none; border-top: none; }
   table.barmans thead tr.tr-turnos th { font-size: .65rem; background: #34495e; border-top: none; }
   table.barmans thead tr.tr-turnos th.th-emp { background: #1a252f; }
+
+  /* Separador entre días */
+  table.barmans .dia-sep { border-left: 2px solid #7f8c8d !important; }
 
   /* Separador entre semanas */
   table.barmans th.col-sep, table.barmans td.col-sep {
@@ -73,7 +78,7 @@
   table.barmans .hoy-col { background: #fffde7; }
   table.barmans thead th.hoy-col { background: #f39c12 !important; }
   table.barmans thead th.feriado  { background: #7d3c27 !important; }
-  table.barmans td.celda-feriado  { box-shadow: inset 0 3px 0 #FFAA00 !important; }
+  table.barmans td.celda-feriado  { border-top: 3px solid #FFAA00 !important; }
 
   /* No confirmada — overlay */
   table.barmans td.sem-nc          { box-shadow: inset 0 0 0 1000px rgba(0,0,0,0.18) !important; }
@@ -98,7 +103,8 @@
 
   /* Celdas */
   table.barmans td.celda { width: 28px; min-width: 28px; max-width: 28px; height: 22px;
-    cursor: pointer; font-size: .72rem; font-weight: bold; padding: 0; transition: filter .1s; }
+    cursor: pointer; font-size: .72rem; font-weight: bold; padding: 0; transition: filter .1s;
+    background: #27ae60; color: #fff; }
   table.barmans td.celda:hover { filter: brightness(.88); }
   table.barmans td.celda.confirmada { cursor: default; }
   table.barmans td.celda-1   { background: #f0fff0; color: #1b5e20; }
@@ -146,7 +152,7 @@
 
   /* ── Print ── */
   @media print {
-    @page { size: landscape; margin: 0.8cm; }
+    @page { size: portrait; margin: 0.8cm; }
     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     body { height: auto !important; overflow: visible !important; display: block !important; background: white !important; }
     header, .toolbar { display: none !important; }
@@ -154,6 +160,7 @@
     .tabla-wrap { overflow: visible !important; flex: none !important; min-height: auto !important;
       height: auto !important; border-radius: 0 !important; box-shadow: none !important; }
     .sem2, .col-sep { display: none !important; }
+    .tabla-wrap { zoom: 1.33; }
     table.barmans thead th, table.barmans td.td-emp, tfoot td.td-emp { position: static !important; }
     table.barmans thead th { padding: 2px 3px !important; font-size: 7pt !important; }
     table.barmans td { padding: 1px 2px !important; font-size: 7pt !important; }
@@ -170,6 +177,15 @@
     table.barmans .sem-conf-l, table.barmans .sem-nc-l { border-left:  1px solid #dee2e6 !important; }
     table.barmans .sem-conf-r, table.barmans .sem-nc-r { border-right: 1px solid #dee2e6 !important; }
     table.barmans thead th.sem-conf, table.barmans thead th.sem-nc { border-top: none !important; }
+    /* Sin resaltado de hoy en impresión */
+    table.barmans .hoy-col { background: white; }
+    table.barmans thead th.hoy-col { background: #d0d0d0 !important; }
+    /* Presentes sin fondo para ahorrar tinta */
+    table.barmans td.celda-1, table.barmans td.celda-P { background: white !important; color: #333 !important; }
+    /* Títulos: fondo claro en lugar de sólido oscuro */
+    table.barmans thead th { background: #d0d0d0 !important; color: #111 !important; }
+    table.barmans thead th.th-emp { background: #b8b8b8 !important; }
+    tfoot tr.tfoot-label td { background: #d8d8d8 !important; color: #111 !important; }
     table.barmans tfoot tr:last-child td.sem-conf,
     table.barmans tfoot tr:last-child td.sem-nc { border-bottom: 1px solid #dee2e6 !important; }
     #print-aviso { display: none; }
@@ -295,6 +311,7 @@
 <script>
 const DIAS_CORTOS  = ['LUN','MAR','MIÉ','JUE','VIE','SÁB','DOM'];
 const DIAS_NOMBRES = ['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO','DOMINGO'];
+const MESES_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const TURNOS = ['TM','TN'];
 const BARMANS_COLORES = {
   '1':  { bg: '#f0fff0', txt: '#1b5e20' },
@@ -469,14 +486,24 @@ function renderTabla() {
   for (const d of detalles) vals[`${d.empleado_id}|${d.fecha}|${d.turno}`] = d.valor;
 
   // ── Thead ──
-  let r1 = `<tr class="tr-dias"><th class="th-emp" rowspan="2">${_data.dept_nombre || 'BARRA'}</th>`;
+  const nc1 = !c1 ? 'sem-nc' : 'sem-conf';
+  const nc2 = !c2 ? 'sem-nc' : 'sem-conf';
+  const fmtRango = (d0, d6) => {
+    const l = new Date(d0+'T12:00:00'), r = new Date(d6+'T12:00:00');
+    return `${DIAS_CORTOS[new Date(d0+'T12:00:00').getDay()===0?6:new Date(d0+'T12:00:00').getDay()-1].toLowerCase()} ${l.getDate()} ${MESES_ES[l.getMonth()]} – ${r.getDate()} ${MESES_ES[r.getMonth()]}`;
+  };
+  const lbl1 = dias.length >= 7  ? fmtRango(dias[0], dias[6])  : '';
+  const lbl2 = dias.length >= 14 ? fmtRango(dias[7], dias[13]) : '';
+  let r0 = `<tr class="tr-semana">`;
+  r0 += `<th class="th-emp" rowspan="3">${_data.dept_nombre || 'Barra'}</th>`;
+  r0 += `<th colspan="14" class="${nc1} ${nc1}-l ${nc1}-r">${lbl1}</th>`;
+  r0 += `<th class="col-sep" rowspan="3"></th>`;
+  r0 += `<th colspan="14" class="sem2 ${nc2} ${nc2}-l ${nc2}-r">${lbl2}</th>`;
+  r0 += `</tr>`;
+  let r1 = `<tr class="tr-dias">`;
   let r2 = `<tr class="tr-turnos">`;
 
   for (let i = 0; i < 14; i++) {
-    if (i === 7) {
-      // separador entre semanas
-      r1 += `<th class="col-sep" rowspan="2"></th>`;
-    }
     const semIdx = i >= 7 ? 1 : 0;
     const di = i % 7;
     const fecha = dias[i];
@@ -489,20 +516,25 @@ function renderTabla() {
     const ncR = isLast  ? ` ${nc}-r` : '';
     const hoyC = esHoy ? ' hoy-col' : '';
     const ferC = esFer ? ' feriado' : '';
-
-    // Fila días (colspan=2 por TM+TN)
-    if (i % 7 === 0 || i === 7) {
-      // primer día del bloque — ya insertamos th arriba, aquí nada extra
-    }
+    const diaSepCls = di > 0 ? ' dia-sep' : '';
     const d = new Date(fecha + 'T00:00:00');
-    r1 += `<th colspan="2" class="${nc}${sem2cls}${ncL}${ncR}${hoyC}${ferC}">${DIAS_CORTOS[di]} ${d.getDate()}</th>`;
-
-    // Fila turnos
-    r2 += `<th class="${nc}${sem2cls}${ncL}${hoyC}">TM</th>`;
+    r1 += `<th colspan="2" class="${nc}${sem2cls}${ncL}${ncR}${hoyC}${ferC}${diaSepCls}">${DIAS_CORTOS[di]} ${d.getDate()}</th>`;
+    r2 += `<th class="${nc}${sem2cls}${ncL}${hoyC}${diaSepCls}">TM</th>`;
     r2 += `<th class="${nc}${sem2cls}${ncR}${hoyC}">TN</th>`;
   }
   r1 += '</tr>'; r2 += '</tr>';
-  document.getElementById('thead-barmans').innerHTML = r1 + r2;
+  document.getElementById('thead-barmans').innerHTML = r0 + r1 + r2;
+  requestAnimationFrame(() => {
+    const thead = document.getElementById('thead-barmans');
+    const trSem  = thead.querySelector('tr.tr-semana');
+    const trDias = thead.querySelector('tr.tr-dias');
+    if (trSem && trDias) {
+      const hSem  = trSem.getBoundingClientRect().height;
+      const hDias = trDias.getBoundingClientRect().height;
+      thead.querySelectorAll('tr.tr-dias th').forEach(th => th.style.top = hSem + 'px');
+      thead.querySelectorAll('tr.tr-turnos th').forEach(th => th.style.top = (hSem + hDias) + 'px');
+    }
+  });
 
   // ── Tbody ──
   if (!empleados.length) {
@@ -532,6 +564,7 @@ function renderTabla() {
         const ncR = (isLast  && ti === 1) ? ` ${nc}-r` : '';
         const ferCls  = esFer ? ' celda-feriado' : '';
         const confCls = confirmado ? ' confirmada' : '';
+        const sepCls  = (di > 0 && ti === 0) ? ' dia-sep' : '';
 
         let valCls = '', display = '';
         if (val && val !== 'N') {
@@ -540,18 +573,19 @@ function renderTabla() {
         } else if (!val) {
           const base = _planBase[`${emp.id}_${fecha}`];
           if (base) {
+            const baseCls = confirmado ? '' : ' celda-base';
             if (base.es_franco) {
-              valCls = ' celda-F celda-base'; display = 'F';
+              valCls = ` celda-F${baseCls}`; display = 'F';
             } else {
               // Usar el grupo real del día (no histórico): DIA→TM, NOCHE→TN, AMBOS→ambos
               const g = base.grupo || 'DIA';
               const mostrar = (turno === 'TM' && g !== 'NOCHE') || (turno === 'TN' && g !== 'DIA');
-              if (mostrar) { valCls = ' celda-P celda-base'; display = '|'; }
+              if (mostrar) { valCls = ` celda-P${baseCls}`; display = '|'; }
             }
           }
         }
 
-        const cls = `celda ${nc}${sem2cls}${ncL}${ncR}${ferCls}${valCls}${confCls}`;
+        const cls = `celda ${nc}${sem2cls}${ncL}${ncR}${ferCls}${valCls}${confCls}${sepCls}`;
         const onclick = confirmado ? '' : `onclick="abrirModal(${emp.id},'${fecha}','${turno}')"`;
         row += `<td class="${cls}" data-eid="${emp.id}" data-fecha="${fecha}" data-turno="${turno}" ${onclick}>${display}</td>`;
       }
@@ -564,10 +598,10 @@ function renderTabla() {
   // ── Counts: detalles explícitos + plan_base (igual que mozos) ──
   const counts = {};
   for (const d of detalles) {
-    if (d.valor === '1') counts[`${d.fecha}_${d.turno}`] = (counts[`${d.fecha}_${d.turno}`] || 0) + 1;
+    if (d.valor === '1' || d.valor === 'FT') counts[`${d.fecha}_${d.turno}`] = (counts[`${d.fecha}_${d.turno}`] || 0) + 1;
   }
-  // Celdas con N bloquean plan_base — no contar plan_base para ese (fecha, turno)
-  const detalleNKeys = new Set(detalles.filter(d => d.valor === 'N').map(d => `${d.fecha}_${d.turno}`));
+  // Celdas con N bloquean plan_base para ese empleado específico
+  const detalleNKeys = new Set(detalles.filter(d => d.valor === 'N').map(d => `${d.empleado_id}_${d.fecha}_${d.turno}`));
   // Sumar plan_base no-franco donde no hay detalle explícito, respetando grupo real del día
   Object.entries(_planBase).forEach(([key, base]) => {
     if (base.es_franco) return;
@@ -576,7 +610,7 @@ function renderTabla() {
     const fecha = key.slice(sep + 1);
     const g = base.grupo || 'DIA';
     for (const t of TURNOS) {
-      if (detalleNKeys.has(`${fecha}_${t}`)) continue;
+      if (detalleNKeys.has(`${eid}_${fecha}_${t}`)) continue;
       const hasDetalle = detalles.some(d => d.empleado_id === eid && d.fecha === fecha && d.turno === t);
       if (hasDetalle) continue;
       const cuenta = (t === 'TM' && g !== 'NOCHE') || (t === 'TN' && g !== 'DIA');
@@ -585,8 +619,8 @@ function renderTabla() {
   });
 
   // ── Tfoot ──
-  let tf1 = `<tr class="tfoot-label"><td class="td-emp">Total</td>`;
-  let tf2 = `<tr><td class="td-emp"></td>`;
+  let tf1 = `<tr class="tfoot-label"><td class="td-emp">TURNO</td>`;
+  let tf2 = `<tr><td class="td-emp">BARRA</td>`;
   for (let i = 0; i < 14; i++) {
     if (i === 7) { tf1 += `<td class="col-sep"></td>`; tf2 += `<td class="col-sep"></td>`; }
     const semIdx = i >= 7 ? 1 : 0;
@@ -595,15 +629,14 @@ function renderTabla() {
     const nc = [!c1, !c2][semIdx] ? 'sem-nc' : 'sem-conf';
     const sem2cls = semIdx === 1 ? ' sem2' : '';
     const isFirst = di === 0, isLast = di === 6;
-    const ncL1 = isFirst ? ` ${nc}-l` : '';
-    const ncR1 = isLast  ? ` ${nc}-r` : '';
-    tf1 += `<td class="${nc}${sem2cls}${ncL1}${ncR1}" colspan="2"></td>`;
     for (let ti = 0; ti < 2; ti++) {
       const turno = TURNOS[ti];
       const ncL = (isFirst && ti === 0) ? ` ${nc}-l` : '';
       const ncR = (isLast  && ti === 1) ? ` ${nc}-r` : '';
+      const tSep = (di > 0 && ti === 0) ? ` dia-sep` : '';
       const cnt = counts[`${fecha}_${turno}`] || 0;
-      tf2 += `<td class="${nc}${sem2cls}${ncL}${ncR}">${cnt || ''}</td>`;
+      tf1 += `<td class="${nc}${sem2cls}${ncL}${ncR}${tSep}">${turno}</td>`;
+      tf2 += `<td class="${nc}${sem2cls}${ncL}${ncR}${tSep}">${cnt || ''}</td>`;
     }
   }
   tf1 += '</tr>'; tf2 += '</tr>';
@@ -619,10 +652,12 @@ function renderTabla() {
       const tn = counts[`${fecha}_TN`] || 0;
       rows += `<tr><td>${DIAS_NOMBRES[di]}</td><td>${tm || ''}</td><td>${tn || ''}</td></tr>`;
     }
-    const titulo = semCls === 'sem1' ? 'Semana 1' : 'Semana 2';
+    const lunes = new Date(diasSlice[0] + 'T12:00:00');
+    const dom   = new Date(diasSlice[6] + 'T12:00:00');
+    const cap   = `${lunes.getDate()} ${MESES_ES[lunes.getMonth()]} – ${dom.getDate()} ${MESES_ES[dom.getMonth()]}`;
     return `<div class="resumen-wrap ${wrapNc}" style="width:392px;flex-shrink:0">
       <table class="resumen-sem ${semCls}">
-        <caption>${_data.dept_nombre || 'BARRA'} — ${titulo}</caption>
+        <caption>Barra — ${cap}</caption>
         <thead><tr><th></th><th>TM</th><th>TN</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>

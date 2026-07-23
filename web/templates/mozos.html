@@ -57,7 +57,9 @@
     padding: 3px 3px; position: sticky; top: 0; z-index: 10; white-space: nowrap; }
   table.mozos thead th.th-emp { background: #1a252f; text-align: left; padding-left: 10px;
     width: 180px; min-width: 180px; max-width: 180px; position: sticky; left: 0; z-index: 20; }
-  table.mozos thead tr.tr-dias th { border-bottom: none; }
+  table.mozos thead tr.tr-semana th { border-bottom: none; }
+  table.mozos thead tr.tr-semana th.sem2 { background: #0b5345; }
+  table.mozos thead tr.tr-dias th { border-bottom: none; border-top: none; }
   table.mozos thead tr.tr-turnos th { font-size: .65rem; background: #34495e; border-top: none; top: 0; }
   table.mozos thead tr.tr-turnos th.th-emp { background: #1a252f; }
   /* Columna vacía entre semanas */
@@ -66,11 +68,11 @@
     width: 38px; min-width: 38px; max-width: 38px; padding: 0;
   }
   /* Separadores visuales */
-  table.mozos .dia-sep { border-left: 1px solid #dee2e6 !important; }
+  table.mozos .dia-sep { border-left: 2px solid #7f8c8d !important; }
   table.mozos .hoy-col { background: #fffde7; }
   table.mozos thead th.hoy-col { background: #f39c12 !important; }
   table.mozos thead th.feriado { background: #7d3c27 !important; }
-  table.mozos td.celda-feriado { box-shadow: inset 0 3px 0 #FFAA00 !important; }
+  table.mozos td.celda-feriado { border-top: 3px solid #FFAA00 !important; }
   /* Semana 2 — color distinto en cabecera y cuerpo */
   table.mozos thead tr.tr-dias th.sem2   { background: #0b5345; }
   table.mozos thead tr.tr-turnos th.sem2 { background: #117a65; }
@@ -112,7 +114,8 @@
 
   /* Celdas de estado */
   table.mozos td.celda { width: 28px; min-width: 28px; max-width: 28px; height: 22px;
-    cursor: pointer; font-size: .72rem; font-weight: bold; padding: 0; transition: filter .1s; }
+    cursor: pointer; font-size: .72rem; font-weight: bold; padding: 0; transition: filter .1s;
+    background: #27ae60; color: #fff; }
   table.mozos td.celda:hover { filter: brightness(.88); }
   table.mozos td.celda.bloqueada { cursor: default; filter: none; opacity: .7; }
   table.mozos td.celda.confirmada { cursor: default; }
@@ -181,10 +184,17 @@
     /* Ocultar semana 2 */
     .sem2, .col-sep { display: none !important; }
 
+    /* Presentes sin fondo para ahorrar tinta */
+    table.mozos td.celda-P { background: white !important; color: #333 !important; }
+    /* Títulos: fondo claro en lugar de sólido oscuro */
+    table.mozos thead th { background: #d0d0d0 !important; color: #111 !important; }
+    table.mozos thead th.th-emp { background: #b8b8b8 !important; }
+    table.mozos tr.tr-grupo td { background: #d8d8d8 !important; color: #111 !important; }
+    tfoot tr.tfoot-label td { background: #d8d8d8 !important; color: #111 !important; }
+
     /* Quitar resaltado de hoy (sin !important para que los estados de celda ganen) */
     table.mozos .hoy-col { background: white; }
-    table.mozos thead tr.tr-dias th.hoy-col { background: #2c3e50 !important; }
-    table.mozos thead tr.tr-turnos th.hoy-col { background: #34495e !important; }
+    table.mozos thead th.hoy-col { background: #d0d0d0 !important; }
 
     /* Quitar sticky */
     table.mozos thead th, table.mozos td.td-emp, table.mozos thead th.th-emp,
@@ -373,6 +383,12 @@
       <div id="nov-modal-subtitulo" style="font-size:.76rem;color:#888"></div>
     </div>
     <div id="nov-tipos-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px"></div>
+    <div id="nov-horario-wrap" style="display:none;margin-bottom:10px">
+      <label style="font-size:.72rem;color:#666;font-weight:bold;display:block;margin-bottom:3px">Horario especial <span style="font-weight:normal;color:#aaa">(por descanso nocturno)</span></label>
+      <select id="nov-horario-sel" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem" onchange="_novHorarioId=this.value?parseInt(this.value):null">
+        <option value="">— Usar horario por defecto —</option>
+      </select>
+    </div>
     <div id="nov-vac-info" style="display:none;border-radius:6px;padding:7px 12px;font-size:.83rem;margin-bottom:10px"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
       <div>
@@ -417,6 +433,8 @@ let _excluirConteo = new Set(); // IDs excluidos del conteo de mozos
 let _periodosCerrados = new Set(); // {'2026-06', ...}
 let _guardando = false;
 let _vacSaldo  = null;
+let _todosHorarios = [];
+let _novHorarioId  = null;
 
 const MESES_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const ESTADOS_RANGO  = new Set(['V','E','ILT','LSG','L','S']);
@@ -552,6 +570,18 @@ function esFechaCerrada(fecha) {
   return _periodosCerrados.has(fecha.slice(0, 7));
 }
 
+// Retorna true si el empleado trabajó TN en `fecha` (chequea detalle explícito Y plan base)
+function _trabajoTN(empId, fecha) {
+  const nov = getNovedad(empId, fecha);
+  if (nov && NOV_BLOQUEA.has(nov.tipo)) return false;
+  const det = _detalles.find(d => d.empleado_id === empId && d.fecha === fecha && d.turno === 'TN');
+  if (det) return det.estado === 'P' || det.estado === 'FT';
+  const base = _planBase[`${empId}_${fecha}`];
+  if (!base || base.es_franco) return false;
+  const g = base.grupo || 'DIA';
+  return g !== 'DIA'; // NOCHE o CORTADOS trabajan TN por planificación base
+}
+
 function badgeEstado(s) {
   if (!s) return { cls: 'badge-nuevo', txt: 'Planificación automática' };
   return s.estado === 'confirmado'
@@ -600,10 +630,22 @@ function renderGrilla() {
 
   // ── Cabecera ──
   const thead = document.getElementById('thead-mozos');
-  let thDias = '<tr class="tr-dias"><th class="th-emp" rowspan="2">Empleado</th>';
+  const nc1 = !c1 ? 'sem-nc' : 'sem-conf';
+  const nc2 = !c2 ? 'sem-nc' : 'sem-conf';
+  const fmtRango = (d0, d6) => `${fmtLabel(new Date(d0+'T12:00:00'))} – ${fmtLabel(new Date(d6+'T12:00:00'))}`;
+  const lbl1 = _dias.length >= 7  ? fmtRango(_dias[0], _dias[6])  : '';
+  const lbl2 = _dias.length >= 14 ? fmtRango(_dias[7], _dias[13]) : '';
+  // Fila superior: nombre columna (rowspan=3) + rango de cada semana + separador (rowspan=3)
+  let thSemana = `<tr class="tr-semana">`;
+  thSemana += `<th class="th-emp" rowspan="3">Mozos</th>`;
+  thSemana += `<th colspan="14" class="${nc1} ${nc1}-l ${nc1}-r">${lbl1}</th>`;
+  thSemana += `<th class="col-sep" rowspan="3"></th>`;
+  thSemana += `<th colspan="14" class="sem2 ${nc2} ${nc2}-l ${nc2}-r">${lbl2}</th>`;
+  thSemana += `</tr>`;
+  // Fila de días y turnos (sin th-emp ni col-sep — cubiertos por rowspan en tr-semana)
+  let thDias = '<tr class="tr-dias">';
   let thTurnos = '<tr class="tr-turnos">';
   _dias.forEach((d, i) => {
-    if (i === 7) { thDias += '<th class="col-sep"></th>'; thTurnos += '<th class="col-sep"></th>'; }
     const esHoy = d === hoy;
     const esFeriado = _feriados.has(d);
     const dt = new Date(d + 'T12:00:00');
@@ -620,13 +662,16 @@ function renderGrilla() {
     thDias    += `<th colspan="2"${clsDia ? ` class="${clsDia}"` : ''}>${label}</th>`;
     thTurnos  += `<th${clsTm ? ` class="${clsTm}"` : ''}>TM</th><th${clsTn ? ` class="${clsTn}"` : ''}>TN</th>`;
   });
-  thead.innerHTML = thDias + '</tr>' + thTurnos + '</tr>';
-  // Fijar top de la fila de turnos (TM/TN) = altura de la fila de fechas
+  thead.innerHTML = thSemana + thDias + '</tr>' + thTurnos + '</tr>';
+  // Fijar top sticky para las 3 filas del encabezado
   requestAnimationFrame(() => {
+    const trSem  = thead.querySelector('tr.tr-semana');
     const trDias = thead.querySelector('tr.tr-dias');
-    if (trDias) {
-      const h = trDias.getBoundingClientRect().height;
-      thead.querySelectorAll('tr.tr-turnos th').forEach(th => th.style.top = h + 'px');
+    if (trSem && trDias) {
+      const hSem  = trSem.getBoundingClientRect().height;
+      const hDias = trDias.getBoundingClientRect().height;
+      thead.querySelectorAll('tr.tr-dias th').forEach(th => th.style.top = hSem + 'px');
+      thead.querySelectorAll('tr.tr-turnos th').forEach(th => th.style.top = (hSem + hDias) + 'px');
     }
   });
 
@@ -817,6 +862,7 @@ let _novCell    = null;
 function abrirPopup(empId, fecha, turno) {
   if (_guardando) return;
   _novTipoSel = null;
+  _novHorarioId = null;
   _novCell = { empId, fecha, turno };
 
   let empNombre = '';
@@ -840,6 +886,31 @@ function abrirPopup(empId, fecha, turno) {
       <div style="font-size:.62rem;font-weight:normal;margin-top:2px">${ESTADOS_LABELS[t]||''}</div>
     </button>`;
   }).join('');
+
+  // Detectar si trabajó TN el día anterior → ofrecer horarios tardíos
+  const wrapHor = document.getElementById('nov-horario-wrap');
+  wrapHor.style.display = 'none';
+  if (turno === 'TM' && _todosHorarios.length && !_trabajoTN(empId, fecha)) {
+    const dtAyer = new Date(fecha + 'T12:00:00');
+    dtAyer.setDate(dtAyer.getDate() - 1);
+    const ayer = toISO(dtAyer);
+    const trabajoTNAyer = _trabajoTN(empId, ayer);
+    if (trabajoTNAyer) {
+      const tardios = _todosHorarios.filter(h => {
+        const m = (h.nombre || '').match(/^(\d{1,2}):(\d{2})/);
+        if (!m) return false;
+        const mins = parseInt(m[1]) * 60 + parseInt(m[2]);
+        return mins >= 600 && mins < 960; // >= 10:00 y < 16:00
+      });
+      if (tardios.length) {
+        const sel = document.getElementById('nov-horario-sel');
+        sel.innerHTML = '<option value="">— Usar horario por defecto —</option>'
+          + tardios.map(h => `<option value="${h.id}">${h.nombre}</option>`).join('');
+        sel.value = '';
+        wrapHor.style.display = '';
+      }
+    }
+  }
 
   document.getElementById('nov-vac-info').style.display = 'none';
   _vacSaldo = null;
@@ -877,8 +948,9 @@ function actualizarVacInfo(empId, fecha, tipo) {
 
 function cerrarNovModal() {
   document.getElementById('nov-modal').style.display = 'none';
-  _novTipoSel = null;
-  _novCell    = null;
+  _novTipoSel   = null;
+  _novCell      = null;
+  _novHorarioId = null;
 }
 
 async function _guardarRango(estado) {
@@ -905,7 +977,8 @@ async function _guardarRango(estado) {
             departamento_id: _deptId,
             semana_inicio: lunesDeISO(fecha),
             empleado_id: _novCell.empId,
-            fecha, turno, estado
+            fecha, turno, estado,
+            horario_id: _novHorarioId || null
           })
         });
         if (!r.ok) {
@@ -1100,6 +1173,11 @@ async function init() {
   await initAuth();
   _lunes = lunesToDate(new Date());
   document.getElementById('label-semana').textContent = fmtSemana(_lunes);
+
+  try {
+    const rh = await fetch('/api/mozos/horarios-lista');
+    if (rh.ok) { const dh = await rh.json(); _todosHorarios = Array.isArray(dh) ? dh : []; }
+  } catch {}
 
   try {
     const r = await fetch('/api/mozos/departamentos');

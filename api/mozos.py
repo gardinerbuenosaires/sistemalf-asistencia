@@ -79,6 +79,17 @@ def set_usa_mozos(dept_id: int, body: UsaMozosIn,
     return {"ok": True}
 
 
+# ── Horarios (lista simple para override) ─────────────────────────────────────
+
+@router.get("/horarios-lista")
+def get_horarios_lista(_user=Depends(require_permiso("mozos", "ver"))):
+    with db_session() as conn:
+        rows = conn.execute(
+            "SELECT id, nombre FROM horarios ORDER BY nombre"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # ── Departamentos accesibles ───────────────────────────────────────────────────
 
 @router.get("/departamentos")
@@ -116,7 +127,7 @@ def get_semana(departamento_id: int, semana_inicio: str,
         for s in (semana1, semana2):
             if s:
                 detalles += conn.execute(
-                    "SELECT empleado_id, fecha, turno, estado FROM mozos_detalle WHERE semana_id=?",
+                    "SELECT empleado_id, fecha, turno, estado, horario_id FROM mozos_detalle WHERE semana_id=?",
                     (s["id"],)
                 ).fetchall()
 
@@ -267,6 +278,7 @@ class CeldaIn(BaseModel):
     fecha: str
     turno: str
     estado: Optional[str] = None
+    horario_id: Optional[int] = None
 
 
 @router.post("/celda")
@@ -308,11 +320,11 @@ def set_celda(body: CeldaIn, user=Depends(require_permiso("mozos", "editar"))):
             )
         else:
             conn.execute(
-                """INSERT INTO mozos_detalle (semana_id, empleado_id, fecha, turno, estado, creado_por, creado_en)
-                   VALUES (?,?,?,?,?,?,datetime('now'))
+                """INSERT INTO mozos_detalle (semana_id, empleado_id, fecha, turno, estado, horario_id, creado_por, creado_en)
+                   VALUES (?,?,?,?,?,?,?,datetime('now'))
                    ON CONFLICT(semana_id, empleado_id, fecha, turno)
-                   DO UPDATE SET estado=excluded.estado, creado_por=excluded.creado_por""",
-                (semana_id, body.empleado_id, body.fecha, body.turno, body.estado, uid)
+                   DO UPDATE SET estado=excluded.estado, horario_id=excluded.horario_id, creado_por=excluded.creado_por""",
+                (semana_id, body.empleado_id, body.fecha, body.turno, body.estado, body.horario_id, uid)
             )
     return {"ok": True}
 
@@ -362,6 +374,8 @@ def _ejecutar_confirmacion(conn, semana, uid: int):
             if key not in estado_dia:
                 estado_dia[key] = {}
             estado_dia[key][det["turno"]] = det["estado"]
+            if det["horario_id"]:
+                estado_dia[key][f'{det["turno"]}_horario'] = det["horario_id"]
         dias_a_tocar = {(eid, f) for (eid, f) in estado_dia} | bloqueantes
         all_plan = conn.execute(
             f"""SELECT id, empleado_id, fecha FROM planificacion
@@ -402,11 +416,11 @@ def _ejecutar_confirmacion(conn, semana, uid: int):
                 trabaja = tm_trabaja or tn_trabaja
                 if trabaja:
                     if tm_trabaja and tn_trabaja:
-                        horario_id = horario_ct
+                        horario_id = horario_ct  # cortado: siempre usa horario del depto, ignora overrides
                     elif tm_trabaja:
-                        horario_id = horario_tm
+                        horario_id = estados.get('TM_horario') or horario_tm
                     else:
-                        horario_id = horario_tn
+                        horario_id = estados.get('TN_horario') or horario_tn
                     if horario_id is not None:
                         conn.execute(
                             """INSERT INTO planificacion

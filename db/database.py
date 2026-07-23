@@ -1054,6 +1054,11 @@ def _migrate(conn):
         conn.execute("ALTER TABLE departamentos ADD COLUMN horario_cortado_id INTEGER REFERENCES horarios(id)")
         logger.info("Migración: columna horario_cortado_id agregada a departamentos")
 
+    cols_mdet = {r[1] for r in conn.execute("PRAGMA table_info(mozos_detalle)").fetchall()}
+    if cols_mdet and "horario_id" not in cols_mdet:
+        conn.execute("ALTER TABLE mozos_detalle ADD COLUMN horario_id INTEGER REFERENCES horarios(id)")
+        logger.info("Migración: columna horario_id agregada a mozos_detalle")
+
     cols_puestos = {r[1] for r in conn.execute("PRAGMA table_info(puestos)").fetchall()}
     if cols_puestos:
         if "es_chef" not in cols_puestos:

@@ -30,6 +30,7 @@ from api.francos import router as francos_router
 from api.periodos_cerrados import router as periodos_cerrados_router
 from api.distribucion import router as distribucion_router
 from api.mozos import router as mozos_router
+from api.barmans import router as barmans_router
 from api.parking import router as parking_router
 from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
 
@@ -140,6 +141,7 @@ app.include_router(francos_router)
 app.include_router(periodos_cerrados_router)
 app.include_router(distribucion_router)
 app.include_router(mozos_router)
+app.include_router(barmans_router)
 app.include_router(parking_router)
 
 
@@ -235,6 +237,10 @@ def page_distribucion(request: Request):
 @app.get("/mozos", include_in_schema=False)
 def page_mozos(request: Request):
     return _page(request, "web/templates/mozos.html", "mozos")
+
+@app.get("/barmans", include_in_schema=False)
+def page_barmans(request: Request):
+    return _page(request, "web/templates/barmans.html", "barmans")
 
 @app.get("/manual-encargado", include_in_schema=False)
 def page_manual_encargado(request: Request):

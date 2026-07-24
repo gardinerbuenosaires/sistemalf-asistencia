@@ -597,31 +597,19 @@ function renderGrilla() {
   const s1 = _semanas[0], s2 = _semanas[1];
   const c1 = s1 && s1.estado === 'confirmado';
   const c2 = s2 && s2.estado === 'confirmado';
-  const ambosConfirmados = c1 && c2;
-  const algoBorrador = !c1 || !c2;
   const sem1Cerrada = _dias.length > 0 && esFechaCerrada(_dias[0]);
   const sem2Cerrada = _dias.length > 7 && esFechaCerrada(_dias[7]);
-  // Hay algo borrador que no está en período cerrado → se puede confirmar
-  const hayBorradorAbierto = (!c1 && !sem1Cerrada) || (!c2 && !sem2Cerrada);
-  // Hay algo confirmado que no está en período cerrado → se puede editar
-  const hayConfirmadoAbierto = (c1 && !sem1Cerrada) || (c2 && !sem2Cerrada);
+  const ambosConfirmados = c1 && c2;
   let badgeCls, badgeTxt;
-  if (ambosConfirmados)  { badgeCls = 'badge-confirmado'; badgeTxt = 'Confirmado'; }
-  else if (!s1 && !s2)   { badgeCls = 'badge-nuevo';      badgeTxt = 'Planificación automática'; }
-  else                    { badgeCls = 'badge-borrador';   badgeTxt = 'Borrador'; }
-  const estadosMixtos = hayBorradorAbierto && hayConfirmadoAbierto;
+  if (ambosConfirmados) { badgeCls = 'badge-confirmado'; badgeTxt = 'Confirmado'; }
+  else if (!s1 && !s2)  { badgeCls = 'badge-nuevo';      badgeTxt = 'Planificación automática'; }
+  else                   { badgeCls = 'badge-borrador';   badgeTxt = 'Borrador'; }
   const ctrl = document.getElementById('semana-controles');
   const centrado = `width:100%;display:flex;justify-content:center;align-items:center;gap:8px`;
+  const sem = `width:392px;flex-shrink:0;display:flex;justify-content:center;align-items:center`;
   if (!puedeConfirmar) {
     ctrl.innerHTML = `<div style="${centrado}">${badgeHtml(badgeCls, badgeTxt)}</div>`;
-  } else if (!estadosMixtos) {
-    let btn = '';
-    if (hayBorradorAbierto) btn = `<button class="btn btn-confirmar" onclick="confirmar()">Confirmar</button>`;
-    if (hayConfirmadoAbierto) btn = `<button class="btn btn-editar" onclick="desconfirmar()">✎ Editar</button>`;
-    ctrl.innerHTML = `<div style="${centrado}">${badgeHtml(badgeCls, badgeTxt)}${btn}</div>`;
   } else {
-    // Estados mixtos → cada semana centrada en sus 392px exactos, con 38px de separador
-    const sem = `width:392px;flex-shrink:0;display:flex;justify-content:center;align-items:center`;
     ctrl.innerHTML = `<div style="${sem}">${semanaCtrl(0, c1, sem1Cerrada)}</div>`
       + `<div style="width:38px;flex-shrink:0"></div>`
       + `<div style="${sem}">${semanaCtrl(1, c2, sem2Cerrada)}</div>`;
@@ -1041,47 +1029,6 @@ function semanaCtrl(idx, confirmado, cerrada) {
 }
 
 // ── Confirmar / Desconfirmar ──────────────────────────────────────────────────
-async function confirmar() {
-  if (!confirm('¿Confirmar ambas semanas? Se escribirá la planificación.')) return;
-  try {
-    for (let idx = 0; idx < 2; idx++) {
-      const s = _semanas[idx];
-      if (s && s.estado === 'confirmado') continue;
-      if (esFechaCerrada(_dias[idx * 7])) continue;
-      let r;
-      if (s) {
-        r = await fetch(`/api/mozos/semana/${s.id}/confirmar`, { method: 'POST' });
-      } else {
-        const semInicio = new Date(_lunes);
-        if (idx === 1) semInicio.setDate(semInicio.getDate() + 7);
-        r = await fetch('/api/mozos/confirmar-por-fecha', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ departamento_id: _deptId, semana_inicio: toISO(semInicio) })
-        });
-      }
-      if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return; }
-    }
-    await cargar();
-    toast('Semanas confirmadas');
-  } catch { toast('Error', true); }
-}
-
-async function desconfirmar() {
-  if (!confirm('¿Volver ambas semanas a borrador?')) return;
-  try {
-    for (let idx = 0; idx < 2; idx++) {
-      const s = _semanas[idx];
-      if (!s || s.estado !== 'confirmado') continue;
-      if (esFechaCerrada(_dias[idx * 7])) continue;
-      const r = await fetch(`/api/mozos/semana/${s.id}/desconfirmar`, { method: 'POST' });
-      if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return; }
-    }
-    await cargar();
-    toast('Abiertas para edición');
-  } catch { toast('Error', true); }
-}
-
 async function confirmarIdx(idx) {
   const s = _semanas[idx];
   const label = `Semana ${idx + 1}`;

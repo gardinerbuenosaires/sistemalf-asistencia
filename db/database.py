@@ -1041,6 +1041,9 @@ def _migrate(conn):
     if "usa_barmans" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN usa_barmans INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna usa_barmans agregada a departamentos")
+    if "usa_peones" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN usa_peones INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna usa_peones agregada a departamentos")
     if "escribe_planificacion" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN escribe_planificacion INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna escribe_planificacion agregada a departamentos")

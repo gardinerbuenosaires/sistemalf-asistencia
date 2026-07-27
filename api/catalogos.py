@@ -16,6 +16,7 @@ class DepartamentoIn(BaseModel):
     usa_distribucion: int | None = None
     usa_mozos: int | None = None
     usa_barmans: int | None = None
+    usa_peones: int | None = None
     horario_tm_id: int | None = None
     horario_tn_id: int | None = None
     horario_cortado_id: int | None = None
@@ -100,7 +101,7 @@ def delete_cargo(cid: int, _user=Depends(require_permiso("empleados", "editar"))
 def list_departamentos(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute(
-            """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans, escribe_planificacion,
+            """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans, usa_peones, escribe_planificacion,
                       horario_tm_id, horario_tn_id, horario_cortado_id
                FROM departamentos ORDER BY nombre"""
         ).fetchall()
@@ -115,14 +116,15 @@ def create_departamento(data: DepartamentoIn, _user=Depends(require_permiso("emp
     usa_dist    = int(data.usa_distribucion or 0)
     usa_mozos   = int(data.usa_mozos or 0)
     usa_barmans = int(data.usa_barmans or 0)
+    usa_peones  = int(data.usa_peones or 0)
     with db_session() as conn:
         try:
             conn.execute(
-                "INSERT INTO departamentos (nombre, usa_distribucion, usa_mozos, usa_barmans) VALUES (?,?,?,?)",
-                (nombre, usa_dist, usa_mozos, usa_barmans)
+                "INSERT INTO departamentos (nombre, usa_distribucion, usa_mozos, usa_barmans, usa_peones) VALUES (?,?,?,?,?)",
+                (nombre, usa_dist, usa_mozos, usa_barmans, usa_peones)
             )
             row = conn.execute(
-                """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans,
+                """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans, usa_peones,
                           horario_tm_id, horario_tn_id, horario_cortado_id
                    FROM departamentos WHERE nombre=?""",
                 (nombre,)
@@ -143,20 +145,21 @@ def update_departamento(did: int, data: DepartamentoIn, _user=Depends(require_pe
         try:
             conn.execute(
                 """UPDATE departamentos
-                   SET nombre=?, usa_distribucion=?, usa_mozos=?, usa_barmans=?,
+                   SET nombre=?, usa_distribucion=?, usa_mozos=?, usa_barmans=?, usa_peones=?,
                        horario_tm_id=?, horario_tn_id=?, horario_cortado_id=?
                    WHERE id=?""",
                 (nombre,
                  int(data.usa_distribucion or 0),
                  int(data.usa_mozos or 0),
                  int(data.usa_barmans or 0),
+                 int(data.usa_peones or 0),
                  data.horario_tm_id,
                  data.horario_tn_id,
                  data.horario_cortado_id,
                  did)
             )
             row = conn.execute(
-                """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans,
+                """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans, usa_peones,
                           horario_tm_id, horario_tn_id, horario_cortado_id
                    FROM departamentos WHERE id=?""",
                 (did,)

@@ -29,6 +29,7 @@ from api.vacaciones import router as vacaciones_router
 from api.francos import router as francos_router
 from api.periodos_cerrados import router as periodos_cerrados_router
 from api.distribucion import router as distribucion_router
+from api.peones import router as peones_router
 from api.mozos import router as mozos_router
 from api.barmans import router as barmans_router
 from api.parking import router as parking_router
@@ -140,6 +141,7 @@ app.include_router(vacaciones_router)
 app.include_router(francos_router)
 app.include_router(periodos_cerrados_router)
 app.include_router(distribucion_router)
+app.include_router(peones_router)
 app.include_router(mozos_router)
 app.include_router(barmans_router)
 app.include_router(parking_router)
@@ -233,6 +235,10 @@ def page_legajo_imprimible(eid: int, request: Request):
 @app.get("/distribucion", include_in_schema=False)
 def page_distribucion(request: Request):
     return _page(request, "web/templates/distribucion.html", "distribucion")
+
+@app.get("/peones", include_in_schema=False)
+def page_peones(request: Request):
+    return _page(request, "web/templates/peones.html", "peones")
 
 @app.get("/mozos", include_in_schema=False)
 def page_mozos(request: Request):

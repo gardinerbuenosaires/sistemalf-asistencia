@@ -163,6 +163,7 @@
         <a href="/distribucion" data-perm="distribucion:ver">Horarios Cocina</a>
         <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
         <a href="/barmans" data-perm="barmans:ver">Horarios Barra</a>
+        <a href="/peones" data-perm="peones:ver">Horario Peones</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -1565,7 +1566,7 @@ function _renderDeptos(lista) {
   }
   const puedeEmp = canDo('empleados','editar');
   tbody.innerHTML = lista.map(item => {
-    const moduloText = item.usa_distribucion ? 'Cocineros' : item.usa_mozos ? 'Mozos' : item.usa_barmans ? 'Barmans' : '<span style="color:#aaa">—</span>';
+    const moduloText = item.usa_distribucion ? 'Cocineros' : item.usa_mozos ? 'Mozos' : item.usa_barmans ? 'Barmans' : item.usa_peones ? 'Horario Peones' : '<span style="color:#aaa">—</span>';
     return `<tr id="tabla-deptos-${item.id}">
       <td><strong>${item.nombre}</strong></td>
       <td style="text-align:center;padding:6px 4px">${moduloText}</td>
@@ -1589,7 +1590,7 @@ function editarDepto(id) {
   const lista = (_catStore["tabla-deptos"] || {}).lista || [];
   const item = lista.find(i => i.id === id);
   if (!item) return;
-  const modulo = item.usa_distribucion ? 'cocineros' : item.usa_mozos ? 'mozos' : item.usa_barmans ? 'barmans' : 'ninguno';
+  const modulo = item.usa_distribucion ? 'cocineros' : item.usa_mozos ? 'mozos' : item.usa_barmans ? 'barmans' : item.usa_peones ? 'peones' : 'ninguno';
   const usaHorarios = modulo === 'mozos' || modulo === 'barmans';
   const sel = (fld, label) => `
     <div style="margin-top:6px;font-size:.8rem;color:#555">${label}</div>
@@ -1606,6 +1607,7 @@ function editarDepto(id) {
         <option value="cocineros" ${modulo==='cocineros'?'selected':''}>Cocineros</option>
         <option value="mozos" ${modulo==='mozos'?'selected':''}>Mozos</option>
         <option value="barmans" ${modulo==='barmans'?'selected':''}>Barmans</option>
+        <option value="peones" ${modulo==='peones'?'selected':''}>Horario Peones</option>
       </select>
       <div id="tabla-deptos-edit-horarios-${id}" style="display:${usaHorarios?'block':'none'}">
         ${sel('horario_tm_id','Horario TM (mañana)')}
@@ -1641,6 +1643,7 @@ async function guardarDepto(id) {
       usa_distribucion: modulo === 'cocineros' ? 1 : 0,
       usa_mozos: modulo === 'mozos' ? 1 : 0,
       usa_barmans: modulo === 'barmans' ? 1 : 0,
+      usa_peones: modulo === 'peones' ? 1 : 0,
       horario_tm_id:      usaHorarios && tmVal ? parseInt(tmVal) : null,
       horario_tn_id:      usaHorarios && tnVal ? parseInt(tnVal) : null,
       horario_cortado_id: usaHorarios && ctVal ? parseInt(ctVal) : null,
@@ -1731,6 +1734,7 @@ function agregarDepto() {
         <option value="cocineros">Cocineros</option>
         <option value="mozos">Mozos</option>
         <option value="barmans">Barmans</option>
+        <option value="peones">Horario Peones</option>
       </select>
     </td>
     <td>
@@ -1760,6 +1764,7 @@ async function crearDepto() {
       usa_distribucion: modulo === 'cocineros' ? 1 : 0,
       usa_mozos: modulo === 'mozos' ? 1 : 0,
       usa_barmans: modulo === 'barmans' ? 1 : 0,
+      usa_peones: modulo === 'peones' ? 1 : 0,
     })
   });
   if (res.ok) { toast("Departamento creado"); await cargarCatalogos(); }

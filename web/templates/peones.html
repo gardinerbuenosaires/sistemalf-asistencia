@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-<title>Cocineros — Sistema de Fichaje</title>
+<title>Horario Peones — Sistema de Fichaje</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; font-size: .88rem;
@@ -217,10 +217,9 @@
       <div class="nav-dropdown">
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
-        <a href="/distribucion" class="activo" data-perm="distribucion:ver">Horarios Cocina</a>
+        <a href="/peones" class="activo" data-perm="peones:ver">Horario Peones</a>
         <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
         <a href="/barmans" data-perm="barmans:ver">Horarios Barra</a>
-        <a href="/peones" data-perm="peones:ver">Horario Peones</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
       </div>
     </div>
@@ -284,12 +283,12 @@
     <option value="">— Turno —</option>
   </select>
   <span id="badge-estado" class="badge badge-nuevo" style="display:none"></span>
-  <button id="btn-editar" class="btn btn-secondary" data-perm="distribucion:confirmar"
+  <button id="btn-editar" class="btn btn-secondary" data-perm="peones:confirmar"
     onclick="desconfirmarDistribucion()" style="display:none">Editar</button>
-  <button id="btn-copiar" class="btn btn-secondary" data-perm="distribucion:editar"
+  <button id="btn-copiar" class="btn btn-secondary" data-perm="peones:editar"
     onclick="copiarSemanaAnterior()" style="display:none" title="Copiar asignaciones de la semana anterior">⧉ Copiar semana anterior</button>
   <button id="btn-imprimir" class="btn btn-secondary" onclick="imprimirGrilla()" style="display:none">🖨 Imprimir</button>
-  <button id="btn-confirmar" class="btn btn-confirmar" data-perm="distribucion:confirmar"
+  <button id="btn-confirmar" class="btn btn-confirmar" data-perm="peones:confirmar"
     onclick="confirmarDistribucion()" style="margin-left:auto" disabled>Confirmar semana</button>
 </div>
 
@@ -518,7 +517,7 @@ async function cargarGrilla() {
 
   try {
     const qs = `departamento_id=${deptId}&turno=${turno}&semana_inicio=${fmtDate(_lunes)}`;
-    const r = await fetch(`/api/distribucion/semana?${qs}`);
+    const r = await fetch(`/api/peones/semana?${qs}`);
     if (!r.ok) { toast('Error al cargar los horarios de cocina', true); return; }
     const data = await r.json();
     _distribucion = data.distribucion;
@@ -545,7 +544,7 @@ function renderGrilla() {
   document.getElementById('empty-dept').style.display = 'none';
   document.getElementById('grilla-wrap').style.display = '';
   document.getElementById('btn-imprimir').style.display = _distribucion ? '' : 'none';
-  const puedeCopiar = canDo('distribucion','editar') && (!_distribucion || _distribucion.estado !== 'confirmado');
+  const puedeCopiar = canDo('peones','editar') && (!_distribucion || _distribucion.estado !== 'confirmado');
   document.getElementById('btn-copiar').style.display = puedeCopiar ? '' : 'none';
 
   // Badge estado
@@ -587,10 +586,10 @@ function renderGrilla() {
   });
   btnConf.disabled = confirmado || !_distribucion || !todosAsignados;
   btnConf.textContent = 'Confirmar semana';
-  btnEditar.style.display = confirmado && canDo('distribucion', 'confirmar') ? '' : 'none';
+  btnEditar.style.display = confirmado && canDo('peones', 'confirmar') ? '' : 'none';
 
   const hoyStr = hoy();
-  const puedoEditar = canDo('distribucion', 'editar') && !confirmado;
+  const puedoEditar = canDo('peones', 'editar') && !confirmado;
   const puedeEditarPuestos = puedoEditar && _editandoPuestos;
 
   // Cabecera
@@ -1145,7 +1144,7 @@ function abrirModalComida(fecha) {
 async function asignarComida(fecha, empleadoId) {
   cerrarModal();
   const distId = await _asegurarDistribucion();
-  const r = await fetch(`/api/distribucion/semana/${distId}/comida-personal`, {
+  const r = await fetch(`/api/peones/semana/${distId}/comida-personal`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fecha, empleado_id: empleadoId })
@@ -1160,7 +1159,7 @@ async function asignarComida(fecha, empleadoId) {
 async function quitarComida(fecha) {
   cerrarModal();
   if (!_distribucion) return;
-  const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/comida-personal/${fecha}`, { method: 'DELETE' });
+  const r = await fetch(`/api/peones/semana/${_distribucion.id}/comida-personal/${fecha}`, { method: 'DELETE' });
   if (!r.ok) { toast('Error al quitar comida de personal', true); return; }
   _comidaPersonal = _comidaPersonal.filter(c => c.fecha !== fecha);
   renderGrilla();
@@ -1170,7 +1169,7 @@ async function agregarFranco(fecha, empleadoId) {
   cerrarModal();
   try {
     const distId = await _asegurarDistribucion();
-    const r = await fetch(`/api/distribucion/semana/${distId}/franco`, {
+    const r = await fetch(`/api/peones/semana/${distId}/franco`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ empleado_id: empleadoId, fecha })
@@ -1192,7 +1191,7 @@ async function quitarFranco(francoId) {
   if (!_distribucion) return;
   if (_distribucion.estado === 'confirmado') { toast('No se puede modificar horarios confirmados', true); return; }
   try {
-    const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/franco/${francoId}`, { method: 'DELETE' });
+    const r = await fetch(`/api/peones/semana/${_distribucion.id}/franco/${francoId}`, { method: 'DELETE' });
     if (!r.ok) { toast('Error al quitar franco', true); return; }
     await cargarGrilla();
     toast('Franco quitado');
@@ -1205,7 +1204,7 @@ async function asignarVacaciones(fecha, empleadoId) {
   cerrarModal();
   try {
     const distId = await _asegurarDistribucion();
-    const r = await fetch(`/api/distribucion/semana/${distId}/vacaciones`, {
+    const r = await fetch(`/api/peones/semana/${distId}/vacaciones`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ empleado_id: empleadoId, fecha })
@@ -1223,7 +1222,7 @@ async function quitarVacaciones(fecha, empleadoId) {
   if (!_distribucion) return;
   if (_distribucion.estado === 'confirmado') { toast('No se puede modificar horarios confirmados', true); return; }
   try {
-    const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/vacaciones/${fecha}/${empleadoId}`, { method: 'DELETE' });
+    const r = await fetch(`/api/peones/semana/${_distribucion.id}/vacaciones/${fecha}/${empleadoId}`, { method: 'DELETE' });
     if (!r.ok) { toast('Error al quitar vacaciones', true); return; }
     await cargarGrilla();
     toast('Vacaciones quitadas');
@@ -1236,7 +1235,7 @@ async function _asegurarDistribucion() {
   if (_distribucion) return _distribucion.id;
   const deptId = document.getElementById('sel-departamento').value;
   const turno  = document.getElementById('sel-turno').value;
-  const r = await fetch('/api/distribucion/semana', {
+  const r = await fetch('/api/peones/semana', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ departamento_id: Number(deptId), turno, semana_inicio: fmtDate(_lunes) })
@@ -1305,9 +1304,9 @@ async function asignar(puestoId, fecha, empleadoId, esFranco, horarioId = null) 
   try {
     const distId = await _asegurarDistribucion();
     if (detAReemplazar) {
-      await fetch(`/api/distribucion/detalle/${detAReemplazar}`, { method: 'DELETE' });
+      await fetch(`/api/peones/detalle/${detAReemplazar}`, { method: 'DELETE' });
     }
-    const r = await fetch('/api/distribucion/detalle', {
+    const r = await fetch('/api/peones/detalle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1331,7 +1330,7 @@ async function quitarDetalle(detId) {
   cerrarModal();
   if (!_distribucion) return;
   try {
-    const r = await fetch(`/api/distribucion/detalle/${detId}`, { method: 'DELETE' });
+    const r = await fetch(`/api/peones/detalle/${detId}`, { method: 'DELETE' });
     if (!r.ok) { toast('Error al quitar', true); return; }
     await cargarGrilla();
     toast('Quitado');
@@ -1393,7 +1392,7 @@ function dragEnd() {
 async function _guardarOrdenPuestos() {
   const deptId = Number(document.getElementById('sel-departamento').value);
   try {
-    await fetch(`/api/distribucion/puestos/reordenar?departamento_id=${deptId}`, {
+    await fetch(`/api/peones/puestos/reordenar?departamento_id=${deptId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: _puestos.map(p => p.id) })
@@ -1404,7 +1403,7 @@ async function _guardarOrdenPuestos() {
 async function eliminarPuesto(pid, nombre) {
   if (!confirm(`¿Desactivar el puesto "${nombre}"?\n\nNo aparecerá en nuevos horarios de cocina, pero el historial existente queda intacto.`)) return;
   try {
-    const r = await fetch(`/api/distribucion/puestos/${pid}`, { method: 'DELETE' });
+    const r = await fetch(`/api/peones/puestos/${pid}`, { method: 'DELETE' });
     if (!r.ok) { toast('Error al desactivar', true); return; }
     await cargarGrilla();
     toast('Puesto desactivado');
@@ -1416,7 +1415,7 @@ async function desconfirmarDistribucion() {
   if (!_distribucion) return;
   if (!confirm('¿Volvés la semana a borrador para editarla?\nNecesitarás confirmarla de nuevo cuando termines.')) return;
   try {
-    const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/desconfirmar`, { method: 'POST' });
+    const r = await fetch(`/api/peones/semana/${_distribucion.id}/desconfirmar`, { method: 'POST' });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       toast(err.detail || 'Error al desconfirmar', true);
@@ -1567,7 +1566,7 @@ async function copiarSemanaAnterior() {
     if (!confirm('Ya hay asignaciones en esta semana. Se agregarán las de la semana anterior sin pisar las existentes. ¿Continuás?')) return;
   }
   try {
-    const r = await fetch('/api/distribucion/semana/copiar-anterior', {
+    const r = await fetch('/api/peones/semana/copiar-anterior', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ departamento_id: deptId, turno, semana_inicio: fmtDate(_lunes) })
@@ -1592,7 +1591,7 @@ async function confirmarDistribucion() {
   const deptId = parseInt(document.getElementById('sel-departamento').value);
   if (!confirm('¿Confirmás los horarios de cocina? Esto sobreescribirá la planificación semanal para este departamento/turno.')) return;
   try {
-    const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/confirmar`, { method: 'POST' });
+    const r = await fetch(`/api/peones/semana/${_distribucion.id}/confirmar`, { method: 'POST' });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       toast(err.detail || 'Error al confirmar', true);
@@ -1633,7 +1632,7 @@ async function guardarPuesto() {
       const p = _puestos.find(x => x.id === _puestoEditId);
       const es_chef = document.getElementById('input-puesto-chef').checked;
       const turno = document.getElementById('input-puesto-turno').value || null;
-      r = await fetch(`/api/distribucion/puestos/${_puestoEditId}`, {
+      r = await fetch(`/api/peones/puestos/${_puestoEditId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre, departamento_id: deptId, orden: p?.orden ?? orden, activo: true, es_chef, turno })
@@ -1641,7 +1640,7 @@ async function guardarPuesto() {
     } else {
       const es_chef = document.getElementById('input-puesto-chef').checked;
       const turno = document.getElementById('input-puesto-turno').value || null;
-      r = await fetch('/api/distribucion/puestos', {
+      r = await fetch('/api/peones/puestos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre, departamento_id: deptId, orden, activo: true, es_chef, turno })
@@ -1673,7 +1672,7 @@ async function init() {
   document.getElementById('label-semana').textContent = fmtLabel(_lunes);
 
   try {
-    const r = await fetch('/api/distribucion/mis-accesos');
+    const r = await fetch('/api/peones/mis-accesos');
     if (!r.ok) { mostrarVacio(); return; }
     _misAccesos = await r.json();
   } catch { mostrarVacio(); return; }
@@ -1709,7 +1708,7 @@ async function _recargarNovedades() {
   if (!deptId || !turno) return;
   try {
     const qs = `departamento_id=${deptId}&turno=${turno}&semana_inicio=${fmtDate(_lunes)}`;
-    const r = await fetch(`/api/distribucion/semana?${qs}`, { headers: { 'X-Poll': '1' } });
+    const r = await fetch(`/api/peones/semana?${qs}`, { headers: { 'X-Poll': '1' } });
     if (r.status === 401) { location.href = '/login'; return; }
     if (!r.ok) return;
     const data = await r.json();

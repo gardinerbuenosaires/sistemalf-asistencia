@@ -141,55 +141,6 @@ def get_empleado(eid: int, _user=Depends(require_permiso("empleados", "ver"))):
         return dict(row)
 
 
-@router.put("/{eid}/horario-habitual")
-def set_horario_habitual(eid: int, body: dict, _user=Depends(require_permiso("empleados", "editar"))):
-    from fastapi import HTTPException
-    horario_id = body.get("horario_id")        # None = sin horario
-    fecha_desde = body.get("fecha_desde")      # Optional: limpiar planif desde esta fecha
-    with db_session() as conn:
-        if not conn.execute("SELECT id FROM empleados WHERE id=?", (eid,)).fetchone():
-            raise HTTPException(404, "Empleado no encontrado")
-        conn.execute(
-            "UPDATE empleados SET horario_habitual_id=? WHERE id=?",
-            (horario_id, eid)
-        )
-        if fecha_desde:
-            from api.periodos_cerrados import check_periodo_abierto
-            check_periodo_abierto(conn, fecha_desde)
-            # Verificar si fecha_desde cae dentro de una semana confirmada de este empleado
-            conflicto = conn.execute(
-                """SELECT ds.semana_inicio
-                   FROM distribucion_detalle dd
-                   JOIN distribucion_semana ds ON ds.id = dd.distribucion_id
-                   WHERE dd.empleado_id = ?
-                     AND ds.estado = 'confirmado'
-                     AND ds.semana_inicio <= ?
-                     AND DATE(ds.semana_inicio, '+6 days') >= ?
-                   ORDER BY ds.semana_inicio
-                   LIMIT 1""",
-                (eid, fecha_desde, fecha_desde)
-            ).fetchone()
-            if conflicto:
-                from datetime import date, timedelta
-                lunes = date.fromisoformat(conflicto["semana_inicio"])
-                domingo = lunes + timedelta(days=6)
-                raise HTTPException(
-                    409,
-                    f"El horario está confirmado en la semana del {lunes.strftime('%d/%m')} "
-                    f"al {domingo.strftime('%d/%m')}. "
-                    f"Para modificarlo desde esa fecha es necesario desconfirmar esa semana en Distribución."
-                )
-            conn.execute(
-                "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= ? AND origen='distribucion'",
-                (eid, fecha_desde)
-            )
-            conn.execute(
-                "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha >= ? AND corregido_manualmente=0",
-                (eid, fecha_desde)
-            )
-    return {"ok": True, "horario_id": horario_id}
-
-
 @router.put("/{eid}")
 def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("empleados", "editar"))):
     with db_session() as conn:
@@ -201,7 +152,6 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
         if row["fecha_recontratacion"] and data.fecha_ingreso != row["fecha_ingreso"]:
             raise HTTPException(409, "No se puede modificar fecha_ingreso cuando existe una recontratación por jubilación")
         anterior = row
-        cargo_id_anterior = anterior["cargo_id"]
         if data.tipo not in ("normal", "jerarquico", "acceso", "parking"):
             raise HTTPException(400, "tipo inválido")
         conn.execute(
@@ -231,43 +181,6 @@ def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("e
         )
         if anterior["activo"] == 0 and data.activo == 1:
             conn.execute("UPDATE empleados SET fecha_egreso=NULL WHERE id=?", (eid,))
-        # Si el cargo cambió, manejar transiciones entre sistemas de planificación
-        if data.cargo_id and data.cargo_id != cargo_id_anterior:
-            hoy = conn.execute("SELECT date('now','localtime')").fetchone()[0]
-
-            def _usa_dist(cargo_id):
-                if not cargo_id:
-                    return False
-                r = conn.execute(
-                    """SELECT d.usa_distribucion FROM cargos c
-                       JOIN departamentos d ON d.id = c.departamento_id
-                       WHERE c.id = ?""", (cargo_id,)
-                ).fetchone()
-                return bool(r and r["usa_distribucion"])
-
-            nuevo_usa_dist   = _usa_dist(data.cargo_id)
-            anterior_usa_dist = _usa_dist(cargo_id_anterior)
-
-            corte = hoy
-
-            if nuevo_usa_dist and not anterior_usa_dist:
-                # Regular → Distribución: limpiar planif auto y cerrar calendario activo
-                conn.execute(
-                    "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= ? AND auto_generado=1",
-                    (eid, corte)
-                )
-                conn.execute(
-                    """UPDATE asignaciones SET fecha_hasta=?
-                       WHERE empleado_id=? AND (fecha_hasta IS NULL OR fecha_hasta > ?)""",
-                    (corte, eid, corte)
-                )
-            elif anterior_usa_dist and not nuevo_usa_dist:
-                # Distribución → Regular: limpiar planif de distribución futura
-                conn.execute(
-                    "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= ? AND origen='distribucion'",
-                    (eid, corte)
-                )
-
         baja = anterior["activo"] == 1 and data.activo == 0
         if baja:
             corte = data.fecha_egreso or conn.execute(

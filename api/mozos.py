@@ -242,6 +242,21 @@ def get_semana(departamento_id: int, semana_inicio: str,
             ).fetchone():
                 periodos_cerrados.append({"anio": anio, "mes": mes})
 
+        def _sem_dict(s):
+            if not s:
+                return None
+            d = dict(s)
+            uid_mod = d.get("modificado_por")
+            nombre = None
+            if uid_mod:
+                u = conn.execute("SELECT nombre FROM usuarios WHERE id=?", (uid_mod,)).fetchone()
+                nombre = u["nombre"] if u else None
+            d["modificado_por_nombre"] = nombre
+            return d
+
+        sem1_dict = _sem_dict(semana1)
+        sem2_dict = _sem_dict(semana2)
+
     # Agrupar empleados — misma lógica que planilla mensual
     grupos: dict[str, list] = {g: [] for g in GRUPOS_ORDEN}
     for e in empleados:
@@ -249,7 +264,7 @@ def get_semana(departamento_id: int, semana_inicio: str,
         grupos[g].append(dict(e))
 
     return {
-        "semanas": [dict(semana1) if semana1 else None, dict(semana2) if semana2 else None],
+        "semanas": [sem1_dict, sem2_dict],
         "grupos": grupos,
         "detalles": [dict(r) for r in detalles],
         "novedades": [dict(r) for r in novedades],

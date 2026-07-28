@@ -169,8 +169,23 @@ def get_semana(departamento_id: int, semana_inicio: str,
             ).fetchone():
                 periodos_cerrados.append({"anio": anio, "mes": mes})
 
+        def _sem_dict(s):
+            if not s:
+                return None
+            d = dict(s)
+            uid_mod = d.get("modificado_por")
+            nombre = None
+            if uid_mod:
+                u = conn.execute("SELECT nombre FROM usuarios WHERE id=?", (uid_mod,)).fetchone()
+                nombre = u["nombre"] if u else None
+            d["modificado_por_nombre"] = nombre
+            return d
+
+        sem1_dict = _sem_dict(semana1)
+        sem2_dict = _sem_dict(semana2)
+
     return {
-        "semanas": [dict(semana1) if semana1 else None, dict(semana2) if semana2 else None],
+        "semanas": [sem1_dict, sem2_dict],
         "empleados": [dict(e) for e in empleados],
         "detalles": [dict(r) for r in detalles],
         "plan_base": plan_base,
@@ -248,6 +263,7 @@ def _ejecutar_confirmacion_barmans(conn, semana, uid: int):
     dept_id = semana["departamento_id"]
     lunes_str = semana["semana_inicio"]
     domingo_str = str(date.fromisoformat(lunes_str) + timedelta(days=6))
+    hoy_str = str(date.today())  # los horarios aplican solo a futuro (> hoy)
 
     detalles = conn.execute(
         "SELECT * FROM barmans_detalle WHERE semana_id=?", (semana_id,)
@@ -298,7 +314,8 @@ def _ejecutar_confirmacion_barmans(conn, semana, uid: int):
         ).fetchall()
         ids_borrar = [r["id"] for r in all_plan
                       if (r["empleado_id"], r["fecha"]) in dias_a_tocar
-                      and (r["empleado_id"], r["fecha"]) not in bloqueantes]
+                      and (r["empleado_id"], r["fecha"]) not in bloqueantes
+                      and r["fecha"] > hoy_str]
         if ids_borrar:
             ph2 = ",".join("?" * len(ids_borrar))
             conn.execute(f"DELETE FROM planificacion WHERE id IN ({ph2})", ids_borrar)
@@ -308,6 +325,8 @@ def _ejecutar_confirmacion_barmans(conn, semana, uid: int):
 
         for emp_id in emp_ids:
             for dia in dias_semana:
+                if dia <= hoy_str:  # no modificar planificación de días ya transcurridos
+                    continue
                 if (emp_id, dia) in bloqueantes:
                     continue
                 if (emp_id, dia) not in estado_dia:

@@ -295,6 +295,7 @@
   <button id="btn-confirmar" class="btn btn-confirmar" data-perm="peones:confirmar"
     onclick="confirmarDistribucion()" style="margin-left:auto" disabled>Confirmar semana</button>
 </div>
+<div id="conf-leyenda" style="display:none;text-align:center;font-size:.75rem;color:#777;padding:2px 0 6px"></div>
 
 <main>
   <div id="empty-dept" class="empty-state">
@@ -388,6 +389,19 @@ function _novedad(empleadoId, fecha) {
 
 // ── Auth / permisos ───────────────────────────────────────────────────────────
 function canDo(mod, act) { return _perms.has(`${mod}:${act}`); }
+
+// Leyenda "Confirmado por <nombre> · <fecha> <hora>" a partir de modificado_por/en.
+// modificado_en se guarda en UTC (datetime('now')); se convierte a hora local.
+function confLeyenda(d) {
+  if (!d || !d.modificado_en) return '';
+  const dt = new Date(String(d.modificado_en).replace(' ', 'T') + 'Z');
+  if (isNaN(dt.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  const fecha = `${p(dt.getDate())}/${p(dt.getMonth() + 1)}/${dt.getFullYear()}`;
+  const hora  = `${p(dt.getHours())}:${p(dt.getMinutes())}`;
+  const quien = d.modificado_por_nombre || 'usuario';
+  return `Confirmado por ${quien} · ${fecha} ${hora} hs`;
+}
 
 async function _loadPerms() {
   try {
@@ -568,16 +582,17 @@ function renderGrilla() {
     badge.textContent = 'Sin guardar';
   } else if (_distribucion.estado === 'confirmado') {
     badge.className = 'badge badge-confirmado';
-    let badgeText = 'Confirmado';
-    if (_distribucion.modificado_por_nombre) {
-      const fecha = _distribucion.modificado_en ? _distribucion.modificado_en.slice(0,16).replace('T',' ') : '';
-      badgeText += ` · ${_distribucion.modificado_por_nombre}${fecha ? ' · ' + fecha : ''}`;
-    }
-    badge.textContent = badgeText;
+    badge.textContent = 'Confirmado';
   } else {
     badge.className = 'badge badge-borrador';
     badge.textContent = 'Borrador';
   }
+
+  // Leyenda de confirmación (pantalla)
+  const ley = document.getElementById('conf-leyenda');
+  const txtLey = (_distribucion && _distribucion.estado === 'confirmado') ? confLeyenda(_distribucion) : '';
+  ley.textContent = txtLey;
+  ley.style.display = txtLey ? '' : 'none';
 
   // Botones confirmar / editar
   const sinCalendario = new Set(_empleados.filter(e => !e.horario_actual_id).map(e => e.id));
@@ -1435,6 +1450,7 @@ async function imprimirGrilla() {
 <body>
 <h2>TURNO ${turnoNombre} — ${deptNombre.toUpperCase()}</h2>
 <h3>Semana del ${fmtF(lunes)} al ${fmtF(domingo)}</h3>
+${_distribucion.estado === 'confirmado' && confLeyenda(_distribucion) ? `<h3 style="font-size:11px;color:#666">${confLeyenda(_distribucion)}</h3>` : ''}
 <table>
   <thead>
     <tr>

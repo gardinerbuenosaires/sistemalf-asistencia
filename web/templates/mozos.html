@@ -234,6 +234,8 @@
 
     /* Aviso de semana sin confirmar */
     #print-aviso { display: none; }
+    #print-conf { display: block !important; text-align: center; font-size: 8pt;
+      color: #444; margin: 0 0 4px; }
     body.print-bloqueado header, body.print-bloqueado .toolbar,
     body.print-bloqueado main, body.print-bloqueado .nomenclatura,
     body.print-bloqueado #toast { display: none !important; }
@@ -248,6 +250,7 @@
     display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: bold; }
 
   #print-aviso { display: none; }
+  #print-conf { display: none; }
 
   /* Toast */
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -359,6 +362,7 @@
 </div>
 
 <main>
+  <div id="print-conf"></div>
   <div class="tabla-wrap" id="tabla-wrap">
     <table class="mozos" id="tabla-mozos">
       <thead id="thead-mozos"></thead>
@@ -624,6 +628,9 @@ function renderGrilla() {
       + `<div style="width:38px;flex-shrink:0"></div>`
       + `<div style="${sem}">${semanaCtrl(1, c2, sem2Cerrada)}</div>`;
   }
+  // Leyenda de confirmación para impresión (solo se imprime la Semana 1)
+  const pc = document.getElementById('print-conf');
+  if (pc) pc.textContent = c1 ? confLeyenda(s1) : '';
   document.getElementById('btn-print').style.display = _dias.length > 0 ? '' : 'none';
 
   // ── Cabecera ──
@@ -1021,15 +1028,32 @@ function badgeHtml(cls, txt) {
   return `<span class="badge ${cls}">${txt}</span>`;
 }
 
+// Leyenda "Confirmado por <nombre> · <fecha> <hora>" a partir de modificado_por/en.
+// modificado_en se guarda en UTC (datetime('now')); se convierte a hora local.
+function confLeyenda(sem) {
+  if (!sem || !sem.modificado_en) return '';
+  const dt = new Date(String(sem.modificado_en).replace(' ', 'T') + 'Z');
+  if (isNaN(dt.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  const fecha = `${p(dt.getDate())}/${p(dt.getMonth() + 1)}/${dt.getFullYear()}`;
+  const hora  = `${p(dt.getHours())}:${p(dt.getMinutes())}`;
+  const quien = sem.modificado_por_nombre || 'usuario';
+  return `Confirmado por ${quien} · ${fecha} ${hora} hs`;
+}
+
 function semanaCtrl(idx, confirmado, cerrada) {
   const label = `S${idx + 1}`;
   if (cerrada) return `<span style="font-size:.78rem;color:#888">${label}: cerrado</span>`;
   if (confirmado) {
-    return `<span style="display:flex;align-items:center;gap:5px">
-      <span style="font-size:.78rem;color:#888">${label}:</span>
-      ${badgeHtml('badge-confirmado', 'Confirmado')}
-      <button class="btn btn-editar" style="padding:4px 10px;font-size:.78rem" onclick="desconfirmarIdx(${idx})">✎ Editar</button>
-    </span>`;
+    const ley = confLeyenda(_semanas[idx]);
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+      <span style="display:flex;align-items:center;gap:5px">
+        <span style="font-size:.78rem;color:#888">${label}:</span>
+        ${badgeHtml('badge-confirmado', 'Confirmado')}
+        <button class="btn btn-editar" style="padding:4px 10px;font-size:.78rem" onclick="desconfirmarIdx(${idx})">✎ Editar</button>
+      </span>
+      ${ley ? `<div style="font-size:.72rem;color:#777;text-align:center">${ley}</div>` : ''}
+    </div>`;
   }
   return `<span style="display:flex;align-items:center;gap:5px">
     <span style="font-size:.78rem;color:#888">${label}:</span>

@@ -30,14 +30,8 @@ def _grupo_turno(nombre_turno: Optional[str]) -> str:
 
 
 def _scope_departamentos(conn, user: dict) -> list[int]:
-    rol = user.get("rol", "")
-    if rol.lower() == "sistema":
-        return [r["id"] for r in conn.execute("SELECT id FROM departamentos WHERE activo=1 AND usa_mozos=1").fetchall()]
-    uid = int(user["sub"])
-    rows = conn.execute(
-        "SELECT departamento_id FROM usuarios_mozos WHERE usuario_id=?", (uid,)
-    ).fetchall()
-    return [r["departamento_id"] for r in rows]
+    rows = conn.execute("SELECT id FROM departamentos WHERE activo=1 AND usa_mozos=1").fetchall()
+    return [r["id"] for r in rows]
 
 
 # ── Toggle usa_mozos ──────────────────────────────────────────────────────────
@@ -548,4 +542,47 @@ def save_config(data: MozosConfigIn, user=Depends(require_permiso("mozos", "edit
                ON CONFLICT(departamento_id, clave) DO UPDATE SET valor=excluded.valor""",
             (data.departamento_id, valor)
         )
+    return {"ok": True}
+
+
+# ── Administración: usuarios_mozos ────────────────────────────────────────────
+
+class UsuarioMozosIn(BaseModel):
+    usuario_id: int
+    departamento_id: int
+
+
+@router.get("/usuarios-acceso")
+def get_usuarios_acceso(_user=Depends(require_permiso("mozos", "ver"))):
+    with db_session() as conn:
+        rows = conn.execute(
+            """SELECT um.id, um.usuario_id, um.departamento_id,
+                      u.nombre AS usuario_nombre, u.email,
+                      d.nombre AS departamento_nombre
+               FROM usuarios_mozos um
+               JOIN usuarios u ON u.id = um.usuario_id
+               JOIN departamentos d ON d.id = um.departamento_id
+               ORDER BY u.nombre, d.nombre"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/usuarios-acceso")
+def add_usuario_acceso(body: UsuarioMozosIn,
+                       _user=Depends(require_permiso("mozos", "editar"))):
+    with db_session() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO usuarios_mozos (usuario_id, departamento_id) VALUES (?,?)",
+                (body.usuario_id, body.departamento_id)
+            )
+            return {"id": cur.lastrowid}
+        except Exception:
+            raise HTTPException(409, "Ya existe ese acceso")
+
+
+@router.delete("/usuarios-acceso/{uid}")
+def delete_usuario_acceso(uid: int, _user=Depends(require_permiso("mozos", "editar"))):
+    with db_session() as conn:
+        conn.execute("DELETE FROM usuarios_mozos WHERE id=?", (uid,))
     return {"ok": True}

@@ -212,16 +212,21 @@
 <header>
   <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a><span id="nav-brand-empresa" style="display:none;margin-left:12px"></span>
   <nav style="display:flex;gap:16px;align-items:center">
-    <div class="nav-group activo">
+    <div class="nav-group">
       <span class="nav-trigger">Programación ▾</span>
       <div class="nav-dropdown">
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
-        <a href="/distribucion" class="activo" data-perm="distribucion:ver">Horarios Cocina</a>
-        <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
-        <a href="/barmans" data-perm="barmans:ver">Horarios Barra</a>
-        <a href="/peones" data-perm="peones:ver">Horario Peones</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group activo">
+      <span class="nav-trigger">Horarios semanales ▾</span>
+      <div class="nav-dropdown">
+        <a href="/distribucion" class="activo" data-perm="distribucion:ver">Cocina</a>
+        <a href="/mozos" data-perm="mozos:ver">Mozos Salón</a>
+        <a href="/barmans" data-perm="barmans:ver">Barra</a>
+        <a href="/peones" data-perm="peones:ver">Peones</a>
       </div>
     </div>
     <div class="nav-group">
@@ -402,6 +407,10 @@ async function _loadPerms() {
       const [m, a] = el.dataset.perm.split(':');
       if (canDo(m, a)) el.removeAttribute('data-perm');
     });
+    document.querySelectorAll('.nav-group').forEach(g => {
+      const links = g.querySelectorAll('a[href]');
+      if (links.length && [...links].every(a => a.hasAttribute('data-perm'))) g.style.display = 'none';
+    });
     const ui = document.getElementById('user-info');
     if (ui) ui.textContent = d.nombre || '';
   } catch { window.location.href = '/login'; }
@@ -494,9 +503,18 @@ function onDeptChange() {
   } else if (_miTurno && dept.turnos && dept.turnos.includes(_miTurno)) {
     selTurno.value = _miTurno;
     cargarGrilla();
+  } else if (dept.turnos && dept.turnos.includes(turnoPorHora())) {
+    selTurno.value = turnoPorHora();
+    cargarGrilla();
   } else {
     mostrarVacio();
   }
+}
+
+// Turno por defecto según la hora actual (mismo criterio que Planilla mensual)
+function turnoPorHora() {
+  const h = new Date().getHours(), m = new Date().getMinutes();
+  return (h < 7 || h > 17 || (h === 17 && m >= 30)) ? 'TN' : 'TM';
 }
 
 function mostrarVacio() {

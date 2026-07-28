@@ -1240,6 +1240,78 @@ def _migrate(conn):
         )
     """)
 
+    # ── Módulo Peones (tablas propias, independientes de distribución) ─────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS peones_semana (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id),
+            turno           TEXT    NOT NULL,
+            semana_inicio   TEXT    NOT NULL,
+            estado          TEXT    NOT NULL DEFAULT 'borrador',
+            creado_por      TEXT,
+            creado_en       TEXT,
+            modificado_por  TEXT,
+            modificado_en   TEXT,
+            UNIQUE(departamento_id, turno, semana_inicio)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS peones_detalle (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            distribucion_id INTEGER NOT NULL REFERENCES peones_semana(id) ON DELETE CASCADE,
+            empleado_id     INTEGER NOT NULL REFERENCES empleados(id),
+            puesto_id       INTEGER REFERENCES puestos(id),
+            fecha           TEXT    NOT NULL,
+            es_franco       INTEGER NOT NULL DEFAULT 0,
+            horario_id      INTEGER REFERENCES horarios(id),
+            creado_por      TEXT,
+            creado_en       TEXT,
+            modificado_por  TEXT,
+            modificado_en   TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS peones_franco (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            distribucion_id INTEGER NOT NULL REFERENCES peones_semana(id) ON DELETE CASCADE,
+            empleado_id     INTEGER NOT NULL REFERENCES empleados(id),
+            fecha           TEXT    NOT NULL,
+            creado_por      INTEGER REFERENCES usuarios(id),
+            creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(distribucion_id, empleado_id, fecha)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS peones_vacacion (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            distribucion_id INTEGER NOT NULL REFERENCES peones_semana(id) ON DELETE CASCADE,
+            empleado_id     INTEGER NOT NULL REFERENCES empleados(id),
+            fecha           TEXT    NOT NULL,
+            creado_por      INTEGER REFERENCES usuarios(id),
+            creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(distribucion_id, empleado_id, fecha)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS usuarios_peones (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id      INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id) ON DELETE CASCADE,
+            turno           TEXT    NOT NULL,
+            UNIQUE(usuario_id, departamento_id, turno)
+        )
+    """)
+    conn.execute("""CREATE TABLE IF NOT EXISTS peones_aviso_config (
+        turno       TEXT PRIMARY KEY,
+        dia_semana  INTEGER NOT NULL DEFAULT 4,
+        hora        TEXT    NOT NULL DEFAULT '18:00',
+        activo      INTEGER NOT NULL DEFAULT 1
+    )""")
+    for turno in ('TM', 'TN', 'CO'):
+        conn.execute(
+            "INSERT OR IGNORE INTO peones_aviso_config (turno) VALUES (?)", (turno,)
+        )
+
     # origen en planificacion: NULL=manual, 'distribucion'=generado por grilla
     cols_plan = {r[1] for r in conn.execute("PRAGMA table_info(planificacion)").fetchall()}
     if "origen" not in cols_plan:

@@ -17,16 +17,8 @@ def _lunes(fecha_str: str) -> date:
 
 
 def _scope_departamentos(conn, user: dict) -> list[int]:
-    rol = user.get("rol", "")
-    if rol.lower() == "sistema":
-        return [r["id"] for r in conn.execute(
-            "SELECT id FROM departamentos WHERE activo=1 AND usa_barmans=1"
-        ).fetchall()]
-    uid = int(user["sub"])
-    rows = conn.execute(
-        "SELECT departamento_id FROM usuarios_barmans WHERE usuario_id=?", (uid,)
-    ).fetchall()
-    return [r["departamento_id"] for r in rows]
+    rows = conn.execute("SELECT id FROM departamentos WHERE activo=1 AND usa_barmans=1").fetchall()
+    return [r["id"] for r in rows]
 
 
 # ── Toggle usa_barmans ────────────────────────────────────────────────────────
@@ -450,4 +442,47 @@ def desconfirmar_semana(semana_id: int, user=Depends(require_permiso("barmans", 
             "UPDATE barmans_semana SET estado='borrador', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
             (uid, semana_id)
         )
+    return {"ok": True}
+
+
+# ── Administración: usuarios_barmans ─────────────────────────────────────────
+
+class UsuarioBarmansIn(BaseModel):
+    usuario_id: int
+    departamento_id: int
+
+
+@router.get("/usuarios-acceso")
+def get_usuarios_acceso(_user=Depends(require_permiso("barmans", "ver"))):
+    with db_session() as conn:
+        rows = conn.execute(
+            """SELECT ub.id, ub.usuario_id, ub.departamento_id,
+                      u.nombre AS usuario_nombre, u.email,
+                      d.nombre AS departamento_nombre
+               FROM usuarios_barmans ub
+               JOIN usuarios u ON u.id = ub.usuario_id
+               JOIN departamentos d ON d.id = ub.departamento_id
+               ORDER BY u.nombre, d.nombre"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/usuarios-acceso")
+def add_usuario_acceso(body: UsuarioBarmansIn,
+                       _user=Depends(require_permiso("barmans", "editar"))):
+    with db_session() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO usuarios_barmans (usuario_id, departamento_id) VALUES (?,?)",
+                (body.usuario_id, body.departamento_id)
+            )
+            return {"id": cur.lastrowid}
+        except Exception:
+            raise HTTPException(409, "Ya existe ese acceso")
+
+
+@router.delete("/usuarios-acceso/{uid}")
+def delete_usuario_acceso(uid: int, _user=Depends(require_permiso("barmans", "editar"))):
+    with db_session() as conn:
+        conn.execute("DELETE FROM usuarios_barmans WHERE id=?", (uid,))
     return {"ok": True}

@@ -62,11 +62,10 @@ def _lunes(fecha_str: str) -> date:
 
 
 def _scope_departamentos(conn, user: dict) -> list[int]:
-    """Devuelve lista de departamento_ids accesibles para el usuario.
-    El rol 'sistema' ve todo; el resto solo lo que tiene en usuarios_distribucion."""
-    rol_nombre = user.get("rol", "")
-    if rol_nombre.lower() == "sistema":
-        rows = conn.execute("SELECT id FROM departamentos WHERE activo=1").fetchall()
+    """Chef: solo sus departamentos asignados. Cualquier otro rol: todos los departamentos activos."""
+    rol = user.get("rol", "").lower()
+    if rol != "chef":
+        rows = conn.execute("SELECT id FROM departamentos WHERE activo=1 AND usa_distribucion=1").fetchall()
         return [r["id"] for r in rows]
     uid = int(user["sub"])
     rows = conn.execute(
@@ -76,9 +75,9 @@ def _scope_departamentos(conn, user: dict) -> list[int]:
 
 
 def _scope_turnos(conn, user: dict, departamento_id: int) -> list[str]:
-    """Devuelve turnos accesibles para el usuario en ese departamento."""
-    rol_nombre = user.get("rol", "")
-    if rol_nombre.lower() == "sistema":
+    """Chef: solo sus turnos asignados. Cualquier otro rol: todos los turnos."""
+    rol = user.get("rol", "").lower()
+    if rol != "chef":
         return ["TM", "TN", "CO"]
     uid = int(user["sub"])
     rows = conn.execute(

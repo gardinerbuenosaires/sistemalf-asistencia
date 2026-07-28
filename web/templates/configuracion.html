@@ -160,11 +160,16 @@
       <div class="nav-dropdown">
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
-        <a href="/distribucion" data-perm="distribucion:ver">Horarios Cocina</a>
-        <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
-        <a href="/barmans" data-perm="barmans:ver">Horarios Barra</a>
-        <a href="/peones" data-perm="peones:ver">Horario Peones</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Horarios semanales ▾</span>
+      <div class="nav-dropdown">
+        <a href="/distribucion" data-perm="distribucion:ver">Cocina</a>
+        <a href="/mozos" data-perm="mozos:ver">Mozos Salón</a>
+        <a href="/barmans" data-perm="barmans:ver">Barra</a>
+        <a href="/peones" data-perm="peones:ver">Peones</a>
       </div>
     </div>
     <div class="nav-group">
@@ -1607,7 +1612,7 @@ function editarDepto(id) {
         <option value="cocineros" ${modulo==='cocineros'?'selected':''}>Cocineros</option>
         <option value="mozos" ${modulo==='mozos'?'selected':''}>Mozos</option>
         <option value="barmans" ${modulo==='barmans'?'selected':''}>Barmans</option>
-        <option value="peones" ${modulo==='peones'?'selected':''}>Horario Peones</option>
+        <option value="peones" ${modulo==='peones'?'selected':''}>Peones</option>
       </select>
       <div id="tabla-deptos-edit-horarios-${id}" style="display:${usaHorarios?'block':'none'}">
         ${sel('horario_tm_id','Horario TM (mañana)')}
@@ -1734,7 +1739,7 @@ function agregarDepto() {
         <option value="cocineros">Cocineros</option>
         <option value="mozos">Mozos</option>
         <option value="barmans">Barmans</option>
-        <option value="peones">Horario Peones</option>
+        <option value="peones">Peones</option>
       </select>
     </td>
     <td>

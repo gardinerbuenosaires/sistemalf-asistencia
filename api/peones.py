@@ -22,7 +22,7 @@ class PuestoIn(BaseModel):
     turno: Optional[str] = None
 
 
-class DistribucionIn(BaseModel):
+class SemanaIn(BaseModel):
     departamento_id: int
     turno: str  # "TM" | "TN" | "CO"
     semana_inicio: str  # ISO date — lunes de la semana
@@ -43,7 +43,7 @@ class DetalleIn(BaseModel):
     horario_id: Optional[int] = None
 
 
-class UsuarioDistribucionIn(BaseModel):
+class UsuarioPeonesIn(BaseModel):
     usuario_id: int
     departamento_id: int
     turno: str
@@ -61,31 +61,13 @@ def _lunes(fecha_str: str) -> date:
     return d - timedelta(days=d.weekday())
 
 
-def _scope_departamentos(conn, user: dict) -> list[int]:
-    """Devuelve lista de departamento_ids accesibles para el usuario.
-    El rol 'sistema' ve todo; el resto solo lo que tiene en usuarios_distribucion."""
-    rol_nombre = user.get("rol", "")
-    if rol_nombre.lower() == "sistema":
-        rows = conn.execute("SELECT id FROM departamentos WHERE activo=1").fetchall()
-        return [r["id"] for r in rows]
-    uid = int(user["sub"])
-    rows = conn.execute(
-        "SELECT DISTINCT departamento_id FROM usuarios_distribucion WHERE usuario_id=?", (uid,)
-    ).fetchall()
-    return [r["departamento_id"] for r in rows]
+def _scope_departamentos(conn, _user: dict) -> list[int]:
+    rows = conn.execute("SELECT id FROM departamentos WHERE activo=1 AND usa_peones=1").fetchall()
+    return [r["id"] for r in rows]
 
 
-def _scope_turnos(conn, user: dict, departamento_id: int) -> list[str]:
-    """Devuelve turnos accesibles para el usuario en ese departamento."""
-    rol_nombre = user.get("rol", "")
-    if rol_nombre.lower() == "sistema":
-        return ["TM", "TN", "CO"]
-    uid = int(user["sub"])
-    rows = conn.execute(
-        "SELECT turno FROM usuarios_distribucion WHERE usuario_id=? AND departamento_id=?",
-        (uid, departamento_id)
-    ).fetchall()
-    return [r["turno"] for r in rows]
+def _scope_turnos(_conn, _user: dict, _departamento_id: int) -> list[str]:
+    return ["TM", "TN", "CO"]
 
 
 def _vac_balance_bulk(conn, emp_ids: list[int]) -> dict[int, float]:
@@ -226,12 +208,12 @@ def update_puesto(pid: int, body: PuestoIn, user=Depends(require_permiso("peones
 def delete_puesto(pid: int, user=Depends(require_permiso("peones", "editar"))):
     with db_session() as conn:
         conn.execute("UPDATE puestos SET activo=0 WHERE id=?", (pid,))
-        # Limpiar asignaciones en distribuciones no confirmadas
+        # Limpiar asignaciones en semanas peones no confirmadas
         conn.execute(
-            """DELETE FROM distribucion_detalle
+            """DELETE FROM peones_detalle
                WHERE puesto_id = ?
                  AND distribucion_id IN (
-                   SELECT id FROM distribucion_semana WHERE estado != 'confirmado'
+                   SELECT id FROM peones_semana WHERE estado != 'confirmado'
                  )""",
             (pid,)
         )
@@ -256,7 +238,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             """SELECT d.*,
                       uc.nombre AS creado_por_nombre,
                       um.nombre AS modificado_por_nombre
-               FROM distribucion_semana d
+               FROM peones_semana d
                LEFT JOIN usuarios uc ON uc.id = d.creado_por
                LEFT JOIN usuarios um ON um.id = CAST(d.modificado_por AS INTEGER)
                WHERE d.departamento_id=? AND d.turno=? AND d.semana_inicio=?""",
@@ -270,40 +252,30 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
 
         detalles = []
         francos = []
-        comida_personal = []
         vac_dist = []
         if dist:
             detalles = conn.execute(
                 """SELECT dd.*, e.nombre AS emp_nombre, e.apellido AS emp_apellido,
                           p.nombre AS puesto_nombre, h.nombre AS horario_nombre
-                   FROM distribucion_detalle dd
+                   FROM peones_detalle dd
                    LEFT JOIN empleados e ON e.id = dd.empleado_id
                    LEFT JOIN puestos p ON p.id = dd.puesto_id
                    LEFT JOIN horarios h ON h.id = dd.horario_id
-                   WHERE dd.distribucion_id=? AND dd.es_comida_personal=0
+                   WHERE dd.distribucion_id=?
                    ORDER BY dd.fecha, p.orden""",
-                (dist["id"],)
-            ).fetchall()
-            comida_personal = conn.execute(
-                """SELECT dd.id, dd.empleado_id, dd.fecha,
-                          e.apellido AS emp_apellido, e.nombre AS emp_nombre
-                   FROM distribucion_detalle dd
-                   JOIN empleados e ON e.id = dd.empleado_id
-                   WHERE dd.distribucion_id=? AND dd.es_comida_personal=1
-                   ORDER BY dd.fecha""",
                 (dist["id"],)
             ).fetchall()
             francos = conn.execute(
                 """SELECT df.id, df.empleado_id, df.fecha,
                           e.nombre AS emp_nombre, e.apellido AS emp_apellido
-                   FROM distribucion_franco df
+                   FROM peones_franco df
                    LEFT JOIN empleados e ON e.id = df.empleado_id
                    WHERE df.distribucion_id=?
                    ORDER BY df.fecha, e.apellido, e.nombre""",
                 (dist["id"],)
             ).fetchall()
             vac_dist = conn.execute(
-                "SELECT id, empleado_id, fecha FROM distribucion_vacacion WHERE distribucion_id=?",
+                "SELECT id, empleado_id, fecha FROM peones_vacacion WHERE distribucion_id=?",
                 (dist["id"],)
             ).fetchall()
 
@@ -438,7 +410,6 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         "detalles": [dict(r) for r in detalles],
         "francos": [dict(r) for r in francos],
         "vac_dist": [dict(r) for r in vac_dist],
-        "comida_personal": [dict(r) for r in comida_personal],
         "horarios": [dict(r) for r in horarios],
         "novedades": novedades,
         "plan_base": plan_base,
@@ -448,7 +419,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
 
 
 @router.post("/semana")
-def create_semana(body: DistribucionIn, user=Depends(require_permiso("peones", "editar"))):
+def create_semana(body: SemanaIn, user=Depends(require_permiso("peones", "editar"))):
     lunes = str(_lunes(body.semana_inicio))
     uid = int(user["sub"])
     with db_session() as conn:
@@ -457,7 +428,7 @@ def create_semana(body: DistribucionIn, user=Depends(require_permiso("peones", "
             raise HTTPException(403, "Sin acceso a este turno/departamento")
         try:
             cur = conn.execute(
-                """INSERT INTO distribucion_semana
+                """INSERT INTO peones_semana
                    (departamento_id, turno, semana_inicio, estado, creado_por, creado_en)
                    VALUES (?,?,?,'borrador',?,datetime('now'))""",
                 (body.departamento_id, body.turno, lunes, uid)
@@ -465,7 +436,7 @@ def create_semana(body: DistribucionIn, user=Depends(require_permiso("peones", "
             return {"id": cur.lastrowid}
         except Exception:
             existing = conn.execute(
-                "SELECT id FROM distribucion_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
+                "SELECT id FROM peones_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
                 (body.departamento_id, body.turno, lunes)
             ).fetchone()
             if existing:
@@ -487,7 +458,7 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("p
 
         # Semana anterior
         dist_ant = conn.execute(
-            "SELECT id FROM distribucion_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
+            "SELECT id FROM peones_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
             (body.departamento_id, body.turno, str(lunes_ant))
         ).fetchone()
         if not dist_ant:
@@ -495,7 +466,7 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("p
 
         # Verificar que la nueva semana no esté confirmada
         dist_nueva = conn.execute(
-            "SELECT id, estado FROM distribucion_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
+            "SELECT id, estado FROM peones_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
             (body.departamento_id, body.turno, str(lunes_nuevo))
         ).fetchone()
         if dist_nueva and dist_nueva["estado"] == "confirmado":
@@ -504,7 +475,7 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("p
         # Crear borrador si no existe
         if not dist_nueva:
             cur = conn.execute(
-                """INSERT INTO distribucion_semana
+                """INSERT INTO peones_semana
                    (departamento_id, turno, semana_inicio, estado, creado_por, creado_en)
                    VALUES (?,?,?,'borrador',?,datetime('now'))""",
                 (body.departamento_id, body.turno, str(lunes_nuevo), uid)
@@ -526,17 +497,17 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("p
             (dias_nuevos[0], dias_nuevos[6])
         ).fetchall()}
 
-        # Detalles de la semana anterior (solo asignaciones a puesto, sin is_comida_personal)
+        # Detalles de la semana anterior (solo asignaciones a puesto)
         detalles_ant = conn.execute(
             """SELECT empleado_id, puesto_id, fecha, horario_id
-               FROM distribucion_detalle
-               WHERE distribucion_id=? AND puesto_id IS NOT NULL AND es_comida_personal=0""",
+               FROM peones_detalle
+               WHERE distribucion_id=? AND puesto_id IS NOT NULL""",
             (dist_ant["id"],)
         ).fetchall()
 
         # Francos de la semana anterior
         francos_ant = conn.execute(
-            "SELECT empleado_id, fecha FROM distribucion_franco WHERE distribucion_id=?",
+            "SELECT empleado_id, fecha FROM peones_franco WHERE distribucion_id=?",
             (dist_ant["id"],)
         ).fetchall()
 
@@ -555,13 +526,13 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("p
                 continue
             # Evitar duplicado
             dup = conn.execute(
-                """SELECT id FROM distribucion_detalle
-                   WHERE distribucion_id=? AND empleado_id=? AND puesto_id=? AND fecha=? AND es_comida_personal=0""",
+                """SELECT id FROM peones_detalle
+                   WHERE distribucion_id=? AND empleado_id=? AND puesto_id=? AND fecha=?""",
                 (nueva_id, emp_id, det["puesto_id"], fecha_nueva)
             ).fetchone()
             if not dup:
                 conn.execute(
-                    """INSERT INTO distribucion_detalle
+                    """INSERT INTO peones_detalle
                        (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
                        VALUES (?,?,?,?,0,?,?,datetime('now'))""",
                     (nueva_id, emp_id, det["puesto_id"], fecha_nueva, det["horario_id"], uid)
@@ -577,12 +548,12 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("p
                 omitidos_fr += 1
                 continue
             dup = conn.execute(
-                "SELECT id FROM distribucion_franco WHERE distribucion_id=? AND empleado_id=? AND fecha=?",
+                "SELECT id FROM peones_franco WHERE distribucion_id=? AND empleado_id=? AND fecha=?",
                 (nueva_id, emp_id, fecha_nueva)
             ).fetchone()
             if not dup:
                 conn.execute(
-                    "INSERT INTO distribucion_franco (distribucion_id, empleado_id, fecha) VALUES (?,?,?)",
+                    "INSERT INTO peones_franco (distribucion_id, empleado_id, fecha) VALUES (?,?,?)",
                     (nueva_id, emp_id, fecha_nueva)
                 )
                 copiados_fr += 1
@@ -602,7 +573,7 @@ def add_detalle(body: DetalleIn, user=Depends(require_permiso("peones", "editar"
     uid = int(user["sub"])
     with db_session() as conn:
         dist = conn.execute(
-            "SELECT * FROM distribucion_semana WHERE id=?", (body.distribucion_id,)
+            "SELECT * FROM peones_semana WHERE id=?", (body.distribucion_id,)
         ).fetchone()
         if not dist:
             raise HTTPException(404, "Distribución no encontrada")
@@ -614,16 +585,15 @@ def add_detalle(body: DetalleIn, user=Depends(require_permiso("peones", "editar"
 
         # Evitar duplicado del mismo empleado en el mismo puesto+día
         dup = conn.execute(
-            """SELECT id FROM distribucion_detalle
-               WHERE distribucion_id=? AND puesto_id=? AND empleado_id=? AND fecha=?
-               AND es_comida_personal=0""",
+            """SELECT id FROM peones_detalle
+               WHERE distribucion_id=? AND puesto_id=? AND empleado_id=? AND fecha=?""",
             (body.distribucion_id, body.puesto_id, body.empleado_id, body.fecha)
         ).fetchone()
         if dup:
             raise HTTPException(409, "El empleado ya está asignado a este puesto ese día")
 
         cur = conn.execute(
-            """INSERT INTO distribucion_detalle
+            """INSERT INTO peones_detalle
                (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
                VALUES (?,?,?,?,0,?,?,datetime('now'))""",
             (body.distribucion_id, body.empleado_id, body.puesto_id,
@@ -631,13 +601,13 @@ def add_detalle(body: DetalleIn, user=Depends(require_permiso("peones", "editar"
         )
         det_id = cur.lastrowid
         conn.execute(
-            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE peones_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
             (uid, body.distribucion_id)
         )
         row = conn.execute(
             """SELECT dd.id, dd.empleado_id, dd.puesto_id, dd.fecha, dd.horario_id,
                       e.apellido AS emp_apellido, e.nombre AS emp_nombre
-               FROM distribucion_detalle dd
+               FROM peones_detalle dd
                JOIN empleados e ON e.id = dd.empleado_id
                WHERE dd.id=?""", (det_id,)
         ).fetchone()
@@ -648,8 +618,8 @@ def add_detalle(body: DetalleIn, user=Depends(require_permiso("peones", "editar"
 def delete_detalle(det_id: int, user=Depends(require_permiso("peones", "editar"))):
     with db_session() as conn:
         det = conn.execute(
-            "SELECT dd.*, ds.estado, ds.departamento_id, ds.turno FROM distribucion_detalle dd "
-            "JOIN distribucion_semana ds ON ds.id = dd.distribucion_id WHERE dd.id=?", (det_id,)
+            "SELECT dd.*, ds.estado, ds.departamento_id, ds.turno FROM peones_detalle dd "
+            "JOIN peones_semana ds ON ds.id = dd.distribucion_id WHERE dd.id=?", (det_id,)
         ).fetchone()
         if not det:
             raise HTTPException(404, "Detalle no encontrado")
@@ -658,7 +628,7 @@ def delete_detalle(det_id: int, user=Depends(require_permiso("peones", "editar")
         turnos_ok = _scope_turnos(conn, user, det["departamento_id"])
         if det["turno"] not in turnos_ok:
             raise HTTPException(403, "Sin acceso")
-        conn.execute("DELETE FROM distribucion_detalle WHERE id=?", (det_id,))
+        conn.execute("DELETE FROM peones_detalle WHERE id=?", (det_id,))
     return {"ok": True}
 
 
@@ -668,7 +638,7 @@ def delete_detalle(det_id: int, user=Depends(require_permiso("peones", "editar")
 def add_franco(dist_id: int, body: FrancoIn, user=Depends(require_permiso("peones", "editar"))):
     uid = int(user["sub"])
     with db_session() as conn:
-        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        dist = conn.execute("SELECT * FROM peones_semana WHERE id=?", (dist_id,)).fetchone()
         if not dist:
             raise HTTPException(404, "Distribución no encontrada")
         if dist["estado"] == "confirmado":
@@ -678,12 +648,12 @@ def add_franco(dist_id: int, body: FrancoIn, user=Depends(require_permiso("peone
             raise HTTPException(403, "Sin acceso")
         try:
             cur = conn.execute(
-                """INSERT INTO distribucion_franco (distribucion_id, empleado_id, fecha, creado_por, creado_en)
+                """INSERT INTO peones_franco (distribucion_id, empleado_id, fecha, creado_por, creado_en)
                    VALUES (?,?,?,?,datetime('now'))""",
                 (dist_id, body.empleado_id, body.fecha, uid)
             )
             conn.execute(
-                "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+                "UPDATE peones_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
                 (uid, dist_id)
             )
             return {"id": cur.lastrowid}
@@ -695,14 +665,14 @@ def add_franco(dist_id: int, body: FrancoIn, user=Depends(require_permiso("peone
 def delete_franco(dist_id: int, fid: int, user=Depends(require_permiso("peones", "editar"))):
     uid = int(user["sub"])
     with db_session() as conn:
-        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        dist = conn.execute("SELECT * FROM peones_semana WHERE id=?", (dist_id,)).fetchone()
         if not dist or dist["estado"] == "confirmado":
             raise HTTPException(409, "No se puede modificar horarios confirmados")
         conn.execute(
-            "DELETE FROM distribucion_franco WHERE id=? AND distribucion_id=?", (fid, dist_id)
+            "DELETE FROM peones_franco WHERE id=? AND distribucion_id=?", (fid, dist_id)
         )
         conn.execute(
-            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE peones_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
             (uid, dist_id)
         )
     return {"ok": True}
@@ -720,7 +690,7 @@ def add_vac_dist(dist_id: int, body: VacDistIn,
                  user=Depends(require_permiso("peones", "editar"))):
     uid = int(user["sub"])
     with db_session() as conn:
-        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        dist = conn.execute("SELECT * FROM peones_semana WHERE id=?", (dist_id,)).fetchone()
         if not dist:
             raise HTTPException(404, "Distribución no encontrada")
         if dist["estado"] == "confirmado":
@@ -736,13 +706,13 @@ def add_vac_dist(dist_id: int, body: VacDistIn,
         if existing_nov:
             raise HTTPException(409, f"Ya existe novedad {existing_nov['tipo']} para ese día")
         conn.execute(
-            """INSERT OR IGNORE INTO distribucion_vacacion
+            """INSERT OR IGNORE INTO peones_vacacion
                (distribucion_id, empleado_id, fecha, creado_por, creado_en)
                VALUES (?,?,?,?,datetime('now'))""",
             (dist_id, body.empleado_id, body.fecha, uid)
         )
         conn.execute(
-            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE peones_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
             (uid, dist_id)
         )
     return {"ok": True}
@@ -752,7 +722,7 @@ def add_vac_dist(dist_id: int, body: VacDistIn,
 def del_vac_dist(dist_id: int, fecha: str, emp_id: int,
                  user=Depends(require_permiso("peones", "editar"))):
     with db_session() as conn:
-        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        dist = conn.execute("SELECT * FROM peones_semana WHERE id=?", (dist_id,)).fetchone()
         if not dist:
             raise HTTPException(404, "Distribución no encontrada")
         if dist["estado"] == "confirmado":
@@ -761,7 +731,7 @@ def del_vac_dist(dist_id: int, fecha: str, emp_id: int,
         if dist["turno"] not in turnos_ok:
             raise HTTPException(403, "Sin acceso")
         conn.execute(
-            "DELETE FROM distribucion_vacacion WHERE distribucion_id=? AND empleado_id=? AND fecha=?",
+            "DELETE FROM peones_vacacion WHERE distribucion_id=? AND empleado_id=? AND fecha=?",
             (dist_id, emp_id, fecha)
         )
         # Fallback: borrar V novedades escritas por el código anterior directamente en novedades
@@ -779,7 +749,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
     uid = int(user["sub"])
     with db_session() as conn:
         dist = conn.execute(
-            "SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)
+            "SELECT * FROM peones_semana WHERE id=?", (dist_id,)
         ).fetchone()
         if not dist:
             raise HTTPException(404, "Distribución no encontrada")
@@ -790,13 +760,13 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
             raise HTTPException(403, "Sin acceso")
 
         detalles = conn.execute(
-            "SELECT * FROM distribucion_detalle WHERE distribucion_id=?", (dist_id,)
+            "SELECT * FROM peones_detalle WHERE distribucion_id=?", (dist_id,)
         ).fetchall()
         francos = conn.execute(
-            "SELECT * FROM distribucion_franco WHERE distribucion_id=?", (dist_id,)
+            "SELECT * FROM peones_franco WHERE distribucion_id=?", (dist_id,)
         ).fetchall()
         vac_staged = conn.execute(
-            "SELECT * FROM distribucion_vacacion WHERE distribucion_id=?", (dist_id,)
+            "SELECT * FROM peones_vacacion WHERE distribucion_id=?", (dist_id,)
         ).fetchall()
 
         lunes_str = dist["semana_inicio"]
@@ -890,7 +860,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
             )
 
         conn.execute(
-            "UPDATE distribucion_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE peones_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
             (uid, dist_id)
         )
 
@@ -901,14 +871,14 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
             lunes_fut_str = str(lunes_fut)
 
             ya_existe = conn.execute(
-                "SELECT id FROM distribucion_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
+                "SELECT id FROM peones_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
                 (dist["departamento_id"], dist["turno"], lunes_fut_str)
             ).fetchone()
             if ya_existe:
-                continue  # El chef ya tiene algo ahí, no pisamos
+                continue
 
             cur_fut = conn.execute(
-                """INSERT INTO distribucion_semana
+                """INSERT INTO peones_semana
                    (departamento_id, turno, semana_inicio, estado, creado_por, creado_en)
                    VALUES (?,?,?,'borrador',?,datetime('now'))""",
                 (dist["departamento_id"], dist["turno"], lunes_fut_str, uid)
@@ -921,7 +891,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
                 dow = fecha_orig.weekday()
                 fecha_fut = str(lunes_fut + timedelta(days=dow))
                 conn.execute(
-                    """INSERT INTO distribucion_detalle
+                    """INSERT INTO peones_detalle
                        (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
                        VALUES (?,?,?,?,?,?,?,datetime('now'))""",
                     (dist_fut_id, det["empleado_id"], det["puesto_id"],
@@ -932,7 +902,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
                 dow = fecha_orig.weekday()
                 fecha_fut = str(lunes_fut + timedelta(days=dow))
                 conn.execute(
-                    """INSERT OR IGNORE INTO distribucion_franco
+                    """INSERT OR IGNORE INTO peones_franco
                        (distribucion_id, empleado_id, fecha, creado_por, creado_en)
                        VALUES (?,?,?,?,datetime('now'))""",
                     (dist_fut_id, fr["empleado_id"], fecha_fut, uid)
@@ -942,7 +912,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
                 dow = fecha_orig.weekday()
                 fecha_fut = str(lunes_fut + timedelta(days=dow))
                 conn.execute(
-                    """INSERT OR IGNORE INTO distribucion_vacacion
+                    """INSERT OR IGNORE INTO peones_vacacion
                        (distribucion_id, empleado_id, fecha, creado_por, creado_en)
                        VALUES (?,?,?,?,datetime('now'))""",
                     (dist_fut_id, v["empleado_id"], fecha_fut, uid)
@@ -955,7 +925,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
 def desconfirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confirmar"))):
     uid = int(user["sub"])
     with db_session() as conn:
-        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        dist = conn.execute("SELECT * FROM peones_semana WHERE id=?", (dist_id,)).fetchone()
         if not dist:
             raise HTTPException(404, "Distribución no encontrada")
         if dist["estado"] != "confirmado":
@@ -964,72 +934,8 @@ def desconfirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "co
         if dist["turno"] not in turnos_ok:
             raise HTTPException(403, "Sin acceso")
         conn.execute(
-            "UPDATE distribucion_semana SET estado='borrador', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE peones_semana SET estado='borrador', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
             (uid, dist_id)
-        )
-    return {"ok": True}
-
-
-# ── Comida de personal ────────────────────────────────────────────────────────
-
-class ComidaPersonalIn(BaseModel):
-    fecha: str
-    empleado_id: int
-
-
-@router.put("/semana/{dist_id}/comida-personal")
-def set_comida_personal(dist_id: int, body: ComidaPersonalIn,
-                        user=Depends(require_permiso("peones", "editar"))):
-    uid = int(user["sub"])
-    with db_session() as conn:
-        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
-        if not dist:
-            raise HTTPException(404, "Distribución no encontrada")
-        if dist["estado"] == "confirmado":
-            raise HTTPException(409, "Distribución confirmada")
-        turnos_ok = _scope_turnos(conn, user, dist["departamento_id"])
-        if dist["turno"] not in turnos_ok:
-            raise HTTPException(403, "Sin acceso")
-        # Upsert: un solo cocinero por día
-        existing = conn.execute(
-            "SELECT id FROM distribucion_detalle WHERE distribucion_id=? AND fecha=? AND es_comida_personal=1",
-            (dist_id, body.fecha)
-        ).fetchone()
-        if existing:
-            conn.execute(
-                "UPDATE distribucion_detalle SET empleado_id=?, modificado_por=?, modificado_en=datetime('now') WHERE id=?",
-                (body.empleado_id, str(uid), existing["id"])
-            )
-        else:
-            conn.execute(
-                """INSERT INTO distribucion_detalle
-                   (distribucion_id, empleado_id, puesto_id, fecha, es_franco, es_comida_personal, creado_por, creado_en)
-                   VALUES (?,?,NULL,?,0,1,?,datetime('now'))""",
-                (dist_id, body.empleado_id, body.fecha, str(uid))
-            )
-        row = conn.execute(
-            """SELECT dd.id, dd.empleado_id, dd.fecha,
-                      e.apellido AS emp_apellido, e.nombre AS emp_nombre
-               FROM distribucion_detalle dd
-               JOIN empleados e ON e.id = dd.empleado_id
-               WHERE dd.distribucion_id=? AND dd.fecha=? AND dd.es_comida_personal=1""",
-            (dist_id, body.fecha)
-        ).fetchone()
-    return dict(row)
-
-
-@router.delete("/semana/{dist_id}/comida-personal/{fecha}")
-def delete_comida_personal(dist_id: int, fecha: str,
-                           user=Depends(require_permiso("peones", "editar"))):
-    with db_session() as conn:
-        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
-        if not dist:
-            raise HTTPException(404, "Distribución no encontrada")
-        if dist["estado"] == "confirmado":
-            raise HTTPException(409, "Distribución confirmada")
-        conn.execute(
-            "DELETE FROM distribucion_detalle WHERE distribucion_id=? AND fecha=? AND es_comida_personal=1",
-            (dist_id, fecha)
         )
     return {"ok": True}
 
@@ -1135,7 +1041,7 @@ def set_horario_habitual_dept(empleado_id: int, body: dict,
     return {"ok": True}
 
 
-# ── Administración: usuarios_distribucion ──────────────────────────────────────
+# ── Administración: usuarios_peones ───────────────────────────────────────────
 
 @router.get("/usuarios-acceso")
 def get_usuarios_acceso(_user=Depends(require_permiso("peones", "ver"))):
@@ -1144,7 +1050,7 @@ def get_usuarios_acceso(_user=Depends(require_permiso("peones", "ver"))):
             """SELECT ud.id, ud.usuario_id, ud.departamento_id, ud.turno,
                       u.nombre AS usuario_nombre, u.email,
                       d.nombre AS departamento_nombre
-               FROM usuarios_distribucion ud
+               FROM usuarios_peones ud
                JOIN usuarios u ON u.id = ud.usuario_id
                JOIN departamentos d ON d.id = ud.departamento_id
                ORDER BY u.nombre, d.nombre, ud.turno"""
@@ -1153,12 +1059,12 @@ def get_usuarios_acceso(_user=Depends(require_permiso("peones", "ver"))):
 
 
 @router.post("/usuarios-acceso")
-def add_usuario_acceso(body: UsuarioDistribucionIn,
+def add_usuario_acceso(body: UsuarioPeonesIn,
                        _user=Depends(require_permiso("peones", "editar"))):
     with db_session() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO usuarios_distribucion (usuario_id, departamento_id, turno) VALUES (?,?,?)",
+                "INSERT INTO usuarios_peones (usuario_id, departamento_id, turno) VALUES (?,?,?)",
                 (body.usuario_id, body.departamento_id, body.turno)
             )
             return {"id": cur.lastrowid}
@@ -1169,7 +1075,7 @@ def add_usuario_acceso(body: UsuarioDistribucionIn,
 @router.delete("/usuarios-acceso/{uid}")
 def delete_usuario_acceso(uid: int, _user=Depends(require_permiso("peones", "editar"))):
     with db_session() as conn:
-        conn.execute("DELETE FROM usuarios_distribucion WHERE id=?", (uid,))
+        conn.execute("DELETE FROM usuarios_peones WHERE id=?", (uid,))
     return {"ok": True}
 
 
@@ -1198,12 +1104,12 @@ def preview_usa_peones(dept_id: int, _user=Depends(require_permiso("peones", "ed
     }
 
 
-class UsaDistribucionIn(BaseModel):
+class UsaPeonesIn(BaseModel):
     value: bool
 
 
 @router.put("/departamentos/{dept_id}/usa-distribucion")
-def set_usa_peones(dept_id: int, body: UsaDistribucionIn,
+def set_usa_peones(dept_id: int, body: UsaPeonesIn,
                          _user=Depends(require_permiso("peones", "editar"))):
     """Activa o desactiva la visibilidad del departamento en el módulo de distribución."""
     with db_session() as conn:
@@ -1229,7 +1135,7 @@ class AvisoConfigIn(BaseModel):
 def get_aviso_config(_user=Depends(require_permiso("peones", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
-            "SELECT turno, dia_semana, hora, activo FROM distribucion_aviso_config ORDER BY turno"
+            "SELECT turno, dia_semana, hora, activo FROM peones_aviso_config ORDER BY turno"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -1246,7 +1152,7 @@ def update_aviso_config(turno: str, data: AvisoConfigIn,
         raise HTTPException(400, "Día inválido, usar 1=lunes … 7=domingo")
     with db_session() as conn:
         conn.execute(
-            "INSERT INTO distribucion_aviso_config (turno, dia_semana, hora, activo) VALUES (?,?,?,?) "
+            "INSERT INTO peones_aviso_config (turno, dia_semana, hora, activo) VALUES (?,?,?,?) "
             "ON CONFLICT(turno) DO UPDATE SET dia_semana=excluded.dia_semana, hora=excluded.hora, activo=excluded.activo",
             (turno, data.dia_semana, data.hora, int(data.activo))
         )
@@ -1259,7 +1165,7 @@ def update_aviso_config(turno: str, data: AvisoConfigIn,
 def get_avisos(_user=Depends(require_permiso("peones", "ver"))):
     with db_session() as conn:
         cfg_rows = conn.execute(
-            "SELECT turno, dia_semana, hora, activo FROM distribucion_aviso_config"
+            "SELECT turno, dia_semana, hora, activo FROM peones_aviso_config"
         ).fetchall()
         cfg = {r["turno"]: {"dia": r["dia_semana"], "hora": r["hora"], "activo": r["activo"]}
                for r in cfg_rows}
@@ -1269,7 +1175,7 @@ def get_avisos(_user=Depends(require_permiso("peones", "ver"))):
         borradores = conn.execute(
             """SELECT ds.id, ds.semana_inicio, ds.turno,
                       d.nombre AS departamento_nombre
-               FROM distribucion_semana ds
+               FROM peones_semana ds
                JOIN departamentos d ON d.id = ds.departamento_id
                WHERE ds.estado = 'borrador'
                  AND ds.semana_inicio >= ?

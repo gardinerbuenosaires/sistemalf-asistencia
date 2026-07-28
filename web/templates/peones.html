@@ -156,8 +156,6 @@
   .badge-emp.novedad-E   { background: #FABF8F; color: #000; border-color: #e8a870; }
   .badge-emp.novedad-ILT { background: #C4D79B; color: #000; border-color: #a8c07a; }
   .badge-emp.novedad-NF  { background: #F4D03F; color: #7D4900; border-color: #d4b030; }
-  .badge-emp.chef { background: #e1bee7; color: #6a1b9a; border-color: #ce93d8; }
-  .badge-emp.chef:hover { background: #ce93d8; }
   .btn-add-emp { background: none; border: 1px dashed #28a745; color: #155724;
     border-radius: 12px; padding: 3px 10px; font-size: .72rem; cursor: pointer; white-space: nowrap; }
   .btn-add-emp:hover { background: #d4edda; }
@@ -212,15 +210,21 @@
 <header>
   <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a><span id="nav-brand-empresa" style="display:none;margin-left:12px"></span>
   <nav style="display:flex;gap:16px;align-items:center">
-    <div class="nav-group activo">
+    <div class="nav-group">
       <span class="nav-trigger">Programación ▾</span>
       <div class="nav-dropdown">
         <a href="/horarios" data-perm="horarios:ver">Horarios</a>
         <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
-        <a href="/peones" class="activo" data-perm="peones:ver">Horario Peones</a>
-        <a href="/mozos" data-perm="mozos:ver">Horarios Mozos Salón</a>
-        <a href="/barmans" data-perm="barmans:ver">Horarios Barra</a>
         <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group activo">
+      <span class="nav-trigger">Horarios semanales ▾</span>
+      <div class="nav-dropdown">
+        <a href="/distribucion" data-perm="distribucion:ver">Cocina</a>
+        <a href="/mozos" data-perm="mozos:ver">Mozos Salón</a>
+        <a href="/barmans" data-perm="barmans:ver">Barra</a>
+        <a href="/peones" class="activo" data-perm="peones:ver">Peones</a>
       </div>
     </div>
     <div class="nav-group">
@@ -333,10 +337,6 @@
         <option value="CO">Cortado (CO)</option>
       </select>
     </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.85rem;cursor:pointer">
-      <input type="checkbox" id="input-puesto-chef">
-      Puesto Chef (aparece al final con color distintivo)
-    </label>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
       <button class="btn-cancel" onclick="cerrarModalPuesto()">Cancelar</button>
       <button class="modal-puesto .btn-save btn" onclick="guardarPuesto()"
@@ -363,7 +363,7 @@ let _novedades = []; // [{empleado_id, fecha, tipo, descripcion}]
 let _dias = [];
 let _misAccesos = { departamentos: [] };
 let _francos = [];         // [{id, empleado_id, fecha, emp_nombre, emp_apellido}]
-let _comidaPersonal = [];  // [{id, empleado_id, fecha, emp_apellido, emp_nombre}]
+let _comidaPersonal = [];
 let _horarios = [];  // [{id, nombre, tipo, turno_nombre}]
 let _vacBalance = {};    // {empleado_id: dias_disponibles}
 let _vacDist = [];       // [{id, empleado_id, fecha}] — staging, antes de confirmar
@@ -400,6 +400,10 @@ async function _loadPerms() {
     document.querySelectorAll('[data-perm]').forEach(el => {
       const [m, a] = el.dataset.perm.split(':');
       if (canDo(m, a)) el.removeAttribute('data-perm');
+    });
+    document.querySelectorAll('.nav-group').forEach(g => {
+      const links = g.querySelectorAll('a[href]');
+      if (links.length && [...links].every(a => a.hasAttribute('data-perm'))) g.style.display = 'none';
     });
     const ui = document.getElementById('user-info');
     if (ui) ui.textContent = d.nombre || '';
@@ -493,9 +497,18 @@ function onDeptChange() {
   } else if (_miTurno && dept.turnos && dept.turnos.includes(_miTurno)) {
     selTurno.value = _miTurno;
     cargarGrilla();
+  } else if (dept.turnos && dept.turnos.includes(turnoPorHora())) {
+    selTurno.value = turnoPorHora();
+    cargarGrilla();
   } else {
     mostrarVacio();
   }
+}
+
+// Turno por defecto según la hora actual (mismo criterio que Planilla mensual)
+function turnoPorHora() {
+  const h = new Date().getHours(), m = new Date().getMinutes();
+  return (h < 7 || h > 17 || (h === 17 && m >= 30)) ? 'TN' : 'TM';
 }
 
 function mostrarVacio() {
@@ -525,7 +538,7 @@ async function cargarGrilla() {
     _empleados    = data.empleados || [];
     _detalles       = data.detalles || [];
     _francos        = data.francos || [];
-    _comidaPersonal = data.comida_personal || [];
+    _comidaPersonal = [];
     _horarios       = data.horarios || [];
     _novedades      = data.novedades || [];
     _vacDist        = data.vac_dist || [];
@@ -643,10 +656,7 @@ function renderGrilla() {
       Sin puestos definidos. Agregá el primero abajo.
     </td></tr>`;
   } else {
-    const puestosOrdenados = [
-      ..._puestos.filter(p => !p.es_chef),
-      ..._puestos.filter(p => p.es_chef)
-    ];
+    const puestosOrdenados = _puestos;
     const puestosHtml = puestosOrdenados.map(p => {
       const celdas = _dias.map(d => {
         const esHoy = d === hoyStr;
@@ -654,7 +664,7 @@ function renderGrilla() {
         const badges = detsDelDia.map(det => {
           const nombre = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?';
           const nov = det.empleado_id ? _novedad(det.empleado_id, d) : null;
-          let cls = 'badge-emp' + (p.es_chef && !nov ? ' chef' : '');
+          let cls = 'badge-emp';
           let labelTxt = nombre;
           if (nov) { cls += ` novedad-${nov.tipo}`; labelTxt = `${nombre} · ${nov.tipo}`; }
           if (puedoEditar) {
@@ -695,11 +705,9 @@ function renderGrilla() {
            ondragend="dragEnd()"`
         : '';
 
-      const chefStyle = p.es_chef ? ' style="background:#f3e5f5;border-top:2px solid #9c27b0"' : '';
-      const chefColStyle = p.es_chef ? ' style="background:#e1bee7;color:#6a1b9a"' : '';
-      return `<tr ${dragAttrs}${chefStyle}>
-        <td class="col-puesto"${chefColStyle}>
-          ${puedeEditarPuestos && !p.es_chef ? '<span class="drag-handle">⠿</span>' : ''}${p.nombre}${accionesPuesto}
+      return `<tr ${dragAttrs}>
+        <td class="col-puesto">
+          ${puedeEditarPuestos ? '<span class="drag-handle">⠿</span>' : ''}${p.nombre}${accionesPuesto}
         </td>
         ${celdas}
       </tr>`;
@@ -820,23 +828,7 @@ function renderGrilla() {
       </tr>`;
     }
 
-    // Fila COMIDA DE PERSONAL
-    const comidaCeldas = _dias.map(d => {
-      const esHoy = d === hoyStr;
-      const asig = _comidaPersonal.find(c => c.fecha === d);
-      const nombre = asig ? `${asig.emp_apellido}, ${asig.emp_nombre}` : '';
-      if (puedoEditar) {
-        return `<td class="col-dia${esHoy ? ' hoy' : ''}" style="cursor:pointer;background:#fce5cd"
-          onclick="abrirModalComida('${d}')">${nombre ? `<span class="badge-franco removable" title="Cambiar" onclick="event.stopPropagation();abrirModalComida('${d}')">${nombre}</span>` : '<span style="color:#aaa;font-size:.75rem">+ Asignar</span>'}</td>`;
-      }
-      return `<td class="col-dia${esHoy ? ' hoy' : ''}" style="background:#fce5cd">${nombre}</td>`;
-    }).join('');
-    const comidaRow = `<tr>
-      <td class="col-puesto" style="background:#f6b26b;font-weight:bold;font-size:.78rem">COMIDA DE PERSONAL</td>
-      ${comidaCeldas}
-    </tr>`;
-
-    tbody.innerHTML = puestosHtml + francoRow + vacRow + novedadesHtml + comidaRow;
+    tbody.innerHTML = puestosHtml + francoRow + vacRow + novedadesHtml;
   }
 
   // Pie
@@ -873,8 +865,7 @@ function abrirModal(puestoId, fecha) {
   const asignadosEnOtro = new Set(
     _detalles
       .filter(x => x.fecha === fecha && x.puesto_id !== puestoId && !x.es_franco && x.empleado_id
-               && activePuestoIds.has(x.puesto_id)
-               && !(_puestos.find(p => p.id === x.puesto_id)?.es_chef))
+               && activePuestoIds.has(x.puesto_id))
       .map(x => x.empleado_id)
   );
   const asignadosModal = new Set(_detalles.filter(x => x.fecha === fecha && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
@@ -1090,79 +1081,6 @@ function abrirModalVacaciones(fecha) {
 
   document.getElementById('overlay-emp').classList.add('active');
   document.getElementById('modal-search').focus();
-}
-
-// ── Comida de personal ────────────────────────────────────────────────────────
-function abrirModalComida(fecha) {
-  const d = new Date(fecha + 'T12:00:00');
-  const labelDia = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
-  document.getElementById('modal-titulo').textContent = 'Comida de personal';
-  document.getElementById('modal-subtitulo').textContent = labelDia;
-  document.getElementById('modal-search').value = '';
-
-  const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
-  const actual = _comidaPersonal.find(c => c.fecha === fecha);
-
-  const lista = document.getElementById('lista-opciones');
-  lista.innerHTML = '';
-
-  // Opción quitar si ya hay asignado
-  if (actual) {
-    const oQuit = document.createElement('div');
-    oQuit.className = 'opcion vaciar-opt';
-    oQuit.textContent = '✕ Quitar asignación';
-    oQuit.onclick = () => quitarComida(fecha);
-    lista.appendChild(oQuit);
-  }
-
-  _empleados.forEach(e => {
-    const opt = document.createElement('div');
-    opt.className = 'opcion';
-    opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
-    const nov = _novedad(e.id, fecha);
-    if (nov) {
-      opt.textContent = `${e.apellido}, ${e.nombre}  ·  ${NOV_LABEL[nov.tipo] || nov.tipo}`;
-      opt.style.cssText = 'opacity:.55;font-style:italic;cursor:default;pointer-events:none;border-color:#ccc';
-    } else if (francoHoy.has(e.id)) {
-      opt.textContent = `${e.apellido}, ${e.nombre}  ·  franco`;
-      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ffc107;color:#856404';
-    } else {
-      opt.textContent = `${e.apellido}, ${e.nombre}`;
-      if (actual && actual.empleado_id === e.id) {
-        opt.style.background = '#fce5cd';
-        opt.style.fontWeight = 'bold';
-      }
-      opt.onclick = () => asignarComida(fecha, e.id);
-    }
-    lista.appendChild(opt);
-  });
-
-  document.getElementById('overlay-emp').classList.add('active');
-  document.getElementById('modal-search').focus();
-}
-
-async function asignarComida(fecha, empleadoId) {
-  cerrarModal();
-  const distId = await _asegurarDistribucion();
-  const r = await fetch(`/api/peones/semana/${distId}/comida-personal`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fecha, empleado_id: empleadoId })
-  });
-  if (!r.ok) { toast('Error al asignar comida de personal', true); return; }
-  const nuevo = await r.json();
-  _comidaPersonal = _comidaPersonal.filter(c => c.fecha !== fecha);
-  _comidaPersonal.push(nuevo);
-  renderGrilla();
-}
-
-async function quitarComida(fecha) {
-  cerrarModal();
-  if (!_distribucion) return;
-  const r = await fetch(`/api/peones/semana/${_distribucion.id}/comida-personal/${fecha}`, { method: 'DELETE' });
-  if (!r.ok) { toast('Error al quitar comida de personal', true); return; }
-  _comidaPersonal = _comidaPersonal.filter(c => c.fecha !== fecha);
-  renderGrilla();
 }
 
 async function agregarFranco(fecha, empleadoId) {
@@ -1436,12 +1354,7 @@ async function imprimirGrilla() {
                        LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
                        FD:'FRANCO DÍA', CP:'COMIDA PERSO' };
 
-  // Una fila por puesto; nombres apilados por línea (chef al final)
-  const puestosImpresion = [
-    ..._puestos.filter(p => !p.es_chef),
-    ..._puestos.filter(p => p.es_chef)
-  ];
-  const filasPuesto = puestosImpresion.map(p => {
+  const filasPuesto = _puestos.map(p => {
     const dias = Object.fromEntries(_dias.map(d => {
       const nombres = _detalles
         .filter(x => x.puesto_id === p.id && x.fecha === d && !x.es_franco && x.empleado_id)
@@ -1450,7 +1363,7 @@ async function imprimirGrilla() {
       return [d, nombres.join('<br>')];
     }));
     const vacia = !Object.values(dias).some(v => v);
-    return vacia ? null : { label: p.nombre, dias, esChef: !!p.es_chef };
+    return vacia ? null : { label: p.nombre, dias };
   }).filter(Boolean);
 
   // Una sola fila FRANCO con todos los nombres apilados por día
@@ -1475,13 +1388,6 @@ async function imprimirGrilla() {
       novByTipo[n.tipo][n.fecha].push(nombre);
   }
 
-  // Comida de personal
-  const comidaDias = Object.fromEntries(_dias.map(d => {
-    const asig = _comidaPersonal.find(c => c.fecha === d);
-    return [d, asig ? `${asig.emp_apellido || ''}, ${asig.emp_nombre || ''}`.trim().replace(/^,\s*/, '') : ''];
-  }));
-  const hayComida = Object.values(comidaDias).some(v => v);
-
   const deptNombre = document.getElementById('sel-departamento').selectedOptions[0]?.text || '';
   const turnoNombre = _distribucion.turno === 'TM' ? 'MAÑANA' : _distribucion.turno === 'TN' ? 'NOCHE' : _distribucion.turno;
   const lunes = new Date(_dias[0] + 'T00:00:00');
@@ -1494,15 +1400,13 @@ async function imprimirGrilla() {
       ${_dias.map(d => `<td>${dias[d] || ''}</td>`).join('')}
     </tr>`;
 
-  const filasHTMLPuesto = filasPuesto.map(f => fila(f.label, f.dias, f.esChef ? 'fila-chef' : '')).join('');
+  const filasHTMLPuesto = filasPuesto.map(f => fila(f.label, f.dias)).join('');
   const filaHTMLFranco = hayFranco ? fila('FRANCO', francoDias, 'fila-off') : '';
   const filasHTMLNov = Object.entries(novByTipo).map(([tipo, diasMap]) => {
     const label = NOV_LABELS[tipo];
     const dias = Object.fromEntries(_dias.map(d => [d, (diasMap[d] || []).join(', ')]));
     return fila(label, dias, `fila-nov fila-nov-${tipo.toLowerCase()}`);
   }).join('');
-  const filaHTMLComida = hayComida ? fila('COMIDA DE PERSONAL', comidaDias, 'fila-comida') : '';
-
   const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1524,10 +1428,6 @@ async function imprimirGrilla() {
   tr.fila-nov.fila-nov-v td { background: #9fc5e8; }
   tr.fila-nov.fila-nov-ilt td { background: #ffe599; }
   tr.fila-nov.fila-nov-s td { background: #ea9999; }
-  tr.fila-comida td { background: #fce5cd; }
-  tr.fila-comida td.col-puesto { background: #f6b26b; }
-  tr.fila-chef td { background: #f3e5f5; }
-  tr.fila-chef td.col-puesto { background: #e1bee7; color: #6a1b9a; }
   @page { size: legal landscape; margin: 6mm; }
   @media print { html { zoom: 0.85; } body { padding: 0; } }
 </style>
@@ -1546,7 +1446,6 @@ async function imprimirGrilla() {
     ${filasHTMLPuesto}
     ${filaHTMLFranco}
     ${filasHTMLNov}
-    ${filaHTMLComida}
   </tbody>
 </table>
 </body>
@@ -1588,9 +1487,26 @@ async function copiarSemanaAnterior() {
 
 async function confirmarDistribucion() {
   if (!_distribucion) { toast('Primero guardá alguna asignación', true); return; }
-  const deptId = parseInt(document.getElementById('sel-departamento').value);
-  if (!confirm('¿Confirmás los horarios de cocina? Esto sobreescribirá la planificación semanal para este departamento/turno.')) return;
+  if (!confirm('¿Confirmás los horarios de peones? Esto sobreescribirá la planificación semanal para este departamento/turno.')) return;
   try {
+    // Guardar francos del plan automático que no fueron quitados ni están ya en distribucion_franco
+    const asignadosEnDetalle = new Set(
+      _detalles.filter(x => x.empleado_id && !x.es_franco).map(x => `${x.empleado_id}_${x.fecha}`)
+    );
+    const francosPlanPendientes = _planBase.filter(p =>
+      p.es_franco &&
+      !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`) &&
+      !_francos.some(f => f.empleado_id === p.empleado_id && f.fecha === p.fecha) &&
+      !asignadosEnDetalle.has(`${p.empleado_id}_${p.fecha}`)
+    );
+    for (const pf of francosPlanPendientes) {
+      await fetch(`/api/peones/semana/${_distribucion.id}/franco`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empleado_id: pf.empleado_id, fecha: pf.fecha })
+      });
+    }
+
     const r = await fetch(`/api/peones/semana/${_distribucion.id}/confirmar`, { method: 'POST' });
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
@@ -1598,9 +1514,9 @@ async function confirmarDistribucion() {
       return;
     }
     await cargarGrilla();
-    toast(escribe ? 'Distribución confirmada y planificación actualizada' : 'Distribución confirmada (sin efecto en planificación)');
+    toast('Horarios confirmados y planificación actualizada');
   } catch(e) {
-    toast('Error de conexión', true);
+    toast('Error al confirmar: ' + (e.message || 'error de conexión'), true);
   }
 }
 
@@ -1611,7 +1527,6 @@ function abrirModalPuesto(puestoId = null) {
   document.getElementById('modal-puesto-titulo').textContent = puesto ? 'Editar puesto' : 'Nuevo puesto';
   document.getElementById('input-puesto-nombre').value = puesto ? puesto.nombre : '';
   document.getElementById('input-puesto-turno').value = puesto?.turno || '';
-  document.getElementById('input-puesto-chef').checked = puesto ? !!puesto.es_chef : false;
   document.getElementById('overlay-puesto').classList.add('active');
   document.getElementById('input-puesto-nombre').focus();
 }
@@ -1630,20 +1545,18 @@ async function guardarPuesto() {
     let r;
     if (_puestoEditId) {
       const p = _puestos.find(x => x.id === _puestoEditId);
-      const es_chef = document.getElementById('input-puesto-chef').checked;
       const turno = document.getElementById('input-puesto-turno').value || null;
       r = await fetch(`/api/peones/puestos/${_puestoEditId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, departamento_id: deptId, orden: p?.orden ?? orden, activo: true, es_chef, turno })
+        body: JSON.stringify({ nombre, departamento_id: deptId, orden: p?.orden ?? orden, activo: true, es_chef: false, turno })
       });
     } else {
-      const es_chef = document.getElementById('input-puesto-chef').checked;
       const turno = document.getElementById('input-puesto-turno').value || null;
       r = await fetch('/api/peones/puestos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, departamento_id: deptId, orden, activo: true, es_chef, turno })
+        body: JSON.stringify({ nombre, departamento_id: deptId, orden, activo: true, es_chef: false, turno })
       });
     }
     if (!r.ok) { toast('Error al guardar puesto', true); return; }

@@ -458,7 +458,7 @@ def create_semana(body: DistribucionIn, user=Depends(require_permiso("distribuci
             cur = conn.execute(
                 """INSERT INTO distribucion_semana
                    (departamento_id, turno, semana_inicio, estado, creado_por, creado_en)
-                   VALUES (?,?,?,'borrador',?,datetime('now'))""",
+                   VALUES (?,?,?,'borrador',?,datetime('now','localtime'))""",
                 (body.departamento_id, body.turno, lunes, uid)
             )
             return {"id": cur.lastrowid}
@@ -505,7 +505,7 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("d
             cur = conn.execute(
                 """INSERT INTO distribucion_semana
                    (departamento_id, turno, semana_inicio, estado, creado_por, creado_en)
-                   VALUES (?,?,?,'borrador',?,datetime('now'))""",
+                   VALUES (?,?,?,'borrador',?,datetime('now','localtime'))""",
                 (body.departamento_id, body.turno, str(lunes_nuevo), uid)
             )
             nueva_id = cur.lastrowid
@@ -562,7 +562,7 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("d
                 conn.execute(
                     """INSERT INTO distribucion_detalle
                        (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
-                       VALUES (?,?,?,?,0,?,?,datetime('now'))""",
+                       VALUES (?,?,?,?,0,?,?,datetime('now','localtime'))""",
                     (nueva_id, emp_id, det["puesto_id"], fecha_nueva, det["horario_id"], uid)
                 )
                 copiados_det += 1
@@ -624,13 +624,13 @@ def add_detalle(body: DetalleIn, user=Depends(require_permiso("distribucion", "e
         cur = conn.execute(
             """INSERT INTO distribucion_detalle
                (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
-               VALUES (?,?,?,?,0,?,?,datetime('now'))""",
+               VALUES (?,?,?,?,0,?,?,datetime('now','localtime'))""",
             (body.distribucion_id, body.empleado_id, body.puesto_id,
              body.fecha, body.horario_id, uid)
         )
         det_id = cur.lastrowid
         conn.execute(
-            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
             (uid, body.distribucion_id)
         )
         row = conn.execute(
@@ -678,11 +678,11 @@ def add_franco(dist_id: int, body: FrancoIn, user=Depends(require_permiso("distr
         try:
             cur = conn.execute(
                 """INSERT INTO distribucion_franco (distribucion_id, empleado_id, fecha, creado_por, creado_en)
-                   VALUES (?,?,?,?,datetime('now'))""",
+                   VALUES (?,?,?,?,datetime('now','localtime'))""",
                 (dist_id, body.empleado_id, body.fecha, uid)
             )
             conn.execute(
-                "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+                "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
                 (uid, dist_id)
             )
             return {"id": cur.lastrowid}
@@ -701,7 +701,7 @@ def delete_franco(dist_id: int, fid: int, user=Depends(require_permiso("distribu
             "DELETE FROM distribucion_franco WHERE id=? AND distribucion_id=?", (fid, dist_id)
         )
         conn.execute(
-            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
             (uid, dist_id)
         )
     return {"ok": True}
@@ -737,11 +737,11 @@ def add_vac_dist(dist_id: int, body: VacDistIn,
         conn.execute(
             """INSERT OR IGNORE INTO distribucion_vacacion
                (distribucion_id, empleado_id, fecha, creado_por, creado_en)
-               VALUES (?,?,?,?,datetime('now'))""",
+               VALUES (?,?,?,?,datetime('now','localtime'))""",
             (dist_id, body.empleado_id, body.fecha, uid)
         )
         conn.execute(
-            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
             (uid, dist_id)
         )
     return {"ok": True}
@@ -889,7 +889,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             )
 
         conn.execute(
-            "UPDATE distribucion_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE distribucion_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
             (uid, dist_id)
         )
 
@@ -909,7 +909,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             cur_fut = conn.execute(
                 """INSERT INTO distribucion_semana
                    (departamento_id, turno, semana_inicio, estado, creado_por, creado_en)
-                   VALUES (?,?,?,'borrador',?,datetime('now'))""",
+                   VALUES (?,?,?,'borrador',?,datetime('now','localtime'))""",
                 (dist["departamento_id"], dist["turno"], lunes_fut_str, uid)
             )
             dist_fut_id = cur_fut.lastrowid
@@ -922,7 +922,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                 conn.execute(
                     """INSERT INTO distribucion_detalle
                        (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
-                       VALUES (?,?,?,?,?,?,?,datetime('now'))""",
+                       VALUES (?,?,?,?,?,?,?,datetime('now','localtime'))""",
                     (dist_fut_id, det["empleado_id"], det["puesto_id"],
                      fecha_fut, det["es_franco"], det["horario_id"], uid)
                 )
@@ -933,7 +933,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                 conn.execute(
                     """INSERT OR IGNORE INTO distribucion_franco
                        (distribucion_id, empleado_id, fecha, creado_por, creado_en)
-                       VALUES (?,?,?,?,datetime('now'))""",
+                       VALUES (?,?,?,?,datetime('now','localtime'))""",
                     (dist_fut_id, fr["empleado_id"], fecha_fut, uid)
                 )
             for v in vac_staged:
@@ -943,7 +943,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                 conn.execute(
                     """INSERT OR IGNORE INTO distribucion_vacacion
                        (distribucion_id, empleado_id, fecha, creado_por, creado_en)
-                       VALUES (?,?,?,?,datetime('now'))""",
+                       VALUES (?,?,?,?,datetime('now','localtime'))""",
                     (dist_fut_id, v["empleado_id"], fecha_fut, uid)
                 )
 
@@ -963,7 +963,7 @@ def desconfirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion
         if dist["turno"] not in turnos_ok:
             raise HTTPException(403, "Sin acceso")
         conn.execute(
-            "UPDATE distribucion_semana SET estado='borrador', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE distribucion_semana SET estado='borrador', modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
             (uid, dist_id)
         )
     return {"ok": True}
@@ -996,14 +996,14 @@ def set_comida_personal(dist_id: int, body: ComidaPersonalIn,
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE distribucion_detalle SET empleado_id=?, modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+                "UPDATE distribucion_detalle SET empleado_id=?, modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
                 (body.empleado_id, str(uid), existing["id"])
             )
         else:
             conn.execute(
                 """INSERT INTO distribucion_detalle
                    (distribucion_id, empleado_id, puesto_id, fecha, es_franco, es_comida_personal, creado_por, creado_en)
-                   VALUES (?,?,NULL,?,0,1,?,datetime('now'))""",
+                   VALUES (?,?,NULL,?,0,1,?,datetime('now','localtime'))""",
                 (dist_id, body.empleado_id, body.fecha, str(uid))
             )
         row = conn.execute(

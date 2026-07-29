@@ -129,6 +129,7 @@
   .mg-tabla-wrap tbody td { padding:5px 10px; border-bottom:1px solid #f0f0f0; }
   .mg-time { width:84px; padding:4px 6px; border:1px solid #ced4da; border-radius:4px; font-size:.82rem; }
 </style>
+<script src="/static/js/date-utils.js"></script>
 </head>
 <body>
 
@@ -334,9 +335,7 @@
 <script src="/static/js/session.js"></script>
 <script src="/static/js/user-menu.js"></script>
 <script>
-function _localDateStr(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
+function _localDateStr(d = new Date()) { return ymdLocal(d); }
 async function logout() {
   await fetch('/api/auth/logout', {method:'POST'});
   location.href = '/login';

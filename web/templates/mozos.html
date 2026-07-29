@@ -260,6 +260,7 @@
   #toast.error { background: #c0392b; }
 
 </style>
+<script src="/static/js/date-utils.js"></script>
 </head>
 <body>
 
@@ -464,9 +465,7 @@ const NOV_COLORES = {
   S:   {bg:'#DA9694', txt:'#000000'},
 };
 
-function hoyISO() {
-  return new Date().toISOString().slice(0,10);
-}
+function hoyISO() { return todayLocal(); }
 
 function lunesToDate(d) {
   const dt = new Date(d);
@@ -475,9 +474,7 @@ function lunesToDate(d) {
   return dt;
 }
 
-function toISO(d) {
-  return d.toISOString().slice(0,10);
-}
+function toISO(d) { return ymdLocal(d); }
 
 function lunesDeISO(fecha) {
   const d = new Date(fecha + 'T12:00:00');
@@ -1029,10 +1026,10 @@ function badgeHtml(cls, txt) {
 }
 
 // Leyenda "Confirmado por <nombre> · <fecha> <hora>" a partir de modificado_por/en.
-// modificado_en se guarda en UTC (datetime('now')); se convierte a hora local.
+// modificado_en se guarda en hora local (datetime('now','localtime')).
 function confLeyenda(sem) {
   if (!sem || !sem.modificado_en) return '';
-  const dt = new Date(String(sem.modificado_en).replace(' ', 'T') + 'Z');
+  const dt = new Date(String(sem.modificado_en).replace(' ', 'T'));
   if (isNaN(dt.getTime())) return '';
   const p = n => String(n).padStart(2, '0');
   const fecha = `${p(dt.getDate())}/${p(dt.getMonth() + 1)}/${dt.getFullYear()}`;

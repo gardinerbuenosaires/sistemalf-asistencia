@@ -213,6 +213,7 @@
   #toast.show { opacity: 1; }
   #toast.error { background: #c0392b; }
 </style>
+<script src="/static/js/date-utils.js"></script>
 </head>
 <body>
 
@@ -391,10 +392,10 @@ function lunes(fecha) {
   const d = new Date(fecha + 'T00:00:00');
   const day = d.getDay();
   d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
-  return d.toISOString().slice(0, 10);
+  return ymdLocal(d);
 }
 
-function hoy() { return new Date().toISOString().slice(0, 10); }
+function hoy() { return todayLocal(); }
 
 function formatSemana(lunesStr) {
   const d  = new Date(lunesStr + 'T00:00:00');
@@ -435,11 +436,11 @@ function onDeptChange() {
 // ── Navegación ─────────────────────────────────────────────────────────────
 function semanaAnterior() {
   const d = new Date(_semanaInicio + 'T00:00:00'); d.setDate(d.getDate() - 7);
-  _semanaInicio = d.toISOString().slice(0, 10); cargar();
+  _semanaInicio = ymdLocal(d); cargar();
 }
 function semanaProxima() {
   const d = new Date(_semanaInicio + 'T00:00:00'); d.setDate(d.getDate() + 7);
-  _semanaInicio = d.toISOString().slice(0, 10); cargar();
+  _semanaInicio = ymdLocal(d); cargar();
 }
 function irAHoy() { _semanaInicio = lunes(hoy()); cargar(); }
 
@@ -465,10 +466,10 @@ function badgeHtml(cls, txt) {
 }
 
 // Leyenda "Confirmado por <nombre> · <fecha> <hora>" a partir de modificado_por/en.
-// modificado_en se guarda en UTC (datetime('now')); se convierte a hora local.
+// modificado_en se guarda en hora local (datetime('now','localtime')).
 function confLeyenda(sem) {
   if (!sem || !sem.modificado_en) return '';
-  const dt = new Date(String(sem.modificado_en).replace(' ', 'T') + 'Z');
+  const dt = new Date(String(sem.modificado_en).replace(' ', 'T'));
   if (isNaN(dt.getTime())) return '';
   const p = n => String(n).padStart(2, '0');
   const fecha = `${p(dt.getDate())}/${p(dt.getMonth() + 1)}/${dt.getFullYear()}`;
@@ -733,7 +734,7 @@ function lunesDeStr(fechaStr) {
   const d = new Date(fechaStr + 'T00:00:00');
   const day = d.getDay();
   d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
-  return d.toISOString().slice(0, 10);
+  return ymdLocal(d);
 }
 
 function abrirModal(eid, fecha, turno) {
@@ -819,7 +820,7 @@ async function _guardarRangoBar(valor) {
   const fechas = [];
   let d = new Date(desdeVal + 'T00:00:00');
   while (true) {
-    const iso = d.toISOString().slice(0, 10);
+    const iso = ymdLocal(d);
     fechas.push(iso);
     if (iso >= hastaVal) break;
     d.setDate(d.getDate() + 1);
@@ -882,7 +883,7 @@ async function _confirmar(semIdx) {
   d.setDate(d.getDate() + semIdx * 7);
   const r = await fetch('/api/barmans/confirmar-por-fecha', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ departamento_id: _deptId, semana_inicio: d.toISOString().slice(0, 10) })
+    body: JSON.stringify({ departamento_id: _deptId, semana_inicio: ymdLocal(d) })
   });
   if (r.status === 401) { location.href = '/login'; return false; }
   if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.detail || 'Error', true); return false; }

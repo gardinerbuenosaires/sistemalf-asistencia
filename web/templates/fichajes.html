@@ -49,6 +49,7 @@
   .nav-dropdown a:hover { background: #f4f6f9; }
   [data-perm] { display: none !important; }
 </style>
+<script src="/static/js/date-utils.js"></script>
 </head>
 <body>
 
@@ -159,9 +160,7 @@ async function _loadPerms() {
 }
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }
 
-function _localDateStr(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
+function _localDateStr(d = new Date()) { return ymdLocal(d); }
 const today = _localDateStr();
 
 async function logout() {

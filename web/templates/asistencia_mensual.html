@@ -386,6 +386,7 @@ table.parking-grid td.p-empty { color: #ddd; font-size: .78rem; }
 table.parking-grid th.col-hoy { background: #e67e22 !important; }
 table.parking-grid td.col-hoy { background: #fffde7 !important; }
 </style>
+<script src="/static/js/date-utils.js"></script>
 </head>
 <body>
 
@@ -1089,7 +1090,7 @@ async function cargarFichajesParking() {
   const fechaStr = `${anio}-${mm}-${dd}`;
   // Fecha siguiente para capturar fichajes de madrugada (ej: TN que termina a las 02:00)
   const nextDate = new Date(anio, mes - 1, dia + 1);
-  const nextStr = nextDate.toISOString().split('T')[0];
+  const nextStr = ymdLocal(nextDate);
 
   const listaEl = document.getElementById('pk-lista');
   listaEl.innerHTML = '<span style="color:#aaa;font-size:.85rem">Cargando...</span>';
@@ -1784,10 +1785,7 @@ function escHtml(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function _localDateStr() {
-  const h = new Date();
-  return `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(h.getDate()).padStart(2,'0')}`;
-}
+function _localDateStr() { return todayLocal(); }
 
 // ── Modal de edición de novedad ───────────────────────────────────────────────
 function modalTabPlani(tab) {
@@ -2038,7 +2036,7 @@ async function guardarNovedad() {
   let d = new Date(desdeVal + 'T00:00:00');
   const dFin = new Date(hastaVal + 'T00:00:00');
   while (d <= dFin) {
-    fechas.push(d.toISOString().slice(0, 10));
+    fechas.push(ymdLocal(d));
     d.setDate(d.getDate() + 1);
   }
 

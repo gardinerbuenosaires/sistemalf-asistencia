@@ -308,7 +308,7 @@ def set_celda(body: CeldaIn, user=Depends(require_permiso("mozos", "editar"))):
         if not semana:
             cur = conn.execute(
                 """INSERT INTO mozos_semana (departamento_id, semana_inicio, estado, creado_por, creado_en)
-                   VALUES (?,?,'borrador',?,datetime('now'))""",
+                   VALUES (?,?,'borrador',?,datetime('now','localtime'))""",
                 (body.departamento_id, lunes, uid)
             )
             semana_id = cur.lastrowid
@@ -318,7 +318,7 @@ def set_celda(body: CeldaIn, user=Depends(require_permiso("mozos", "editar"))):
             semana_id = semana["id"]
 
         conn.execute(
-            "UPDATE mozos_semana SET modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE mozos_semana SET modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
             (uid, semana_id)
         )
 
@@ -330,7 +330,7 @@ def set_celda(body: CeldaIn, user=Depends(require_permiso("mozos", "editar"))):
         else:
             conn.execute(
                 """INSERT INTO mozos_detalle (semana_id, empleado_id, fecha, turno, estado, horario_id, creado_por, creado_en)
-                   VALUES (?,?,?,?,?,?,?,datetime('now'))
+                   VALUES (?,?,?,?,?,?,?,datetime('now','localtime'))
                    ON CONFLICT(semana_id, empleado_id, fecha, turno)
                    DO UPDATE SET estado=excluded.estado, horario_id=excluded.horario_id, creado_por=excluded.creado_por""",
                 (semana_id, body.empleado_id, body.fecha, body.turno, body.estado, body.horario_id, uid)
@@ -445,7 +445,7 @@ def _ejecutar_confirmacion(conn, semana, uid: int):
                         (emp_id, dia)
                     )
     conn.execute(
-        "UPDATE mozos_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+        "UPDATE mozos_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
         (uid, semana_id)
     )
 
@@ -488,7 +488,7 @@ def confirmar_por_fecha(body: ConfirmarPorFechaIn, user=Depends(require_permiso(
         if not semana:
             cur = conn.execute(
                 """INSERT INTO mozos_semana (departamento_id, semana_inicio, estado, creado_por, creado_en)
-                   VALUES (?,?,'borrador',?,datetime('now'))""",
+                   VALUES (?,?,'borrador',?,datetime('now','localtime'))""",
                 (body.departamento_id, lunes, uid)
             )
             semana = conn.execute("SELECT * FROM mozos_semana WHERE id=?", (cur.lastrowid,)).fetchone()
@@ -525,7 +525,7 @@ def desconfirmar_semana(semana_id: int, user=Depends(require_permiso("mozos", "c
                     [lunes_str, domingo_str] + emp_ids
                 )
         conn.execute(
-            "UPDATE mozos_semana SET estado='borrador', modificado_por=?, modificado_en=datetime('now') WHERE id=?",
+            "UPDATE mozos_semana SET estado='borrador', modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
             (uid, semana_id)
         )
     return {"ok": True}

@@ -168,6 +168,7 @@
   #pl-estado.pl-error  { color: #e74c3c; }
 
 </style>
+<script src="/static/js/date-utils.js"></script>
 </head>
 <body>
 
@@ -343,9 +344,7 @@
 <script src="/static/js/session.js"></script>
 <script src="/static/js/user-menu.js"></script>
 <script>
-function _localDateStr(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
+function _localDateStr(d = new Date()) { return ymdLocal(d); }
 const DIAS_NOMBRES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const _fmtF = f => f ? f.split('-').reverse().join('-') : '';
 

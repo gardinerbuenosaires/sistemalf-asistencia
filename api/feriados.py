@@ -75,6 +75,10 @@ def importar_feriados(anio: int, _user=Depends(require_permiso("calendarios", "e
         fecha  = (f.get("fecha") or "").strip()
         nombre = (f.get("nombre") or "Feriado").strip()
         tipo_raw = (f.get("tipo") or "").lower()
+        # Los "no laborables" y "puente" (días no laborables con fines
+        # turísticos) NO son feriados obligatorios: se ignoran.
+        if "no laborable" in tipo_raw or "puente" in tipo_raw:
+            continue
         tipo = "provincial" if "provincial" in tipo_raw else "nacional"
         if fecha:
             api_fechas[fecha] = (nombre, tipo)

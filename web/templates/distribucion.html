@@ -1454,7 +1454,10 @@ function abrirModalPase(tipo, fecha) {
   const turnoActual = document.getElementById('sel-turno').value;
   const deptId = document.getElementById('sel-departamento').value;
   const dept = _misAccesos.departamentos.find(d => String(d.id) === deptId);
-  const otros = (dept && dept.turnos ? dept.turnos : ['TM','TN','CO']).filter(t => t !== turnoActual);
+  // Destino = turnos REALES del depto (no el scope del chef): un chef limitado a su
+  // turno igual puede mandar un cocinero a otro turno del departamento.
+  const todos = (dept && dept.turnos_todos && dept.turnos_todos.length) ? dept.turnos_todos : ['TM','TN','CO'];
+  const otros = todos.filter(t => t !== turnoActual);
   if (!otros.length) { toast('No hay otro turno para asignar', true); return; }
   _paseCtx = { tipo, fecha };
 

@@ -87,6 +87,30 @@ def _scope_turnos(conn, user: dict, departamento_id: int) -> list[str]:
     return [r["turno"] for r in rows]
 
 
+def _turnos_departamento(conn, departamento_id: int) -> list[str]:
+    """Turnos REALES que opera el depto (destinos posibles de cambio/doble turno),
+    independientes del scope del usuario. Un chef limitado a su turno igual puede
+    mandar un cocinero a otro turno del depto."""
+    turnos = {r["turno"] for r in conn.execute(
+        "SELECT DISTINCT turno FROM distribucion_semana WHERE departamento_id=?",
+        (departamento_id,)
+    ).fetchall()}
+    if not turnos:  # depto sin distribuciones aún: caer a los turnos configurados
+        dep = conn.execute(
+            "SELECT horario_tm_id, horario_tn_id, horario_cortado_id FROM departamentos WHERE id=?",
+            (departamento_id,)
+        ).fetchone()
+        if dep:
+            if dep["horario_tm_id"]:
+                turnos.add("TM")
+            if dep["horario_tn_id"]:
+                turnos.add("TN")
+            if dep["horario_cortado_id"]:
+                turnos.add("CO")
+    orden = {"TM": 0, "TN": 1, "CO": 2}
+    return sorted(turnos, key=lambda t: orden.get(t, 9))
+
+
 def _vac_balance_bulk(conn, emp_ids: list[int]) -> dict[int, float]:
     """Remaining vacation days (current period) for a list of employee IDs."""
     if not emp_ids:
@@ -1231,7 +1255,8 @@ def get_mis_accesos(user=Depends(require_permiso("distribucion", "ver"))):
         result = []
         for d in depts:
             turnos = _scope_turnos(conn, user, d["id"])
-            result.append({**dict(d), "turnos": turnos})
+            result.append({**dict(d), "turnos": turnos,
+                           "turnos_todos": _turnos_departamento(conn, d["id"])})
 
     return {"departamentos": result}
 

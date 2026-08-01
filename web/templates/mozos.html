@@ -68,7 +68,7 @@
     width: 38px; min-width: 38px; max-width: 38px; padding: 0;
   }
   /* Separadores visuales */
-  table.mozos .dia-sep { border-left: 2px solid #7f8c8d !important; }
+  table.mozos .dia-sep { border-left: 3px solid #4a5560 !important; }
   table.mozos .hoy-col { background: #fffde7; }
   table.mozos thead th.hoy-col { background: #f39c12 !important; }
   table.mozos thead th.feriado { background: #7d3c27 !important; }
@@ -112,9 +112,10 @@
   tr.tr-grupo.dia     td.sem2 { background: #145220; }
   tr.tr-grupo.noche   td.sem2 { background: #142d52; }
   /* Etiqueta/subgrupo dentro de cortados (más tenue que el header de grupo) */
-  tr.tr-etiqueta td { background: #efe3d5; color: #7f4f24; font-weight: bold;
+  tr.tr-etiqueta td { background: #9fc5e8; color: #000; font-weight: bold;
     font-size: .62rem; padding: 1px 6px; letter-spacing: .04em; text-align: center; }
-  tr.tr-etiqueta td.td-emp { text-align: left; }
+  tr.tr-etiqueta td.td-emp { text-align: left; background: #9fc5e8; }
+  table.mozos tr.tr-etiqueta:hover td.td-emp { background: #9fc5e8; }
 
   /* Celdas de estado */
   table.mozos td.celda { width: 28px; min-width: 28px; max-width: 28px; height: 22px;
@@ -123,6 +124,9 @@
   table.mozos td.celda:hover { filter: brightness(.88); }
   table.mozos td.celda.bloqueada { cursor: default; filter: none; opacity: .7; }
   table.mozos td.celda.confirmada { cursor: default; }
+  /* Días hasta hoy: no editables (la asistencia sale de los fichajes) */
+  table.mozos td.celda-pasado { cursor: not-allowed; filter: grayscale(.55) opacity(.6); }
+  table.mozos td.celda-pasado:hover { filter: grayscale(.55) opacity(.6); }
 
   table.mozos td.celda-F  { background: #27ae60; color: #ffffff; }
   table.mozos td.celda-P  { background: #f0fff0; color: #1b5e20; }
@@ -180,7 +184,7 @@
 
     /* Reset layout de página */
     body { height: auto !important; overflow: visible !important; display: block !important; background: white !important; }
-    header, .toolbar, .nomenclatura, .resumen-wrap.sem2, .resumen-sep { display: none !important; }
+    header, .toolbar, .nomenclatura, .resumen-wrap.sem2, .resumen-sep, #leyenda-pasado { display: none !important; }
     main { overflow: visible !important; flex: none !important; display: block !important; padding: 0 !important; }
     .tabla-wrap { overflow: visible !important; flex: none !important; min-height: auto !important;
       height: auto !important; border-radius: 0 !important; box-shadow: none !important; }
@@ -351,6 +355,10 @@
     <button id="btn-excluir" class="btn" style="background:#7f8c8d;color:white" data-perm="mozos:editar" onclick="abrirExcluir()" title="Configurar empleados excluidos del conteo">Excluir del conteo</button>
     <button id="btn-print" class="btn" style="background:#546e7a;color:white;display:none" onclick="imprimirMozos()" title="Imprimir semana 1">⎙ Imprimir S1</button>
   </div>
+</div>
+
+<div id="leyenda-pasado" style="display:none;font-size:.72rem;color:#888;padding:3px 14px;align-items:center;gap:6px">
+  🔒 Los días hasta hoy no se editan — la asistencia sale de los fichajes. Los horarios aplican desde mañana.
 </div>
 
 <!-- Modal excluir del conteo -->
@@ -642,6 +650,8 @@ function badgeEstado(s) {
 function renderGrilla() {
   const puedeConfirmar = canDo('mozos', 'confirmar');
   const hoy = hoyISO();
+  const legPas = document.getElementById('leyenda-pasado');
+  if (legPas) legPas.style.display = (_dias || []).some(d => d <= hoy) ? 'flex' : 'none';
 
   // Badge y botones globales (ambas semanas juntas)
   const s1 = _semanas[0], s2 = _semanas[1];
@@ -733,7 +743,8 @@ function renderGrilla() {
         ['TM','TN'].forEach((turno, ti) => {
           const semIdx    = di < 7 ? 0 : 1;
           const confirmado = _semanas[semIdx] && _semanas[semIdx].estado === 'confirmado';
-          const puedoEditar = canDo('mozos', 'editar') && !confirmado && !esFechaCerrada(fecha);
+          const esPasado = fecha <= hoy;   // días hasta hoy: no editables (asistencia sale de fichajes)
+          const puedoEditar = canDo('mozos', 'editar') && !confirmado && !esFechaCerrada(fecha) && !esPasado;
           const esSep = di > 0 && di !== 7 && ti === 0;
           const esHoy = fecha === hoy;
           const nov = getNovedad(emp.id, fecha);
@@ -748,6 +759,7 @@ function renderGrilla() {
           const borderR = isLastCol  ? ` ${ncState}-r` : '';
           const sepCls = esSep ? ' dia-sep' : '';
           let cls = `celda${sepCls}${esHoy?' hoy-col':''}${esFeriado?' celda-feriado':''}${esNc}${borderL}${borderR}`;
+          if (esPasado && !confirmado) cls += ' celda-pasado';
           let label = '';
           let cellStyle = '';
           let bloqueada = false;
@@ -899,6 +911,7 @@ let _novCell    = null;
 // ── Selector de horario por día (horario primero) ─────────────────────────────
 function abrirPopup(empId, fecha, turno) {
   if (_guardando) return;
+  if (fecha <= hoyISO()) { toast('Los días hasta hoy no se editan — la asistencia sale de los fichajes', true); return; }
   _horDia = { empId, fecha, turno };
   _horVerTodos = false;
 
@@ -1200,10 +1213,15 @@ function semanaCtrl(idx, confirmado, cerrada) {
       ${ley ? `<div style="font-size:.72rem;color:#777;text-align:center">${ley}</div>` : ''}
     </div>`;
   }
+  const ultimoDia = (_dias || [])[idx * 7 + 6];   // domingo de esa semana
+  const semanaPasada = ultimoDia && ultimoDia <= hoyISO();
+  const btnConfirmar = semanaPasada
+    ? `<button class="btn btn-confirmar" style="padding:4px 10px;font-size:.78rem" disabled title="Semana ya transcurrida — la asistencia sale de los fichajes">Confirmar</button>`
+    : `<button class="btn btn-confirmar" style="padding:4px 10px;font-size:.78rem" onclick="confirmarIdx(${idx})">Confirmar</button>`;
   return `<span style="display:flex;align-items:center;gap:5px">
     <span style="font-size:.78rem;color:#888">${label}:</span>
     ${badgeHtml('badge-borrador', 'Borrador')}
-    <button class="btn btn-confirmar" style="padding:4px 10px;font-size:.78rem" onclick="confirmarIdx(${idx})">Confirmar</button>
+    ${btnConfirmar}
   </span>`;
 }
 
@@ -1211,6 +1229,10 @@ function semanaCtrl(idx, confirmado, cerrada) {
 async function confirmarIdx(idx) {
   const s = _semanas[idx];
   const label = `Semana ${idx + 1}`;
+  const ultimoDia = (_dias || [])[idx * 7 + 6];
+  if (ultimoDia && ultimoDia <= hoyISO()) {
+    toast('Semana ya transcurrida — no hay días futuros para planificar', true); return;
+  }
   if (!confirm(`¿Confirmar ${label}? Se escribirá la planificación.`)) return;
   try {
     let r;

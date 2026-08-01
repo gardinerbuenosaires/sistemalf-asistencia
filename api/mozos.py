@@ -500,6 +500,7 @@ def _ejecutar_confirmacion(conn, semana, uid: int):
     ).fetchall()
     lunes_str = semana["semana_inicio"]
     domingo_str = str(date.fromisoformat(lunes_str) + timedelta(days=6))
+    hoy_str = str(date.today())  # los horarios aplican solo a futuro (> hoy)
     cargo_ids = [r["id"] for r in conn.execute(
         "SELECT id FROM cargos WHERE departamento_id=?", (semana["departamento_id"],)
     ).fetchall()]
@@ -545,7 +546,8 @@ def _ejecutar_confirmacion(conn, semana, uid: int):
         ).fetchall()
         ids_borrar = [r["id"] for r in all_plan
                       if (r["empleado_id"], r["fecha"]) in dias_a_tocar
-                      and (r["empleado_id"], r["fecha"]) not in bloqueantes]
+                      and (r["empleado_id"], r["fecha"]) not in bloqueantes
+                      and r["fecha"] > hoy_str]
         if ids_borrar:
             ph2 = ",".join("?" * len(ids_borrar))
             conn.execute(f"DELETE FROM planificacion WHERE id IN ({ph2})", ids_borrar)
@@ -553,6 +555,8 @@ def _ejecutar_confirmacion(conn, semana, uid: int):
         dias_semana = [str(lunes_dt + timedelta(days=i)) for i in range(7)]
         for emp_id in emp_ids:
             for dia in dias_semana:
+                if dia <= hoy_str:  # no modificar planificación de días ya transcurridos
+                    continue
                 if (emp_id, dia) in bloqueantes:
                     continue
                 if (emp_id, dia) not in estado_dia:

@@ -726,10 +726,6 @@ function renderGrilla() {
     }
   });
 
-  // Mapa inverso emp.id → grupo (para inferir bloques en plan_base)
-  const empGroup = {};
-  Object.entries(_grupos).forEach(([g, emps]) => emps.forEach(e => { empGroup[e.id] = g; }));
-
   // ── Cuerpo ──
   let html = '';
   _ordenMozos.forEach(emp => {
@@ -827,6 +823,8 @@ function renderGrilla() {
   const counts = {};
   _detalles.forEach(d => {
     if (EXCLUIR_CONTEO.has(d.empleado_id)) return;
+    const nv = getNovedad(d.empleado_id, d.fecha);
+    if (nv && NOV_BLOQUEA.has(nv.tipo)) return;   // en novedad (V/E/Lic…) no cuenta como presente
     if (d.estado === 'P' || d.estado === 'FT') {
       const k = `${d.fecha}_${d.turno}`;
       counts[k] = (counts[k] || 0) + 1;
@@ -839,7 +837,9 @@ function renderGrilla() {
     const empId = parseInt(key.slice(0, sep));
     if (EXCLUIR_CONTEO.has(empId)) return;
     const fecha = key.slice(sep + 1);
-    const g = empGroup[parseInt(empId)] || 'DIA';
+    const nv = getNovedad(empId, fecha);
+    if (nv && NOV_BLOQUEA.has(nv.tipo)) return;   // en novedad (V/E/Lic…) no cuenta como presente
+    const g = base.grupo || 'DIA';   // grupo REAL de ese día (no el dominante), igual que la celda
     const hasDetalleTM = _detalles.some(d => d.empleado_id === parseInt(empId) && d.fecha === fecha && d.turno === 'TM');
     const hasDetalleTN = _detalles.some(d => d.empleado_id === parseInt(empId) && d.fecha === fecha && d.turno === 'TN');
     if (g !== 'NOCHE' && !hasDetalleTM) counts[`${fecha}_TM`] = (counts[`${fecha}_TM`] || 0) + 1;

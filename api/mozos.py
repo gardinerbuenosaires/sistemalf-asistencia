@@ -76,12 +76,68 @@ def set_usa_mozos(dept_id: int, body: UsaMozosIn,
 # ── Horarios (lista simple para override) ─────────────────────────────────────
 
 @router.get("/horarios-lista")
-def get_horarios_lista(_user=Depends(require_permiso("mozos", "ver"))):
+def get_horarios_lista(dept_id: Optional[int] = None,
+                       _user=Depends(require_permiso("mozos", "ver"))):
+    """Horarios para el selector 'horario primero'.
+    Devuelve por cada horario su grupo (DIA/NOCHE/CORTADO) y las celdas de la grilla
+    que pinta (TM y/o TN), más un flag 'frecuente' (default del depto o usado por sus
+    mozos en los últimos 150 días) para acortar la lista del selector."""
     with db_session() as conn:
+        defaults = set()
+        usados: dict = {}
+        if dept_id:
+            dc = conn.execute(
+                "SELECT horario_tm_id, horario_tn_id, horario_cortado_id FROM departamentos WHERE id=?",
+                (dept_id,)
+            ).fetchone()
+            if dc:
+                for k in ("horario_tm_id", "horario_tn_id", "horario_cortado_id"):
+                    if dc[k]:
+                        defaults.add(dc[k])
+            for r in conn.execute(
+                """SELECT p.horario_id, COUNT(*) AS c
+                   FROM planificacion p
+                   JOIN empleados e ON e.id = p.empleado_id
+                   JOIN cargos cg ON cg.id = e.cargo_id
+                   WHERE cg.departamento_id = ? AND p.horario_id IS NOT NULL
+                     AND p.fecha >= date('now','localtime','-150 days')
+                   GROUP BY p.horario_id""",
+                (dept_id,)
+            ).fetchall():
+                usados[r["horario_id"]] = r["c"]
+
         rows = conn.execute(
-            "SELECT id, nombre FROM horarios ORDER BY nombre"
+            """SELECT h.id, h.nombre, h.tipo, t.nombre AS turno,
+                   (SELECT COUNT(*) FROM horarios_bloques hb
+                     WHERE hb.horario_id=h.id AND hb.bloque=1 AND hb.aplica=1) AS b1,
+                   (SELECT COUNT(*) FROM horarios_bloques hb
+                     WHERE hb.horario_id=h.id AND hb.bloque=2 AND hb.aplica=1) AS b2
+               FROM horarios h LEFT JOIN turnos t ON t.id = h.turno_id
+               WHERE h.activo=1 ORDER BY h.nombre"""
         ).fetchall()
-    return [dict(r) for r in rows]
+
+    out = []
+    for r in rows:
+        b1, b2 = bool(r["b1"]), bool(r["b2"])
+        tn = (r["turno"] or "").lower()
+        if r["tipo"] == "cortado":
+            if b1 and b2:
+                grupo, cells = "CORTADO", ["TM", "TN"]
+            elif b2:
+                grupo, cells = "NOCHE", ["TN"]
+            else:
+                grupo, cells = "DIA", ["TM"]
+        elif "noche" in tn or "madrugada" in tn:
+            grupo, cells = "NOCHE", ["TN"]
+        else:
+            grupo, cells = "DIA", ["TM"]
+        out.append({
+            "id": r["id"], "nombre": r["nombre"], "grupo": grupo, "cells": cells,
+            "frecuente": (r["id"] in defaults) or (r["id"] in usados),
+            "uso": usados.get(r["id"], 0),
+        })
+    out.sort(key=lambda x: (0 if x["frecuente"] else 1, -x["uso"], x["nombre"]))
+    return out
 
 
 # ── Departamentos accesibles ───────────────────────────────────────────────────
@@ -176,6 +232,44 @@ def get_semana(departamento_id: int, semana_inicio: str,
                 else:
                     grupo_emp[r["empleado_id"]] = "DIA"
 
+        # Grupo REAL por bloques del horario dominante (para reubicar los medio turnos
+        # de forma robusta, sin depender del texto de la etiqueta): un cortado con un
+        # solo bloque aplicado es en realidad DIA (bloque 1) o NOCHE (bloque 2).
+        grupo_real = {}
+        if emp_ids:
+            ph = ",".join("?" * len(emp_ids))
+            gr_rows = conn.execute(
+                f"""WITH freq AS (
+                        SELECT p.empleado_id, p.horario_id, COUNT(*) AS cnt,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY p.empleado_id ORDER BY COUNT(*) DESC
+                               ) AS rn
+                        FROM planificacion p
+                        WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
+                          AND p.empleado_id IN ({ph})
+                        GROUP BY p.empleado_id, p.horario_id
+                    )
+                    SELECT f.empleado_id,
+                        CASE
+                            WHEN lower(COALESCE(t.nombre,'')) LIKE '%noche%'
+                              OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%' THEN 'NOCHE'
+                            WHEN h.tipo = 'cortado' THEN
+                                CASE
+                                    WHEN EXISTS(SELECT 1 FROM horarios_bloques hb WHERE hb.horario_id=h.id AND hb.bloque=1 AND hb.aplica=1)
+                                     AND EXISTS(SELECT 1 FROM horarios_bloques hb WHERE hb.horario_id=h.id AND hb.bloque=2 AND hb.aplica=1) THEN 'AMBOS'
+                                    WHEN EXISTS(SELECT 1 FROM horarios_bloques hb WHERE hb.horario_id=h.id AND hb.bloque=2 AND hb.aplica=1) THEN 'NOCHE'
+                                    ELSE 'DIA'
+                                END
+                            ELSE 'DIA'
+                        END AS grupo_real
+                    FROM freq f
+                    JOIN horarios h ON h.id = f.horario_id
+                    LEFT JOIN turnos t ON t.id = h.turno_id
+                    WHERE f.rn = 1""",
+                [fecha_desde, str(lunes)] + emp_ids
+            ).fetchall()
+            grupo_real = {r["empleado_id"]: r["grupo_real"] for r in gr_rows}
+
         novedades = []
         if emp_ids:
             ph = ",".join("?" * len(emp_ids))
@@ -206,7 +300,16 @@ def get_semana(departamento_id: int, semana_inicio: str,
                 f"""SELECT p.empleado_id, p.fecha, p.es_franco,
                            CASE
                                WHEN p.es_franco = 1 THEN 'AMBOS'
-                               WHEN h.tipo = 'cortado' THEN 'AMBOS'
+                               WHEN h.tipo = 'cortado' THEN
+                                   CASE
+                                       WHEN EXISTS(SELECT 1 FROM horarios_bloques hb
+                                                   WHERE hb.horario_id=h.id AND hb.bloque=1 AND hb.aplica=1)
+                                        AND EXISTS(SELECT 1 FROM horarios_bloques hb
+                                                   WHERE hb.horario_id=h.id AND hb.bloque=2 AND hb.aplica=1) THEN 'AMBOS'
+                                       WHEN EXISTS(SELECT 1 FROM horarios_bloques hb
+                                                   WHERE hb.horario_id=h.id AND hb.bloque=2 AND hb.aplica=1) THEN 'NOCHE'
+                                       ELSE 'DIA'
+                                   END
                                WHEN lower(COALESCE(t.nombre,'')) LIKE '%noche%'
                                  OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%' THEN 'NOCHE'
                                ELSE 'DIA'
@@ -257,15 +360,64 @@ def get_semana(departamento_id: int, semana_inicio: str,
         sem1_dict = _sem_dict(semana1)
         sem2_dict = _sem_dict(semana2)
 
-    # Agrupar empleados — misma lógica que planilla mensual
+        # Orden manual de la planilla mensual (grupos CO, TM, TN en ese orden)
+        orden_planilla = {}
+        for g in ("CO", "TM", "TN"):
+            orden_planilla[g] = [dict(r) for r in conn.execute(
+                "SELECT empleado_id, etiqueta FROM planilla_orden WHERE grupo=? ORDER BY posicion", (g,)
+            ).fetchall()]
+
+    # Agrupar empleados por turno (para presencia/estilos internos)
     grupos: dict[str, list] = {g: [] for g in GRUPOS_ORDEN}
     for e in empleados:
         g = grupo_emp.get(e["id"], "DIA")
         grupos[g].append(dict(e))
 
+    # Lista única de mozos, ordenada como en la planilla mensual (CO → TM → TN),
+    # filtrando SOLO a los mozos del roster y colgando cada etiqueta del primer mozo real.
+    # Los subgrupos "Medio Turno Mañana" / "Medio Turno Noche" (que están en CO pero son
+    # de día/noche) se difieren y se ubican debajo de TM (día) y TN (noche) respectivamente.
+    mozo_map = {e["id"]: dict(e) for e in empleados}
+    orden_mozos, usados = [], set()
+    defer_manana, defer_noche = [], []
+
+    def _emit(g, diferir=False):
+        pend = None
+        for r in orden_planilla[g]:
+            if r["empleado_id"] is None:
+                pend = r["etiqueta"]
+            elif r["empleado_id"] in mozo_map and r["empleado_id"] not in usados:
+                m = mozo_map[r["empleado_id"]]
+                m["_etiqueta"] = pend
+                pend = None
+                usados.add(r["empleado_id"])
+                # Reubicación robusta: se decide por el horario real del mozo
+                # (grupo_real), no por el texto de la etiqueta.
+                gr = grupo_real.get(r["empleado_id"], "AMBOS")
+                if diferir and gr == "DIA":
+                    defer_manana.append(m)
+                elif diferir and gr == "NOCHE":
+                    defer_noche.append(m)
+                else:
+                    orden_mozos.append(m)
+
+    _emit("CO", diferir=True)   # cortados reales quedan arriba; medio turnos se difieren
+    _emit("TM")                 # mozos de día
+    orden_mozos.extend(defer_manana)   # medio turno mañana, debajo de día
+    _emit("TN")                 # mozos de noche
+    orden_mozos.extend(defer_noche)    # medio turno noche, debajo de noche
+    # Mozos que no están en ningún orden de la planilla → al final (alfabético)
+    for e in empleados:
+        if e["id"] not in usados:
+            m = mozo_map[e["id"]]
+            m["_etiqueta"] = None
+            orden_mozos.append(m)
+            usados.add(e["id"])
+
     return {
         "semanas": [sem1_dict, sem2_dict],
         "grupos": grupos,
+        "orden_mozos": orden_mozos,
         "detalles": [dict(r) for r in detalles],
         "novedades": [dict(r) for r in novedades],
         "plan_base": plan_base,
@@ -424,8 +576,11 @@ def _ejecutar_confirmacion(conn, semana, uid: int):
                 tn_trabaja = tn in ('P', 'FT')
                 trabaja = tm_trabaja or tn_trabaja
                 if trabaja:
+                    # "Horario primero": se usa el horario elegido y guardado por celda.
+                    # Si falta (datos viejos con solo presencia), se cae al default del depto.
                     if tm_trabaja and tn_trabaja:
-                        horario_id = horario_ct  # cortado: siempre usa horario del depto, ignora overrides
+                        horario_id = (estados.get('TM_horario')
+                                      or estados.get('TN_horario') or horario_ct)
                     elif tm_trabaja:
                         horario_id = estados.get('TM_horario') or horario_tm
                     else:

@@ -20,6 +20,7 @@ class DepartamentoIn(BaseModel):
     horario_tm_id: int | None = None
     horario_tn_id: int | None = None
     horario_cortado_id: int | None = None
+    horario_doble_id: int | None = None
 
 
 class CargoUpdate(BaseModel):
@@ -102,7 +103,7 @@ def list_departamentos(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute(
             """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans, usa_peones, escribe_planificacion,
-                      horario_tm_id, horario_tn_id, horario_cortado_id
+                      horario_tm_id, horario_tn_id, horario_cortado_id, horario_doble_id
                FROM departamentos ORDER BY nombre"""
         ).fetchall()
     return [dict(r) for r in rows]
@@ -125,7 +126,7 @@ def create_departamento(data: DepartamentoIn, _user=Depends(require_permiso("emp
             )
             row = conn.execute(
                 """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans, usa_peones,
-                          horario_tm_id, horario_tn_id, horario_cortado_id
+                          horario_tm_id, horario_tn_id, horario_cortado_id, horario_doble_id
                    FROM departamentos WHERE nombre=?""",
                 (nombre,)
             ).fetchone()
@@ -146,7 +147,7 @@ def update_departamento(did: int, data: DepartamentoIn, _user=Depends(require_pe
             conn.execute(
                 """UPDATE departamentos
                    SET nombre=?, usa_distribucion=?, usa_mozos=?, usa_barmans=?, usa_peones=?,
-                       horario_tm_id=?, horario_tn_id=?, horario_cortado_id=?
+                       horario_tm_id=?, horario_tn_id=?, horario_cortado_id=?, horario_doble_id=?
                    WHERE id=?""",
                 (nombre,
                  int(data.usa_distribucion or 0),
@@ -156,11 +157,12 @@ def update_departamento(did: int, data: DepartamentoIn, _user=Depends(require_pe
                  data.horario_tm_id,
                  data.horario_tn_id,
                  data.horario_cortado_id,
+                 data.horario_doble_id,
                  did)
             )
             row = conn.execute(
                 """SELECT id, nombre, usa_distribucion, usa_mozos, usa_barmans, usa_peones,
-                          horario_tm_id, horario_tn_id, horario_cortado_id
+                          horario_tm_id, horario_tn_id, horario_cortado_id, horario_doble_id
                    FROM departamentos WHERE id=?""",
                 (did,)
             ).fetchone()

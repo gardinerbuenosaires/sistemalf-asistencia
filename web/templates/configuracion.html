@@ -1596,7 +1596,7 @@ function editarDepto(id) {
   const item = lista.find(i => i.id === id);
   if (!item) return;
   const modulo = item.usa_distribucion ? 'cocineros' : item.usa_mozos ? 'mozos' : item.usa_barmans ? 'barmans' : item.usa_peones ? 'peones' : 'ninguno';
-  const usaHorarios = modulo === 'mozos' || modulo === 'barmans';
+  const usaHorarios = modulo === 'mozos' || modulo === 'barmans' || modulo === 'cocineros';
   const sel = (fld, label) => `
     <div style="margin-top:6px;font-size:.8rem;color:#555">${label}</div>
     <select id="tabla-deptos-edit-${fld}-${id}" style="width:100%;padding:3px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
@@ -1619,6 +1619,9 @@ function editarDepto(id) {
         ${sel('horario_tn_id','Horario TN (noche)')}
         ${sel('horario_cortado_id','Horario cortado')}
       </div>
+      <div id="tabla-deptos-edit-horarios-doble-${id}" style="display:${modulo==='cocineros'?'block':'none'}">
+        ${sel('horario_doble_id','Horario doble turno')}
+      </div>
     </td>
     <td>
       <button class="btn btn-sm btn-primary" onclick="guardarDepto(${id})">Guardar</button>
@@ -1630,17 +1633,20 @@ function editarDepto(id) {
 function _toggleHorariosDepto(id) {
   const modulo = document.getElementById(`tabla-deptos-edit-modulo-${id}`)?.value;
   const div = document.getElementById(`tabla-deptos-edit-horarios-${id}`);
-  if (div) div.style.display = (modulo === 'mozos' || modulo === 'barmans') ? 'block' : 'none';
+  if (div) div.style.display = (modulo === 'mozos' || modulo === 'barmans' || modulo === 'cocineros') ? 'block' : 'none';
+  const divD = document.getElementById(`tabla-deptos-edit-horarios-doble-${id}`);
+  if (divD) divD.style.display = (modulo === 'cocineros') ? 'block' : 'none';
 }
 
 async function guardarDepto(id) {
   const nombre = document.getElementById(`tabla-deptos-edit-nombre-${id}`)?.value.trim();
   if (!nombre) { toast("Ingresá el nombre"); return; }
   const modulo = document.getElementById(`tabla-deptos-edit-modulo-${id}`)?.value || 'ninguno';
-  const usaHorarios = modulo === 'mozos' || modulo === 'barmans';
+  const usaHorarios = modulo === 'mozos' || modulo === 'barmans' || modulo === 'cocineros';
   const tmVal  = document.getElementById(`tabla-deptos-edit-horario_tm_id-${id}`)?.value;
   const tnVal  = document.getElementById(`tabla-deptos-edit-horario_tn_id-${id}`)?.value;
   const ctVal  = document.getElementById(`tabla-deptos-edit-horario_cortado_id-${id}`)?.value;
+  const dbVal  = document.getElementById(`tabla-deptos-edit-horario_doble_id-${id}`)?.value;
   const res = await fetch(`/api/departamentos/${id}`, {
     method: "PATCH", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({
@@ -1652,6 +1658,7 @@ async function guardarDepto(id) {
       horario_tm_id:      usaHorarios && tmVal ? parseInt(tmVal) : null,
       horario_tn_id:      usaHorarios && tnVal ? parseInt(tnVal) : null,
       horario_cortado_id: usaHorarios && ctVal ? parseInt(ctVal) : null,
+      horario_doble_id:   modulo === 'cocineros' && dbVal ? parseInt(dbVal) : null,
     })
   });
   if (res.ok) {

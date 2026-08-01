@@ -84,6 +84,10 @@
     white-space: normal; flex-direction: column; gap: 1px; text-overflow: clip; }
   .celda-dist.franco { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
   .celda-dist.hoy { box-shadow: 0 0 0 2px #007bff; }
+  /* Días hasta hoy: columna bloqueada (la planificación no se modifica) */
+  td.col-dia.pasado { background: #efefef !important; }
+  thead th.col-dia.pasado { background: #e2e2e2 !important; color: #999 !important; }
+  .col-dia.pasado .badge-emp, .col-dia.pasado .badge-franco { opacity: .6; }
   .celda-dist.novedad-V   { background: #95B3D7; color: #000; border-color: #7a9bbf; }
   .celda-dist.novedad-L   { background: #92CDDC; color: #000; border-color: #6ab5c8; }
   .celda-dist.novedad-LSG { background: #B1A0C7; color: #000; border-color: #9a88b5; }
@@ -305,6 +309,10 @@
     <p>Seleccioná un departamento y turno para ver los horarios de cocina.</p>
   </div>
   <div id="grilla-wrap" class="grilla-wrap" style="display:none">
+    <div id="leyenda-pasado" style="display:none;font-size:.75rem;color:#888;padding:2px 0 8px;align-items:center;gap:6px">
+      <span style="display:inline-block;width:14px;height:12px;border-radius:2px;background:#efefef;border:1px solid #ddd"></span>
+      Los días hasta hoy no se editan — la asistencia sale de los fichajes. Los horarios aplican desde mañana.
+    </div>
     <table id="tabla-dist">
       <thead id="thead-dist"></thead>
       <tbody id="tbody-dist"></tbody>
@@ -322,6 +330,26 @@
     <div class="opciones" id="lista-opciones"></div>
     <div class="modal-footer">
       <button class="btn-cancel" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal cambio de turno / doble turno -->
+<div class="overlay" id="overlay-pase" onclick="cerrarModalPase()">
+  <div class="modal modal-puesto" onclick="event.stopPropagation()">
+    <h3 id="pase-titulo">Cambio de turno</h3>
+    <p class="subtitulo" id="pase-subtitulo" style="margin-bottom:12px"></p>
+    <div>
+      <label style="font-size:.8rem;color:#666;display:block;margin-bottom:4px">Cocinero</label>
+      <select id="pase-empleado" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem"></select>
+    </div>
+    <div id="pase-destino-wrap" style="margin-top:10px">
+      <label id="pase-destino-label" style="font-size:.8rem;color:#666;display:block;margin-bottom:4px">Pasa a</label>
+      <select id="pase-destino" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem"></select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn-cancel" onclick="cerrarModalPase()">Cancelar</button>
+      <button class="btn" onclick="guardarPase()" style="background:#2c3e50;color:white;border:none;padding:8px 18px;border-radius:5px;cursor:pointer">Guardar</button>
     </div>
   </div>
 </div>
@@ -377,6 +405,10 @@ let _vacBalance = {};    // {empleado_id: dias_disponibles}
 let _vacDist = [];       // [{id, empleado_id, fecha}] — staging, antes de confirmar
 let _planBase  = [];     // [{empleado_id, fecha, es_franco, horario_id}] desde planificacion auto
 let _planFrancoHide = new Set(); // "empId_fecha" — plan francos quitados manualmente esta sesión
+let _pases = [];            // [{id, empleado_id, fecha, tipo, turno_origen, turno_destino, emp_nombre, emp_apellido}]
+let _empleadosEntrantes = []; // cocineros que entran a este turno por un pase (roster extra)
+let _horarioTurnoDefault = null; // horario por defecto del turno actual (para los que vienen de otro turno)
+let _horarioDobleId = null;      // horario "doble turno" del depto (para los marcados doble)
 let _francoMode = false; // true cuando el modal de empleado es para la fila FRANCO
 let _editandoPuestos = false; // modo edición estructural de puestos
 let _editando = null; // { puesto_id, fecha } — celda abierta
@@ -565,6 +597,10 @@ async function cargarGrilla() {
     _planFrancoHide = new Set();
     _dias           = data.dias || [];
     _vacBalance     = data.vacaciones_balance || {};
+    _pases            = data.pases || [];
+    _empleadosEntrantes = data.empleados_entrantes || [];
+    _horarioTurnoDefault = data.horario_turno_default || null;
+    _horarioDobleId    = data.horario_doble_id || null;
     renderGrilla();
   } catch(e) {
     toast('Error de conexión', true);
@@ -572,6 +608,10 @@ async function cargarGrilla() {
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
+function turnoNombre(t) {
+  return t === 'TM' ? 'Mañana' : t === 'TN' ? 'Noche' : t === 'CO' ? 'Cortado' : (t || '');
+}
+
 function renderGrilla() {
   document.getElementById('empty-dept').style.display = 'none';
   document.getElementById('grilla-wrap').style.display = '';
@@ -604,26 +644,40 @@ function renderGrilla() {
   const btnConf  = document.getElementById('btn-confirmar');
   const btnEditar = document.getElementById('btn-editar');
   const confirmado = _distribucion && _distribucion.estado === 'confirmado';
-  const todosAsignados = _dias.every(d => {
+  const turnoActual = document.getElementById('sel-turno').value;
+
+  // Faltan asignar ese día: roster del turno (menos los que se fueron por cambio de turno)
+  // + los que ENTRAN por cambio/doble (deben quedar asignados a un puesto en este turno).
+  function _sinAsignarDia(d) {
     const novIds = new Set([
       ..._novedades.filter(n => n.fecha === d).map(n => n.empleado_id),
       ..._vacDist.filter(v => v.fecha === d).map(v => v.empleado_id)
     ]);
-    const presentes = _empleados.filter(e => !novIds.has(e.id) && !sinCalendario.has(e.id));
-    const asignadosIds = new Set(_detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
-    const francoIds = new Set([
+    const cambioOut = new Set(_pases.filter(p => p.tipo === 'cambio' && p.turno_origen === turnoActual && p.fecha === d).map(p => p.empleado_id));
+    const asignados = new Set(_detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
+    const francos = new Set([
       ..._francos.filter(f => f.fecha === d).map(f => f.empleado_id),
-      ..._planBase.filter(p => p.es_franco && p.fecha === d && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)).map(p => p.empleado_id)
+      ..._planBase.filter(p => p.es_franco && p.fecha === d && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`) && !asignados.has(p.empleado_id)).map(p => p.empleado_id)
     ]);
-    return presentes.every(e => asignadosIds.has(e.id) || francoIds.has(e.id));
-  });
+    const presentes = _empleados.filter(e => !novIds.has(e.id) && !sinCalendario.has(e.id) && !cambioOut.has(e.id));
+    const entrantes = _pases.filter(p => p.turno_destino === turnoActual && p.fecha === d);
+    const falta = presentes.filter(e => !asignados.has(e.id) && !francos.has(e.id)).length
+                + entrantes.filter(p => !asignados.has(p.empleado_id)).length;
+    return { falta, total: presentes.length + entrantes.length };
+  }
+
+  const todosAsignados = _dias.every(d => _sinAsignarDia(d).falta === 0);
   btnConf.disabled = confirmado || !_distribucion || !todosAsignados;
   btnConf.textContent = 'Confirmar semana';
   btnEditar.style.display = confirmado && canDo('distribucion', 'confirmar') ? '' : 'none';
 
   const hoyStr = hoy();
-  const puedoEditar = canDo('distribucion', 'editar') && !confirmado;
-  const puedeEditarPuestos = puedoEditar && _editandoPuestos;
+  const puedoEditarBase = canDo('distribucion', 'editar') && !confirmado;
+  const puedeEditarPuestos = puedoEditarBase && _editandoPuestos;
+  // Bloqueo de días ya transcurridos: la planificación de días <= hoy no se modifica.
+  const esPasado = (d) => d <= hoyStr;
+  const legPas = document.getElementById('leyenda-pasado');
+  if (legPas) legPas.style.display = (_dias || []).some(d => d <= hoyStr) ? 'flex' : 'none';
 
   // Cabecera
   const thead = document.getElementById('thead-dist');
@@ -631,32 +685,16 @@ function renderGrilla() {
   let thDias = _dias.map((d, i) => {
     const esHoy = d === hoyStr;
     const label = DIAS_ES[i] + '<br><small>' + d.slice(8) + '/' + d.slice(5,7) + '</small>';
-    return `<th class="col-dia${esHoy ? ' hoy' : ''}">${label}</th>`;
+    return `<th class="col-dia${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}">${label}</th>`;
   }).join('');
 
   const contadores = _dias.map((d, i) => {
     const esHoy = d === hoyStr;
-    const novedades = new Set([
-      ..._novedades.filter(n => n.fecha === d).map(n => n.empleado_id),
-      ..._vacDist.filter(v => v.fecha === d).map(v => v.empleado_id)
-    ]);
-    // Excluye ausentes por novedad y cocineros sin calendario asignado
-    const presentes = _empleados.filter(e => !novedades.has(e.id) && !sinCalendario.has(e.id));
-    const asignados = new Set(
-      _detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id)
-    );
-    const asignadosHoy = new Set(_detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
-    const francos = new Set([
-      ..._francos.filter(f => f.fecha === d).map(f => f.empleado_id),
-      ..._planBase.filter(p => p.es_franco && p.fecha === d
-        && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)
-        && !asignadosHoy.has(p.empleado_id)).map(p => p.empleado_id)
-    ]);
-    const sinAsignar = presentes.filter(e => !asignados.has(e.id) && !francos.has(e.id)).length;
-    const tag = (presentes.length === 0 || sinAsignar > 0)
-      ? `<span class="tag-pendiente">${sinAsignar} sin asignar</span>`
+    const { falta, total } = _sinAsignarDia(d);
+    const tag = (total === 0 || falta > 0)
+      ? `<span class="tag-pendiente">${falta} sin asignar</span>`
       : `<span class="tag-completo">✓ Completo</span>`;
-    return `<th class="col-dia contador-cell${esHoy ? ' hoy' : ''}">${tag}</th>`;
+    return `<th class="col-dia contador-cell${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}">${tag}</th>`;
   }).join('');
 
   thead.innerHTML = `
@@ -683,6 +721,7 @@ function renderGrilla() {
     const puestosHtml = puestosOrdenados.map(p => {
       const celdas = _dias.map(d => {
         const esHoy = d === hoyStr;
+        const puedoEditar = puedoEditarBase && !esPasado(d);
         const detsDelDia = _detalles.filter(x => x.puesto_id === p.id && x.fecha === d && !x.es_franco);
         const badges = detsDelDia.map(det => {
           const nombre = det.emp_apellido ? `${det.emp_apellido}, ${det.emp_nombre}` : '?';
@@ -690,9 +729,16 @@ function renderGrilla() {
           let cls = 'badge-emp' + (p.es_chef && !nov ? ' chef' : '');
           let labelTxt = nombre;
           if (nov) { cls += ` novedad-${nov.tipo}`; labelTxt = `${nombre} · ${nov.tipo}`; }
+          const paseIn = _pases.find(pp => pp.turno_destino === turnoActual && pp.empleado_id === det.empleado_id && pp.fecha === d);
+          if (paseIn) labelTxt += ` <small style="opacity:.75;font-weight:normal;font-size:.62rem">(de ${turnoNombre(paseIn.turno_origen)})</small>`;
+          const dobleP = _pases.find(pp => pp.tipo === 'doble' && pp.empleado_id === det.empleado_id && pp.fecha === d);
+          if (dobleP) labelTxt += ` <small style="font-weight:normal;font-size:.62rem;color:#7a1fa2">· doble</small>`;
+          const _horNombre = (dobleP && _horarioDobleId)
+            ? (_horarios.find(h => h.id === _horarioDobleId)?.nombre || 'Doble turno')
+            : det.horario_nombre;
           if (puedoEditar) {
-            const horLabel = det.horario_nombre
-              ? `<small style="opacity:.7;font-weight:normal;font-size:.65rem;display:block;line-height:1.2">${det.horario_nombre}</small>` : '';
+            const horLabel = _horNombre
+              ? `<small style="opacity:.7;font-weight:normal;font-size:.65rem;display:block;line-height:1.2">${_horNombre}</small>` : '';
             return `<span class="${cls}" style="padding:0;gap:0;align-items:stretch">
               <span style="padding:4px 5px 4px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start"
                 onclick="editarHorarioDet(${det.id},${p.id},'${d}',${det.empleado_id})"
@@ -701,15 +747,15 @@ function renderGrilla() {
                 onclick="event.stopPropagation();quitarDetalle(${det.id})" title="Quitar">✕</span>
             </span>`;
           }
-          const horLabel = det.horario_nombre
-            ? `<small style="opacity:.7;font-weight:normal;font-size:.65rem;display:block;line-height:1.2">${det.horario_nombre}</small>` : '';
+          const horLabel = _horNombre
+            ? `<small style="opacity:.7;font-weight:normal;font-size:.65rem;display:block;line-height:1.2">${_horNombre}</small>` : '';
           return `<span class="${cls}" style="flex-direction:column;align-items:flex-start">${labelTxt}${horLabel}</span>`;
         }).join('');
         const addBtn = puedoEditar
           ? `<button class="btn-add-emp" onclick="abrirModal(${p.id}, '${d}')">+ ${p.nombre}</button>`
           : '';
         const badgesWrap = badges ? `<div class="celda-puesto-badges">${badges}</div>` : '';
-        return `<td class="col-dia${esHoy ? ' hoy' : ''}">
+        return `<td class="col-dia${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}">
           <div class="celda-puesto-wrap">${badgesWrap}${addBtn}</div>
         </td>`;
       }).join('');
@@ -741,6 +787,7 @@ function renderGrilla() {
     // Fila FRANCO (empleados de franco ese día)
     const francoCeldas = _dias.map(d => {
       const esHoy = d === hoyStr;
+      const puedoEditar = puedoEditarBase && !esPasado(d);
       const enFranco = _francos.filter(f => f.fecha === d);
       const badges = enFranco.map(f => {
         const nombre = f.emp_apellido ? `${f.emp_apellido}, ${f.emp_nombre}` : '?';
@@ -771,7 +818,7 @@ function renderGrilla() {
         : '';
       const allBadges = badges + badgesPlan;
       const badgesWrap = allBadges ? `<div class="celda-franco-badges">${allBadges}</div>` : '';
-      return `<td class="col-dia${esHoy ? ' hoy' : ''}">
+      return `<td class="col-dia${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}">
         <div class="celda-franco-wrap">${badgesWrap}${addBtn}</div>
       </td>`;
     }).join('');
@@ -783,6 +830,7 @@ function renderGrilla() {
     // Fila VACACIONES (staged=_vacDist con ✕; reales de novedades sin ✕)
     const vacCeldas = _dias.map(d => {
       const esHoy = d === hoyStr;
+      const puedoEditar = puedoEditarBase && !esPasado(d);
       const stagedHoy = _vacDist.filter(v => v.fecha === d);
       const stagedIds = new Set(stagedHoy.map(v => v.empleado_id));
       const realVHoy = _novedades.filter(n => n.fecha === d && n.tipo === 'V' && !stagedIds.has(n.empleado_id));
@@ -809,7 +857,7 @@ function renderGrilla() {
         : '';
       const allBadges = badgesStaged + badgesReal;
       const badgesWrap = allBadges ? `<div class="celda-franco-badges">${allBadges}</div>` : '';
-      return `<td class="col-dia${esHoy ? ' hoy' : ''}">
+      return `<td class="col-dia${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}">
         <div class="celda-franco-wrap">${badgesWrap}${addBtn}</div>
       </td>`;
     }).join('');
@@ -856,6 +904,7 @@ function renderGrilla() {
     // Fila COMIDA DE PERSONAL
     const comidaCeldas = _dias.map(d => {
       const esHoy = d === hoyStr;
+      const puedoEditar = puedoEditarBase && !esPasado(d);
       const asig = _comidaPersonal.find(c => c.fecha === d);
       const nombre = asig ? `${asig.emp_apellido}, ${asig.emp_nombre}` : '';
       if (puedoEditar) {
@@ -869,12 +918,55 @@ function renderGrilla() {
       ${comidaCeldas}
     </tr>`;
 
-    tbody.innerHTML = puestosHtml + francoRow + vacRow + novedadesHtml + comidaRow;
+    // Filas CAMBIO DE TURNO / DOBLE TURNO (marcadas por el chef de origen)
+    const paseRow = (tipo, label, bg, borde, color) => {
+      const celdas = _dias.map(d => {
+        const esHoy = d === hoyStr;
+        const editable = puedoEditarBase && !esPasado(d);
+        const items = _pases.filter(p => p.tipo === tipo && p.turno_origen === turnoActual && p.fecha === d);
+        const badges = items.map(p => {
+          const nombre = `${p.emp_apellido}, ${p.emp_nombre}`;
+          const suf = tipo === 'cambio' ? ` → ${turnoNombre(p.turno_destino)}` : '';
+          if (editable) return `<span class="badge-franco removable" title="Quitar" onclick="quitarPase(${p.id})">${nombre}${suf} ✕</span>`;
+          return `<span class="badge-franco">${nombre}${suf}</span>`;
+        }).join('');
+        const addBtn = editable
+          ? `<button class="btn-add-franco" style="border-color:${borde};color:${color}" onclick="abrirModalPase('${tipo}','${d}')">+ ${tipo === 'cambio' ? 'Cambio' : 'Doble'}</button>`
+          : '';
+        const wrap = badges ? `<div class="celda-franco-badges">${badges}</div>` : '';
+        return `<td class="col-dia${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}"><div class="celda-franco-wrap">${wrap}${addBtn}</div></td>`;
+      }).join('');
+      return `<tr style="background:${bg};border-top:2px solid ${borde}">
+        <td class="col-puesto" style="color:${color};font-weight:bold;font-size:.78rem">${label}</td>
+        ${celdas}
+      </tr>`;
+    };
+    const cambioRow = paseRow('cambio', 'CAMBIO DE TURNO', '#e8f0fe', '#6a8fd8', '#1a3a6a');
+    const dobleRow  = paseRow('doble',  'DOBLE TURNO',     '#f3e8fd', '#a56fd8', '#4a1a6a');
+
+    // Fila informativa: cocineros que ENTRAN a este turno (solo si hay)
+    const entranItems = _pases.filter(p => p.turno_destino === turnoActual);
+    let entranRow = '';
+    if (entranItems.length) {
+      const celdas = _dias.map(d => {
+        const esHoy = d === hoyStr;
+        const dia = entranItems.filter(p => p.fecha === d);
+        const badges = dia.map(p => `<span class="badge-franco" style="background:#e8f0fe;color:#1a3a6a">${p.emp_apellido}, ${p.emp_nombre} <small>(de ${turnoNombre(p.turno_origen)}${p.tipo === 'doble' ? ' · doble' : ''})</small></span>`).join('');
+        const wrap = badges ? `<div class="celda-franco-badges">${badges}</div>` : '';
+        return `<td class="col-dia${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}"><div class="celda-franco-wrap">${wrap}</div></td>`;
+      }).join('');
+      entranRow = `<tr style="background:#eef4ff;border-top:2px solid #6a8fd8">
+        <td class="col-puesto" style="color:#1a3a6a;font-weight:bold;font-size:.78rem">VIENE DE OTRO TURNO</td>
+        ${celdas}
+      </tr>`;
+    }
+
+    tbody.innerHTML = puestosHtml + francoRow + vacRow + novedadesHtml + comidaRow + cambioRow + dobleRow + entranRow;
   }
 
   // Pie
   const tfoot = document.getElementById('tfoot-dist');
-  if (puedoEditar) {
+  if (puedoEditarBase) {
     const addBtn = puedeEditarPuestos
       ? `<button class="btn-add-puesto" onclick="abrirModalPuesto()" style="margin-right:8px">+ Agregar puesto</button>`
       : '';
@@ -890,6 +982,7 @@ function renderGrilla() {
 
 // ── Asignar empleado ──────────────────────────────────────────────────────────
 function abrirModal(puestoId, fecha) {
+  if (fecha <= hoy()) { toast('Los días hasta hoy no se editan — la asistencia sale de los fichajes', true); return; }
   _editando = { puestoId, fecha };
   const puesto = _puestos.find(p => p.id === puestoId);
   const d = new Date(fecha + 'T12:00:00');
@@ -918,6 +1011,8 @@ function abrirModal(puestoId, fecha) {
       && !asignadosModal.has(p.empleado_id)).map(p => p.empleado_id)
   ]);
   const vacStagedModal = new Set(_vacDist.filter(v => v.fecha === fecha).map(v => v.empleado_id));
+  const _turnoAct = document.getElementById('sel-turno').value;
+  const cambioOut = new Set(_pases.filter(p => p.tipo === 'cambio' && p.turno_origen === _turnoAct && p.fecha === fecha).map(p => p.empleado_id));
 
   const lista = document.getElementById('lista-opciones');
   lista.innerHTML = '';
@@ -947,6 +1042,7 @@ function abrirModal(puestoId, fecha) {
   let hayDisponibles = false;
   _empleados.forEach(e => {
     if (asignadosEnEste.has(e.id)) return;
+    if (cambioOut.has(e.id)) return;  // cambió de turno ese día: ya no está en este turno
     hayDisponibles = true;
     const opt = document.createElement('div');
     opt.className = 'opcion';
@@ -974,6 +1070,28 @@ function abrirModal(puestoId, fecha) {
       opt.textContent = nombre;
       const planHorario = _planBase.find(p => p.empleado_id === e.id && p.fecha === fecha)?.horario_id;
       opt.onclick = () => asignar(puestoId, fecha, e.id, false, planHorario || e.horario_actual_id || null);
+    }
+    lista.appendChild(opt);
+  });
+
+  // Cocineros que ENTRAN a este turno ese día (cambio/doble desde otro turno)
+  const entrantesHoy = _pases.filter(p => p.turno_destino === _turnoAct && p.fecha === fecha);
+  entrantesHoy.forEach(p => {
+    if (asignadosEnEste.has(p.empleado_id)) return;
+    const e = _empleadosEntrantes.find(x => x.id === p.empleado_id) || _empleados.find(x => x.id === p.empleado_id);
+    if (!e) return;
+    hayDisponibles = true;
+    const nombre = `${e.apellido}, ${e.nombre}`;
+    const opt = document.createElement('div');
+    opt.className = 'opcion';
+    opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
+    const badge = `<span class="nov-badge" style="background:#e8f0fe;color:#1a3a6a">viene de ${turnoNombre(p.turno_origen)}${p.tipo === 'doble' ? ' · doble' : ''}</span>`;
+    if (asignadosEnOtro.has(e.id)) {
+      opt.innerHTML = `${nombre} ${badge} · ya en otro puesto`;
+      opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
+    } else {
+      opt.innerHTML = `${nombre} ${badge}`;
+      opt.onclick = () => asignar(puestoId, fecha, e.id, false, _horarioTurnoDefault || e.horario_actual_id || null);
     }
     lista.appendChild(opt);
   });
@@ -1006,6 +1124,7 @@ function cerrarModal() {
 
 // ── Fila FRANCO ───────────────────────────────────────────────────────────────
 async function abrirModalFranco(fecha) {
+  if (fecha <= hoy()) { toast('Los días hasta hoy no se editan — la asistencia sale de los fichajes', true); return; }
   _francoMode = true;
   _editando = null;
   const d = new Date(fecha + 'T12:00:00');
@@ -1054,6 +1173,7 @@ async function abrirModalFranco(fecha) {
 
 // ── Fila VACACIONES ───────────────────────────────────────────────────────────
 function abrirModalVacaciones(fecha) {
+  if (fecha <= hoy()) { toast('Los días hasta hoy no se editan — la asistencia sale de los fichajes', true); return; }
   _francoMode = false;
   _editando = null;
   const d = new Date(fecha + 'T12:00:00');
@@ -1127,6 +1247,7 @@ function abrirModalVacaciones(fecha) {
 
 // ── Comida de personal ────────────────────────────────────────────────────────
 function abrirModalComida(fecha) {
+  if (fecha <= hoy()) { toast('Los días hasta hoy no se editan — la asistencia sale de los fichajes', true); return; }
   const d = new Date(fecha + 'T12:00:00');
   const labelDia = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
   document.getElementById('modal-titulo').textContent = 'Comida de personal';
@@ -1325,7 +1446,70 @@ function abrirHorarioPicker(puestoId, fecha, empleadoId) {
   document.getElementById('modal-search').focus();
 }
 
+// ── Pases: cambio de turno / doble turno ──────────────────────────────────────
+let _paseCtx = null; // { tipo, fecha }
+
+function abrirModalPase(tipo, fecha) {
+  if (fecha <= hoy()) { toast('Los días hasta hoy no se editan — la asistencia sale de los fichajes', true); return; }
+  const turnoActual = document.getElementById('sel-turno').value;
+  const deptId = document.getElementById('sel-departamento').value;
+  const dept = _misAccesos.departamentos.find(d => String(d.id) === deptId);
+  const otros = (dept && dept.turnos ? dept.turnos : ['TM','TN','CO']).filter(t => t !== turnoActual);
+  if (!otros.length) { toast('No hay otro turno para asignar', true); return; }
+  _paseCtx = { tipo, fecha };
+
+  const dd = new Date(fecha + 'T12:00:00');
+  document.getElementById('pase-titulo').textContent = tipo === 'cambio' ? 'Cambio de turno' : 'Doble turno';
+  document.getElementById('pase-subtitulo').textContent = dd.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('pase-destino-label').textContent = tipo === 'cambio' ? 'Pasa a' : 'Dobla en';
+
+  const marcados = new Set(_pases.filter(p => p.fecha === fecha && p.turno_origen === turnoActual).map(p => p.empleado_id));
+  const selEmp = document.getElementById('pase-empleado');
+  const disp = _empleados.filter(e => !marcados.has(e.id));
+  selEmp.innerHTML = disp.length
+    ? disp.map(e => `<option value="${e.id}">${e.apellido}, ${e.nombre}</option>`).join('')
+    : '<option value="">— Sin cocineros disponibles —</option>';
+
+  document.getElementById('pase-destino').innerHTML =
+    otros.map(t => `<option value="${t}">${turnoNombre(t)}</option>`).join('');
+
+  document.getElementById('overlay-pase').classList.add('active');
+}
+
+function cerrarModalPase() {
+  document.getElementById('overlay-pase').classList.remove('active');
+  _paseCtx = null;
+}
+
+async function guardarPase() {
+  if (!_paseCtx) return;
+  const { tipo, fecha } = _paseCtx;
+  const empId   = document.getElementById('pase-empleado').value;
+  const destino = document.getElementById('pase-destino').value;
+  if (!empId || !destino) { toast('Elegí cocinero y turno', true); return; }
+  const deptId = document.getElementById('sel-departamento').value;
+  const turnoActual = document.getElementById('sel-turno').value;
+  const r = await fetch('/api/distribucion/pase', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      departamento_id: Number(deptId), empleado_id: Number(empId),
+      fecha, tipo, turno_origen: turnoActual, turno_destino: destino
+    })
+  });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); toast(e.detail || 'Error', true); return; }
+  cerrarModalPase();
+  toast(tipo === 'doble' ? 'Doble turno autorizado' : 'Cambio de turno autorizado');
+  cargarGrilla();
+}
+
+async function quitarPase(id) {
+  const r = await fetch(`/api/distribucion/pase/${id}`, { method: 'DELETE' });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); toast(e.detail || 'Error', true); return; }
+  cargarGrilla();
+}
+
 function editarHorarioDet(detId, puestoId, fecha, empleadoId) {
+  if (fecha <= hoy()) { toast('Los días hasta hoy no se editan — la asistencia sale de los fichajes', true); return; }
   _reemplazandoDetId = detId;
   abrirHorarioPicker(puestoId, fecha, empleadoId);
 }
@@ -1632,7 +1816,7 @@ async function confirmarDistribucion() {
       return;
     }
     await cargarGrilla();
-    toast(escribe ? 'Distribución confirmada y planificación actualizada' : 'Distribución confirmada (sin efecto en planificación)');
+    toast('Distribución confirmada y planificación actualizada');
   } catch(e) {
     toast('Error de conexión', true);
   }

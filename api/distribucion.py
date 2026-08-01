@@ -307,9 +307,19 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             ).fetchall()
 
         dept_info = conn.execute(
-            "SELECT usa_distribucion FROM departamentos WHERE id=?", (departamento_id,)
+            """SELECT usa_distribucion, horario_tm_id, horario_tn_id, horario_cortado_id, horario_doble_id
+               FROM departamentos WHERE id=?""", (departamento_id,)
         ).fetchone()
         usa_dist = bool(dept_info and dept_info["usa_distribucion"])
+        # Horario por defecto del turno actual (para cocineros que vienen de otro turno)
+        if dept_info and turno == "TM":
+            horario_turno_default = dept_info["horario_tm_id"]
+        elif dept_info and turno == "TN":
+            horario_turno_default = dept_info["horario_tn_id"]
+        elif dept_info and turno == "CO":
+            horario_turno_default = dept_info["horario_cortado_id"]
+        else:
+            horario_turno_default = None
 
         dept_cargos = conn.execute(
             "SELECT id FROM cargos WHERE departamento_id=?", (departamento_id,)
@@ -430,6 +440,45 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
 
         vac_balance = _vac_balance_bulk(conn, emp_ids_list)
 
+        # Pases (cambio de turno / doble) de la semana que tocan este turno
+        pases_rows = conn.execute(
+            """SELECT dp.id, dp.empleado_id, dp.fecha, dp.tipo,
+                      dp.turno_origen, dp.turno_destino,
+                      e.nombre AS emp_nombre, e.apellido AS emp_apellido
+               FROM distribucion_pase dp
+               JOIN empleados e ON e.id = dp.empleado_id
+               WHERE dp.departamento_id=? AND dp.fecha >= ? AND dp.fecha <= ?
+                 AND (dp.turno_origen=? OR dp.turno_destino=?)
+               ORDER BY dp.fecha""",
+            (departamento_id, dias[0], dias[6], turno, turno)
+        ).fetchall()
+        pases = [dict(r) for r in pases_rows]
+
+        # Cocineros que ENTRAN a este turno (destino) y no están en el roster base
+        base_ids = {e["id"] for e in empleados}
+        entrante_ids = list({p["empleado_id"] for p in pases
+                             if p["turno_destino"] == turno and p["empleado_id"] not in base_ids})
+        empleados_entrantes = []
+        if entrante_ids:
+            ph = ",".join("?" * len(entrante_ids))
+            empleados_entrantes = [dict(r) for r in conn.execute(
+                f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
+                       (SELECT COALESCE(a.horario_id,
+                            (SELECT cd.horario_id FROM calendarios_dias cd
+                             WHERE cd.calendario_id = a.calendario_id
+                               AND cd.es_franco = 0 AND cd.horario_id IS NOT NULL
+                             LIMIT 1))
+                        FROM asignaciones a
+                        WHERE a.empleado_id = e.id
+                          AND a.fecha_desde <= ? AND (a.fecha_hasta IS NULL OR a.fecha_hasta >= ?)
+                        ORDER BY a.fecha_desde DESC LIMIT 1
+                       ) AS horario_actual_id
+                   FROM empleados e
+                   WHERE e.id IN ({ph}) AND e.activo=1
+                   ORDER BY e.apellido, e.nombre""",
+                [lunes_str, lunes_str] + entrante_ids
+            ).fetchall()]
+
     return {
         "distribucion": dict(dist) if dist else None,
         "puestos": [dict(r) for r in puestos],
@@ -443,6 +492,10 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         "plan_base": plan_base,
         "dias": dias,
         "vacaciones_balance": vac_balance,
+        "pases": pases,
+        "empleados_entrantes": empleados_entrantes,
+        "horario_turno_default": horario_turno_default,
+        "horario_doble_id": (dept_info["horario_doble_id"] if dept_info else None),
     }
 
 
@@ -478,6 +531,7 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("d
     lunes_nuevo = _lunes(body.semana_inicio)
     lunes_ant   = lunes_nuevo - timedelta(days=7)
     uid = int(user["sub"])
+    hoy_str = str(date.today())  # no copiar sobre días ya transcurridos (<= hoy)
 
     with db_session() as conn:
         turnos_ok = _scope_turnos(conn, user, body.departamento_id)
@@ -548,6 +602,8 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("d
             fecha_nueva = str(date.fromisoformat(det["fecha"]) + timedelta(days=7))
             if fecha_nueva not in dias_nuevos:
                 continue
+            if fecha_nueva <= hoy_str:  # días <= hoy no se modifican
+                continue
             emp_id = det["empleado_id"]
             if emp_id not in emp_activos or (emp_id, fecha_nueva) in nov_bloq:
                 omitidos_det += 1
@@ -571,6 +627,8 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("d
             fecha_nueva = str(date.fromisoformat(fr["fecha"]) + timedelta(days=7))
             if fecha_nueva not in dias_nuevos:
                 continue
+            if fecha_nueva <= hoy_str:  # días <= hoy no se modifican
+                continue
             emp_id = fr["empleado_id"]
             if emp_id not in emp_activos or (emp_id, fecha_nueva) in nov_bloq:
                 omitidos_fr += 1
@@ -592,6 +650,60 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("d
         "copiados_francos": copiados_fr,
         "omitidos": omitidos_det + omitidos_fr,
     }
+
+
+# ── Pases: cambio de turno / doble turno ───────────────────────────────────────
+
+class PaseIn(BaseModel):
+    departamento_id: int
+    empleado_id: int
+    fecha: str
+    tipo: str            # 'cambio' | 'doble'
+    turno_origen: str
+    turno_destino: str
+
+
+@router.post("/pase")
+def crear_pase(body: PaseIn, user=Depends(require_permiso("distribucion", "editar"))):
+    """Autoriza (por día) el cambio de turno o doble turno de un cocinero.
+    Lo marca el chef del turno de ORIGEN. Solo días > hoy."""
+    uid = int(user["sub"])
+    if body.tipo not in ("cambio", "doble"):
+        raise HTTPException(400, "tipo inválido")
+    if body.turno_origen == body.turno_destino:
+        raise HTTPException(400, "El turno destino debe ser distinto al de origen")
+    if body.fecha <= str(date.today()):
+        raise HTTPException(409, "No se puede autorizar en días ya transcurridos")
+    with db_session() as conn:
+        if body.turno_origen not in _scope_turnos(conn, user, body.departamento_id):
+            raise HTTPException(403, "Sin acceso al turno de origen")
+        conn.execute(
+            """INSERT INTO distribucion_pase
+               (departamento_id, empleado_id, fecha, tipo, turno_origen, turno_destino, autorizado_por)
+               VALUES (?,?,?,?,?,?,?)
+               ON CONFLICT(departamento_id, empleado_id, fecha)
+               DO UPDATE SET tipo=excluded.tipo, turno_origen=excluded.turno_origen,
+                             turno_destino=excluded.turno_destino,
+                             autorizado_por=excluded.autorizado_por,
+                             creado_en=datetime('now','localtime')""",
+            (body.departamento_id, body.empleado_id, body.fecha, body.tipo,
+             body.turno_origen, body.turno_destino, uid)
+        )
+    return {"ok": True}
+
+
+@router.delete("/pase/{pase_id}")
+def borrar_pase(pase_id: int, user=Depends(require_permiso("distribucion", "editar"))):
+    with db_session() as conn:
+        p = conn.execute("SELECT * FROM distribucion_pase WHERE id=?", (pase_id,)).fetchone()
+        if not p:
+            raise HTTPException(404, "Pase no encontrado")
+        if p["turno_origen"] not in _scope_turnos(conn, user, p["departamento_id"]):
+            raise HTTPException(403, "Sin acceso al turno de origen")
+        if p["fecha"] <= str(date.today()):
+            raise HTTPException(409, "No se puede modificar días ya transcurridos")
+        conn.execute("DELETE FROM distribucion_pase WHERE id=?", (pase_id,))
+    return {"ok": True}
 
 
 # ── Detalles de distribución ───────────────────────────────────────────────────
@@ -800,6 +912,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
 
         lunes_str = dist["semana_inicio"]
         domingo_str = str(date.fromisoformat(lunes_str) + timedelta(days=6))
+        hoy_str = str(date.today())  # los horarios aplican solo a futuro (> hoy)
 
         emp_ids = list(
             {det["empleado_id"] for det in detalles}
@@ -807,8 +920,27 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             | {v["empleado_id"] for v in vac_staged}
         )
 
+        # Pases de la semana: doble → horario doble turno; cambio saliente → no escribir en origen
+        dept_row = conn.execute(
+            "SELECT horario_doble_id FROM departamentos WHERE id=?", (dist["departamento_id"],)
+        ).fetchone()
+        horario_doble = dept_row["horario_doble_id"] if dept_row else None
+        pases_rows = conn.execute(
+            """SELECT empleado_id, fecha, tipo, turno_origen, turno_destino FROM distribucion_pase
+               WHERE departamento_id=? AND fecha >= ? AND fecha <= ?""",
+            (dist["departamento_id"], lunes_str, domingo_str)
+        ).fetchall()
+        doble_dias = {(p["empleado_id"], p["fecha"]) for p in pases_rows if p["tipo"] == "doble"}
+        cambio_out_dias = {(p["empleado_id"], p["fecha"]) for p in pases_rows
+                           if p["tipo"] == "cambio" and p["turno_origen"] == dist["turno"]}
+        # Cocineros que ENTRAN a este turno por un pase: solo "pertenecen" a este turno en sus
+        # días de pase. Sus otros días son de su turno de origen y no hay que tocarlos.
+        entrante_ids = {p["empleado_id"] for p in pases_rows if p["turno_destino"] == dist["turno"]}
+        pase_in_dias = {(p["empleado_id"], p["fecha"]) for p in pases_rows if p["turno_destino"] == dist["turno"]}
+
         # Novedades bloqueantes reales de la semana (no tocamos planificacion de esos días)
         bloqueantes: set[tuple] = set()
+        franco_previo: set[tuple] = set()   # francos existentes (calendario) — a preservar
         if emp_ids:
             ph = ",".join("?" * len(emp_ids))
             nov_bloq = conn.execute(
@@ -822,12 +954,17 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
 
             # Borrar TODA la planificacion del turno en la semana, excepto días bloqueantes
             all_plan = conn.execute(
-                f"""SELECT id, empleado_id, fecha FROM planificacion
+                f"""SELECT id, empleado_id, fecha, es_franco FROM planificacion
                     WHERE fecha >= ? AND fecha <= ? AND empleado_id IN ({ph})""",
                 [lunes_str, domingo_str] + emp_ids
             ).fetchall()
+            franco_previo = {(r["empleado_id"], r["fecha"]) for r in all_plan if r["es_franco"]}
             ids_borrar = [r["id"] for r in all_plan
-                          if (r["empleado_id"], r["fecha"]) not in bloqueantes]
+                          if (r["empleado_id"], r["fecha"]) not in bloqueantes
+                          and r["fecha"] > hoy_str
+                          and (r["empleado_id"], r["fecha"]) not in cambio_out_dias
+                          and not (r["empleado_id"] in entrante_ids
+                                   and (r["empleado_id"], r["fecha"]) not in pase_in_dias)]
             if ids_borrar:
                 ph2 = ",".join("?" * len(ids_borrar))
                 conn.execute(f"DELETE FROM planificacion WHERE id IN ({ph2})", ids_borrar)
@@ -836,6 +973,10 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
         vac_dias: set[tuple] = {(v["empleado_id"], v["fecha"]) for v in vac_staged}
 
         for fr in francos:
+            if fr["fecha"] <= hoy_str:  # no modificar días ya transcurridos
+                continue
+            if (fr["empleado_id"], fr["fecha"]) in cambio_out_dias:  # cambió de turno: no escribe origen
+                continue
             if (fr["empleado_id"], fr["fecha"]) in bloqueantes:
                 continue
             conn.execute(
@@ -845,6 +986,10 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             )
 
         for det in detalles:
+            if det["fecha"] <= hoy_str:  # no modificar días ya transcurridos
+                continue
+            if (det["empleado_id"], det["fecha"]) in cambio_out_dias:  # cambió de turno: no escribe origen
+                continue
             if (det["empleado_id"], det["fecha"]) in bloqueantes:
                 continue
             if (det["empleado_id"], det["fecha"]) in vac_dias:
@@ -854,6 +999,13 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                     """INSERT INTO planificacion (empleado_id, fecha, es_franco, origen)
                        VALUES (?,?,1,'distribucion')""",
                     (det["empleado_id"], det["fecha"])
+                )
+            elif (det["empleado_id"], det["fecha"]) in doble_dias and horario_doble:
+                # Doble turno: horario que abarca ambos turnos (mismo valor lo escriba TM o TN)
+                conn.execute(
+                    """INSERT INTO planificacion (empleado_id, fecha, es_franco, horario_id, origen)
+                       VALUES (?,?,0,?,'distribucion')""",
+                    (det["empleado_id"], det["fecha"], horario_doble)
                 )
             else:
                 horario_id = det["horario_id"]
@@ -879,6 +1031,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
 
         # Escribir vacaciones staged a novedades (si no hay novedad real bloqueante)
         for v in vac_staged:
+            if v["fecha"] <= hoy_str:  # no modificar días ya transcurridos
+                continue
             if (v["empleado_id"], v["fecha"]) in bloqueantes:
                 continue
             conn.execute(
@@ -886,6 +1040,27 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                    (empleado_id, fecha, bloque, tipo, descripcion, creado_por)
                    VALUES (?,?,0,'V','Desde distribución',?)""",
                 (v["empleado_id"], v["fecha"], v["creado_por"])
+            )
+
+        # Preservar los francos del calendario: días que tenían franco y no fueron
+        # reasignados ni marcados franco manual quedan como franco en la planificación.
+        asignado_o_franco = {(det["empleado_id"], det["fecha"]) for det in detalles} \
+                          | {(fr["empleado_id"], fr["fecha"]) for fr in francos}
+        for (emp, fecha) in franco_previo:
+            if fecha <= hoy_str:
+                continue
+            if (emp, fecha) in asignado_o_franco:
+                continue
+            if (emp, fecha) in bloqueantes or (emp, fecha) in vac_dias:
+                continue
+            if (emp, fecha) in cambio_out_dias:
+                continue
+            if emp in entrante_ids and (emp, fecha) not in pase_in_dias:
+                continue
+            conn.execute(
+                """INSERT INTO planificacion (empleado_id, fecha, es_franco, origen)
+                   VALUES (?,?,1,'distribucion')""",
+                (emp, fecha)
             )
 
         conn.execute(

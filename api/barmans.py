@@ -135,7 +135,16 @@ def get_semana(departamento_id: int, semana_inicio: str,
                 f"""SELECT p.empleado_id, p.fecha, p.es_franco,
                            CASE
                                WHEN p.es_franco = 1 THEN 'AMBOS'
-                               WHEN h.tipo = 'cortado' THEN 'AMBOS'
+                               WHEN h.tipo = 'cortado' THEN
+                                   CASE
+                                       WHEN EXISTS(SELECT 1 FROM horarios_bloques hb
+                                                   WHERE hb.horario_id=h.id AND hb.bloque=1 AND hb.aplica=1)
+                                        AND EXISTS(SELECT 1 FROM horarios_bloques hb
+                                                   WHERE hb.horario_id=h.id AND hb.bloque=2 AND hb.aplica=1) THEN 'AMBOS'
+                                       WHEN EXISTS(SELECT 1 FROM horarios_bloques hb
+                                                   WHERE hb.horario_id=h.id AND hb.bloque=2 AND hb.aplica=1) THEN 'NOCHE'
+                                       ELSE 'DIA'
+                                   END
                                WHEN lower(COALESCE(t.nombre,'')) LIKE '%noche%'
                                  OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%' THEN 'NOCHE'
                                ELSE 'DIA'

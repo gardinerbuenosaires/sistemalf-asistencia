@@ -111,6 +111,10 @@
   tr.tr-grupo.cortados td.sem2 { background: #5c3a1a; }
   tr.tr-grupo.dia     td.sem2 { background: #145220; }
   tr.tr-grupo.noche   td.sem2 { background: #142d52; }
+  /* Etiqueta/subgrupo dentro de cortados (más tenue que el header de grupo) */
+  tr.tr-etiqueta td { background: #efe3d5; color: #7f4f24; font-weight: bold;
+    font-size: .62rem; padding: 1px 6px; letter-spacing: .04em; text-align: center; }
+  tr.tr-etiqueta td.td-emp { text-align: left; }
 
   /* Celdas de estado */
   table.mozos td.celda { width: 28px; min-width: 28px; max-width: 28px; height: 22px;
@@ -419,6 +423,26 @@
   </div>
 </div>
 
+<!-- Modal selector de horario por día (horario primero) -->
+<div id="hor-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:10px;padding:20px;width:420px;max-width:95vw;max-height:90vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+    <div style="margin-bottom:12px">
+      <div id="hor-modal-titulo" style="font-weight:bold;font-size:.95rem"></div>
+      <div id="hor-modal-subtitulo" style="font-size:.76rem;color:#888"></div>
+    </div>
+    <div id="hor-grupos"></div>
+    <div style="text-align:center;margin:8px 0 12px">
+      <a href="#" id="hor-vertodos" onclick="toggleVerTodos(event)" style="font-size:.74rem;color:#2c3e50">▾ Ver todos los horarios</a>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #eee;padding-top:12px">
+      <button onclick="marcarFrancoDia()" style="padding:7px 12px;border:1px solid #cbd5e0;border-radius:6px;background:#f7fafc;cursor:pointer;font-size:.82rem">Franco</button>
+      <button onclick="abrirNovedadDesdeHor()" style="padding:7px 12px;border:1px solid #cbd5e0;border-radius:6px;background:#f7fafc;cursor:pointer;font-size:.82rem">Novedad (V/E/Lic…)</button>
+      <button onclick="limpiarDia()" style="padding:7px 12px;border:1px solid #e2a0a0;color:#c0392b;border-radius:6px;background:white;cursor:pointer;font-size:.82rem">Limpiar día</button>
+      <button onclick="cerrarHorModal()" style="padding:7px 12px;border:1px solid #ccc;border-radius:6px;background:white;cursor:pointer;font-size:.82rem;margin-left:auto">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div id="print-aviso">
   <div style="font-size:56px;line-height:1;color:#e74c3c">⚠</div>
   <h2 style="margin:0;color:#c0392b;font-size:22px">No se puede imprimir</h2>
@@ -434,7 +458,8 @@ let _perms = new Set();
 let _lunes = null;          // Date — lunes de la primera semana visible
 let _deptId = null;         // departamento seleccionado
 let _semanas = [null, null]; // [{id, estado}, {id, estado}]
-let _grupos = {};           // {CORTADOS:[...], DIA:[...], NOCHE:[...]}
+let _grupos = {};           // {CORTADOS:[...], DIA:[...], NOCHE:[...]} — para presencia/estilos
+let _ordenMozos = [];       // lista plana ordenada como la planilla mensual (con _etiqueta)
 let _detalles = [];         // [{empleado_id, fecha, turno, estado}]
 let _novedades = [];        // [{empleado_id, fecha, tipo}]
 let _planBase = {};         // {`${empId}_${fecha}`: {es_franco}}
@@ -445,6 +470,10 @@ let _periodosCerrados = new Set(); // {'2026-06', ...}
 let _guardando = false;
 let _vacSaldo  = null;
 let _todosHorarios = [];
+let _horariosLista = [];   // horario-primero: [{id,nombre,grupo,cells,frecuente,uso}]
+let _horariosMap   = {};   // id → horario
+let _horVerTodos   = false;
+let _horDia        = null;  // {empId, fecha, turno} del selector por día
 let _novHorarioId  = null;
 
 const MESES_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
@@ -539,6 +568,15 @@ function irAHoy() {
 async function cargar() {
   if (!_deptId || !_lunes) return;
   document.getElementById('label-semana').textContent = fmtSemana(_lunes);
+  // Horarios del depto para el selector "horario primero"
+  try {
+    const rh = await fetch(`/api/mozos/horarios-lista?dept_id=${_deptId}`);
+    if (rh.ok) {
+      _horariosLista = await rh.json();
+      _horariosMap = {};
+      _horariosLista.forEach(h => { _horariosMap[h.id] = h; });
+    }
+  } catch {}
   // Cargar exclusiones del conteo para este departamento
   try {
     const rc = await fetch(`/api/mozos/config?departamento_id=${_deptId}`);
@@ -554,6 +592,7 @@ async function cargar() {
     const data = await r.json();
     _semanas         = data.semanas || [null, null];
     _grupos          = data.grupos || {};
+    _ordenMozos      = data.orden_mozos || [];
     _detalles        = data.detalles || [];
     _novedades       = data.novedades || [];
     _periodosCerrados = new Set((data.periodos_cerrados || []).map(p => `${p.anio}-${String(p.mes).padStart(2,'0')}`));
@@ -683,13 +722,10 @@ function renderGrilla() {
 
   // ── Cuerpo ──
   let html = '';
-  GRUPOS_ORDEN.forEach(grupo => {
-    const emps = (_grupos[grupo] || []);
-    if (!emps.length) return;
-    const css = GRUPO_CSS[grupo];
-    const label = GRUPO_LABEL[grupo];
-    html += `<tr class="tr-grupo ${css}"><td class="td-emp">${label}</td><td colspan="14">${label}</td><td class="col-sep"></td><td colspan="14" class="sem2">${label}</td></tr>`;
-    emps.forEach(emp => {
+  _ordenMozos.forEach(emp => {
+      if (emp._etiqueta) {
+        html += `<tr class="tr-etiqueta"><td class="td-emp">${emp._etiqueta}</td><td colspan="14">${emp._etiqueta}</td><td class="col-sep"></td><td colspan="14" class="sem2">${emp._etiqueta}</td></tr>`;
+      }
       html += `<tr>`;
       html += `<td class="td-emp" title="${emp.apellido}, ${emp.nombre}">${emp.apellido}, ${emp.nombre}</td>`;
       _dias.forEach((fecha, di) => {
@@ -756,7 +792,6 @@ function renderGrilla() {
         });
       });
       html += `</tr>`;
-    });
   });
   document.getElementById('tbody-mozos').innerHTML = html;
 
@@ -861,7 +896,120 @@ const TIPOS_MOZOS = ['P', 'F', 'FT', 'FD', 'V', 'E', 'ILT', 'L', 'LSG', 'S'];
 let _novTipoSel = null;
 let _novCell    = null;
 
+// ── Selector de horario por día (horario primero) ─────────────────────────────
 function abrirPopup(empId, fecha, turno) {
+  if (_guardando) return;
+  _horDia = { empId, fecha, turno };
+  _horVerTodos = false;
+
+  let empNombre = '';
+  for (const emps of Object.values(_grupos)) {
+    const e = emps.find(e => e.id === empId);
+    if (e) { empNombre = `${e.apellido}, ${e.nombre}`; break; }
+  }
+  document.getElementById('hor-modal-titulo').textContent = empNombre;
+  const dt = new Date(fecha + 'T12:00:00');
+  const dd = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  document.getElementById('hor-modal-subtitulo').textContent =
+    `${dd[dt.getDay()]} ${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()}`;
+  renderHorGrupos();
+  document.getElementById('hor-modal').style.display = 'flex';
+}
+
+function renderHorGrupos() {
+  const cont = document.getElementById('hor-grupos');
+  const lista = _horariosLista.filter(h => _horVerTodos || h.frecuente);
+  const GRUPOS = [['DIA','Día','#eef7ee'],['NOCHE','Noche','#eef2fb'],['CORTADO','Cortado','#fdf3e7']];
+  let html = '';
+  GRUPOS.forEach(([g, lbl, bg]) => {
+    const hs = lista.filter(h => h.grupo === g);
+    if (!hs.length) return;
+    html += `<div style="margin-bottom:10px">
+      <div style="font-size:.66rem;font-weight:bold;color:#7a7a7a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${lbl}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">`;
+    hs.forEach(h => {
+      const cellsLbl = h.cells.join('+');
+      html += `<button onclick="aplicarHorario(${h.id})" title="Pinta ${cellsLbl}"
+        style="padding:6px 10px;border:1px solid #cbd5e0;border-radius:6px;background:${bg};cursor:pointer;font-size:.8rem;text-align:left;line-height:1.15">
+        ${h.nombre}<span style="display:block;font-size:.58rem;color:#999">${cellsLbl}</span>
+      </button>`;
+    });
+    html += `</div></div>`;
+  });
+  if (!html) html = '<div style="font-size:.8rem;color:#999;padding:8px 0">Sin horarios disponibles</div>';
+  cont.innerHTML = html;
+  document.getElementById('hor-vertodos').textContent =
+    _horVerTodos ? '▴ Ver menos' : '▾ Ver todos los horarios';
+}
+
+function toggleVerTodos(ev) {
+  ev.preventDefault();
+  _horVerTodos = !_horVerTodos;
+  renderHorGrupos();
+}
+
+function cerrarHorModal() {
+  document.getElementById('hor-modal').style.display = 'none';
+  _horDia = null;
+}
+
+async function _postCelda(turno, estado, horarioId) {
+  const r = await fetch('/api/mozos/celda', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      departamento_id: _deptId, semana_inicio: lunesDeISO(_horDia.fecha),
+      empleado_id: _horDia.empId, fecha: _horDia.fecha, turno,
+      estado, horario_id: horarioId
+    })
+  });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || 'Error'); }
+}
+
+async function _aplicarDia(fn, msg) {
+  if (_guardando || !_horDia) return;
+  _guardando = true;
+  try {
+    await fn();
+    cerrarHorModal();
+    await cargar();
+    toast(msg);
+  } catch (e) {
+    toast(e.message || 'Error al guardar', true);
+  } finally {
+    _guardando = false;
+  }
+}
+
+function aplicarHorario(horId) {
+  const h = _horariosMap[horId];
+  if (!h) return;
+  _aplicarDia(async () => {
+    for (const turno of ['TM', 'TN']) {
+      const activo = h.cells.includes(turno);
+      await _postCelda(turno, activo ? 'P' : null, activo ? horId : null);
+    }
+  }, `${h.nombre} asignado`);
+}
+
+function marcarFrancoDia() {
+  _aplicarDia(async () => {
+    for (const turno of ['TM', 'TN']) await _postCelda(turno, 'F', null);
+  }, 'Franco asignado');
+}
+
+function limpiarDia() {
+  _aplicarDia(async () => {
+    for (const turno of ['TM', 'TN']) await _postCelda(turno, null, null);
+  }, 'Día limpiado');
+}
+
+function abrirNovedadDesdeHor() {
+  const d = _horDia;
+  cerrarHorModal();
+  if (d) abrirNovModal(d.empId, d.fecha, d.turno);
+}
+
+function abrirNovModal(empId, fecha, turno) {
   if (_guardando) return;
   _novTipoSel = null;
   _novHorarioId = null;

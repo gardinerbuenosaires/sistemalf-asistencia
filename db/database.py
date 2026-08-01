@@ -415,7 +415,8 @@ def init_db():
                 escribe_planificacion INTEGER NOT NULL DEFAULT 0,
                 horario_tm_id         INTEGER REFERENCES horarios(id),
                 horario_tn_id         INTEGER REFERENCES horarios(id),
-                horario_cortado_id    INTEGER REFERENCES horarios(id)
+                horario_cortado_id    INTEGER REFERENCES horarios(id),
+                horario_doble_id      INTEGER REFERENCES horarios(id)
             );
 
             CREATE TABLE IF NOT EXISTS categorias (
@@ -1056,6 +1057,9 @@ def _migrate(conn):
     if "horario_cortado_id" not in cols_dept:
         conn.execute("ALTER TABLE departamentos ADD COLUMN horario_cortado_id INTEGER REFERENCES horarios(id)")
         logger.info("Migración: columna horario_cortado_id agregada a departamentos")
+    if "horario_doble_id" not in cols_dept:
+        conn.execute("ALTER TABLE departamentos ADD COLUMN horario_doble_id INTEGER REFERENCES horarios(id)")
+        logger.info("Migración: columna horario_doble_id agregada a departamentos")
 
     cols_mdet = {r[1] for r in conn.execute("PRAGMA table_info(mozos_detalle)").fetchall()}
     if cols_mdet and "horario_id" not in cols_mdet:
@@ -1146,6 +1150,22 @@ def _migrate(conn):
             creado_por      INTEGER REFERENCES usuarios(id),
             creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
             UNIQUE(distribucion_id, empleado_id, fecha)
+        )
+    """)
+
+    # Autorización de cambio de turno / doble turno (por día, excepcional)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS distribucion_pase (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            departamento_id INTEGER NOT NULL REFERENCES departamentos(id),
+            empleado_id     INTEGER NOT NULL REFERENCES empleados(id),
+            fecha           TEXT    NOT NULL,
+            tipo            TEXT    NOT NULL CHECK(tipo IN ('cambio','doble')),
+            turno_origen    TEXT    NOT NULL,
+            turno_destino   TEXT,
+            autorizado_por  INTEGER REFERENCES usuarios(id),
+            creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(departamento_id, empleado_id, fecha)
         )
     """)
 

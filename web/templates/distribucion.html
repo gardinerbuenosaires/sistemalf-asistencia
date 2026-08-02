@@ -1673,11 +1673,22 @@ async function imprimirGrilla() {
     return vacia ? null : { label: p.nombre, dias, esChef: !!p.es_chef };
   }).filter(Boolean);
 
-  // Una sola fila FRANCO con todos los nombres apilados por día
+  // Una sola fila FRANCO con todos los nombres apilados por día:
+  // francos manuales + francos automáticos del calendario (misma lógica que la pantalla).
   const francoDias = Object.fromEntries(_dias.map(d => {
-    const nombres = _francos
-      .filter(f => f.fecha === d)
-      .map(f => `${f.emp_apellido || ''}, ${f.emp_nombre || ''}`.trim().replace(/^,\s*/, ''));
+    const enFranco = _francos.filter(f => f.fecha === d);
+    const nombres = enFranco.map(f => `${f.emp_apellido || ''}, ${f.emp_nombre || ''}`.trim().replace(/^,\s*/, ''));
+    const planFrancoIds = new Set(enFranco.map(f => f.empleado_id));
+    const asignadosEsteDay = new Set(_detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
+    _planBase
+      .filter(p => p.es_franco && p.fecha === d
+        && !planFrancoIds.has(p.empleado_id)
+        && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)
+        && !asignadosEsteDay.has(p.empleado_id))
+      .forEach(p => {
+        const emp = _empleados.find(e => e.id === p.empleado_id);
+        if (emp) nombres.push(`${emp.apellido || ''}, ${emp.nombre || ''}`.trim().replace(/^,\s*/, ''));
+      });
     return [d, nombres.join('<br>')];
   }));
   const hayFranco = Object.values(francoDias).some(v => v);

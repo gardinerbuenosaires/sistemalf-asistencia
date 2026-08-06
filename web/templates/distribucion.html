@@ -45,7 +45,7 @@
   .badge-confirmado { background: #d4edda; color: #155724; }
   .badge-nuevo { background: #e2e3e5; color: #383d41; }
 
-  main { padding: 16px; overflow: auto; flex: 1; }
+  main { padding: 0 16px 16px; overflow: auto; flex: 1; }
   .grilla-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1);
     min-width: 700px; }
 
@@ -182,6 +182,11 @@
   .opcion { padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: .85rem;
     border: 1px solid #dee2e6; }
   .opcion:hover { background: #f0f4f8; }
+  .opcion.disp-opt { background: #eafaf0; border-color: #82b366; border-left: 3px solid #82b366; font-weight: bold; }
+  .opcion.disp-opt:hover { background: #d9f2e3; }
+  .opciones .grupo-sep { font-size: .75rem; padding: 6px 0 4px; font-weight: bold; }
+  .opciones .grupo-sep.disp { color: #38601f; }
+  .opciones .grupo-sep.nodisp { color: #999; border-top: 1px solid #eee; margin-top: 4px; padding-top: 8px; }
   .opcion.franco-opt  { background: #fff3cd; border-color: #ffc107; color: #856404; }
   .opcion.vaciar-opt  { color: #e74c3c; border-color: #e74c3c; }
   .opcion.nov-V       { background: #d0e8f8; border-color: #95B3D7; cursor: default; pointer-events: none; }
@@ -403,6 +408,8 @@ let _comidaPersonal = [];  // [{id, empleado_id, fecha, emp_apellido, emp_nombre
 let _horarios = [];  // [{id, nombre, tipo, turno_nombre}]
 let _vacBalance = {};    // {empleado_id: dias_disponibles}
 let _vacDist = [];       // [{id, empleado_id, fecha}] — staging, antes de confirmar
+let _licencias = [];     // [{id, empleado_id, fecha, tipo}] — licencias L/LSG staged (borrador)
+let _licTipo   = 'L';    // tipo elegido en el modal de licencia
 let _planBase  = [];     // [{empleado_id, fecha, es_franco, horario_id}] desde planificacion auto
 let _planFrancoHide = new Set(); // "empId_fecha" — plan francos quitados manualmente esta sesión
 let _pases = [];            // [{id, empleado_id, fecha, tipo, turno_origen, turno_destino, emp_nombre, emp_apellido}]
@@ -412,6 +419,13 @@ let _horarioDobleId = null;      // horario "doble turno" del depto (para los ma
 let _francoMode = false; // true cuando el modal de empleado es para la fila FRANCO
 let _editandoPuestos = false; // modo edición estructural de puestos
 let _editando = null; // { puesto_id, fecha } — celda abierta
+
+// Colores de novedad como en asistencia mensual (L celeste, LSG lila)
+const LIC_COLORS = { L: { bg: '#92CDDC', txt: '#000' }, LSG: { bg: '#B1A0C7', txt: '#000' } };
+function licBox(tipo) {
+  const c = LIC_COLORS[tipo] || { bg: '#ccc', txt: '#000' };
+  return `<span style="display:inline-block;background:${c.bg};color:${c.txt};font-weight:bold;font-size:.6rem;line-height:1.3;padding:0 5px;border-radius:3px;border:1px solid rgba(0,0,0,.3)">${tipo}</span>`;
+}
 let _puestoEditId = null; // para modal de puesto
 let _reemplazandoDetId = null; // cuando se cambia horario: det a borrar antes de insertar
 
@@ -593,6 +607,7 @@ async function cargarGrilla() {
     _horarios       = data.horarios || [];
     _novedades      = data.novedades || [];
     _vacDist        = data.vac_dist || [];
+    _licencias      = data.licencias || [];
     _planBase       = data.plan_base || [];
     _planFrancoHide = new Set();
     _dias           = data.dias || [];
@@ -651,7 +666,8 @@ function renderGrilla() {
   function _sinAsignarDia(d) {
     const novIds = new Set([
       ..._novedades.filter(n => n.fecha === d).map(n => n.empleado_id),
-      ..._vacDist.filter(v => v.fecha === d).map(v => v.empleado_id)
+      ..._vacDist.filter(v => v.fecha === d).map(v => v.empleado_id),
+      ..._licencias.filter(l => l.fecha === d).map(l => l.empleado_id)
     ]);
     const cambioOut = new Set(_pases.filter(p => p.tipo === 'cambio' && p.turno_origen === turnoActual && p.fecha === d).map(p => p.empleado_id));
     const asignados = new Set(_detalles.filter(x => x.fecha === d && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
@@ -866,7 +882,46 @@ function renderGrilla() {
       ${vacCeldas}
     </tr>`;
 
-    // Filas de novedades (excluye V — tiene fila propia)
+    // Fila LICENCIAS (L/LSG): staged=_licencias (borrador) y reales de novedades, ambas con ✕
+    const licCeldas = _dias.map(d => {
+      const esHoy = d === hoyStr;
+      const puedoEditar = puedoEditarBase && !esPasado(d);
+      const stagedHoy = _licencias.filter(l => l.fecha === d);
+      const realHoy = _novedades.filter(n => n.fecha === d && (n.tipo === 'L' || n.tipo === 'LSG'));
+      const badgesStaged = stagedHoy.map(l => {
+        const emp = _empleados.find(e => e.id === l.empleado_id);
+        const nombre = emp ? `${emp.apellido}, ${emp.nombre}` : '?';
+        const box = licBox(l.tipo);
+        if (puedoEditar) {
+          return `<span class="badge-franco" style="background:#fff;color:#333;border:1px dashed #93c47d;cursor:pointer" onclick="quitarLicencia(${l.id})" title="Quitar licencia (borrador)">${box} ${nombre} ✕</span>`;
+        }
+        return `<span class="badge-franco" style="background:#fff;color:#333;border:1px dashed #93c47d">${box} ${nombre}</span>`;
+      }).join('');
+      const badgesReal = realHoy.flatMap(n => {
+        const emp = _empleados.find(e => e.id === n.empleado_id);
+        if (!emp) return [];
+        const nombre = `${emp.apellido}, ${emp.nombre}`;
+        const box = licBox(n.tipo);
+        if (puedoEditar) {
+          return [`<span class="badge-franco" style="background:#fff;color:#333;border:1px solid #93c47d;cursor:pointer" onclick="quitarLicenciaReal('${d}', ${n.empleado_id})" title="Quitar licencia (registrada en asistencia)">${box} ${nombre} ✕</span>`];
+        }
+        return [`<span class="badge-franco" style="background:#fff;color:#333;border:1px solid #93c47d">${box} ${nombre}</span>`];
+      }).join('');
+      const addBtn = puedoEditar
+        ? `<button class="btn-add-franco" style="border-color:#93c47d;color:#38601f" onclick="abrirModalLicencia('${d}')">+ Licencia</button>`
+        : '';
+      const allBadges = badgesStaged + badgesReal;
+      const badgesWrap = allBadges ? `<div class="celda-franco-badges">${allBadges}</div>` : '';
+      return `<td class="col-dia${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}">
+        <div class="celda-franco-wrap">${badgesWrap}${addBtn}</div>
+      </td>`;
+    }).join('');
+    const licenciaRow = `<tr style="background:#eaf3e3;border-top:2px solid #93c47d">
+      <td class="col-puesto" style="color:#38601f;font-weight:bold">LICENCIAS</td>
+      ${licCeldas}
+    </tr>`;
+
+    // Filas de novedades (excluye V, L y LSG — tienen fila propia)
     const NOV_LABELS_GRID = { ILT:'ILT', E:'ENFERMEDAD', L:'LICENCIA',
                                LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
                                FD:'FRANCO DÍA', CP:'COMIDA PERSO' };
@@ -877,6 +932,7 @@ function renderGrilla() {
     const novByTipo = {};
     for (const n of _novedades) {
       if (!NOV_LABELS_GRID[n.tipo]) continue;
+      if (n.tipo === 'L' || n.tipo === 'LSG') continue;  // van en la fila LICENCIAS
       const emp = _empleados.find(e => e.id === n.empleado_id);
       if (!emp) continue;
       if (!novByTipo[n.tipo]) novByTipo[n.tipo] = {};
@@ -961,7 +1017,7 @@ function renderGrilla() {
       </tr>`;
     }
 
-    tbody.innerHTML = puestosHtml + francoRow + vacRow + novedadesHtml + comidaRow + cambioRow + dobleRow + entranRow;
+    tbody.innerHTML = puestosHtml + francoRow + vacRow + licenciaRow + novedadesHtml + comidaRow + cambioRow + dobleRow + entranRow;
   }
 
   // Pie
@@ -1011,6 +1067,7 @@ function abrirModal(puestoId, fecha) {
       && !asignadosModal.has(p.empleado_id)).map(p => p.empleado_id)
   ]);
   const vacStagedModal = new Set(_vacDist.filter(v => v.fecha === fecha).map(v => v.empleado_id));
+  const licStagedModal = new Set(_licencias.filter(l => l.fecha === fecha).map(l => l.empleado_id));
   const _turnoAct = document.getElementById('sel-turno').value;
   const cambioOut = new Set(_pases.filter(p => p.tipo === 'cambio' && p.turno_origen === _turnoAct && p.fecha === fecha).map(p => p.empleado_id));
 
@@ -1020,7 +1077,8 @@ function abrirModal(puestoId, fecha) {
   // Sección: ya asignados a este puesto (con opción de quitar)
   if (detsEnPuesto.length > 0) {
     const sep1 = document.createElement('div');
-    sep1.style.cssText = 'font-size:.75rem;color:#888;padding:4px 0 4px;font-weight:bold';
+    sep1.className = 'grupo-sep';
+    sep1.style.color = '#888';
     sep1.textContent = 'Ya asignados';
     lista.appendChild(sep1);
     detsEnPuesto.forEach(det => {
@@ -1032,18 +1090,16 @@ function abrirModal(puestoId, fecha) {
       opt.onclick = () => quitarDetalle(det.id);
       lista.appendChild(opt);
     });
-    const sep2 = document.createElement('div');
-    sep2.style.cssText = 'font-size:.75rem;color:#888;padding:8px 0 4px;font-weight:bold;border-top:1px solid #eee;margin-top:4px';
-    sep2.textContent = 'Agregar';
-    lista.appendChild(sep2);
   }
 
-  // Empleados disponibles para agregar
-  let hayDisponibles = false;
+  // Resto de cocineros → dos grupos: Disponibles (asignables) y No disponibles (grisados),
+  // cada uno en orden alfabético (se preserva el orden del roster).
+  const dispEls = [];
+  const noDispEls = [];
+
   _empleados.forEach(e => {
     if (asignadosEnEste.has(e.id)) return;
     if (cambioOut.has(e.id)) return;  // cambió de turno ese día: ya no está en este turno
-    hayDisponibles = true;
     const opt = document.createElement('div');
     opt.className = 'opcion';
     opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
@@ -1052,26 +1108,36 @@ function abrirModal(puestoId, fecha) {
     if (vacStagedModal.has(e.id)) {
       opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#d0e8f8;color:#1a3a5c">Vacaciones</span>`;
       opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#95B3D7';
+      noDispEls.push(opt);
+    } else if (licStagedModal.has(e.id)) {
+      opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#d9ead3;color:#38601f">Licencia</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#93c47d';
+      noDispEls.push(opt);
     } else if (nov) {
       const label = NOV_LABEL[nov.tipo] || nov.tipo;
       opt.innerHTML = `${nombre} <span class="nov-badge">${label}</span>`;
       opt.classList.add(`nov-${nov.tipo in NOV_LABEL ? nov.tipo : 'otro'}`);
       opt.title = nov.descripcion || label;
+      noDispEls.push(opt);
     } else if (francoHoy.has(e.id)) {
       opt.innerHTML = `${nombre} <span class="nov-badge">Franco</span>`;
       opt.classList.add('nov-F');
+      noDispEls.push(opt);
     } else if (!e.horario_actual_id) {
       opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#f8d7da;color:#721c24">Sin calendario</span>`;
       opt.style.cssText = 'opacity:.6;cursor:default;pointer-events:none';
+      noDispEls.push(opt);
     } else if (asignadosEnOtro.has(e.id)) {
       opt.textContent = `${nombre}  ·  ya en otro puesto`;
       opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
+      noDispEls.push(opt);
     } else {
       opt.textContent = nombre;
+      opt.classList.add('disp-opt');
       const planHorario = _planBase.find(p => p.empleado_id === e.id && p.fecha === fecha)?.horario_id;
       opt.onclick = () => asignar(puestoId, fecha, e.id, false, planHorario || e.horario_actual_id || null);
+      dispEls.push(opt);
     }
-    lista.appendChild(opt);
   });
 
   // Cocineros que ENTRAN a este turno ese día (cambio/doble desde otro turno)
@@ -1080,7 +1146,6 @@ function abrirModal(puestoId, fecha) {
     if (asignadosEnEste.has(p.empleado_id)) return;
     const e = _empleadosEntrantes.find(x => x.id === p.empleado_id) || _empleados.find(x => x.id === p.empleado_id);
     if (!e) return;
-    hayDisponibles = true;
     const nombre = `${e.apellido}, ${e.nombre}`;
     const opt = document.createElement('div');
     opt.className = 'opcion';
@@ -1089,14 +1154,31 @@ function abrirModal(puestoId, fecha) {
     if (asignadosEnOtro.has(e.id)) {
       opt.innerHTML = `${nombre} ${badge} · ya en otro puesto`;
       opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
+      noDispEls.push(opt);
     } else {
       opt.innerHTML = `${nombre} ${badge}`;
+      opt.classList.add('disp-opt');
       opt.onclick = () => asignar(puestoId, fecha, e.id, false, _horarioTurnoDefault || e.horario_actual_id || null);
+      dispEls.push(opt);
     }
-    lista.appendChild(opt);
   });
 
-  if (!hayDisponibles && detsEnPuesto.length === 0) {
+  if (dispEls.length) {
+    const h = document.createElement('div');
+    h.className = 'grupo-sep disp';
+    h.textContent = `Disponibles (${dispEls.length})`;
+    lista.appendChild(h);
+    dispEls.forEach(el => lista.appendChild(el));
+  }
+  if (noDispEls.length) {
+    const h = document.createElement('div');
+    h.className = 'grupo-sep nodisp';
+    h.textContent = 'No disponibles';
+    lista.appendChild(h);
+    noDispEls.forEach(el => lista.appendChild(el));
+  }
+
+  if (!dispEls.length && !noDispEls.length && detsEnPuesto.length === 0) {
     const p = document.createElement('p');
     p.style.cssText = 'color:#888;font-size:.82rem;padding:8px 0';
     p.textContent = 'Sin empleados disponibles en este departamento/turno.';
@@ -1104,6 +1186,7 @@ function abrirModal(puestoId, fecha) {
   }
 
   document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('lista-opciones').scrollTop = 0;   // siempre mostrar desde arriba
   document.getElementById('modal-search').focus();
 }
 
@@ -1168,6 +1251,7 @@ async function abrirModalFranco(fecha) {
   });
 
   document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('lista-opciones').scrollTop = 0;   // siempre mostrar desde arriba
   document.getElementById('modal-search').focus();
 }
 
@@ -1242,6 +1326,7 @@ function abrirModalVacaciones(fecha) {
   });
 
   document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('lista-opciones').scrollTop = 0;   // siempre mostrar desde arriba
   document.getElementById('modal-search').focus();
 }
 
@@ -1292,6 +1377,7 @@ function abrirModalComida(fecha) {
   });
 
   document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('lista-opciones').scrollTop = 0;   // siempre mostrar desde arriba
   document.getElementById('modal-search').focus();
 }
 
@@ -1385,6 +1471,119 @@ async function quitarVacaciones(fecha, empleadoId) {
   }
 }
 
+// ── Fila LICENCIAS (L / LSG) ──────────────────────────────────────────────────
+function setLicTipo(t) {
+  _licTipo = t;
+  ['L', 'LSG'].forEach(x => {
+    const el = document.getElementById('lic-tipo-' + x);
+    if (el) {
+      const c = LIC_COLORS[x] || { bg: '#e0e0e0', txt: '#555' };
+      const on = x === t;
+      el.style.background = c.bg;
+      el.style.color = c.txt;
+      el.style.opacity = on ? '1' : '.4';
+      el.style.border = on ? '2px solid #333' : '2px solid transparent';
+    }
+  });
+}
+
+function abrirModalLicencia(fecha) {
+  if (fecha <= hoy()) { toast('Los días hasta hoy no se editan — la asistencia sale de los fichajes', true); return; }
+  _francoMode = false;
+  _editando = null;
+  _licTipo = 'L';
+  const d = new Date(fecha + 'T12:00:00');
+  const labelDia = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('modal-titulo').textContent = 'Asignar Licencia';
+  document.getElementById('modal-subtitulo').innerHTML =
+    `${labelDia} · Tipo: ` +
+    `<span id="lic-tipo-L" onclick="setLicTipo('L')" style="cursor:pointer;padding:2px 9px;border-radius:4px;font-weight:bold;margin-left:2px">L</span>` +
+    `<span id="lic-tipo-LSG" onclick="setLicTipo('LSG')" style="cursor:pointer;padding:2px 9px;border-radius:4px;font-weight:bold;margin-left:4px">LSG</span>`;
+  document.getElementById('modal-search').value = '';
+  setLicTipo('L');
+
+  const novHoy = new Map(_novedades.filter(n => n.fecha === fecha).map(n => [n.empleado_id, n]));
+  const stagedLicHoy = new Set(_licencias.filter(l => l.fecha === fecha).map(l => l.empleado_id));
+  const vacStagedHoy = new Set(_vacDist.filter(v => v.fecha === fecha).map(v => v.empleado_id));
+  const asignadoHoy = new Set(_detalles.filter(x => x.fecha === fecha && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
+  const francoHoy = new Set([
+    ..._francos.filter(f => f.fecha === fecha).map(f => f.empleado_id),
+    ..._planBase.filter(p => p.es_franco && p.fecha === fecha
+      && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)
+      && !asignadoHoy.has(p.empleado_id)).map(p => p.empleado_id)
+  ]);
+
+  const lista = document.getElementById('lista-opciones');
+  lista.innerHTML = '';
+  _empleados.forEach(e => {
+    const opt = document.createElement('div');
+    opt.className = 'opcion';
+    opt.dataset.nombre = `${e.apellido} ${e.nombre}`.toLowerCase();
+    const nombre = `${e.apellido}, ${e.nombre}`;
+    if (stagedLicHoy.has(e.id)) {
+      opt.innerHTML = `${nombre} <span class="nov-badge">Ya con licencia</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#93c47d;color:#38601f';
+    } else if (asignadoHoy.has(e.id)) {
+      opt.innerHTML = `${nombre} <span class="nov-badge">Asignado a un puesto</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ccc';
+    } else if (francoHoy.has(e.id)) {
+      opt.innerHTML = `${nombre} <span class="nov-badge">Franco</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ffc107';
+    } else if (novHoy.has(e.id) || vacStagedHoy.has(e.id)) {
+      const nov = novHoy.get(e.id);
+      const label = vacStagedHoy.has(e.id) ? 'Vacaciones'
+        : (nov.tipo === 'V' ? 'Vacaciones' : (NOV_LABEL[nov.tipo] || nov.tipo));
+      opt.innerHTML = `${nombre} <span class="nov-badge">${label}</span>`;
+      opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ccc';
+    } else {
+      opt.textContent = nombre;
+      opt.onclick = () => agregarLicencia(fecha, e.id);
+    }
+    lista.appendChild(opt);
+  });
+  document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('lista-opciones').scrollTop = 0;   // siempre mostrar desde arriba
+  document.getElementById('modal-search').focus();
+}
+
+async function agregarLicencia(fecha, empleadoId) {
+  const tipo = _licTipo;
+  cerrarModal();
+  try {
+    const distId = await _asegurarDistribucion();
+    const r = await fetch(`/api/distribucion/semana/${distId}/licencia`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ empleado_id: empleadoId, fecha, tipo })
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); toast('Error: ' + (e.detail || r.status), true); return; }
+    await cargarGrilla();
+    toast('Licencia asignada');
+  } catch(e) {
+    toast('Error: ' + e.message, true);
+  }
+}
+
+async function quitarLicencia(licId) {
+  if (!_distribucion) return;
+  if (_distribucion.estado === 'confirmado') { toast('No se puede modificar horarios confirmados', true); return; }
+  try {
+    const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/licencia/${licId}`, { method: 'DELETE' });
+    if (!r.ok) { toast('Error al quitar licencia', true); return; }
+    await cargarGrilla();
+    toast('Licencia quitada');
+  } catch(e) { toast('Error', true); }
+}
+
+async function quitarLicenciaReal(fecha, empleadoId) {
+  if (!confirm('Esta licencia está registrada en asistencia mensual. ¿Quitarla para todos?')) return;
+  try {
+    const r = await fetch(`/api/distribucion/novedad-licencia?empleado_id=${empleadoId}&fecha=${fecha}`, { method: 'DELETE' });
+    if (!r.ok) { toast('Error al quitar licencia', true); return; }
+    await cargarGrilla();
+    toast('Licencia quitada');
+  } catch(e) { toast('Error', true); }
+}
+
 async function _asegurarDistribucion() {
   if (_distribucion) return _distribucion.id;
   const deptId = document.getElementById('sel-departamento').value;
@@ -1443,6 +1642,7 @@ function abrirHorarioPicker(puestoId, fecha, empleadoId) {
   }
 
   document.getElementById('overlay-emp').classList.add('active');
+  document.getElementById('lista-opciones').scrollTop = 0;   // siempre mostrar desde arriba
   document.getElementById('modal-search').focus();
 }
 
@@ -1467,8 +1667,25 @@ function abrirModalPase(tipo, fecha) {
   document.getElementById('pase-destino-label').textContent = tipo === 'cambio' ? 'Pasa a' : 'Dobla en';
 
   const marcados = new Set(_pases.filter(p => p.fecha === fecha && p.turno_origen === turnoActual).map(p => p.empleado_id));
+  // En un cambio de turno el cocinero DEJA este turno: no debe estar asignado a un puesto acá.
+  // (En doble sí puede estar asignado, porque trabaja su turno y además dobla en el otro.)
+  const asignados = new Set(_detalles.filter(x => x.fecha === fecha && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
+  // Cocineros que ese día NO trabajan (franco, licencia y demás novedades): no se pueden pasar.
+  const noTrabaja = new Set([
+    ..._francos.filter(f => f.fecha === fecha).map(f => f.empleado_id),
+    ..._planBase.filter(p => p.es_franco && p.fecha === fecha
+      && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)
+      && !asignados.has(p.empleado_id)).map(p => p.empleado_id),
+    ..._novedades.filter(n => n.fecha === fecha).map(n => n.empleado_id),
+    ..._vacDist.filter(v => v.fecha === fecha).map(v => v.empleado_id),
+    ..._licencias.filter(l => l.fecha === fecha).map(l => l.empleado_id)
+  ]);
   const selEmp = document.getElementById('pase-empleado');
-  const disp = _empleados.filter(e => !marcados.has(e.id));
+  const disp = _empleados.filter(e =>
+    !marcados.has(e.id)
+    && !noTrabaja.has(e.id)
+    && !(tipo === 'cambio' && asignados.has(e.id))
+  );
   selEmp.innerHTML = disp.length
     ? disp.map(e => `<option value="${e.id}">${e.apellido}, ${e.nombre}</option>`).join('')
     : '<option value="">— Sin cocineros disponibles —</option>';
@@ -1704,6 +1921,16 @@ async function imprimirGrilla() {
     if (!novByTipo[n.tipo][n.fecha]) novByTipo[n.tipo][n.fecha] = [];
     if (!novByTipo[n.tipo][n.fecha].includes(nombre))
       novByTipo[n.tipo][n.fecha].push(nombre);
+  }
+  // Licencias staged (borrador) — se imprimen junto a las reales en sus filas L/LSG
+  for (const l of _licencias) {
+    const emp = _empleados.find(e => e.id === l.empleado_id);
+    if (!emp) continue;
+    const nombre = `${emp.apellido || ''}, ${emp.nombre || ''}`.trim().replace(/^,\s*/, '');
+    if (!novByTipo[l.tipo]) novByTipo[l.tipo] = {};
+    if (!novByTipo[l.tipo][l.fecha]) novByTipo[l.tipo][l.fecha] = [];
+    if (!novByTipo[l.tipo][l.fecha].includes(nombre))
+      novByTipo[l.tipo][l.fecha].push(nombre);
   }
 
   // Comida de personal

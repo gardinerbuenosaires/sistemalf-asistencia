@@ -1169,6 +1169,20 @@ def _migrate(conn):
         )
     """)
 
+    # Licencias (L / LSG) cargadas desde distribución (borrador → novedades al confirmar)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS distribucion_licencia (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            distribucion_id INTEGER NOT NULL REFERENCES distribucion_semana(id) ON DELETE CASCADE,
+            empleado_id     INTEGER NOT NULL REFERENCES empleados(id),
+            fecha           TEXT    NOT NULL,
+            tipo            TEXT    NOT NULL CHECK(tipo IN ('L','LSG')),
+            creado_por      INTEGER REFERENCES usuarios(id),
+            creado_en       TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE(distribucion_id, empleado_id, fecha)
+        )
+    """)
+
     # ── Módulo Mozos ──────────────────────────────────────────────────────────
     conn.execute("""
         CREATE TABLE IF NOT EXISTS mozos_semana (

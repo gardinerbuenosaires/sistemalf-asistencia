@@ -54,6 +54,12 @@ class FrancoIn(BaseModel):
     fecha: str
 
 
+class LicenciaIn(BaseModel):
+    empleado_id: int
+    fecha: str
+    tipo: str  # 'L' | 'LSG'
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _lunes(fecha_str: str) -> date:
@@ -295,6 +301,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         francos = []
         comida_personal = []
         vac_dist = []
+        licencias = []
         if dist:
             detalles = conn.execute(
                 """SELECT dd.*, e.nombre AS emp_nombre, e.apellido AS emp_apellido,
@@ -327,6 +334,15 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             ).fetchall()
             vac_dist = conn.execute(
                 "SELECT id, empleado_id, fecha FROM distribucion_vacacion WHERE distribucion_id=?",
+                (dist["id"],)
+            ).fetchall()
+            licencias = conn.execute(
+                """SELECT dl.id, dl.empleado_id, dl.fecha, dl.tipo,
+                          e.nombre AS emp_nombre, e.apellido AS emp_apellido
+                   FROM distribucion_licencia dl
+                   LEFT JOIN empleados e ON e.id = dl.empleado_id
+                   WHERE dl.distribucion_id=?
+                   ORDER BY dl.fecha""",
                 (dist["id"],)
             ).fetchall()
 
@@ -517,6 +533,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
         "dias": dias,
         "vacaciones_balance": vac_balance,
         "pases": pases,
+        "licencias": [dict(r) for r in licencias],
         "empleados_entrantes": empleados_entrantes,
         "horario_turno_default": horario_turno_default,
         "horario_doble_id": (dept_info["horario_doble_id"] if dept_info else None),
@@ -701,6 +718,18 @@ def crear_pase(body: PaseIn, user=Depends(require_permiso("distribucion", "edita
     with db_session() as conn:
         if body.turno_origen not in _scope_turnos(conn, user, body.departamento_id):
             raise HTTPException(403, "Sin acceso al turno de origen")
+        if body.tipo == "cambio":
+            dist_orig = conn.execute(
+                "SELECT id FROM distribucion_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
+                (body.departamento_id, body.turno_origen, str(_lunes(body.fecha)))
+            ).fetchone()
+            if dist_orig and conn.execute(
+                """SELECT 1 FROM distribucion_detalle
+                   WHERE distribucion_id=? AND empleado_id=? AND fecha=?
+                     AND es_franco=0 AND es_comida_personal=0""",
+                (dist_orig["id"], body.empleado_id, body.fecha)
+            ).fetchone():
+                raise HTTPException(409, "El cocinero está asignado a un puesto ese día — quitá la asignación antes de cambiarlo de turno")
         conn.execute(
             """INSERT INTO distribucion_pase
                (departamento_id, empleado_id, fecha, tipo, turno_origen, turno_destino, autorizado_por)
@@ -907,6 +936,95 @@ def del_vac_dist(dist_id: int, fecha: str, emp_id: int,
     return {"ok": True}
 
 
+# ── Licencias (L / LSG) desde distribución ────────────────────────────────────
+
+@router.post("/semana/{dist_id}/licencia")
+def add_licencia(dist_id: int, body: LicenciaIn,
+                 user=Depends(require_permiso("distribucion", "editar"))):
+    uid = int(user["sub"])
+    if body.tipo not in ("L", "LSG"):
+        raise HTTPException(400, "tipo debe ser L o LSG")
+    with db_session() as conn:
+        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        if not dist:
+            raise HTTPException(404, "Distribución no encontrada")
+        if dist["estado"] == "confirmado":
+            raise HTTPException(409, "Los horarios ya están confirmados")
+        turnos_ok = _scope_turnos(conn, user, dist["departamento_id"])
+        if dist["turno"] not in turnos_ok:
+            raise HTTPException(403, "Sin acceso")
+        if body.fecha <= str(date.today()):
+            raise HTTPException(409, "No se pueden cargar días hasta hoy")
+        existing_nov = conn.execute(
+            "SELECT tipo FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=0",
+            (body.empleado_id, body.fecha)
+        ).fetchone()
+        if existing_nov:
+            raise HTTPException(409, f"Ya existe novedad {existing_nov['tipo']} para ese día")
+        asignado = conn.execute(
+            """SELECT 1 FROM distribucion_detalle
+               WHERE distribucion_id=? AND empleado_id=? AND fecha=?
+                 AND es_franco=0 AND es_comida_personal=0""",
+            (dist_id, body.empleado_id, body.fecha)
+        ).fetchone()
+        if asignado:
+            raise HTTPException(409, "El cocinero está asignado a un puesto ese día")
+        franco = conn.execute(
+            "SELECT 1 FROM distribucion_franco WHERE distribucion_id=? AND empleado_id=? AND fecha=?",
+            (dist_id, body.empleado_id, body.fecha)
+        ).fetchone()
+        if franco:
+            raise HTTPException(409, "El cocinero tiene franco ese día")
+        try:
+            cur = conn.execute(
+                """INSERT INTO distribucion_licencia
+                   (distribucion_id, empleado_id, fecha, tipo, creado_por, creado_en)
+                   VALUES (?,?,?,?,?,datetime('now','localtime'))""",
+                (dist_id, body.empleado_id, body.fecha, body.tipo, uid)
+            )
+            conn.execute(
+                "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
+                (uid, dist_id)
+            )
+            return {"id": cur.lastrowid}
+        except Exception:
+            raise HTTPException(409, "El empleado ya tiene una licencia ese día")
+
+
+@router.delete("/semana/{dist_id}/licencia/{lid}")
+def delete_licencia(dist_id: int, lid: int,
+                    user=Depends(require_permiso("distribucion", "editar"))):
+    uid = int(user["sub"])
+    with db_session() as conn:
+        dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
+        if not dist or dist["estado"] == "confirmado":
+            raise HTTPException(409, "No se puede modificar horarios confirmados")
+        turnos_ok = _scope_turnos(conn, user, dist["departamento_id"])
+        if dist["turno"] not in turnos_ok:
+            raise HTTPException(403, "Sin acceso")
+        conn.execute(
+            "DELETE FROM distribucion_licencia WHERE id=? AND distribucion_id=?", (lid, dist_id)
+        )
+        conn.execute(
+            "UPDATE distribucion_semana SET modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
+            (uid, dist_id)
+        )
+    return {"ok": True}
+
+
+@router.delete("/novedad-licencia")
+def delete_novedad_licencia(empleado_id: int, fecha: str,
+                            _user=Depends(require_permiso("distribucion", "editar"))):
+    """Quita una licencia REAL (L/LSG) de la tabla novedades — compartida con asistencia
+    mensual. El chef puede quitar cualquier licencia (decisión del usuario)."""
+    with db_session() as conn:
+        conn.execute(
+            "DELETE FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=0 AND tipo IN ('L','LSG')",
+            (empleado_id, fecha)
+        )
+    return {"ok": True}
+
+
 # ── Confirmar distribución → escribe en planificacion ─────────────────────────
 
 @router.post("/semana/{dist_id}/confirmar")
@@ -933,6 +1051,9 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
         vac_staged = conn.execute(
             "SELECT * FROM distribucion_vacacion WHERE distribucion_id=?", (dist_id,)
         ).fetchall()
+        lic_staged = conn.execute(
+            "SELECT * FROM distribucion_licencia WHERE distribucion_id=?", (dist_id,)
+        ).fetchall()
 
         lunes_str = dist["semana_inicio"]
         domingo_str = str(date.fromisoformat(lunes_str) + timedelta(days=6))
@@ -942,6 +1063,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             {det["empleado_id"] for det in detalles}
             | {fr["empleado_id"] for fr in francos}
             | {v["empleado_id"] for v in vac_staged}
+            | {l["empleado_id"] for l in lic_staged}
         )
 
         # Pases de la semana: doble → horario doble turno; cambio saliente → no escribir en origen
@@ -993,8 +1115,9 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                 ph2 = ",".join("?" * len(ids_borrar))
                 conn.execute(f"DELETE FROM planificacion WHERE id IN ({ph2})", ids_borrar)
 
-        # Días de vacaciones staged (no escribimos planificacion en esos días)
+        # Días de vacaciones/licencias staged (no escribimos planificacion en esos días)
         vac_dias: set[tuple] = {(v["empleado_id"], v["fecha"]) for v in vac_staged}
+        lic_dias: set[tuple] = {(l["empleado_id"], l["fecha"]) for l in lic_staged}
 
         for fr in francos:
             if fr["fecha"] <= hoy_str:  # no modificar días ya transcurridos
@@ -1002,6 +1125,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             if (fr["empleado_id"], fr["fecha"]) in cambio_out_dias:  # cambió de turno: no escribe origen
                 continue
             if (fr["empleado_id"], fr["fecha"]) in bloqueantes:
+                continue
+            if (fr["empleado_id"], fr["fecha"]) in lic_dias:  # licencia ese día: no franco
                 continue
             conn.execute(
                 """INSERT INTO planificacion (empleado_id, fecha, es_franco, origen)
@@ -1017,6 +1142,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             if (det["empleado_id"], det["fecha"]) in bloqueantes:
                 continue
             if (det["empleado_id"], det["fecha"]) in vac_dias:
+                continue
+            if (det["empleado_id"], det["fecha"]) in lic_dias:  # licencia ese día: no asignar
                 continue
             if det["es_franco"]:
                 conn.execute(
@@ -1066,6 +1193,23 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                 (v["empleado_id"], v["fecha"], v["creado_por"])
             )
 
+        # Escribir licencias staged (L/LSG) a novedades, y limpiar el borrador ya volcado
+        for l in lic_staged:
+            if l["fecha"] <= hoy_str:  # no modificar días ya transcurridos
+                continue
+            if (l["empleado_id"], l["fecha"]) in bloqueantes:
+                continue
+            conn.execute(
+                """INSERT OR IGNORE INTO novedades
+                   (empleado_id, fecha, bloque, tipo, descripcion, creado_por)
+                   VALUES (?,?,0,?,'Desde distribución',?)""",
+                (l["empleado_id"], l["fecha"], l["tipo"], l["creado_por"])
+            )
+        conn.execute(
+            "DELETE FROM distribucion_licencia WHERE distribucion_id=? AND fecha > ?",
+            (dist_id, hoy_str)
+        )
+
         # Preservar los francos del calendario: días que tenían franco y no fueron
         # reasignados ni marcados franco manual quedan como franco en la planificación.
         asignado_o_franco = {(det["empleado_id"], det["fecha"]) for det in detalles} \
@@ -1075,7 +1219,7 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                 continue
             if (emp, fecha) in asignado_o_franco:
                 continue
-            if (emp, fecha) in bloqueantes or (emp, fecha) in vac_dias:
+            if (emp, fecha) in bloqueantes or (emp, fecha) in vac_dias or (emp, fecha) in lic_dias:
                 continue
             if (emp, fecha) in cambio_out_dias:
                 continue

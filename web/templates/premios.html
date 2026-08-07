@@ -732,8 +732,9 @@ async function generarPeriodo() {
   if (!periodo) { toast("Seleccioná un período"); return; }
   await _verificarPremiosCerrado(periodo);
   if (_premiosCerrado) { await cargar(false); return; }
+  // El cierre CONTABLE no bloquea el recálculo de premios: solo lo hace el cierre de premios.
+  // (Se sigue verificando para el estado de la UI, pero ya no impide regenerar.)
   await _verificarPeriodoCerrado(periodo);
-  if (!_periodoAbierto) { await cargar(false); return; }
   toast("Generando...", 10000);
   const res = await fetch(`/api/premios/${periodo}/generar`, {method:"POST"});
   if (res.ok) {

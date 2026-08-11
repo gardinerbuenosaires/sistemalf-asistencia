@@ -560,6 +560,7 @@ async function guardarDeterminante(id, campo, valor) {
   });
   if (res.ok) {
     const ev = await res.json();
+    if (ev.trapos_recalculado) { await cargar(); return; }  // el reparto de trapos cambió para todos
     const idx = _evaluaciones.findIndex(e => e.id === id);
     if (idx !== -1) {
       _evaluaciones[idx] = {..._evaluaciones[idx], ...ev,

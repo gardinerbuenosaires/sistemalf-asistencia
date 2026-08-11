@@ -168,6 +168,55 @@ def _finalizar(desglose: dict, valor_bruto: int, params: dict) -> dict:
     return desglose
 
 
+def _aplicar_trapos(conn, periodo: str, params: dict) -> dict | None:
+    """(Re)distribuye el monto de trapos del período y actualiza los valores de TODAS las
+    filas. Recalcula desde el estado guardado de cada fila (respeta tolerancias/BPM/monto),
+    reparte el total entre los que califican (valor sin trapos > 0 y cargo aplica_trapos) y
+    resetea el descuento de los que no califican. Se llama tras generar y tras cada
+    corrección manual que pueda cambiar quién califica."""
+    ta = conn.execute("SELECT valor FROM configuracion WHERE clave='trapos_cocina_activo'").fetchone()
+    trapos_activo = bool(ta and ta["valor"] == "1")
+    tv = conn.execute("SELECT valor FROM configuracion WHERE clave='trapos_cocina_valor'").fetchone()
+    trapos_valor = int(tv["valor"]) if (trapos_activo and tv and tv["valor"]) else 0
+
+    rows = conn.execute(
+        """SELECT pe.*, c.aplica_trapos
+           FROM premios_evaluacion pe
+           JOIN empleados e ON e.id = pe.empleado_id
+           JOIN cargos c ON c.id = e.cargo_id
+           WHERE pe.periodo=?""",
+        (periodo,)
+    ).fetchall()
+
+    # Valor SIN trapos con el estado guardado → define quién califica
+    base_calc = {}
+    for r in rows:
+        ev = dict(r)
+        ev["deduccion_trapos"] = 0
+        base_calc[r["id"]] = (ev, _calcular(ev, params))
+
+    elegibles = {rid for rid, (ev, d) in base_calc.items()
+                 if d["valor_calculado"] > 0 and ev.get("aplica_trapos")}
+    count = len(elegibles)
+    deduccion = round(trapos_valor / count) if (trapos_valor > 0 and count) else 0
+
+    for rid, (ev, d) in base_calc.items():
+        ded = deduccion if rid in elegibles else 0
+        if ded:
+            ev["deduccion_trapos"] = ded
+            d = _calcular(ev, params)
+        conn.execute(
+            """UPDATE premios_evaluacion SET deduccion_trapos=?, desglose_json=?,
+               valor_calculado=?, valor_final=?, modificado_en=datetime('now','localtime')
+               WHERE id=?""",
+            (ded, json.dumps(d), d["valor_calculado"], d["valor_final"], rid)
+        )
+
+    if trapos_activo and trapos_valor > 0:
+        return {"monto_total": trapos_valor, "count": count, "deduccion": deduccion}
+    return None
+
+
 def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
     """
     Lee los contadores de asistencia aplicando la misma resolución de novedades
@@ -568,34 +617,8 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
             ))
             generados += 1
 
-        # Pasada 2: aplicar trapos proporcionalmente
-        trapos_distribucion = None
-        if trapos_activo and trapos_valor > 0:
-            elegibles = conn.execute("""
-                SELECT pe.id, pe.empleado_id, pe.bpm, pe.monto_base, pe.tolerar_nf,
-                       pe.tolerar_e, pe.tolerar_retardo, pe.tolerar_ausente, pe.minutos_retardo, pe.dias_tarde,
-                       pe.no_fichadas, pe.dias_vacacion, pe.dias_enfermo, pe.dias_suspension,
-                       pe.dias_ausente, pe.valor_calculado
-                FROM premios_evaluacion pe
-                JOIN empleados e ON e.id = pe.empleado_id
-                JOIN cargos c ON c.id = e.cargo_id
-                WHERE pe.periodo=? AND c.aplica_trapos=1 AND pe.valor_calculado > 0
-            """, (periodo,)).fetchall()
-
-            if elegibles:
-                count = len(elegibles)
-                deduccion_per_emp = round(trapos_valor / count)
-                trapos_distribucion = {"monto_total": trapos_valor, "count": count, "deduccion": deduccion_per_emp}
-                for ev in elegibles:
-                    ev_dict = dict(ev)
-                    ev_dict["deduccion_trapos"] = deduccion_per_emp
-                    desglose = _calcular(ev_dict, params)
-                    conn.execute("""
-                        UPDATE premios_evaluacion SET
-                            deduccion_trapos=?, desglose_json=?, valor_calculado=?, valor_final=?,
-                            modificado_en=datetime('now','localtime')
-                        WHERE id=?
-                    """, (deduccion_per_emp, json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"], ev["id"]))
+        # Pasada 2: repartir trapos (respeta las tolerancias guardadas)
+        trapos_distribucion = _aplicar_trapos(conn, periodo, params)
 
     return {"ok": True, "generados": generados, "diagnostico": diag, "trapos_distribucion": trapos_distribucion}
 
@@ -653,6 +676,20 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         ))
 
         ev.update({"desglose": desglose, "valor_calculado": desglose["valor_calculado"], "valor_final": desglose["valor_final"]})
+
+        # Si hay trapos activos, un cambio de calificación (tolerar/BPM/monto/anular) cambia
+        # quién califica y por ende el reparto: re-repartir todo el período.
+        ta = conn.execute("SELECT valor FROM configuracion WHERE clave='trapos_cocina_activo'").fetchone()
+        if ta and ta["valor"] == "1":
+            _aplicar_trapos(conn, ev["periodo"], params)
+            row2 = conn.execute(
+                "SELECT valor_calculado, valor_final, desglose_json FROM premios_evaluacion WHERE id=?",
+                (ev_id,)
+            ).fetchone()
+            ev["valor_calculado"] = row2["valor_calculado"]
+            ev["valor_final"] = row2["valor_final"]
+            ev["desglose"] = json.loads(row2["desglose_json"])
+            ev["trapos_recalculado"] = True
     return ev
 
 

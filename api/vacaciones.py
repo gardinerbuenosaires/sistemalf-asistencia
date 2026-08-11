@@ -406,3 +406,33 @@ def upsert_saldo_inicial(data: SaldoInicialIn, _user=Depends(require_permiso("va
                 dias_tomados       = excluded.dias_tomados
         """, (data.empleado_id, data.anio, data.dias_correspondian, data.dias_tomados))
     return {"ok": True}
+
+
+@router.post("/saldo-inicial/recalcular", status_code=200)
+def recalcular_saldos_iniciales(anio: int, _user=Depends(require_permiso("vacaciones", "carga_inicial"))):
+    """Refresca 'dias_correspondian' (valor por fórmula del año) de TODOS los saldos iniciales
+    ya cargados del año, preservando 'dias_tomados'. Automatiza el re-guardado uno por uno.
+    No crea saldos nuevos: los empleados sin saldo cargado se siguen calculando en vivo."""
+    with db_session() as conn:
+        emps = conn.execute(
+            """SELECT e.id, e.fecha_ingreso, e.fecha_recontratacion, e.vac_dias_jubilacion
+               FROM empleados e
+               JOIN vacaciones_saldo_inicial s ON s.empleado_id = e.id AND s.anio = ?
+               WHERE e.activo = 1 AND e.tipo NOT IN ('acceso','parking')""",
+            (anio,)
+        ).fetchall()
+        n = 0
+        for e in emps:
+            recont = e["fecha_recontratacion"]
+            anio_recont = date.fromisoformat(recont).year if recont else None
+            es_jub = bool(e["vac_dias_jubilacion"] and anio_recont and anio >= anio_recont)
+            if es_jub:
+                dias_formula = float(e["vac_dias_jubilacion"])
+            else:
+                _, dias_formula = _calcular_dias_formula(e["fecha_ingreso"], anio)
+            conn.execute(
+                "UPDATE vacaciones_saldo_inicial SET dias_correspondian=? WHERE empleado_id=? AND anio=?",
+                (dias_formula, e["id"], anio)
+            )
+            n += 1
+    return {"actualizados": n}

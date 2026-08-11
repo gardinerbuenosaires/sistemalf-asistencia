@@ -165,7 +165,9 @@
         Ingresá los días tomados antes de usar el sistema. Los días que corresponden se calculan automáticamente.
         Filas en verde ya tienen datos guardados.
       </span>
-      <button class="btn btn-secondary btn-sm" onclick="cargarCI()">↻</button>
+      <button class="btn btn-sm" style="background:#856404;color:white" onclick="recalcularTodosCI()"
+              title="Actualiza 'Corresponden' de todos los ya guardados con la fórmula actual (por si cambió una fecha de ingreso)">↻ Recalcular todos</button>
+      <button class="btn btn-secondary btn-sm" onclick="cargarCI()" title="Recargar">↻</button>
       <button class="btn btn-secondary btn-sm" onclick="cerrarCI()">✕</button>
     </div>
     <div style="overflow:auto;flex:1">
@@ -417,6 +419,22 @@ async function guardarCI(i) {
     await cargar();
   } else {
     toast('Error al guardar');
+  }
+}
+
+async function recalcularTodosCI() {
+  const anio = parseInt(document.getElementById('sel-anio').value);
+  const nGuardados = _ciData.filter(e => e.tiene_saldo).length;
+  if (!nGuardados) { toast('No hay saldos cargados para recalcular'); return; }
+  if (!confirm(`Recalcular "Corresponden" de los ${nGuardados} empleados ya guardados de ${anio}?\nSe recalculan con la fórmula actual; los días tomados no se tocan.`)) return;
+  const r = await fetch(`/api/vacaciones/saldo-inicial/recalcular?anio=${anio}`, { method: 'POST' });
+  if (r.ok) {
+    const d = await r.json();
+    toast(`Recalculados: ${d.actualizados}`);
+    await cargarCI();
+    await cargar();
+  } else {
+    toast('Error al recalcular');
   }
 }
 

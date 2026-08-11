@@ -24,6 +24,7 @@ class EvaluacionUpdate(BaseModel):
     tolerar_nf: Optional[bool] = None
     tolerar_e: Optional[bool] = None
     tolerar_retardo: Optional[bool] = None
+    tolerar_ausente: Optional[bool] = None
     anular_premio: Optional[bool] = None
 
 
@@ -76,6 +77,7 @@ def _calcular(ev: dict, params: dict) -> dict:
     if ev.get("tolerar_nf"):      no_fichadas = 0
     if ev.get("tolerar_e"):       dias_enfermo = 0
     if ev.get("tolerar_retardo"): minutos_retardo = 0
+    if ev.get("tolerar_ausente"): dias_ausente = 0   # ignora A/L/LSG
 
     desglose = {
         "monto_base": base,
@@ -571,7 +573,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
         if trapos_activo and trapos_valor > 0:
             elegibles = conn.execute("""
                 SELECT pe.id, pe.empleado_id, pe.bpm, pe.monto_base, pe.tolerar_nf,
-                       pe.tolerar_e, pe.tolerar_retardo, pe.minutos_retardo, pe.dias_tarde,
+                       pe.tolerar_e, pe.tolerar_retardo, pe.tolerar_ausente, pe.minutos_retardo, pe.dias_tarde,
                        pe.no_fichadas, pe.dias_vacacion, pe.dias_enfermo, pe.dias_suspension,
                        pe.dias_ausente, pe.valor_calculado
                 FROM premios_evaluacion pe
@@ -608,7 +610,8 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         ev = dict(ev)
         check_premios_abierto(conn, ev["periodo"])
 
-        campos_corregir = [data.tolerar_nf, data.tolerar_e, data.tolerar_retardo, data.anular_premio]
+        campos_corregir = [data.tolerar_nf, data.tolerar_e, data.tolerar_retardo,
+                           data.tolerar_ausente, data.anular_premio]
         if any(v is not None for v in campos_corregir):
             if not tiene_permiso(_user.get("rol_id"), "premios", "corregir"):
                 raise HTTPException(403, "Sin permiso: premios.corregir")
@@ -626,6 +629,8 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             ev["tolerar_e"] = int(data.tolerar_e)
         if data.tolerar_retardo is not None:
             ev["tolerar_retardo"] = int(data.tolerar_retardo)
+        if data.tolerar_ausente is not None:
+            ev["tolerar_ausente"] = int(data.tolerar_ausente)
         if data.anular_premio is not None:
             ev["anular_premio"] = int(data.anular_premio)
 
@@ -635,13 +640,14 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         conn.execute("""
             UPDATE premios_evaluacion SET
                 bpm=?, desempenio=?, monto_base=?, monto_base_manual=?,
-                tolerar_nf=?, tolerar_e=?, tolerar_retardo=?, anular_premio=?,
+                tolerar_nf=?, tolerar_e=?, tolerar_retardo=?, tolerar_ausente=?, anular_premio=?,
                 desglose_json=?, valor_calculado=?, valor_final=?,
                 modificado_en=datetime('now','localtime')
             WHERE id=?
         """, (
             ev["bpm"], ev["desempenio"], ev["monto_base"], ev.get("monto_base_manual", 0),
-            ev.get("tolerar_nf", 0), ev.get("tolerar_e", 0), ev.get("tolerar_retardo", 0), ev.get("anular_premio", 0),
+            ev.get("tolerar_nf", 0), ev.get("tolerar_e", 0), ev.get("tolerar_retardo", 0),
+            ev.get("tolerar_ausente", 0), ev.get("anular_premio", 0),
             json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
             ev_id
         ))

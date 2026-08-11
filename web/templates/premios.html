@@ -451,9 +451,15 @@ function _filaHtml(ev, editar, corregir) {
          ${ev.tolerar_retardo ? 'checked' : ''}
          onchange="guardarDeterminante(${ev.id}, 'tolerar_retardo', this.checked)">`
     : '';
+  const chkTolAus = corregir
+    ? `<input type="checkbox" class="det-inline" title="Ignorar A/L/LSG (ausencia/licencia) en el cálculo de este período"
+         ${ev.tolerar_ausente ? 'checked' : ''}
+         onchange="guardarDeterminante(${ev.id}, 'tolerar_ausente', this.checked)">`
+    : '';
   const tolNFbadge  = ev.tolerar_nf      ? '<span class="det-tol">tol</span>' : '';
   const tolEbadge   = ev.tolerar_e       ? '<span class="det-tol">tol</span>' : '';
   const tolRetbadge = ev.tolerar_retardo ? '<span class="det-tol">tol</span>' : '';
+  const tolAusbadge = ev.tolerar_ausente ? '<span class="det-tol">tol</span>' : '';
   return `<tr data-id="${ev.id}">
     <td><button class="btn-expand" onclick="toggleDesglose(${ev.id})" title="Ver desglose">▶</button></td>
     <td>
@@ -484,7 +490,7 @@ function _filaHtml(ev, editar, corregir) {
     <td>${_cnt(ev.dias_vacacion)}</td>
     <td>${_cnt(ev.dias_enfermo, tolEbadge + chkTolE)}</td>
     <td>${_cnt(ev.dias_suspension)}</td>
-    <td>${_cnt(ev.dias_ausente)}</td>
+    <td>${_cnt(ev.dias_ausente, tolAusbadge + chkTolAus)}</td>
     <td class="firma-cell"><span class="firma-linea"></span></td>
   </tr>`;
 }
@@ -557,7 +563,8 @@ async function guardarDeterminante(id, campo, valor) {
     const idx = _evaluaciones.findIndex(e => e.id === id);
     if (idx !== -1) {
       _evaluaciones[idx] = {..._evaluaciones[idx], ...ev,
-        tolerar_nf: ev.tolerar_nf, tolerar_e: ev.tolerar_e, tolerar_retardo: ev.tolerar_retardo, anular_premio: ev.anular_premio};
+        tolerar_nf: ev.tolerar_nf, tolerar_e: ev.tolerar_e, tolerar_retardo: ev.tolerar_retardo,
+        tolerar_ausente: ev.tolerar_ausente, anular_premio: ev.anular_premio};
       _sincGrupos(idx);
       const row = document.querySelector(`tr[data-id="${id}"]`);
       if (row) row.outerHTML = _filaHtml(_evaluaciones[idx], canDo("premios","editar"), canDo("premios","corregir"));

@@ -288,10 +288,10 @@ def _diagnostico(conn, fecha_desde: str, dias_min: int) -> dict:
                                AND (e.fecha_ingreso IS NULL OR e.fecha_ingreso = ''))       AS sin_fecha_ingreso,
             COUNT(*) FILTER (WHERE c.aplica_premio = 1
                                AND e.fecha_ingreso IS NOT NULL AND e.fecha_ingreso != ''
-                               AND date(e.fecha_ingreso, '+' || ? || ' days') > ?)         AS sin_antiguedad,
+                               AND date(e.fecha_ingreso, '+' || ? || ' days') > date(?, '+1 month', '-1 day')) AS sin_antiguedad,
             COUNT(*) FILTER (WHERE c.aplica_premio = 1
                                AND e.fecha_ingreso IS NOT NULL AND e.fecha_ingreso != ''
-                               AND date(e.fecha_ingreso, '+' || ? || ' days') <= ?)        AS incluidos
+                               AND date(e.fecha_ingreso, '+' || ? || ' days') <= date(?, '+1 month', '-1 day')) AS incluidos
         FROM empleados e
         LEFT JOIN cargos c ON c.id = e.cargo_id
         WHERE e.activo = 1 AND e.tipo != 'acceso'
@@ -486,7 +486,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
             WHERE e.activo=1 AND e.tipo != 'acceso'
               AND c.aplica_premio = 1
               AND e.fecha_ingreso IS NOT NULL AND e.fecha_ingreso != ''
-              AND date(e.fecha_ingreso, '+' || ? || ' days') <= ?
+              AND date(e.fecha_ingreso, '+' || ? || ' days') <= date(?, '+1 month', '-1 day')
         """, (dias_min, fecha_desde)).fetchall()
 
         # Eliminar filas del período para empleados que ya no califican

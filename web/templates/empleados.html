@@ -803,28 +803,29 @@ function _buildPremioAviso(e) {
     </div>`;
   }
 
-  const primerDiaMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const ingreso = new Date(e.fecha_ingreso + "T00:00:00");
-  const diasDesdeIngreso = Math.floor((primerDiaMes - ingreso) / 86400000);
+  // Día en que cumple la antigüedad mínima
+  const cumple = new Date(ingreso);
+  cumple.setDate(cumple.getDate() + _diasMinAntiguedad);
+  // La antigüedad se mide al FIN del mes evaluado: el primer período elegible es el
+  // MES en que cae la fecha de cumplimiento (ese mes ya termina con la antigüedad cumplida).
+  const primerPeriodo = new Date(cumple.getFullYear(), cumple.getMonth(), 1);
+  const labelMes = `${MESES[primerPeriodo.getMonth()]} ${primerPeriodo.getFullYear()}`;
+  const mesActual = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
-  if (diasDesdeIngreso >= _diasMinAntiguedad) {
+  if (primerPeriodo <= mesActual) {
+    const diasHoy = Math.floor((new Date() - ingreso) / 86400000);
     return `<div class="form-group span-2">
       <div style="padding:8px 12px;border-radius:6px;font-size:.82rem;background:#d4edda;color:#155724;border:1px solid #c3e6cb">
-        ✓ Apto para el premio — antigüedad: ${diasDesdeIngreso} días (mínimo ${_diasMinAntiguedad})
+        ✓ Apto para el premio — elegible desde <strong>${labelMes}</strong> (antigüedad hoy: ${diasHoy} días, mínimo ${_diasMinAntiguedad})
       </div>
     </div>`;
   } else {
-    const qualifying = new Date(ingreso);
-    qualifying.setDate(qualifying.getDate() + _diasMinAntiguedad);
-    const primerPeriodo = qualifying.getDate() === 1
-      ? qualifying
-      : new Date(qualifying.getFullYear(), qualifying.getMonth() + 1, 1);
-    const diasHasta = Math.ceil((primerPeriodo - new Date()) / 86400000);
-    const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-    const labelMes = `${MESES[primerPeriodo.getMonth()]} ${primerPeriodo.getFullYear()}`;
+    const diasHasta = Math.ceil((cumple - new Date()) / 86400000);
     return `<div class="form-group span-2">
       <div style="padding:8px 12px;border-radius:6px;font-size:.82rem;background:#fff3cd;color:#856404;border:1px solid #ffeaa7">
-        ⏳ Primer período elegible: <strong>${labelMes}</strong> — faltan ${diasHasta} día${diasHasta !== 1 ? "s" : ""} (requiere ${_diasMinAntiguedad} días de antigüedad al inicio de cada período)
+        ⏳ Primer período elegible: <strong>${labelMes}</strong> — faltan ${diasHasta} día${diasHasta !== 1 ? "s" : ""} (requiere ${_diasMinAntiguedad} días de antigüedad cumplidos dentro del mes evaluado)
       </div>
     </div>`;
   }

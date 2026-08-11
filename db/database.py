@@ -686,6 +686,12 @@ def _migrate(conn):
         conn.execute("ALTER TABLE premios_evaluacion ADD COLUMN dias_tarde INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna dias_tarde agregada a premios_evaluacion")
 
+    # CP con reemplazante: quién cubre al ausente (compensación de presencia verificable)
+    cols_nov = {r[1] for r in conn.execute("PRAGMA table_info(novedades)").fetchall()}
+    if "reemplazante_id" not in cols_nov:
+        conn.execute("ALTER TABLE novedades ADD COLUMN reemplazante_id INTEGER REFERENCES empleados(id)")
+        logger.info("Migración: columna reemplazante_id agregada a novedades")
+
     # Tabla periodos_cerrados
     conn.execute("""
         CREATE TABLE IF NOT EXISTS periodos_cerrados (

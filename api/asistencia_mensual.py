@@ -45,7 +45,8 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
         nov = nov_map.get((eid, fecha, 0))
     if nov:
         if nov["tipo"] == "CP":
-            r = {"letra": "I", "tipo": "normal", "cp": True, "nov_id": nov["id"]}
+            r = {"letra": "I", "tipo": "normal", "cp": True, "nov_id": nov["id"],
+                 "reemplazante_id": nov.get("reemplazante_id")}
         else:
             r = {"letra": nov["tipo"], "tipo": "normal", "nov_id": nov["id"]}
         if nov.get("descripcion"):
@@ -384,10 +385,22 @@ def _asistencia_datos(mes: str) -> dict:
         ).fetchall()
 
         novedades = conn.execute(
-            f"SELECT id, empleado_id, fecha, bloque, tipo, descripcion, creado_por "
+            f"SELECT id, empleado_id, fecha, bloque, tipo, descripcion, creado_por, reemplazante_id "
             f"FROM novedades WHERE empleado_id IN ({ph}) AND fecha>=? AND fecha<=?",
             (*eids, f0, f1)
         ).fetchall()
+        # Nombres de reemplazantes (para el registro del CP)
+        reemp_ids = {n["reemplazante_id"] for n in novedades if n["reemplazante_id"]}
+        reemp_nombres = {}
+        if reemp_ids:
+            ph_r = ",".join("?" * len(reemp_ids))
+            reemp_nombres = {
+                r["id"]: f'{r["apellido"]}, {r["nombre"]}'
+                for r in conn.execute(
+                    f"SELECT id, apellido, nombre FROM empleados WHERE id IN ({ph_r})",
+                    tuple(reemp_ids)
+                ).fetchall()
+            }
 
         aliviadas = conn.execute(
             f"SELECT empleado_id, fecha, bloque "
@@ -431,6 +444,8 @@ def _asistencia_datos(mes: str) -> dict:
             "fecha": n["fecha"], "bloque": n["bloque"],
             "tipo": n["tipo"], "descripcion": n["descripcion"],
             "creado_por": n["creado_por"],
+            "reemplazante_id": n["reemplazante_id"],
+            "reemplazante_nombre": reemp_nombres.get(n["reemplazante_id"]) if n["reemplazante_id"] else None,
         })
         if n["tipo"] == "CO":
             co_map[(n["empleado_id"], n["fecha"])] = {
@@ -439,7 +454,7 @@ def _asistencia_datos(mes: str) -> dict:
         else:
             nov_map[(n["empleado_id"], n["fecha"], n["bloque"])] = {
                 "id": n["id"], "tipo": n["tipo"], "descripcion": n["descripcion"],
-                "creado_por": n["creado_por"],
+                "creado_por": n["creado_por"], "reemplazante_id": n["reemplazante_id"],
             }
     ali_set       = {(a["empleado_id"], a["fecha"], a["bloque"]) for a in aliviadas}
     transporte_map = {s["empleado_id"]: s["saldo"] for s in saldos}
@@ -831,6 +846,7 @@ class NovedadIn(BaseModel):
     bloque:      int = 0
     tipo:        str
     descripcion: Optional[str] = None
+    reemplazante_id: Optional[int] = None   # solo CP: quién cubre al ausente
 
 
 @router.post("/novedades", status_code=201)
@@ -890,17 +906,25 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
         dias_restan = round(dias_restan, 1)
         if dias_restan < nueva:
             raise HTTPException(400, f"Sin días de vacaciones disponibles. Quedan {dias_restan:.1f} día(s).")
+    # El reemplazante solo aplica al CP; para otros tipos queda en NULL.
+    reemplazante = data.reemplazante_id if data.tipo == "CP" else None
+    if reemplazante is not None and reemplazante == data.empleado_id:
+        raise HTTPException(400, "El reemplazante no puede ser el mismo empleado")
     creado_por = user.get("email") or user.get("sub")
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
         check_periodo_abierto(conn, data.fecha)
+        if reemplazante is not None and not conn.execute(
+            "SELECT 1 FROM empleados WHERE id=? AND activo=1", (reemplazante,)
+        ).fetchone():
+            raise HTTPException(400, "Reemplazante inválido")
         conn.execute(
-            """INSERT INTO novedades (empleado_id, fecha, bloque, tipo, descripcion, creado_por)
-               VALUES (?,?,?,?,?,?)
+            """INSERT INTO novedades (empleado_id, fecha, bloque, tipo, descripcion, creado_por, reemplazante_id)
+               VALUES (?,?,?,?,?,?,?)
                ON CONFLICT(empleado_id, fecha, bloque)
                DO UPDATE SET tipo=excluded.tipo, descripcion=excluded.descripcion,
-                             creado_por=excluded.creado_por""",
-            (data.empleado_id, data.fecha, data.bloque, data.tipo, data.descripcion, creado_por),
+                             creado_por=excluded.creado_por, reemplazante_id=excluded.reemplazante_id""",
+            (data.empleado_id, data.fecha, data.bloque, data.tipo, data.descripcion, creado_por, reemplazante),
         )
         row = conn.execute(
             "SELECT * FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=?",

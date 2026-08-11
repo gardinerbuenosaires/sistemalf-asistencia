@@ -630,6 +630,13 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
     </div>
     <textarea id="nov-descripcion" placeholder="Comentario (opcional)" rows="2"
       style="width:100%;box-sizing:border-box;border:1px solid #ced4da;border-radius:6px;padding:6px 8px;font-size:.83rem;resize:vertical;margin-top:6px"></textarea>
+    <div id="nov-reemp-wrap" style="display:none;margin-top:6px">
+      <label style="font-size:.78rem;color:#555;display:block;margin-bottom:2px">Cubierto por (reemplazante)</label>
+      <select id="nov-reemplazante"
+        style="width:100%;box-sizing:border-box;border:1px solid #9CCC65;border-radius:6px;padding:6px 8px;font-size:.83rem">
+        <option value="">— Sin reemplazante (marca presente como hasta ahora) —</option>
+      </select>
+    </div>
     <div class="modal-actions">
       <button class="btn-guardar"  onclick="guardarNovedad()">Guardar</button>
       <button class="btn-borrar"   id="btn-borrar"  onclick="borrarNovedad()" style="display:none">Quitar</button>
@@ -1458,7 +1465,10 @@ function renderGrupo(grupo, dias, empleados) {
           ? `${_fmtD(c.fecha)} → ${_fmtD(c.fecha_hasta)}${blq}`
           : `${_fmtD(c.fecha)}${blq}`;
         const autor = c.creado_por ? `<span class="informe-autor">${escHtml(c.creado_por)}</span>` : '<span class="informe-autor" style="color:#ddd">—</span>';
-        const desc  = c.descripcion ? escHtml(c.descripcion) : '';
+        let desc  = c.descripcion ? escHtml(c.descripcion) : '';
+        if (c.tipo === 'CP' && c.reemplazante_nombre) {
+          desc += ` <span style="color:#2d6a2d;font-weight:bold">· cubierto por ${escHtml(c.reemplazante_nombre)}</span>`;
+        }
         html += `<div class="informe-fila">
           <span class="informe-nombre">${escHtml(c.nombre)}</span>
           <span class="informe-fecha">${rango}</span>
@@ -1881,6 +1891,12 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   document.getElementById('nov-hasta').value  = '';
   document.getElementById('nov-hasta').min    = fecha;
 
+  // Reemplazante (solo CP): recordar el actual de la celda y ocultar el selector
+  modalCtx.reemplazante_id = (esCortado
+    ? (bloqueInicial === 2 ? celda?.b2?.reemplazante_id : celda?.b1?.reemplazante_id)
+    : celda?.reemplazante_id) || null;
+  document.getElementById('nov-reemp-wrap').style.display = 'none';
+
   // Panel comentario CO
   const coComment = celda?.co_comment || '';
   const coNovId   = celda?.co_nov_id  || null;
@@ -1953,6 +1969,19 @@ function selBloque(b, skipSubtitulo) {
       `${modalCtx.fecha.split('-').reverse().join('-')}  —  ${['Día completo','Bloque 1','Bloque 2'][b]}`;
 }
 
+function _empleadosParaReemplazo(excludeId) {
+  const out = [], seen = new Set();
+  ['TM','TN','CO','ST'].forEach(g => {
+    (datosActuales?.[g] || []).forEach(e => {
+      if (e.id === excludeId || seen.has(e.id)) return;
+      seen.add(e.id);
+      out.push({ id: e.id, apellido: e.apellido, nombre: e.nombre });
+    });
+  });
+  out.sort((a, b) => (`${a.apellido} ${a.nombre}`).localeCompare(`${b.apellido} ${b.nombre}`, 'es'));
+  return out;
+}
+
 function selTipo(t) {
   document.querySelectorAll('.tipo-btn').forEach(b =>
     b.classList.toggle('selected', b.dataset.tipo === t));
@@ -1960,11 +1989,25 @@ function selTipo(t) {
   if (t === '@' && modalCtx?.esCortado && modalCtx.bloqueActivo === 0) {
     selBloque(1);
   }
-  // Compensación de presencia: descripción obligatoria
+  // Compensación de presencia: descripción obligatoria + selector de reemplazante
   const descField = document.getElementById('nov-descripcion');
   if (descField) {
     descField.placeholder = t === 'CP' ? 'Descripción (obligatoria) — explicar motivo' : 'Descripción (opcional)';
     descField.style.borderColor = t === 'CP' ? '#9CCC65' : '';
+  }
+  const reempWrap = document.getElementById('nov-reemp-wrap');
+  if (reempWrap) {
+    if (t === 'CP' && !modalCtx?.multiSel) {
+      const sel = document.getElementById('nov-reemplazante');
+      const actual = modalCtx?.reemplazante_id || '';
+      const emps = _empleadosParaReemplazo(modalCtx?.eid);
+      sel.innerHTML = '<option value="">— Sin reemplazante (marca presente como hasta ahora) —</option>'
+        + emps.map(e => `<option value="${e.id}">${e.apellido}, ${e.nombre}</option>`).join('');
+      sel.value = actual ? String(actual) : '';
+      reempWrap.style.display = '';
+    } else {
+      reempWrap.style.display = 'none';
+    }
   }
   // Saldo vacaciones
   const vacInfo = document.getElementById('vac-saldo-info');
@@ -2046,11 +2089,14 @@ async function guardarNovedad() {
     document.getElementById('nov-descripcion').focus();
     return;
   }
+  const reemplazante_id = tipo === 'CP'
+    ? (parseInt(document.getElementById('nov-reemplazante').value) || null)
+    : null;
   for (const f of fechas) {
     const res = await fetch('/api/asistencia/novedades', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({empleado_id: eid, fecha: f, bloque: bloqueActivo, tipo, descripcion}),
+      body: JSON.stringify({empleado_id: eid, fecha: f, bloque: bloqueActivo, tipo, descripcion, reemplazante_id}),
     });
     if (!res.ok) {
       const e = await res.json();

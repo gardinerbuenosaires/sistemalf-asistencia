@@ -560,7 +560,14 @@ async function guardarDeterminante(id, campo, valor) {
   });
   if (res.ok) {
     const ev = await res.json();
-    if (ev.trapos_recalculado) { await cargar(); return; }  // el reparto de trapos cambió para todos
+    if (ev.trapos_recalculado) {
+      // El reparto de trapos cambió para todos → recargar la tabla, preservando el scroll.
+      const cont = document.getElementById('tbody-premios')?.closest('.section');
+      const sy = cont ? cont.scrollTop : 0;
+      await cargar();
+      if (cont) requestAnimationFrame(() => { cont.scrollTop = sy; });
+      return;
+    }
     const idx = _evaluaciones.findIndex(e => e.id === id);
     if (idx !== -1) {
       _evaluaciones[idx] = {..._evaluaciones[idx], ...ev,

@@ -720,10 +720,11 @@ async function cargar(spinner = true) {
 }
 
 async function guardarTraposTotal(valor) {
-  await fetch("/api/configuracion/trapos_cocina_valor", {
+  const r = await fetch("/api/premios/trapos-valor", {
     method: "PUT", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ valor: String(parseInt(valor) || 0) })
+    body: JSON.stringify({ valor: parseInt(valor) || 0 })
   });
+  if (!r.ok) { toast("Sin permiso para editar el valor de trapos (requiere Premios: Corregir)"); return; }
   await generarPeriodo();
 }
 

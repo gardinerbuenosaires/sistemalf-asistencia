@@ -272,6 +272,24 @@ def update_parametros(updates: list[ParametroUpdate], _user=Depends(require_perm
     return {"ok": True}
 
 
+class TraposValorIn(BaseModel):
+    valor: int
+
+
+@router.put("/trapos-valor")
+def set_trapos_valor(data: TraposValorIn, _user=Depends(require_permiso("premios", "corregir"))):
+    """Guarda el monto total de trapos de cocina. Protegido por premios:corregir
+    (coherente con la habilitación del campo en la UI); antes iba por el endpoint
+    genérico de configuración, que exigía usuarios:editar (solo perfil Sistema)."""
+    with db_session() as conn:
+        conn.execute(
+            "INSERT INTO configuracion (clave, valor) VALUES ('trapos_cocina_valor', ?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+            (str(int(data.valor)),)
+        )
+    return {"ok": True}
+
+
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
 def _diagnostico(conn, fecha_desde: str, dias_min: int) -> dict:

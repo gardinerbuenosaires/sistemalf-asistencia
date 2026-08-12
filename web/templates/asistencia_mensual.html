@@ -631,7 +631,7 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
     <textarea id="nov-descripcion" placeholder="Comentario (opcional)" rows="2"
       style="width:100%;box-sizing:border-box;border:1px solid #ced4da;border-radius:6px;padding:6px 8px;font-size:.83rem;resize:vertical;margin-top:6px"></textarea>
     <div id="nov-reemp-wrap" style="display:none;margin-top:6px">
-      <label style="font-size:.78rem;color:#555;display:block;margin-bottom:2px">Cubierto por (reemplazante)</label>
+      <label style="font-size:.78rem;color:#555;display:block;margin-bottom:2px">Cubierto por (reemplazante) <span style="color:#c0392b">*</span></label>
       <select id="nov-reemplazante"
         style="width:100%;box-sizing:border-box;border:1px solid #9CCC65;border-radius:6px;padding:6px 8px;font-size:.83rem">
         <option value="">— Sin reemplazante (marca presente como hasta ahora) —</option>
@@ -2001,7 +2001,7 @@ function selTipo(t) {
       const sel = document.getElementById('nov-reemplazante');
       const actual = modalCtx?.reemplazante_id || '';
       const emps = _empleadosParaReemplazo(modalCtx?.eid);
-      sel.innerHTML = '<option value="">— Sin reemplazante (marca presente como hasta ahora) —</option>'
+      sel.innerHTML = '<option value="">— Elegí un reemplazante —</option>'
         + emps.map(e => `<option value="${e.id}">${e.apellido}, ${e.nombre}</option>`).join('');
       sel.value = actual ? String(actual) : '';
       reempWrap.style.display = '';
@@ -2038,12 +2038,11 @@ async function guardarNovedad() {
 
   // ── Modo multi-selección ──
   if (modalCtx.multiSel) {
-    const descripcion = document.getElementById('nov-descripcion').value.trim() || null;
-    if (tipo === 'CP' && !descripcion) {
-      toast('La compensación de presencia requiere una descripción');
-      document.getElementById('nov-descripcion').focus();
+    if (tipo === 'CP') {
+      toast('El CP con reemplazante se carga de a un empleado por vez');
       return;
     }
+    const descripcion = document.getElementById('nov-descripcion').value.trim() || null;
     let errores = 0;
     for (const {eid, fecha, bloque} of modalCtx.multiSel) {
       const res = await fetch('/api/asistencia/novedades', {
@@ -2092,6 +2091,11 @@ async function guardarNovedad() {
   const reemplazante_id = tipo === 'CP'
     ? (parseInt(document.getElementById('nov-reemplazante').value) || null)
     : null;
+  if (tipo === 'CP' && !reemplazante_id) {
+    toast('Elegí un reemplazante para el CP');
+    document.getElementById('nov-reemplazante').focus();
+    return;
+  }
   for (const f of fechas) {
     const res = await fetch('/api/asistencia/novedades', {
       method: 'POST',

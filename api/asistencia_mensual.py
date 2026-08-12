@@ -921,6 +921,8 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
             raise HTTPException(400, f"Sin días de vacaciones disponibles. Quedan {dias_restan:.1f} día(s).")
     # El reemplazante solo aplica al CP; para otros tipos queda en NULL.
     reemplazante = data.reemplazante_id if data.tipo == "CP" else None
+    if data.tipo == "CP" and reemplazante is None:
+        raise HTTPException(400, "El CP requiere seleccionar un reemplazante")
     if reemplazante is not None and reemplazante == data.empleado_id:
         raise HTTPException(400, "El reemplazante no puede ser el mismo empleado")
     creado_por = user.get("email") or user.get("sub")

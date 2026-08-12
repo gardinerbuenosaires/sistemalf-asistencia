@@ -654,7 +654,7 @@ function _recalcularCards() {
   const data = _grupos[_tabActiva] || [];
   let total = 0, completo = 0, descuento = 0, cero = 0;
   data.forEach(ev => {
-    const vf = (ev.anular_premio || !ev.bpm) ? 0 : (ev.valor_final ?? 0);
+    const vf = (ev.anular_premio || (_usaBpm && !ev.bpm)) ? 0 : (ev.valor_final ?? 0);
     total += vf;
     if (vf === 0) cero++;
     else if (vf < ev.monto_base) descuento++;

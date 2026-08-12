@@ -101,6 +101,24 @@ def _evaluar_bloque(bloque: dict, fecha: date, f_entrada, f_salida) -> dict:
     }
 
 
+def _cp_fantasma(bloque: dict, fecha: date, fecha_str: str) -> dict:
+    """Resultado 'presente' con timestamps fantasma según el horario planificado (CP)."""
+    cruza = bool(bloque["cruza_medianoche"])
+    return {
+        "ausente":           False,
+        "entrada":           f"{fecha_str} {bloque['hora_entrada']}:00",
+        "salida":            f"{str(fecha + timedelta(days=1)) if cruza else fecha_str} {bloque['hora_salida']}:00",
+        "minutos_tarde":     None,
+        "salida_anticipada": False,
+        "sin_salida":        False,
+    }
+
+
+def _bloque_ausente() -> dict:
+    return {"ausente": True, "entrada": None, "salida": None,
+            "minutos_tarde": None, "salida_anticipada": False, "sin_salida": False}
+
+
 def _calcular_estado(b1: dict, b2: dict | None) -> str:
     if b1["ausente"] and (b2 is None or b2["ausente"]):
         return "ausente"
@@ -261,11 +279,14 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
             ).fetchall()
         }
 
-        cp_set: set[int] = {
-            r["empleado_id"] for r in conn.execute(
-                "SELECT DISTINCT empleado_id FROM novedades WHERE fecha=? AND tipo='CP'",
-                (fecha_str,)
-            ).fetchall()
+        cp_rows = conn.execute(
+            "SELECT empleado_id, reemplazante_id FROM novedades WHERE fecha=? AND tipo='CP'",
+            (fecha_str,)
+        ).fetchall()
+        cp_set: set[int] = {r["empleado_id"] for r in cp_rows}
+        # CP con reemplazante: A -> B. La presencia de A se verifica por la fichada de B.
+        cp_reemp: dict[int, int] = {
+            r["empleado_id"]: r["reemplazante_id"] for r in cp_rows if r["reemplazante_id"]
         }
 
         # Cargar tipo de empleado para los que tienen planificación
@@ -294,6 +315,8 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
 
         # Fichajes del día y siguiente — tipo ignorado, clasificamos por proximidad
         eids = [p["empleado_id"] for p in planes]
+        # Incluir los reemplazantes aunque no tengan planificación ese día (para verificar cobertura)
+        eids = list({*eids, *cp_reemp.values()})
         pe   = ",".join("?" * len(eids))
         fichajes_rows = conn.execute(
             f"SELECT * FROM fichajes "
@@ -305,6 +328,36 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
         fich_map: dict[int, list] = defaultdict(list)
         for f in fichajes_rows:
             fich_map[f["empleado_id"]].append(dict(f))
+
+        # ── Cobertura por reemplazo (CP con reemplazante) ─────────────────────────
+        # Para cada A cubierto por B: qué bloques de A cubrió B (fichó dentro del bloque)
+        # y qué fichadas de B se consumen en esa cobertura (se excluyen de la eval de B).
+        cobertura_A: dict[int, dict[int, bool]] = {}
+        consumidas: dict[int, set] = defaultdict(set)
+        if cp_reemp:
+            plan_by_eid = {p["empleado_id"]: dict(p) for p in planes}
+            for a_id, b_id in cp_reemp.items():
+                pa = plan_by_eid.get(a_id)
+                if not pa or not pa.get("horario_id"):
+                    continue
+                bloques_a = bloques_map.get(pa["horario_id"], [])
+                if not bloques_a:
+                    continue
+                slots_cob = _clasificar_fichajes(fich_map.get(b_id, []), bloques_a, fecha)
+                cov: dict[int, bool] = {}
+                for b in bloques_a:
+                    bn = b["bloque"]
+                    ent = slots_cob.get(f"b{bn}_entrada")
+                    cov[bn] = ent is not None
+                    for lado in ("entrada", "salida"):
+                        f = slots_cob.get(f"b{bn}_{lado}")
+                        if f:
+                            consumidas[b_id].add(f["id"])
+                cobertura_A[a_id] = cov
+            # Excluir de la evaluación de B las fichadas que usó para cubrir a A
+            for b_id, ids in consumidas.items():
+                if ids:
+                    fich_map[b_id] = [f for f in fich_map.get(b_id, []) if f["id"] not in ids]
 
         for plan in planes:
             eid = plan["empleado_id"]
@@ -524,33 +577,42 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                         }
                     estado = "ok"
 
-            # Si tiene novedad CP y resultó ausente, marcar como presente (timestamps fantasma)
+            # Novedad CP: compensación de presencia.
             if estado == "ausente" and eid in cp_set:
                 bloques = bloques_map.get(p.get("horario_id"), [])
-                if bloques:
-                    b1 = bloques[0]
-                    cruza1 = bool(b1["cruza_medianoche"])
-                    b1r = {
-                        "entrada":           f"{fecha_str} {b1['hora_entrada']}:00",
-                        "salida":            f"{str(fecha + timedelta(days=1)) if cruza1 else fecha_str} {b1['hora_salida']}:00",
-                        "minutos_tarde":     None,
-                        "salida_anticipada": False,
-                        "ausente":           False,
-                        "sin_salida":        False,
-                    }
-                    b2r = None
-                    if len(bloques) > 1:
-                        b2 = bloques[1]
-                        cruza2 = bool(b2["cruza_medianoche"])
-                        b2r = {
-                            "entrada":           f"{fecha_str} {b2['hora_entrada']}:00",
-                            "salida":            f"{str(fecha + timedelta(days=1)) if cruza2 else fecha_str} {b2['hora_salida']}:00",
-                            "minutos_tarde":     None,
-                            "salida_anticipada": False,
-                            "ausente":           False,
-                            "sin_salida":        False,
-                        }
-                estado = "ok"
+                if eid in cp_reemp:
+                    # CP con reemplazante: A queda presente SOLO en los bloques que B cubrió
+                    # (fichó dentro del bloque). Los bloques sin cubrir quedan ausentes.
+                    cov = cobertura_A.get(eid, {})
+                    algun_cubierto = False
+                    if bloques:
+                        b1 = bloques[0]
+                        b1_aplica = bool(b1.get("aplica", 1))
+                        if not b1_aplica or cov.get(b1["bloque"]):
+                            b1r = _cp_fantasma(b1, fecha, fecha_str)
+                            if b1_aplica:
+                                algun_cubierto = True
+                        else:
+                            b1r = _bloque_ausente()
+                        b2r = None
+                        if len(bloques) > 1:
+                            b2 = bloques[1]
+                            b2_aplica = bool(b2.get("aplica", 1))
+                            if not b2_aplica or cov.get(b2["bloque"]):
+                                b2r = _cp_fantasma(b2, fecha, fecha_str)
+                                if b2_aplica:
+                                    algun_cubierto = True
+                            else:
+                                b2r = _bloque_ausente()
+                        if algun_cubierto:
+                            estado = _calcular_estado(b1r, b2r)
+                        # si ningún bloque aplicable fue cubierto → estado sigue "ausente"
+                else:
+                    # CP sin reemplazante: comportamiento clásico (presente en todo)
+                    if bloques:
+                        b1r = _cp_fantasma(bloques[0], fecha, fecha_str)
+                        b2r = _cp_fantasma(bloques[1], fecha, fecha_str) if len(bloques) > 1 else None
+                    estado = "ok"
 
             # Si el empleado tiene novedad NF y resultó ausente, usar horario planificado
             if estado == "ausente" and eid in nf_set:

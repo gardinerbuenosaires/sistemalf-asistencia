@@ -290,11 +290,21 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
         WHERE empleado_id=? AND fecha>=? AND fecha<?
     """, (empleado_id, fecha_desde, fecha_hasta)).fetchone()
 
+    # CP con reemplazante que NO cubrió: el evaluador/planilla lo resuelve como ausente.
+    # Se toma esa misma info (no se re-analiza distinto) y cuenta como ausencia.
+    cp_no_cubierto = conn.execute("""
+        SELECT COUNT(DISTINCT rd.fecha)
+        FROM resultados_dia rd
+        JOIN novedades nv ON nv.empleado_id = rd.empleado_id AND nv.fecha = rd.fecha
+                         AND nv.tipo = 'CP' AND nv.reemplazante_id IS NOT NULL
+        WHERE rd.empleado_id=? AND rd.fecha>=? AND rd.fecha<? AND rd.estado='ausente'
+    """, (empleado_id, fecha_desde, fecha_hasta)).fetchone()[0] or 0
+
     return {
         "minutos_retardo": r["minutos_retardo"],
         "dias_tarde":      r["dias_tarde"],
         "no_fichadas":     r["no_fichadas"],
-        "dias_ausente":    n["dias_ausente"],
+        "dias_ausente":    n["dias_ausente"] + cp_no_cubierto,
         "dias_vacacion":   n["dias_vacacion"],
         "dias_enfermo":    n["dias_enfermo"],
         "dias_suspension": n["dias_suspension"],

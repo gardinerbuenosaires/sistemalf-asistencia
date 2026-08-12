@@ -45,8 +45,21 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
         nov = nov_map.get((eid, fecha, 0))
     if nov:
         if nov["tipo"] == "CP":
-            r = {"letra": "I", "tipo": "normal", "cp": True, "nov_id": nov["id"],
-                 "reemplazante_id": nov.get("reemplazante_id")}
+            letra_cp = "I"
+            if nov.get("reemplazante_id"):
+                # CP con reemplazante: presente solo si B cubrió (según el evaluador).
+                res = res_map.get((eid, fecha))
+                if res:
+                    if bloque == 2:
+                        cubierto = not res.get("b2_ausente")
+                    elif bloque == 1:
+                        cubierto = not res.get("b1_ausente")
+                    else:
+                        cubierto = res.get("estado") != "ausente"
+                    letra_cp = "I" if cubierto else "A"
+            r = {"letra": letra_cp, "tipo": "normal", "cp": True, "nov_id": nov["id"],
+                 "reemplazante_id": nov.get("reemplazante_id"),
+                 **({"cp_no_cubierto": True} if letra_cp == "A" else {})}
         else:
             r = {"letra": nov["tipo"], "tipo": "normal", "nov_id": nov["id"]}
         if nov.get("descripcion"):
@@ -930,6 +943,14 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
             "SELECT * FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=?",
             (data.empleado_id, data.fecha, data.bloque),
         ).fetchone()
+    # Un CP con reemplazante afecta la evaluación de A y de B (cobertura) → reevaluar la fecha
+    # completa para que ambos queden al día. Solo cuando hay reemplazante (la lógica nueva).
+    if data.tipo == "CP" and reemplazante is not None:
+        try:
+            from sync.evaluador import evaluar_fecha
+            evaluar_fecha(data.fecha, respetar_correcciones=True)
+        except Exception:
+            pass
     return dict(row)
 
 

@@ -640,10 +640,12 @@ def _migrate(conn):
     ).fetchone()
     if old_exists:
         conn.execute("DROP TABLE novedades_old")
-    try:
-        conn.execute("INSERT INTO novedades (empleado_id, fecha, bloque, tipo) VALUES (0,'1900-01-01',99,'@')")
-        conn.execute("DELETE FROM novedades WHERE bloque=99")
-    except Exception:
+    # Recrear SOLO si la tabla realmente tiene un CHECK en 'tipo' (detección por esquema,
+    # no por un insert de prueba que fallaba por la FK y disparaba la recreación en cada arranque).
+    sql_nov = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='novedades'"
+    ).fetchone()
+    if sql_nov and "CHECK" in sql_nov[0].upper():
         conn.executescript("""
             ALTER TABLE novedades RENAME TO novedades_old;
             CREATE TABLE novedades (
@@ -657,7 +659,8 @@ def _migrate(conn):
                 creado_en   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 UNIQUE(empleado_id, fecha, bloque)
             );
-            INSERT INTO novedades SELECT * FROM novedades_old;
+            INSERT INTO novedades (id, empleado_id, fecha, bloque, tipo, descripcion, creado_por, creado_en)
+                SELECT id, empleado_id, fecha, bloque, tipo, descripcion, creado_por, creado_en FROM novedades_old;
             DROP TABLE novedades_old;
         """)
         logger.info("Migración: tabla novedades recreada sin CHECK constraint en tipo")

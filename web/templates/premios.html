@@ -102,6 +102,7 @@
              border-radius: 3px; padding: 0 3px; margin-left: 3px; vertical-align: middle; }
   .det-inline { margin-left: 5px; cursor: pointer; vertical-align: middle; width: 13px; height: 13px; }
   .falta-bpm { color: #e67e22; font-size: .75rem; font-style: italic; }
+  body.sin-bpm .col-bpm { display: none; }
   .cnt-cero { color: #ccc; }
   .cnt-nz   { font-weight: bold; }
   .asist-inc  { color: #c0392b; font-size: .75rem; font-style: italic; }
@@ -250,7 +251,7 @@
           <th>Premio</th>
           <th class="det-col th-det" title="Anular premio para este período"><span style="color:#e74c3c;font-weight:bold">✕</span></th>
           <th>Desempeño</th>
-          <th>BPM</th>
+          <th class="col-bpm">BPM</th>
           <th>Puntualidad</th>
           <th>Retardo</th>
           <th title="No fichadas / ignorar NF">NF <span style="color:#e74c3c;font-size:.7em">✕</span></th>
@@ -278,6 +279,7 @@ let _evaluaciones = [];
 const _debounceTimers = {};
 let _nombreEmpresa = "";
 let _periodoAbierto = false;
+let _usaBpm = true;   // si false: se oculta la columna BPM y no bloquea
 let _premiosCerrado = false;
 let _traposActivo = false;
 let _traposDistribucion = null;
@@ -415,7 +417,7 @@ function _filaHtml(ev, editar, corregir) {
   const vf = ev.valor_final ?? 0;
   const vfPantalla = ev.anular_premio ? 0 : vf;
   const clsValor = vfPantalla === 0 ? "valor-cero" : "valor-final";
-  const sinBpm       = !ev.bpm;
+  const sinBpm       = _usaBpm ? !ev.bpm : false;
   const sinAsistencia = !!ev.asistencia_incompleta;
   const bloqueado    = sinBpm || sinAsistencia;
   const bpmBadge = ev.bpm === "NO CONFORME"
@@ -483,7 +485,7 @@ function _filaHtml(ev, editar, corregir) {
            <span class="print-only" style="font-size:.7rem;white-space:pre-wrap;word-break:break-word">${ev.desempenio||""}</span>`
         : `<span style="font-size:.8rem;white-space:pre-wrap">${ev.desempenio||""}</span>`}
     </td>
-    <td class="field-bpm">${editar ? bpmSelect : bpmBadge}</td>
+    <td class="field-bpm col-bpm">${editar ? bpmSelect : bpmBadge}</td>
     <td class="cell-puntualidad">${_badgePuntualidad(d.puntualidad_status, d.descalificado)}</td>
     <td>${_cnt(_fmtMin(ev.minutos_retardo) + (ev.dias_tarde > 0 ? ` <span style="color:#999;font-size:.75rem">(${ev.dias_tarde}v)</span>` : ''), tolRetbadge + chkTolRet)}</td>
     <td>${_cnt(ev.no_fichadas, tolNFbadge + chkTolNF)}</td>
@@ -790,6 +792,9 @@ _loadPerms().then(async () => {
     ]);
     const p = params.find(p => p.clave === 'dia_corte_mes_anterior');
     if (p) diaCorte = parseInt(p.valor) || 10;
+    const pb = params.find(p => p.clave === 'usa_bpm');
+    _usaBpm = !pb || pb.valor !== '0';   // por defecto usa BPM
+    document.body.classList.toggle('sin-bpm', !_usaBpm);
     if (cfgNombre.nombre) _nombreEmpresa = cfgNombre.nombre;
     _traposActivo = cfgAll.find(c => c.clave === 'trapos_cocina_activo')?.valor === '1';
     if (_traposActivo) {

@@ -908,6 +908,8 @@ def _migrate(conn):
              "Días de antigüedad mínima al 1° del mes para aplicar al premio"),
             ("dia_corte_mes_anterior", "10", "entero",
              "Hasta qué día del mes se muestra el mes anterior por defecto en premios (1-28)"),
+            ("usa_bpm", "1", "bool",
+             "Usar columna BPM. Desactivar para ocultarla y no exigirla (locales que no usan BPM)"),
         ]
     )
 

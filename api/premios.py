@@ -26,6 +26,7 @@ class EvaluacionUpdate(BaseModel):
     tolerar_retardo: Optional[bool] = None
     tolerar_ausente: Optional[bool] = None
     tolerar_lsg: Optional[bool] = None
+    desempenio_penaliza: Optional[bool] = None
     anular_premio: Optional[bool] = None
 
 
@@ -76,6 +77,7 @@ def _calcular(ev: dict, params: dict) -> dict:
     minutos_retardo = ev["minutos_retardo"]
     bpm = ev["bpm"]
     lsg_proporcional = bool(params.get("lsg_proporcional"))
+    desempenio_penaliza = bool(ev.get("desempenio_penaliza"))
 
     if ev.get("tolerar_nf"):      no_fichadas = 0
     if ev.get("tolerar_e"):       dias_enfermo = 0
@@ -93,6 +95,7 @@ def _calcular(ev: dict, params: dict) -> dict:
         "puntualidad_status": None,
         "deduccion_puntualidad": 0,
         "deduccion_bpm": 0,
+        "deduccion_desempenio": 0,
         "deduccion_vacaciones": 0,
         "deduccion_lsg": 0,
         "deduccion_trapos": 0,
@@ -150,6 +153,10 @@ def _calcular(ev: dict, params: dict) -> dict:
     deduccion_bpm = round(base * params["pct_descuento_bpm"] / 100) if bpm == "NO CONFORME" else 0
     desglose["deduccion_bpm"] = deduccion_bpm
 
+    # Desempeño (checkbox manual): descuenta un porcentaje del monto base
+    deduccion_desempenio = round(base * params.get("pct_descuento_desempenio", 0) / 100) if desempenio_penaliza else 0
+    desglose["deduccion_desempenio"] = deduccion_desempenio
+
     # Vacaciones (proporcional)
     deduccion_vacaciones = 0
     if dias_vacacion > 0:
@@ -165,7 +172,7 @@ def _calcular(ev: dict, params: dict) -> dict:
     deduccion_trapos = int(ev.get("deduccion_trapos") or 0)
     desglose["deduccion_trapos"] = deduccion_trapos
 
-    valor_bruto = max(0, base - deduccion_puntualidad - deduccion_bpm
+    valor_bruto = max(0, base - deduccion_puntualidad - deduccion_bpm - deduccion_desempenio
                       - deduccion_vacaciones - deduccion_lsg - deduccion_trapos)
     return _finalizar(desglose, valor_bruto, params)
 
@@ -661,7 +668,8 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         check_premios_abierto(conn, ev["periodo"])
 
         campos_corregir = [data.tolerar_nf, data.tolerar_e, data.tolerar_retardo,
-                           data.tolerar_ausente, data.tolerar_lsg, data.anular_premio]
+                           data.tolerar_ausente, data.tolerar_lsg, data.desempenio_penaliza,
+                           data.anular_premio]
         if any(v is not None for v in campos_corregir):
             if not tiene_permiso(_user.get("rol_id"), "premios", "corregir"):
                 raise HTTPException(403, "Sin permiso: premios.corregir")
@@ -683,6 +691,8 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             ev["tolerar_ausente"] = int(data.tolerar_ausente)
         if data.tolerar_lsg is not None:
             ev["tolerar_lsg"] = int(data.tolerar_lsg)
+        if data.desempenio_penaliza is not None:
+            ev["desempenio_penaliza"] = int(data.desempenio_penaliza)
         if data.anular_premio is not None:
             ev["anular_premio"] = int(data.anular_premio)
 
@@ -692,14 +702,16 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         conn.execute("""
             UPDATE premios_evaluacion SET
                 bpm=?, desempenio=?, monto_base=?, monto_base_manual=?,
-                tolerar_nf=?, tolerar_e=?, tolerar_retardo=?, tolerar_ausente=?, tolerar_lsg=?, anular_premio=?,
+                tolerar_nf=?, tolerar_e=?, tolerar_retardo=?, tolerar_ausente=?, tolerar_lsg=?,
+                desempenio_penaliza=?, anular_premio=?,
                 desglose_json=?, valor_calculado=?, valor_final=?,
                 modificado_en=datetime('now','localtime')
             WHERE id=?
         """, (
             ev["bpm"], ev["desempenio"], ev["monto_base"], ev.get("monto_base_manual", 0),
             ev.get("tolerar_nf", 0), ev.get("tolerar_e", 0), ev.get("tolerar_retardo", 0),
-            ev.get("tolerar_ausente", 0), ev.get("tolerar_lsg", 0), ev.get("anular_premio", 0),
+            ev.get("tolerar_ausente", 0), ev.get("tolerar_lsg", 0),
+            ev.get("desempenio_penaliza", 0), ev.get("anular_premio", 0),
             json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
             ev_id
         ))

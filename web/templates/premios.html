@@ -101,6 +101,10 @@
              background: #e9f7ef; border: 1px solid #a9dfbf;
              border-radius: 3px; padding: 0 3px; margin-left: 3px; vertical-align: middle; }
   .det-inline { margin-left: 5px; cursor: pointer; vertical-align: middle; width: 13px; height: 13px; }
+  .chk-desempenio { display: flex; align-items: center; gap: 4px; margin-top: 5px;
+                    font-size: .68rem; color: #c0392b; cursor: pointer; user-select: none; }
+  .chk-desempenio input { width: 13px; height: 13px; cursor: pointer; margin: 0; }
+  .chk-desempenio-ro { margin-top: 5px; font-size: .68rem; color: #c0392b; font-weight: bold; }
   .falta-bpm { color: #e67e22; font-size: .75rem; font-style: italic; }
   body.sin-bpm .col-bpm { display: none; }
   .cnt-cero { color: #ccc; }
@@ -127,6 +131,7 @@
     .field-desempenio textarea { display: none !important; }
     .firma-cell, .th-firma { display: table-cell !important; min-width: 120px; }
     .det-col, .th-det, .det-inline { display: none !important; }
+    .chk-desempenio input { display: none !important; }
     .screen-only { display: none !important; }
     .print-only { display: inline !important; }
     .firma-linea { border-bottom: 1px solid #333; width: 110px; display: inline-block; }
@@ -357,6 +362,7 @@ function _renderDesglose(d) {
     rows.push(`<tr><td>Retardo efectivo</td><td><b>${_fmtMin(d.minutos_efectivos)}</b></td></tr>`);
     if (d.deduccion_puntualidad) rows.push(`<tr><td>Desc. puntualidad (${d.puntualidad_status})</td><td class="neg">−${_fmtPesos(d.deduccion_puntualidad)}</td></tr>`);
     if (d.deduccion_bpm)         rows.push(`<tr><td>Desc. BPM NO CONFORME</td><td class="neg">−${_fmtPesos(d.deduccion_bpm)}</td></tr>`);
+    if (d.deduccion_desempenio)  rows.push(`<tr><td>Desc. desempeño</td><td class="neg">−${_fmtPesos(d.deduccion_desempenio)}</td></tr>`);
     if (d.deduccion_vacaciones)  rows.push(`<tr><td>Desc. vacaciones</td><td class="neg">−${_fmtPesos(d.deduccion_vacaciones)}</td></tr>`);
     if (d.deduccion_lsg)         rows.push(`<tr><td>Desc. licencia (L/LSG)</td><td class="neg">−${_fmtPesos(d.deduccion_lsg)}</td></tr>`);
     if (d.deduccion_trapos)      rows.push(`<tr><td>Desc. trapos de cocina</td><td class="neg">−${_fmtPesos(d.deduccion_trapos)}</td></tr>`);
@@ -470,7 +476,23 @@ function _filaHtml(ev, editar, corregir) {
   const tolRetbadge = ev.tolerar_retardo ? '<span class="det-tol">tol</span>' : '';
   const tolAusbadge = ev.tolerar_ausente ? '<span class="det-tol">tol</span>' : '';
   const tolLsgbadge = ev.tolerar_lsg     ? '<span class="det-tol">tol</span>' : '';
+  const chkDesemp = corregir
+    ? `<label class="chk-desempenio" title="Descontar un tercio del premio por desempeño">
+         <input type="checkbox" ${ev.desempenio_penaliza ? 'checked' : ''}
+           onchange="guardarDeterminante(${ev.id}, 'desempenio_penaliza', this.checked)">
+         <span>−⅓ desempeño</span>
+       </label>`
+    : (ev.desempenio_penaliza ? '<div class="chk-desempenio-ro">−⅓ desempeño</div>' : '');
   const cntAS = (ev.dias_ausente || 0) + (ev.dias_suspension || 0);
+  // Retardo: minutos de reloj + ajuste por no fichada (cada NF suma min al retardo efectivo)
+  const ajusteNf  = d.minutos_ajuste_nf || 0;
+  const efectivos = d.minutos_efectivos ?? ev.minutos_retardo;
+  const retardoTxt = ajusteNf > 0
+    ? `<span title="${ev.minutos_retardo} min de reloj + ${ajusteNf} min por ${ev.no_fichadas} no fichada(s) = ${efectivos} min efectivos">`
+        + `${ev.minutos_retardo} <span style="color:#e67e22">+ ${ajusteNf}</span> `
+        + `<span style="color:#999;font-size:.8em">min</span></span>`
+    : _fmtMin(ev.minutos_retardo);
+  const vecesTxt = ev.dias_tarde > 0 ? ` <span style="color:#999;font-size:.75rem">(${ev.dias_tarde}v)</span>` : '';
   return `<tr data-id="${ev.id}">
     <td><button class="btn-expand" onclick="toggleDesglose(${ev.id})" title="Ver desglose">▶</button></td>
     <td>
@@ -493,10 +515,11 @@ function _filaHtml(ev, editar, corregir) {
         ? `<textarea oninput="_autoResize(this);guardarDesempenioDebounce(${ev.id})">${ev.desempenio||""}</textarea>
            <span class="print-only" style="font-size:.7rem;white-space:pre-wrap;word-break:break-word">${ev.desempenio||""}</span>`
         : `<span style="font-size:.8rem;white-space:pre-wrap">${ev.desempenio||""}</span>`}
+      ${chkDesemp}
     </td>
     <td class="field-bpm col-bpm">${editar ? bpmSelect : bpmBadge}</td>
     <td class="cell-puntualidad">${_badgePuntualidad(d.puntualidad_status, d.descalificado)}</td>
-    <td>${_cnt(_fmtMin(ev.minutos_retardo) + (ev.dias_tarde > 0 ? ` <span style="color:#999;font-size:.75rem">(${ev.dias_tarde}v)</span>` : ''), tolRetbadge + chkTolRet)}</td>
+    <td>${_cnt(retardoTxt + vecesTxt, tolRetbadge + chkTolRet)}</td>
     <td>${_cnt(ev.no_fichadas, tolNFbadge + chkTolNF)}</td>
     <td>${_cnt(ev.dias_vacacion)}</td>
     <td>${_cnt(ev.dias_enfermo, tolEbadge + chkTolE)}</td>
@@ -583,7 +606,8 @@ async function guardarDeterminante(id, campo, valor) {
     if (idx !== -1) {
       _evaluaciones[idx] = {..._evaluaciones[idx], ...ev,
         tolerar_nf: ev.tolerar_nf, tolerar_e: ev.tolerar_e, tolerar_retardo: ev.tolerar_retardo,
-        tolerar_ausente: ev.tolerar_ausente, tolerar_lsg: ev.tolerar_lsg, anular_premio: ev.anular_premio};
+        tolerar_ausente: ev.tolerar_ausente, tolerar_lsg: ev.tolerar_lsg,
+        desempenio_penaliza: ev.desempenio_penaliza, anular_premio: ev.anular_premio};
       _sincGrupos(idx);
       const row = document.querySelector(`tr[data-id="${id}"]`);
       if (row) row.outerHTML = _filaHtml(_evaluaciones[idx], canDo("premios","editar"), canDo("premios","corregir"));
@@ -913,6 +937,7 @@ async function toggleFormula() {
     `<b>Retardo efectivo:</b> min. sistema + (no fichadas × ${get('min_por_no_fichada')} min)`,
     `<b>Puntualidad:</b> 0 min → PERFECTA ($0) · < ${get('umbral_puntualidad_ok_min')} min → OK ($0) · ${get('umbral_puntualidad_ok_min')}–${get('umbral_puntualidad_total_min')} min → PARCIAL (−${get('pct_descuento_puntualidad')}%) · ≥ ${get('umbral_puntualidad_total_min')} min → NO CUMPLE ($0)`,
     `<b>BPM NO CONFORME:</b> −${get('pct_descuento_bpm')}% del monto base`,
+    `<b>Desempeño (checkbox manual):</b> −${get('pct_descuento_desempenio')}% del monto base`,
     `<b>Vacaciones:</b> −(base ÷ ${get('dias_base_vacaciones')}) × días de vacación`,
     `<b>Redondeo:</b> al múltiplo de ${get('redondeo') || '—'}`,
   ];

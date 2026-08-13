@@ -679,7 +679,7 @@ def _migrate(conn):
     # Determinantes de premios (tolerar_nf, tolerar_e, tolerar_retardo, tolerar_ausente, anular_premio)
     cols_pe = {r[1] for r in conn.execute("PRAGMA table_info(premios_evaluacion)").fetchall()}
     for col in ("tolerar_nf", "tolerar_e", "tolerar_retardo", "tolerar_ausente",
-                "anular_premio", "dias_lsg", "tolerar_lsg"):
+                "anular_premio", "dias_lsg", "tolerar_lsg", "desempenio_penaliza"):
         if col not in cols_pe:
             conn.execute(f"ALTER TABLE premios_evaluacion ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
             logger.info("Migración: columna %s agregada a premios_evaluacion", col)
@@ -913,6 +913,8 @@ def _migrate(conn):
              "Usar columna BPM. Desactivar para ocultarla y no exigirla (locales que no usan BPM)"),
             ("lsg_proporcional", "0", "bool",
              "L/LSG descuenta proporcional (como vacaciones) en vez de anular el premio"),
+            ("pct_descuento_desempenio", "33.33", "porcentaje",
+             "Descuento sobre el monto base al marcar el checkbox de desempeño (un tercio por defecto)"),
         ]
     )
 

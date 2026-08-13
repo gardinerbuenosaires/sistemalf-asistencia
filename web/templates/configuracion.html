@@ -1872,6 +1872,7 @@ const _LABELS_PARAM = {
   limite_no_fichadas:          "No fichadas → pérdida total (≥)",
   limite_enfermedad_dias:      "Días enfermedad → pérdida total (>)",
   pct_descuento_bpm:           "Descuento BPM no conforme (%)",
+  pct_descuento_desempenio:    "Descuento desempeño (%)",
   dias_base_vacaciones:        "Base días para prorrateo vacaciones",
   redondeo:                    "Redondeo final (0 = sin redondeo)",
   usa_bpm:                     "Usar columna BPM",
@@ -1888,6 +1889,7 @@ const _ORDEN_PARAMS = [
   "limite_enfermedad_dias",
   "pct_descuento_puntualidad",
   "pct_descuento_bpm",
+  "pct_descuento_desempenio",
   "dias_base_vacaciones",
   "redondeo",
   "usa_bpm",
@@ -1929,6 +1931,7 @@ function _renderFormula() {
     `<b>Retardo efectivo:</b> min. sistema + (no fichadas × ${get('min_por_no_fichada')} min)`,
     `<b>Puntualidad:</b> 0 min → PERFECTA ($0) · < ${get('umbral_puntualidad_ok_min')} min → OK ($0) · ${get('umbral_puntualidad_ok_min')}–${get('umbral_puntualidad_total_min')} min → PARCIAL (−${get('pct_descuento_puntualidad')}%) · ≥ ${get('umbral_puntualidad_total_min')} min → NO CUMPLE ($0)`,
     `<b>BPM NO CONFORME:</b> −${get('pct_descuento_bpm')}% del monto base`,
+    `<b>Desempeño (checkbox manual):</b> −${get('pct_descuento_desempenio')}% del monto base`,
     `<b>Vacaciones:</b> −(base ÷ ${get('dias_base_vacaciones')}) × días de vacación`,
     `<b>Redondeo:</b> al múltiplo de ${get('redondeo') || '—'}`,
   ];

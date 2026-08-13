@@ -28,6 +28,8 @@ _EST_B2 = {
 }
 
 CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "NF"}
+# Días efectivamente trabajados (presencia real). MT trabajado se suma aparte por bloque.
+TRABAJADOS    = {"I", "T", "FT", "NF"}
 LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "F", "@", "NF", "A", "CP", "CO"}
 DIAS_SEMANA   = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]
 
@@ -512,8 +514,12 @@ def _asistencia_datos(mes: str) -> dict:
                         tots[l] += (1 if l == "@" else 0.5)
                         if l in CONTABLES:
                             tots["dias"] += 0.5
+                        if l in TRABAJADOS:
+                            tots["trabajados"] += 0.5
                     elif b["tipo"] in ("mt", "mt_trabajado"):
                         tots["dias"] += 0.5
+                        if b["tipo"] == "mt_trabajado":
+                            tots["trabajados"] += 0.5
                 if fecha in feriados:
                     letras_feri = [b["letra"] for b in (b1, b2)
                                    if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF")]
@@ -537,9 +543,13 @@ def _asistencia_datos(mes: str) -> dict:
                             tots[l] += (1 if l == "@" else 0.5)
                             if l in CONTABLES:
                                 tots["dias"] += 0.5
+                            if l in TRABAJADOS:
+                                tots["trabajados"] += 0.5
                         elif b["tipo"] in ("mt", "mt_trabajado"):
                             tots["MT"] += 0.5
                             tots["dias"] += 0.5
+                            if b["tipo"] == "mt_trabajado":
+                                tots["trabajados"] += 0.5
                     if fecha in feriados:
                         letras_feri = [b["letra"] for b in (b1, b2)
                                        if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF")]
@@ -558,6 +568,8 @@ def _asistencia_datos(mes: str) -> dict:
                         tots[l] += 1.0
                         if l in CONTABLES:
                             tots["dias"] += 1.0
+                        if l in TRABAJADOS:
+                            tots["trabajados"] += 1.0
                         if fecha in feriados and l in ("I", "T", "FT", "NF"):
                             feriados_trab += 1.0
 
@@ -744,7 +756,12 @@ def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permi
         hcell(col, RES_LABELS[rc], width=5.5); col += 1
 
     ctrl_col = col
-    hcell(col, "CONTROL", width=20, halign="left")
+    hcell(col, "CONTROL", width=20, halign="left"); col += 1
+
+    ws.column_dimensions[ws.cell(HDR_ROW, col).column_letter].width = 1
+    col += 1  # separador antes de días trabajados
+    trab_col = col
+    hcell(col, "DÍAS TRABAJADOS EFECTIVOS", fill=PatternFill("solid", fgColor="2E7D32"), width=9)
 
     ws.freeze_panes = f"C{HDR_ROW + 1}"
     ws.row_dimensions[HDR_ROW].height = 30
@@ -838,6 +855,12 @@ def asistencia_mensual_excel(mes: str = Query(None), _user=Depends(require_permi
         elif estado in ("en_curso",) and da:
             c.fill = PatternFill("solid", fgColor="7B0000")
             c.font = Font(size=7, color="FFFFFF")
+
+        # Días trabajados efectivos (extremo derecho, tras CONTROL)
+        vt = (emp.get("totales") or {}).get("trabajados", 0) or 0
+        c = ws.cell(row_i, trab_col, vt if vt != 0 else "")
+        c.alignment = Alignment(horizontal="center"); c.font = Font(size=8, bold=True)
+
         ws.row_dimensions[row_i].height = 14
 
     buf = BytesIO()

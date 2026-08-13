@@ -88,6 +88,9 @@ table.planilla thead th.col-sep   { width: 6px; min-width: 6px; background: #f4f
 table.planilla thead th.col-res   { width: 34px; min-width: 34px; font-size: .65rem; }
 table.planilla thead th.col-dias  { width: 40px; min-width: 40px; font-size: .65rem; background: #1a252f; }
 table.planilla thead th.col-ctrl  { width: 130px; min-width: 130px; font-size: .65rem; background: #1a252f; text-align: left; padding-left: 6px; }
+table.planilla thead th.col-trab  { width: 58px; min-width: 58px; font-size: .56rem; line-height: 1.05; white-space: normal; padding: 2px 3px; }
+table.planilla tbody td.col-trab  { font-weight: bold; font-size: .82rem; }
+table.planilla tbody td.col-trab.res-cero { color: #bbb; font-weight: normal; }
 table.planilla tbody td.col-ctrl  { font-size: .68rem; font-weight: bold; padding: 0 5px; text-align: left; white-space: normal; line-height: 1.25; }
 .ctrl-completado  { background: #d4edda; color: #155724; }
 .ctrl-liquidacion { background: #e74c3c; color: #ffffff; }
@@ -781,6 +784,7 @@ const C = {
   'X':   {bg:'#808080', txt:'#ffffff'},
   'O':   {bg:'#404040', txt:'#ffffff'},
   '!':   {bg:'#8e44ad', txt:'#ffffff'},
+  trabajados: {bg:'#2E7D32', txt:'#ffffff'},
 };
 const TIPOS_NOVEDAD        = ['ILT','LSG','L','E','V','S','FT','FD','NF','CP'];
 const TIPOS_NOVEDAD_CORTADO = ['ILT','LSG','L','E','V','S','FT','FD','@','NF','CP'];
@@ -1307,9 +1311,10 @@ function renderGrupoTodos() {
   resCols.forEach(c => {
     const col = C[c];
     const style = col ? ` style="background:${col.bg};color:${col.txt}"` : '';
-    html += `<th class="col-res${c==='dias'?' col-dias':''}"${style}>${resLabels[c]}</th>`;
+    html += `<th class="col-res${(c==='dias'||c==='trabajados')?' col-dias':''}"${style}>${resLabels[c]}</th>`;
   });
   html += '<th class="col-ctrl">CONTROL</th>';
+  html += _trabTh();
   html += '</tr></thead><tbody>';
 
   todos.forEach(({ emp, esCortado }) => {
@@ -1342,9 +1347,10 @@ function renderGrupoTodos() {
       const cls = col === 'saldo_francos'
         ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : 'res-cero')
         : (esCero ? 'res-cero' : 'res-nz');
-      html += `<td class="col-res${col==='dias'?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
+      html += `<td class="col-res${(col==='dias'||col==='trabajados')?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
     });
     html += controlHtml(emp.control);
+    html += _trabTd(emp);
     html += '</tr>';
   });
 
@@ -1393,7 +1399,7 @@ function renderGrupo(grupo, dias, empleados) {
     L:'L', '@':'@', E:'E', V:'V', VP:'VP', S:'S', NF:'NF', FM:'FM', A:'A',
     feriados_trabajados:'FERI.', dias:'DÍAS'
   };
-  const totalCols = 2 + dias.length + 1 + resCols.length + 1;
+  const totalCols = 2 + dias.length + 1 + resCols.length + 1 + 2;
 
   let html = '<table class="planilla"><thead><tr>';
   html += '<th class="col-cod">COD</th>';
@@ -1407,9 +1413,10 @@ function renderGrupo(grupo, dias, empleados) {
   resCols.forEach(c => {
     const col = C[c];
     const style = col ? ` style="background:${col.bg};color:${col.txt}"` : '';
-    html += `<th class="col-res${c==='dias'?' col-dias':''}"${style}>${resLabels[c]}</th>`;
+    html += `<th class="col-res${(c==='dias'||c==='trabajados')?' col-dias':''}"${style}>${resLabels[c]}</th>`;
   });
   html += '<th class="col-ctrl">CONTROL</th>';
+  html += _trabTh();
   html += '</tr></thead><tbody>';
 
   const filas = ordenarEmpleados(grupo, empleados);
@@ -1582,9 +1589,10 @@ function filaHtmlSimple(emp, dias, resCols) {
     const cls = col === 'saldo_francos'
       ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : 'res-cero')
       : (esCero ? 'res-cero' : 'res-nz');
-    h += `<td class="col-res${col==='dias'?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
+    h += `<td class="col-res${(col==='dias'||col==='trabajados')?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
   });
   h += controlHtml(emp.control);
+  h += _trabTd(emp);
   return h + '</tr>';
 }
 
@@ -1609,9 +1617,10 @@ function filaHtmlCortado(emp, dias, resCols) {
     const cls = col === 'saldo_francos'
       ? (v < 0 ? 'saldo-neg' : v > 0 ? 'saldo-pos' : 'res-cero')
       : (esCero ? 'res-cero' : 'res-nz');
-    h += `<td class="col-res${col==='dias'?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
+    h += `<td class="col-res${(col==='dias'||col==='trabajados')?' col-dias':''} ${cls}">${fmtNum(v)}</td>`;
   });
   h += controlHtml(emp.control);
+  h += _trabTd(emp);
   return h + '</tr>';
 }
 
@@ -1789,6 +1798,21 @@ function fmtNum(v) {
   if (v === 0 || v === '0') return '0';
   if (typeof v === 'number' && v % 1 !== 0) return v.toFixed(1).replace('.0','');
   return v;
+}
+
+// Columna "Días Trabajados Efectivos": va en el extremo derecho, después de CONTROL,
+// separada por un col-sep. Se renderiza aparte del bloque de resumen.
+function _trabTh() {
+  const c = C.trabajados;
+  return `<th class="col-sep"></th>` +
+    `<th class="col-res col-trab" style="background:${c.bg};color:${c.txt}" ` +
+    `title="Días efectivamente trabajados (presencia real)">DÍAS TRABAJADOS EFECTIVOS</th>`;
+}
+function _trabTd(emp) {
+  const v = emp.totales?.trabajados ?? 0;
+  const esCero = v === 0 || v === '0';
+  return `<td class="col-sep"></td>` +
+    `<td class="col-res col-trab ${esCero ? 'res-cero' : 'res-nz'}">${fmtNum(v)}</td>`;
 }
 
 function escHtml(s) {

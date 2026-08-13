@@ -529,8 +529,22 @@ function _filaHtml(ev, editar, corregir) {
   </tr>`;
 }
 
+// Refresca el texto "÷ N empleados = $X c/u" desde los datos vigentes en pantalla.
+// Se llama en cada render para que anular/tolerar/recargar lo mantengan actualizado.
+function _actualizarTraposInfo() {
+  const el = document.getElementById("trapos-dist-info");
+  if (!el) return;
+  if (!_traposActivo) { el.textContent = ""; return; }
+  const eleg = _evaluaciones.filter(ev => (ev.deduccion_trapos || 0) > 0);
+  const count = eleg.length;
+  el.textContent = count
+    ? `÷ ${count} empleados = ${_fmtPesos(eleg[0].deduccion_trapos)} c/u`
+    : "sin empleados que califiquen";
+}
+
 function _renderTabla(data) {
   _evaluaciones = data;
+  _actualizarTraposInfo();
 
   if (!data.length) {
     _grupos = {};

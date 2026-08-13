@@ -216,8 +216,12 @@ def _aplicar_trapos(conn, periodo: str, params: dict) -> dict | None:
         ev["deduccion_trapos"] = 0
         base_calc[r["id"]] = (ev, _calcular(ev, params))
 
+    # Elegibles = tienen premio a cobrar (valor sin trapos > 0), su cargo aplica trapos
+    # y el premio NO fue anulado manualmente. Los anulados no cobran, así que no deben
+    # contar en el divisor ni recibir descuento.
     elegibles = {rid for rid, (ev, d) in base_calc.items()
-                 if d["valor_calculado"] > 0 and ev.get("aplica_trapos")}
+                 if d["valor_calculado"] > 0 and ev.get("aplica_trapos")
+                 and not ev.get("anular_premio")}
     count = len(elegibles)
     deduccion = round(trapos_valor / count) if (trapos_valor > 0 and count) else 0
 

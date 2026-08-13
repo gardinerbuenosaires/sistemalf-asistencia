@@ -678,7 +678,8 @@ def _migrate(conn):
 
     # Determinantes de premios (tolerar_nf, tolerar_e, tolerar_retardo, tolerar_ausente, anular_premio)
     cols_pe = {r[1] for r in conn.execute("PRAGMA table_info(premios_evaluacion)").fetchall()}
-    for col in ("tolerar_nf", "tolerar_e", "tolerar_retardo", "tolerar_ausente", "anular_premio"):
+    for col in ("tolerar_nf", "tolerar_e", "tolerar_retardo", "tolerar_ausente",
+                "anular_premio", "dias_lsg", "tolerar_lsg"):
         if col not in cols_pe:
             conn.execute(f"ALTER TABLE premios_evaluacion ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
             logger.info("Migración: columna %s agregada a premios_evaluacion", col)
@@ -910,6 +911,8 @@ def _migrate(conn):
              "Hasta qué día del mes se muestra el mes anterior por defecto en premios (1-28)"),
             ("usa_bpm", "1", "bool",
              "Usar columna BPM. Desactivar para ocultarla y no exigirla (locales que no usan BPM)"),
+            ("lsg_proporcional", "0", "bool",
+             "L/LSG descuenta proporcional (como vacaciones) en vez de anular el premio"),
         ]
     )
 

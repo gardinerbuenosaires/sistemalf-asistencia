@@ -25,6 +25,7 @@ class EvaluacionUpdate(BaseModel):
     tolerar_e: Optional[bool] = None
     tolerar_retardo: Optional[bool] = None
     tolerar_ausente: Optional[bool] = None
+    tolerar_lsg: Optional[bool] = None
     anular_premio: Optional[bool] = None
 
 
@@ -69,15 +70,18 @@ def _calcular(ev: dict, params: dict) -> dict:
     no_fichadas = ev["no_fichadas"]
     dias_ausente = ev["dias_ausente"]
     dias_suspension = ev["dias_suspension"]
+    dias_lsg = ev.get("dias_lsg") or 0
     dias_enfermo = ev["dias_enfermo"]
     dias_vacacion = ev["dias_vacacion"]
     minutos_retardo = ev["minutos_retardo"]
     bpm = ev["bpm"]
+    lsg_proporcional = bool(params.get("lsg_proporcional"))
 
     if ev.get("tolerar_nf"):      no_fichadas = 0
     if ev.get("tolerar_e"):       dias_enfermo = 0
     if ev.get("tolerar_retardo"): minutos_retardo = 0
-    if ev.get("tolerar_ausente"): dias_ausente = 0   # ignora A/L/LSG
+    if ev.get("tolerar_ausente"): dias_ausente = dias_suspension = 0  # ignora A/S
+    if ev.get("tolerar_lsg"):     dias_lsg = 0                        # ignora L/LSG
 
     desglose = {
         "monto_base": base,
@@ -90,6 +94,7 @@ def _calcular(ev: dict, params: dict) -> dict:
         "deduccion_puntualidad": 0,
         "deduccion_bpm": 0,
         "deduccion_vacaciones": 0,
+        "deduccion_lsg": 0,
         "deduccion_trapos": 0,
         "valor_bruto": 0,
         "valor_final": 0,
@@ -100,12 +105,14 @@ def _calcular(ev: dict, params: dict) -> dict:
         desglose.update({"descalificado": True, "motivo_descalificacion": "no_fichadas"})
         return _finalizar(desglose, 0, params)
 
-    if dias_ausente > 0:
+    # A/S (ausencia + suspensión): anulan el premio en ambos locales
+    if dias_ausente > 0 or dias_suspension > 0:
         desglose.update({"descalificado": True, "motivo_descalificacion": "ausente"})
         return _finalizar(desglose, 0, params)
 
-    if dias_suspension > 0:
-        desglose.update({"descalificado": True, "motivo_descalificacion": "suspension"})
+    # L/LSG: anula (config clásica) o descuenta proporcional (config Happening)
+    if dias_lsg > 0 and not lsg_proporcional:
+        desglose.update({"descalificado": True, "motivo_descalificacion": "licencia"})
         return _finalizar(desglose, 0, params)
 
     if dias_enfermo > params["limite_enfermedad_dias"]:
@@ -149,10 +156,17 @@ def _calcular(ev: dict, params: dict) -> dict:
         deduccion_vacaciones = round((base / params["dias_base_vacaciones"]) * dias_vacacion)
     desglose["deduccion_vacaciones"] = deduccion_vacaciones
 
+    # L/LSG proporcional (misma base que vacaciones), solo si el local usa ese criterio
+    deduccion_lsg = 0
+    if lsg_proporcional and dias_lsg > 0:
+        deduccion_lsg = round((base / params["dias_base_vacaciones"]) * dias_lsg)
+    desglose["deduccion_lsg"] = deduccion_lsg
+
     deduccion_trapos = int(ev.get("deduccion_trapos") or 0)
     desglose["deduccion_trapos"] = deduccion_trapos
 
-    valor_bruto = max(0, base - deduccion_puntualidad - deduccion_bpm - deduccion_vacaciones - deduccion_trapos)
+    valor_bruto = max(0, base - deduccion_puntualidad - deduccion_bpm
+                      - deduccion_vacaciones - deduccion_lsg - deduccion_trapos)
     return _finalizar(desglose, valor_bruto, params)
 
 
@@ -285,7 +299,8 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
             COUNT(DISTINCT fecha) FILTER (WHERE tipo='V')            AS dias_vacacion,
             COUNT(DISTINCT fecha) FILTER (WHERE tipo IN ('E','ILT')) AS dias_enfermo,
             COUNT(DISTINCT fecha) FILTER (WHERE tipo='S')            AS dias_suspension,
-            COUNT(DISTINCT fecha) FILTER (WHERE tipo IN ('A','L','LSG')) AS dias_ausente
+            COUNT(DISTINCT fecha) FILTER (WHERE tipo='A')            AS dias_ausente,
+            COUNT(DISTINCT fecha) FILTER (WHERE tipo IN ('L','LSG')) AS dias_lsg
         FROM novedades
         WHERE empleado_id=? AND fecha>=? AND fecha<?
     """, (empleado_id, fecha_desde, fecha_hasta)).fetchone()
@@ -305,6 +320,7 @@ def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
         "dias_tarde":      r["dias_tarde"],
         "no_fichadas":     r["no_fichadas"],
         "dias_ausente":    n["dias_ausente"] + cp_no_cubierto,
+        "dias_lsg":        n["dias_lsg"],
         "dias_vacacion":   n["dias_vacacion"],
         "dias_enfermo":    n["dias_enfermo"],
         "dias_suspension": n["dias_suspension"],
@@ -501,13 +517,13 @@ def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver
                 conn.execute("""
                     UPDATE premios_evaluacion SET
                         minutos_retardo=?, dias_tarde=?, no_fichadas=?, dias_vacacion=?,
-                        dias_enfermo=?, dias_suspension=?, dias_ausente=?,
+                        dias_enfermo=?, dias_suspension=?, dias_ausente=?, dias_lsg=?,
                         desglose_json=?, valor_calculado=?, valor_final=?,
                         modificado_en=datetime('now','localtime')
                     WHERE id=?
                 """, (
                     datos["minutos_retardo"], datos["dias_tarde"], datos["no_fichadas"], datos["dias_vacacion"],
-                    datos["dias_enfermo"], datos["dias_suspension"], datos["dias_ausente"],
+                    datos["dias_enfermo"], datos["dias_suspension"], datos["dias_ausente"], datos["dias_lsg"],
                     json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
                     ev["id"]
                 ))
@@ -601,9 +617,9 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
             conn.execute("""
                 INSERT INTO premios_evaluacion
                     (empleado_id, periodo, minutos_retardo, dias_tarde, no_fichadas, dias_vacacion,
-                     dias_enfermo, dias_suspension, dias_ausente, bpm, monto_base,
+                     dias_enfermo, dias_suspension, dias_ausente, dias_lsg, bpm, monto_base,
                      deduccion_trapos, desglose_json, valor_calculado, valor_final)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(empleado_id, periodo) DO UPDATE SET
                     minutos_retardo=excluded.minutos_retardo,
                     dias_tarde=excluded.dias_tarde,
@@ -612,6 +628,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
                     dias_enfermo=excluded.dias_enfermo,
                     dias_suspension=excluded.dias_suspension,
                     dias_ausente=excluded.dias_ausente,
+                    dias_lsg=excluded.dias_lsg,
                     monto_base=CASE WHEN monto_base_manual=1 THEN monto_base ELSE excluded.monto_base END,
                     deduccion_trapos=0,
                     desglose_json=excluded.desglose_json,
@@ -621,7 +638,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
             """, (
                 eid, periodo,
                 datos["minutos_retardo"], datos["dias_tarde"], datos["no_fichadas"], datos["dias_vacacion"],
-                datos["dias_enfermo"], datos["dias_suspension"], datos["dias_ausente"],
+                datos["dias_enfermo"], datos["dias_suspension"], datos["dias_ausente"], datos["dias_lsg"],
                 bpm_actual, monto_actual, 0,
                 json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"]
             ))
@@ -644,7 +661,7 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         check_premios_abierto(conn, ev["periodo"])
 
         campos_corregir = [data.tolerar_nf, data.tolerar_e, data.tolerar_retardo,
-                           data.tolerar_ausente, data.anular_premio]
+                           data.tolerar_ausente, data.tolerar_lsg, data.anular_premio]
         if any(v is not None for v in campos_corregir):
             if not tiene_permiso(_user.get("rol_id"), "premios", "corregir"):
                 raise HTTPException(403, "Sin permiso: premios.corregir")
@@ -664,6 +681,8 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             ev["tolerar_retardo"] = int(data.tolerar_retardo)
         if data.tolerar_ausente is not None:
             ev["tolerar_ausente"] = int(data.tolerar_ausente)
+        if data.tolerar_lsg is not None:
+            ev["tolerar_lsg"] = int(data.tolerar_lsg)
         if data.anular_premio is not None:
             ev["anular_premio"] = int(data.anular_premio)
 
@@ -673,14 +692,14 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
         conn.execute("""
             UPDATE premios_evaluacion SET
                 bpm=?, desempenio=?, monto_base=?, monto_base_manual=?,
-                tolerar_nf=?, tolerar_e=?, tolerar_retardo=?, tolerar_ausente=?, anular_premio=?,
+                tolerar_nf=?, tolerar_e=?, tolerar_retardo=?, tolerar_ausente=?, tolerar_lsg=?, anular_premio=?,
                 desglose_json=?, valor_calculado=?, valor_final=?,
                 modificado_en=datetime('now','localtime')
             WHERE id=?
         """, (
             ev["bpm"], ev["desempenio"], ev["monto_base"], ev.get("monto_base_manual", 0),
             ev.get("tolerar_nf", 0), ev.get("tolerar_e", 0), ev.get("tolerar_retardo", 0),
-            ev.get("tolerar_ausente", 0), ev.get("anular_premio", 0),
+            ev.get("tolerar_ausente", 0), ev.get("tolerar_lsg", 0), ev.get("anular_premio", 0),
             json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
             ev_id
         ))

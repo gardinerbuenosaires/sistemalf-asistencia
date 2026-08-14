@@ -250,8 +250,17 @@ def evaluar_fecha(fecha_str: str, respetar_correcciones: bool = True,
                   "LEFT JOIN horarios h ON h.id = p.horario_id WHERE p.fecha = ?")
         params: tuple = (fecha_str,)
         if solo_empleado_id:
-            sql    += " AND p.empleado_id = ?"
-            params += (solo_empleado_id,)
+            # Si el empleado es reemplazante en un CP ese día, incluir también a los reemplazados:
+            # la cobertura debe evaluarse con ambos presentes para consumir su fichada (así el
+            # reemplazante no queda afectado —p.ej. FT sobre franco— y el reemplazado sale de ausente).
+            cubiertos = [r["empleado_id"] for r in conn.execute(
+                "SELECT empleado_id FROM novedades WHERE fecha=? AND tipo='CP' AND reemplazante_id=?",
+                (fecha_str, solo_empleado_id)
+            ).fetchall()]
+            ids_eval = [solo_empleado_id, *cubiertos]
+            ph_e = ",".join("?" * len(ids_eval))
+            sql    += f" AND p.empleado_id IN ({ph_e})"
+            params += tuple(ids_eval)
         if solo_horario_id:
             sql    += " AND p.horario_id = ?"
             params += (solo_horario_id,)

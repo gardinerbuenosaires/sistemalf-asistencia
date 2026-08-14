@@ -27,9 +27,10 @@ _EST_B2 = {
     "nf": "NF", "duda": "!",
 }
 
-CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "NF"}
+CONTABLES     = {"I", "T", "F", "FT", "FD", "V", "L", "LSG", "S", "NF", "CP"}
 # Días efectivamente trabajados (presencia real). MT trabajado se suma aparte por bloque.
-TRABAJADOS    = {"I", "T", "FT", "NF"}
+# CP presente cuenta como trabajado (equivale a la presencia que antes se mostraba como "I").
+TRABAJADOS    = {"I", "T", "FT", "NF", "CP"}
 LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "F", "@", "NF", "A", "CP", "CO"}
 DIAS_SEMANA   = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]
 
@@ -47,7 +48,9 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
         nov = nov_map.get((eid, fecha, 0))
     if nov:
         if nov["tipo"] == "CP":
-            letra_cp = "I"
+            # CP presente se muestra como "CP" (no "I") para diferenciarlo de una
+            # presencia real. Si tiene reemplazante y B no cubrió, queda ausente.
+            letra_cp = "CP"
             if nov.get("reemplazante_id"):
                 # CP con reemplazante: presente solo si B cubrió (según el evaluador).
                 res = res_map.get((eid, fecha))
@@ -58,7 +61,7 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
                         cubierto = not res.get("b1_ausente")
                     else:
                         cubierto = res.get("estado") != "ausente"
-                    letra_cp = "I" if cubierto else "A"
+                    letra_cp = "CP" if cubierto else "A"
             r = {"letra": letra_cp, "tipo": "normal", "cp": True, "nov_id": nov["id"],
                  "reemplazante_id": nov.get("reemplazante_id"),
                  **({"cp_no_cubierto": True} if letra_cp == "A" else {})}
@@ -522,7 +525,7 @@ def _asistencia_datos(mes: str) -> dict:
                             tots["trabajados"] += 0.5
                 if fecha in feriados:
                     letras_feri = [b["letra"] for b in (b1, b2)
-                                   if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF")]
+                                   if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF", "CP")]
                     if any(l != "@" for l in letras_feri):
                         feriados_trab += 1.0
             else:
@@ -552,7 +555,7 @@ def _asistencia_datos(mes: str) -> dict:
                                 tots["trabajados"] += 0.5
                     if fecha in feriados:
                         letras_feri = [b["letra"] for b in (b1, b2)
-                                       if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF")]
+                                       if b.get("tipo") == "normal" and b.get("letra") in ("I", "T", "FT", "@", "NF", "CP")]
                         if any(l != "@" for l in letras_feri):
                             feriados_trab += len(letras_feri) * 0.5
                 else:
@@ -570,7 +573,7 @@ def _asistencia_datos(mes: str) -> dict:
                             tots["dias"] += 1.0
                         if l in TRABAJADOS:
                             tots["trabajados"] += 1.0
-                        if fecha in feriados and l in ("I", "T", "FT", "NF"):
+                        if fecha in feriados and l in ("I", "T", "FT", "NF", "CP"):
                             feriados_trab += 1.0
 
         transporte = transporte_map.get(eid, 0)
@@ -883,6 +886,7 @@ class NovedadIn(BaseModel):
     tipo:        str
     descripcion: Optional[str] = None
     reemplazante_id: Optional[int] = None   # solo CP: quién cubre al ausente
+    sin_reemplazante: bool = False           # CP clásico: marcar presente sin reemplazante
 
 
 @router.post("/novedades", status_code=201)
@@ -944,8 +948,10 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
             raise HTTPException(400, f"Sin días de vacaciones disponibles. Quedan {dias_restan:.1f} día(s).")
     # El reemplazante solo aplica al CP; para otros tipos queda en NULL.
     reemplazante = data.reemplazante_id if data.tipo == "CP" else None
-    if data.tipo == "CP" and reemplazante is None:
-        raise HTTPException(400, "El CP requiere seleccionar un reemplazante")
+    # CP exige reemplazante salvo que se marque explícitamente "sin reemplazante"
+    # (uso clásico: el CP simplemente deja al empleado presente).
+    if data.tipo == "CP" and reemplazante is None and not data.sin_reemplazante:
+        raise HTTPException(400, "El CP requiere seleccionar un reemplazante o marcar 'sin reemplazante'")
     if reemplazante is not None and reemplazante == data.empleado_id:
         raise HTTPException(400, "El reemplazante no puede ser el mismo empleado")
     creado_por = user.get("email") or user.get("sub")
@@ -968,9 +974,9 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
             "SELECT * FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=?",
             (data.empleado_id, data.fecha, data.bloque),
         ).fetchone()
-    # Un CP con reemplazante afecta la evaluación de A y de B (cobertura) → reevaluar la fecha
-    # completa para que ambos queden al día. Solo cuando hay reemplazante (la lógica nueva).
-    if data.tipo == "CP" and reemplazante is not None:
+    # Un CP afecta la evaluación del día: con reemplazante verifica cobertura (A y B),
+    # sin reemplazante deja al empleado presente (clásico). En ambos casos reevaluar la fecha.
+    if data.tipo == "CP":
         try:
             from sync.evaluador import evaluar_fecha
             evaluar_fecha(data.fecha, respetar_correcciones=True)

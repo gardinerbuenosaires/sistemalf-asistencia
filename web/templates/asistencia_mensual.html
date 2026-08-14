@@ -637,8 +637,12 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
       <label style="font-size:.78rem;color:#555;display:block;margin-bottom:2px">Cubierto por (reemplazante) <span style="color:#c0392b">*</span></label>
       <select id="nov-reemplazante"
         style="width:100%;box-sizing:border-box;border:1px solid #9CCC65;border-radius:6px;padding:6px 8px;font-size:.83rem">
-        <option value="">— Sin reemplazante (marca presente como hasta ahora) —</option>
+        <option value="">— Elegí un reemplazante —</option>
       </select>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:.78rem;color:#555;cursor:pointer">
+        <input type="checkbox" id="nov-sin-reemp" onchange="toggleSinReemp()">
+        Sin reemplazante — marcar presente (uso clásico del CP)
+      </label>
     </div>
     <div class="modal-actions">
       <button class="btn-guardar"  onclick="guardarNovedad()">Guardar</button>
@@ -1788,7 +1792,12 @@ function estiloBloque(celda) {
   if (celda.tipo === 'mt')             return {bg:'#C4D79B', txt:'#4F6228', cls:'tipo-mt'};
   if (celda.tipo === 'mt_trabajado')   return {bg: C.MT.bg, txt: C.MT.txt, cls:'tipo-mt-trabajado'};
   if (celda.tipo === 'no_iniciado')    return {bg:'#f0f3f5', txt:'#c0c8d0', cls:'tipo-pendiente'};
-  if (celda.cp)                        return {bg: C.CP.bg, txt: C.CP.txt, cls: 'tipo-cp'};
+  if (celda.cp) {
+    // CP no cubierto (el reemplazante no fichó) → el empleado queda ausente: rojo, no verde
+    if (celda.cp_no_cubierto || celda.letra === 'A')
+      return {bg: C.A.bg, txt: C.A.txt, cls: 'tipo-cp-ausente'};
+    return {bg: C.CP.bg, txt: C.CP.txt, cls: 'tipo-cp'};
+  }
   if (!celda.letra)                    return {bg:'#ffffff', txt:'transparent', cls:'tipo-sin_plan'};
   const col = C[celda.letra] || {bg:'#eee', txt:'#333'};
   return {bg: col.bg, txt: col.txt, cls: ''};
@@ -1916,9 +1925,12 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   document.getElementById('nov-hasta').min    = fecha;
 
   // Reemplazante (solo CP): recordar el actual de la celda y ocultar el selector
-  modalCtx.reemplazante_id = (esCortado
-    ? (bloqueInicial === 2 ? celda?.b2?.reemplazante_id : celda?.b1?.reemplazante_id)
-    : celda?.reemplazante_id) || null;
+  const celBloqueCP = esCortado
+    ? (bloqueInicial === 2 ? celda?.b2 : celda?.b1)
+    : celda;
+  modalCtx.reemplazante_id = celBloqueCP?.reemplazante_id || null;
+  // CP existente sin reemplazante (uso clásico) → arrancar con el checkbox tildado
+  modalCtx.cpSinReemp = !!(celBloqueCP?.cp && !celBloqueCP?.reemplazante_id);
   document.getElementById('nov-reemp-wrap').style.display = 'none';
 
   // Panel comentario CO
@@ -1940,10 +1952,10 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   if (celda) {
     if (esCortado) {
       const b = bloqueInicial === 2 ? celda.b2 : celda.b1;
-      if (b && b.cp) desc = 'Estado actual: I — Compensación de presencia';
+      if (b && b.cp) desc = `Estado actual: ${b.letra||'CP'} — Compensación de presencia`;
       else if (b && b.letra) desc = `Estado actual: ${b.letra} (${NOMBRES_LETRA[b.letra]||b.letra})`;
     } else {
-      if (celda.cp) desc = 'Estado actual: I — Compensación de presencia';
+      if (celda.cp) desc = `Estado actual: ${celda.letra||'CP'} — Compensación de presencia`;
       else if (celda.letra) desc = `Estado actual: ${celda.letra} (${NOMBRES_LETRA[celda.letra]||celda.letra})`;
     }
   }
@@ -2028,7 +2040,11 @@ function selTipo(t) {
       sel.innerHTML = '<option value="">— Elegí un reemplazante —</option>'
         + emps.map(e => `<option value="${e.id}">${e.apellido}, ${e.nombre}</option>`).join('');
       sel.value = actual ? String(actual) : '';
+      // Si el CP existente no tiene reemplazante, arrancar con "sin reemplazante" tildado.
+      const chkSin = document.getElementById('nov-sin-reemp');
+      chkSin.checked = (modalCtx?.cpSinReemp === true);
       reempWrap.style.display = '';
+      toggleSinReemp();
     } else {
       reempWrap.style.display = 'none';
     }
@@ -2054,6 +2070,16 @@ function selTipo(t) {
   } else {
     vacInfo.style.display = 'none';
   }
+}
+
+// CP: alterna entre exigir reemplazante o marcar presente sin reemplazante (uso clásico)
+function toggleSinReemp() {
+  const chk = document.getElementById('nov-sin-reemp');
+  const sel = document.getElementById('nov-reemplazante');
+  if (!chk || !sel) return;
+  sel.disabled = chk.checked;
+  sel.style.opacity = chk.checked ? '.5' : '';
+  if (chk.checked) sel.value = '';
 }
 
 async function guardarNovedad() {
@@ -2112,11 +2138,12 @@ async function guardarNovedad() {
     document.getElementById('nov-descripcion').focus();
     return;
   }
-  const reemplazante_id = tipo === 'CP'
+  const sinReemp = tipo === 'CP' && document.getElementById('nov-sin-reemp').checked;
+  const reemplazante_id = (tipo === 'CP' && !sinReemp)
     ? (parseInt(document.getElementById('nov-reemplazante').value) || null)
     : null;
-  if (tipo === 'CP' && !reemplazante_id) {
-    toast('Elegí un reemplazante para el CP');
+  if (tipo === 'CP' && !sinReemp && !reemplazante_id) {
+    toast('Elegí un reemplazante o marcá "sin reemplazante"');
     document.getElementById('nov-reemplazante').focus();
     return;
   }
@@ -2124,7 +2151,7 @@ async function guardarNovedad() {
     const res = await fetch('/api/asistencia/novedades', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({empleado_id: eid, fecha: f, bloque: bloqueActivo, tipo, descripcion, reemplazante_id}),
+      body: JSON.stringify({empleado_id: eid, fecha: f, bloque: bloqueActivo, tipo, descripcion, reemplazante_id, sin_reemplazante: sinReemp}),
     });
     if (!res.ok) {
       const e = await res.json();

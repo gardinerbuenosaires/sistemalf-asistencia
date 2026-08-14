@@ -129,6 +129,8 @@ def crear_fichaje_manual(
 
     try:
         from sync.evaluador import evaluar_fecha
+        # evaluar_fecha expande solo al reemplazado si este empleado es reemplazante de un CP
+        # ese día (para consumir su fichada en la cobertura), así que basta con evaluarlo a él.
         evaluar_fecha(ts[:10], respetar_correcciones=True, solo_empleado_id=data.empleado_id)
     except Exception:
         pass

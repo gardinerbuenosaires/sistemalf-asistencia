@@ -145,6 +145,89 @@ def set_dia(data: PlanDiaIn, _user=Depends(require_permiso("planificacion", "edi
     return dict(row)
 
 
+class QuitarFrancoIn(BaseModel):
+    empleado_id: int
+    fecha: str
+
+
+@router.post("/quitar-franco")
+def quitar_franco(data: QuitarFrancoIn, _user=Depends(require_permiso("planificacion", "editar"))):
+    """
+    Quita el franco planificado de un día y deja al empleado trabajando su horario
+    habitual (el de su calendario), como entrada MANUAL (auto_generado=0), de modo que
+    la planificación automática no vuelva a asignarle franco ese día.
+    """
+    from api.periodos_cerrados import check_periodo_abierto
+    weekday = date.fromisoformat(data.fecha).weekday()  # 0=lunes … 6=domingo
+    with db_session() as conn:
+        check_periodo_abierto(conn, data.fecha)
+
+        # Calendario vigente del empleado en esa fecha
+        asig = conn.execute(
+            """SELECT calendario_id FROM asignaciones
+               WHERE empleado_id=? AND fecha_desde <= ?
+                 AND (fecha_hasta IS NULL OR fecha_hasta > ?)
+               ORDER BY fecha_desde DESC, id DESC LIMIT 1""",
+            (data.empleado_id, data.fecha, data.fecha)
+        ).fetchone()
+
+        horario_id = None
+        if asig:
+            cid = asig["calendario_id"]
+            # 1) Horario del calendario para ese día de la semana (caso franco rotativo:
+            #    el día tiene horario propio pero el franco vino por rotación).
+            dia = conn.execute(
+                "SELECT horario_id, es_franco FROM calendarios_dias WHERE calendario_id=? AND dia_semana=?",
+                (cid, weekday)
+            ).fetchone()
+            if dia and dia["horario_id"] and not dia["es_franco"]:
+                horario_id = dia["horario_id"]
+            else:
+                # 2) Horario más frecuente entre los días laborales del calendario.
+                row = conn.execute(
+                    """SELECT horario_id FROM calendarios_dias
+                       WHERE calendario_id=? AND es_franco=0 AND horario_id IS NOT NULL
+                       GROUP BY horario_id ORDER BY COUNT(*) DESC LIMIT 1""",
+                    (cid,)
+                ).fetchone()
+                if row:
+                    horario_id = row["horario_id"]
+
+        if not horario_id:
+            raise HTTPException(422, "No se pudo determinar el horario habitual del empleado. Asigná el turno manualmente.")
+
+        uid = int(_user.get("sub") or 0) or None
+        conn.execute(
+            """INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, auto_generado, creado_por)
+               VALUES (?, ?, ?, 0, 0, ?)
+               ON CONFLICT(empleado_id, fecha) DO UPDATE SET
+                   horario_id     = excluded.horario_id,
+                   es_franco      = 0,
+                   auto_generado  = 0,
+                   modificado_por = excluded.creado_por,
+                   modificado_en  = datetime('now','localtime')""",
+            (data.empleado_id, data.fecha, horario_id, uid)
+        )
+        conn.execute(
+            "DELETE FROM resultados_dia WHERE empleado_id=? AND fecha=? AND corregido_manualmente=0",
+            (data.empleado_id, data.fecha)
+        )
+        horario_nombre = conn.execute(
+            "SELECT nombre FROM horarios WHERE id=?", (horario_id,)
+        ).fetchone()
+
+    if data.fecha <= str(date.today()):
+        try:
+            from sync.evaluador import evaluar_fecha
+            evaluar_fecha(data.fecha, respetar_correcciones=False, solo_empleado_id=data.empleado_id)
+        except Exception as e:
+            logger.error("evaluar_fecha falló al quitar franco %s emp %s: %s",
+                         data.fecha, data.empleado_id, e, exc_info=True)
+
+    return {"ok": True, "horario_id": horario_id,
+            "horario_nombre": horario_nombre["nombre"] if horario_nombre else None}
+
+
 @router.patch("/ft-horario")
 def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion", "editar"))):
     """

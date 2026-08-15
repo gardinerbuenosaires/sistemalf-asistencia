@@ -612,6 +612,7 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
     <button class="modal-tab-btn"        id="mtab-co"     onclick="modalTabPlani('co')">Observación</button>
     <button class="modal-tab-btn"        id="mtab-ft"     onclick="_poblarHorariosFT();modalTabPlani('ft')" style="display:none">Asignar horario</button>
     <button class="modal-tab-btn"        id="mtab-franco" onclick="abrirPanelFranco()" style="display:none">Franco</button>
+    <button class="modal-tab-btn"        id="mtab-quitar-franco" onclick="modalTabPlani('quitar-franco')" style="display:none">Quitar franco</button>
   </div>
 
   <!-- Panel novedad -->
@@ -709,6 +710,19 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
     <div class="mpanel-franco-fichajes" id="franco-fichajes-info">Cargando fichajes...</div>
     <div class="modal-actions">
       <button class="btn-guardar" onclick="asignarFranco()">Confirmar franco</button>
+      <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Panel quitar franco -->
+  <div id="mpanel-quitar-franco" style="display:none">
+    <div class="mpanel-franco-info">
+      Quita el <strong>franco</strong> de este día y deja al empleado trabajando su
+      <strong>horario habitual</strong> (el de su calendario).<br>
+      Queda como cambio manual: la planificación automática <em>no</em> le vuelve a asignar franco.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-guardar" onclick="quitarFrancoDia()">Quitar franco</button>
       <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
     </div>
   </div>
@@ -1840,11 +1854,13 @@ function modalTabPlani(tab) {
   document.getElementById('mpanel-bloqueado').style.display  = tab === 'bloqueado'  ? 'block' : 'none';
   document.getElementById('mpanel-aliviada').style.display   = tab === 'aliviada'   ? 'block' : 'none';
   document.getElementById('mpanel-ausente-sc').style.display = tab === 'ausente-sc' ? 'block' : 'none';
+  document.getElementById('mpanel-quitar-franco').style.display = tab === 'quitar-franco' ? 'block' : 'none';
   document.getElementById('mtab-nov').className    = 'modal-tab-btn' + (tab === 'nov'    ? ' activo' : '');
   document.getElementById('mtab-fm').className     = 'modal-tab-btn' + (tab === 'fm'     ? ' activo' : '');
   document.getElementById('mtab-co').className     = 'modal-tab-btn' + (tab === 'co'     ? ' activo' : '');
   document.getElementById('mtab-ft').className     = 'modal-tab-btn' + (tab === 'ft'     ? ' activo' : '');
   document.getElementById('mtab-franco').className = 'modal-tab-btn' + (tab === 'franco' ? ' activo' : '');
+  document.getElementById('mtab-quitar-franco').className = 'modal-tab-btn' + (tab === 'quitar-franco' ? ' activo' : '');
 }
 
 function _esBloqueado(celda, esCortado, bloque) {
@@ -1886,8 +1902,12 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   const canHorario = !bloqueado && canDo('planificacion','editar') && letraActual !== 'F';
   const canFranco = !bloqueado && !periodoCerrado && canDo('planificacion','editar')
     && letraActual !== 'F' && letraActual !== 'FT' && letraActual !== 'FD';
+  // Quitar franco: solo en una celda que hoy es franco de día completo (no cortado)
+  const canQuitarFranco = !bloqueado && !periodoCerrado && canDo('planificacion','editar')
+    && !esCortado && letraActual === 'F';
   document.getElementById('mtab-ft').style.display     = canHorario ? 'inline-block' : 'none';
   document.getElementById('mtab-franco').style.display = canFranco ? 'inline-block' : 'none';
+  document.getElementById('mtab-quitar-franco').style.display = canQuitarFranco ? 'inline-block' : 'none';
 
   if (bloqueado) {
     modalTabPlani('bloqueado');
@@ -2409,6 +2429,24 @@ async function asignarFranco() {
   }
   await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, {method:'POST'}).catch(()=>{});
   toast('Franco asignado');
+  cerrarModal();
+  cargar();
+}
+
+async function quitarFrancoDia() {
+  const { eid, fecha } = modalCtx;
+  const res = await fetch('/api/planificacion/quitar-franco', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({empleado_id: eid, fecha}),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(()=>({}));
+    toast('Error: ' + (e.detail || res.status));
+    return;
+  }
+  const d = await res.json().catch(()=>({}));
+  toast(d.horario_nombre ? `Franco quitado — turno ${d.horario_nombre}` : 'Franco quitado');
   cerrarModal();
   cargar();
 }

@@ -720,6 +720,18 @@ def _migrate(conn):
         )
     """)
 
+    # Períodos de premios reabiertos: se muestran los valores del cierre y NO se
+    # recalculan solos. Se marca al reabrir y se limpia al volver a cerrar.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS premios_periodos_reabiertos (
+            anio         INTEGER NOT NULL,
+            mes          INTEGER NOT NULL,
+            reabierto_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            reabierto_por INTEGER REFERENCES usuarios(id),
+            PRIMARY KEY (anio, mes)
+        )
+    """)
+
     # Tabla planilla_orden
     conn.execute("""
         CREATE TABLE IF NOT EXISTS planilla_orden (

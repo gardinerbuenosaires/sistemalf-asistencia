@@ -311,16 +311,34 @@ def _cerrar_premios_periodo_auto():
         from db.database import db_session
         from api.premios import es_premios_cerrado
         with db_session() as conn:
+            # 1) Cerrar el mes anterior si aún no lo estaba
             if es_premios_cerrado(conn, anio, mes):
                 logger.info("Cierre automático premios: período %d-%02d ya estaba cerrado", anio, mes)
-                _mes_ultimo_cierre_premios_auto = mes_actual
-                return
-            conn.execute(
-                "INSERT INTO premios_periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,NULL)",
-                (anio, mes)
-            )
+            else:
+                conn.execute(
+                    "INSERT OR IGNORE INTO premios_periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,NULL)",
+                    (anio, mes)
+                )
+                logger.info("Cierre automático premios: período %d-%02d cerrado correctamente", anio, mes)
+
+            # 2) Red de seguridad: re-cerrar cualquier período que haya quedado REABIERTO por
+            #    error. Los reabiertos ya muestran los valores del cierre (no recalculan), así
+            #    que re-cerrarlos solo los devuelve a estado final limpio.
+            reabiertos = conn.execute(
+                "SELECT anio, mes FROM premios_periodos_reabiertos"
+            ).fetchall()
+            for r in reabiertos:
+                if not es_premios_cerrado(conn, r["anio"], r["mes"]):
+                    conn.execute(
+                        "INSERT OR IGNORE INTO premios_periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,NULL)",
+                        (r["anio"], r["mes"])
+                    )
+                conn.execute(
+                    "DELETE FROM premios_periodos_reabiertos WHERE anio=? AND mes=?",
+                    (r["anio"], r["mes"])
+                )
+                logger.info("Cierre automático premios: período reabierto %d-%02d re-cerrado", r["anio"], r["mes"])
         _mes_ultimo_cierre_premios_auto = mes_actual
-        logger.info("Cierre automático premios: período %d-%02d cerrado correctamente", anio, mes)
     except Exception as e:
         logger.error("Error en cierre automático de premios: %s", e)
 

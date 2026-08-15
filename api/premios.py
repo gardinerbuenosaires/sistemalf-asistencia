@@ -53,6 +53,12 @@ def check_premios_abierto(conn, periodo: str):
         raise HTTPException(409, f"El período {anio}-{mes} de premios está cerrado y no puede modificarse")
 
 
+def es_premios_reabierto(conn, anio: int, mes: int) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM premios_periodos_reabiertos WHERE anio=? AND mes=?", (anio, mes)
+    ).fetchone() is not None
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _get_params(conn) -> dict:
@@ -458,9 +464,10 @@ def get_premios_periodo(anio: int, mes: int, _user=Depends(require_permiso("prem
             "WHERE ppc.anio=? AND ppc.mes=?",
             (anio, mes)
         ).fetchone()
+        reabierto = es_premios_reabierto(conn, anio, mes)
     if not row:
-        return {"cerrado": False}
-    return {**dict(row), "cerrado": True}
+        return {"cerrado": False, "reabierto": reabierto}
+    return {**dict(row), "cerrado": True, "reabierto": False}
 
 
 @router.post("/periodos-cerrados", status_code=201)
@@ -473,6 +480,11 @@ def cerrar_premios_periodo(data: PremiosPeriodoIn, user=Depends(require_permiso(
         conn.execute(
             "INSERT INTO premios_periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,?)",
             (data.anio, data.mes, int(user["sub"]))
+        )
+        # Al cerrar, deja de estar "reabierto": vuelve a estado cerrado limpio.
+        conn.execute(
+            "DELETE FROM premios_periodos_reabiertos WHERE anio=? AND mes=?",
+            (data.anio, data.mes)
         )
     return {"ok": True}
 
@@ -491,6 +503,12 @@ def reabrir_premios_periodo(anio: int, mes: int, data: PremiosReabrirIn,
         conn.execute(
             "DELETE FROM premios_periodos_cerrados WHERE anio=? AND mes=?", (anio, mes)
         )
+        # Marca el período como reabierto: se mostrarán los valores del cierre y no se
+        # recalculará solo hasta que se pida "Recalcular todo" o se vuelva a cerrar.
+        conn.execute(
+            "INSERT OR REPLACE INTO premios_periodos_reabiertos (anio, mes, reabierto_por) VALUES (?,?,?)",
+            (anio, mes, int(user["sub"]))
+        )
     return {"ok": True}
 
 
@@ -503,7 +521,8 @@ def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver
         f0 = f"{anio_i:04d}-{mes_i:02d}-01"
         f1 = f"{anio_i:04d}-{mes_i:02d}-{_cal.monthrange(anio_i, mes_i)[1]:02d}"
 
-        # Auto-refresh de contadores de asistencia solo si ambos períodos están abiertos
+        # Auto-refresh de contadores de asistencia solo si el período está realmente activo:
+        # ni cerrado (contable/premios) ni reabierto (los reabiertos muestran lo del cierre).
         cerrado = conn.execute(
             "SELECT 1 FROM periodos_cerrados WHERE anio=? AND mes=?",
             (anio_i, mes_i)
@@ -512,8 +531,9 @@ def get_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", "ver
             "SELECT 1 FROM premios_periodos_cerrados WHERE anio=? AND mes=?",
             (anio_i, mes_i)
         ).fetchone()
+        reabierto = es_premios_reabierto(conn, anio_i, mes_i)
 
-        if not cerrado and not premios_cerrado:
+        if not cerrado and not premios_cerrado and not reabierto:
             params = _get_params(conn)
             evs = conn.execute(
                 "SELECT id, empleado_id FROM premios_evaluacion WHERE periodo=?", (periodo,)

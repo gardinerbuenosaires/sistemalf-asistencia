@@ -26,7 +26,7 @@
 
   main { padding: 20px; max-width: 1400px; margin: 0 auto; width: 100%; flex: 1; overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
 
-  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
   .toolbar h1 { font-size: 1.1rem; flex: 1; }
   .toolbar select, .toolbar input { padding: 7px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: .88rem; }
   .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: .88rem; font-weight: bold; }
@@ -41,6 +41,14 @@
   .card { background: white; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
   .card .lbl { font-size: .72rem; color: #999; text-transform: uppercase; letter-spacing: .04em; }
   .card .val { font-size: 1.2rem; font-weight: bold; margin-top: 4px; }
+  /* Resumen compacto en una tira */
+  .resumen-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+    background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    padding: 8px 16px; margin-bottom: 10px; font-size: .9rem; color: #555; }
+  .resumen-strip b { font-size: 1rem; }
+  .resumen-strip .sep { color: #ccc; }
+  .resumen-strip .total-a-pagar { margin-left: auto; font-size: 1rem; color: #2c3e50; }
+  .resumen-strip .total-a-pagar b:last-child { font-size: 1.15rem; }
 
   /* Tabs */
   .tabs { display: flex; gap: 4px; margin-bottom: 0; }
@@ -117,7 +125,7 @@
 
   @media print {
     @page { size: legal landscape; margin: 10mm 12mm; }
-    header, .toolbar, .cards, #diag-bar, #toast, .btn-expand, .btn-save-row,
+    header, .toolbar, .cards, .resumen-strip, #diag-bar, #toast, .btn-expand, .btn-save-row,
     [data-perm], button, .grupo-subtotal, #tabs-turnos { display: none !important; }
     html, body { height: auto; overflow: visible; }
     body { background: white; display: block; }
@@ -193,8 +201,10 @@
     <label style="font-size:.85rem;color:#666">Período</label>
     <input type="month" id="periodo-sel">
     <span id="badge-premios-cerrado" style="display:none;background:#dc3545;color:white;padding:4px 12px;border-radius:12px;font-size:.78rem;font-weight:bold;align-items:center;gap:4px">&#128274; Cerrado</span>
+    <span id="badge-premios-reabierto" style="display:none;background:#f0ad4e;color:#5a3c00;padding:4px 12px;border-radius:12px;font-size:.78rem;font-weight:bold;align-items:center;gap:4px">&#128275; Reabierto</span>
     <button id="btn-cerrar-premios" class="btn btn-secondary btn-sm" style="display:none" onclick="cerrarPremiosPeriodo()">Cerrar período</button>
     <button id="btn-reabrir-premios" class="btn btn-secondary btn-sm" style="display:none" onclick="abrirModalReabrir()">Reabrir</button>
+    <button id="btn-recalcular-todo" class="btn btn-secondary btn-sm" style="display:none" onclick="recalcularTodo()" title="Re-liquida todo el período con los datos y parámetros actuales">Recalcular todo</button>
     <button class="btn btn-secondary btn-sm" onclick="toggleFormula()">Ver fórmula</button>
     <button class="btn btn-secondary" onclick="imprimirPremios()" title="Imprime el turno activo en oficio horizontal">Imprimir / PDF</button>
   </div>
@@ -204,16 +214,19 @@
     <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px" id="formula-pasos-premios"></div>
   </div>
 
-  <div class="cards">
-    <div class="card"><div class="lbl">Empleados</div><div class="val" id="cnt-total">—</div></div>
-    <div class="card"><div class="lbl">Premio completo</div><div class="val" id="cnt-completo" style="color:#27ae60">—</div></div>
-    <div class="card"><div class="lbl">Con descuento</div><div class="val" id="cnt-descuento" style="color:#e67e22">—</div></div>
-    <div class="card"><div class="lbl">Sin premio</div><div class="val" id="cnt-cero" style="color:#c0392b">—</div></div>
-    <div class="card"><div class="lbl">Total a pagar</div><div class="val" id="total-pagar" style="color:#2c3e50">—</div></div>
+  <div class="resumen-strip">
+    <span><b id="cnt-total">—</b> empleados</span>
+    <span class="sep">·</span>
+    <span><b id="cnt-completo" style="color:#27ae60">—</b> completo</span>
+    <span class="sep">·</span>
+    <span><b id="cnt-descuento" style="color:#e67e22">—</b> con descuento</span>
+    <span class="sep">·</span>
+    <span><b id="cnt-cero" style="color:#c0392b">—</b> sin premio</span>
+    <span class="total-a-pagar"><b>Total a pagar:</b> <b id="total-pagar" style="color:#2c3e50">—</b></span>
   </div>
 
   <div id="trapos-panel" style="display:none;background:#fdf6ec;border:1px solid #f0c070;border-radius:8px;
-       padding:10px 16px;margin-bottom:12px;font-size:.88rem;color:#7d4900;align-items:center;gap:12px;flex-wrap:wrap">
+       padding:6px 16px;margin-bottom:8px;font-size:.88rem;color:#7d4900;align-items:center;gap:12px;flex-wrap:wrap">
     <span style="font-weight:bold">Trapos de cocina</span>
     <span>Total del mes ($):</span>
     <input type="number" id="inp-trapos-total" min="0" step="1000"
@@ -227,13 +240,18 @@
     &#128274; <b>Período de premios cerrado</b> — no se pueden realizar modificaciones.
   </div>
 
+  <div id="banner-premios-reabierto" style="display:none;background:#fff7e6;border:1px solid #f0ad4e;border-radius:8px;
+       padding:10px 16px;margin-bottom:8px;font-size:.88rem;color:#7d4900;align-items:center;gap:10px">
+    &#128275; <b>Período reabierto</b> — se muestran los valores del cierre. Editá lo que necesites; usá <b>“Recalcular todo”</b> para re-liquidar con las reglas actuales.
+  </div>
+
   <div id="banner-periodo-abierto" style="display:none;background:#fff8e1;border:1px solid #f9a825;border-radius:8px;
        padding:10px 16px;margin-bottom:16px;font-size:.88rem;color:#795500;align-items:center;gap:10px;flex-wrap:wrap">
     ⚠ <b>El período no está cerrado en asistencia</b> — los valores pueden cambiar si se modifican novedades o fichajes.
   </div>
 
   <div id="diag-bar" style="background:white; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.08);
-       padding:10px 16px; margin-bottom:16px; font-size:.8rem; gap:20px; align-items:center; flex-wrap:wrap; display:none;"></div>
+       padding:6px 16px; margin-bottom:8px; font-size:.8rem; gap:20px; align-items:center; flex-wrap:wrap; display:none;"></div>
 
   <div class="tabs" id="tabs-turnos" style="display:none">
     <button class="tab-btn activo" onclick="switchTab('TM')" id="tab-TM">Turno Mañana<span class="cnt" id="cnt-tab-TM">0</span></button>
@@ -244,7 +262,7 @@
 
   <div id="print-titulo" class="print-only" style="font-size:1.1rem;font-weight:bold;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #333;display:flex;justify-content:space-between;align-items:baseline">
     <span id="print-titulo-texto"></span>
-    <span id="print-titulo-total" style="text-align:right"></span>
+    <span id="print-titulo-total" class="print-only" style="text-align:right"></span>
   </div>
 
   <div class="section">
@@ -286,6 +304,7 @@ let _nombreEmpresa = "";
 let _periodoAbierto = false;
 let _usaBpm = true;   // si false: se oculta la columna BPM y no bloquea
 let _premiosCerrado = false;
+let _premiosReabierto = false;
 let _traposActivo = false;
 let _traposDistribucion = null;
 
@@ -415,6 +434,13 @@ function _autoResize(ta) {
   ta.style.height = ta.scrollHeight + 'px';
 }
 
+// Mantiene el span de impresión en sincronía con lo que se escribe en el desempeño,
+// para que un "Imprimir" inmediato (antes de guardar) refleje el texto actual.
+function _syncDesempPrint(ta) {
+  const span = ta.parentElement?.querySelector('span.print-only');
+  if (span) span.textContent = ta.value;
+}
+
 function _cnt(val, suffix = '') {
   const esCero = !val || val === 0 || val === '0' || val === '0:00';
   return `<span class="${esCero ? 'cnt-cero' : 'cnt-nz'}">${val}</span>${suffix}`;
@@ -476,13 +502,18 @@ function _filaHtml(ev, editar, corregir) {
   const tolRetbadge = ev.tolerar_retardo ? '<span class="det-tol">tol</span>' : '';
   const tolAusbadge = ev.tolerar_ausente ? '<span class="det-tol">tol</span>' : '';
   const tolLsgbadge = ev.tolerar_lsg     ? '<span class="det-tol">tol</span>' : '';
-  const chkDesemp = corregir
-    ? `<label class="chk-desempenio" title="Descontar un tercio del premio por desempeño">
+  // Pantalla: checkbox interactivo (corregir) o marca de solo lectura si está aplicado.
+  const chkDesempScreen = corregir
+    ? `<label class="chk-desempenio screen-only" title="Descontar un tercio del premio por desempeño">
          <input type="checkbox" ${ev.desempenio_penaliza ? 'checked' : ''}
            onchange="guardarDeterminante(${ev.id}, 'desempenio_penaliza', this.checked)">
          <span>−⅓ desempeño</span>
        </label>`
-    : (ev.desempenio_penaliza ? '<div class="chk-desempenio-ro">−⅓ desempeño</div>' : '');
+    : (ev.desempenio_penaliza ? '<div class="chk-desempenio-ro screen-only">−⅓ desempeño</div>' : '');
+  // Impresión: la marca "−⅓ desempeño" solo aparece en las filas donde está aplicado.
+  const chkDesempPrint = ev.desempenio_penaliza
+    ? '<div class="chk-desempenio-ro print-only">−⅓ desempeño</div>' : '';
+  const chkDesemp = chkDesempScreen + chkDesempPrint;
   const cntAS = (ev.dias_ausente || 0) + (ev.dias_suspension || 0);
   // Retardo: minutos de reloj + ajuste por no fichada (cada NF suma min al retardo efectivo)
   const ajusteNf  = d.minutos_ajuste_nf || 0;
@@ -512,7 +543,7 @@ function _filaHtml(ev, editar, corregir) {
     <td class="det-col">${chkAnula}</td>
     <td class="field-desempenio" style="min-width:160px">
       ${editar
-        ? `<textarea oninput="_autoResize(this);guardarDesempenioDebounce(${ev.id})">${ev.desempenio||""}</textarea>
+        ? `<textarea oninput="_autoResize(this);_syncDesempPrint(this);guardarDesempenioDebounce(${ev.id})">${ev.desempenio||""}</textarea>
            <span class="print-only" style="font-size:.7rem;white-space:pre-wrap;word-break:break-word">${ev.desempenio||""}</span>`
         : `<span style="font-size:.8rem;white-space:pre-wrap">${ev.desempenio||""}</span>`}
       ${chkDesemp}
@@ -789,14 +820,26 @@ async function guardarTraposTotal(valor) {
     body: JSON.stringify({ valor: parseInt(valor) || 0 })
   });
   if (!r.ok) { toast("Sin permiso para editar el valor de trapos (requiere Premios: Corregir)"); return; }
-  await generarPeriodo();
+  // El cambio de trapos es una acción explícita → se aplica aunque el período esté reabierto.
+  await generarPeriodo(true);
 }
 
-async function generarPeriodo() {
+async function recalcularTodo() {
+  const periodo = document.getElementById("periodo-sel").value;
+  if (!periodo) return;
+  if (!confirm(`Esto va a RE-LIQUIDAR todo el período ${_fmtPeriodo(periodo)} con los datos y parámetros actuales.\n\nSe pierden los valores del cierre. ¿Aplicar el recálculo?`)) return;
+  await generarPeriodo(true);
+  toast("Período recalculado con las reglas actuales");
+}
+
+async function generarPeriodo(forzar = false) {
   const periodo = document.getElementById("periodo-sel").value;
   if (!periodo) { toast("Seleccioná un período"); return; }
   await _verificarPremiosCerrado(periodo);
   if (_premiosCerrado) { await cargar(false); return; }
+  // Período reabierto: no recalcula solo. Muestra lo del cierre salvo que se fuerce
+  // explícitamente (botón "Recalcular todo" o cambio de valor de trapos).
+  if (_premiosReabierto && !forzar) { await cargar(false); return; }
   // El cierre CONTABLE no bloquea el recálculo de premios: solo lo hace el cierre de premios.
   // (Se sigue verificando para el estado de la UI, pero ya no impide regenerar.)
   await _verificarPeriodoCerrado(periodo);
@@ -877,11 +920,15 @@ async function _verificarPremiosCerrado(periodo) {
     const [y, m] = periodo.split("-");
     const data = await fetch(`/api/premios/periodos-cerrados/${y}/${parseInt(m)}`).then(r => r.json());
     _premiosCerrado = !!data.cerrado;
-  } catch { _premiosCerrado = false; }
+    _premiosReabierto = !!data.reabierto;
+  } catch { _premiosCerrado = false; _premiosReabierto = false; }
   document.getElementById("banner-premios-cerrado").style.display = _premiosCerrado ? "flex" : "none";
   document.getElementById("badge-premios-cerrado").style.display  = _premiosCerrado ? "inline-flex" : "none";
+  document.getElementById("banner-premios-reabierto").style.display = _premiosReabierto ? "flex" : "none";
+  document.getElementById("badge-premios-reabierto").style.display  = _premiosReabierto ? "inline-flex" : "none";
   document.getElementById("btn-cerrar-premios").style.display  = !_premiosCerrado && canDo("premios","cerrar")  ? "" : "none";
   document.getElementById("btn-reabrir-premios").style.display = _premiosCerrado  && canDo("premios","reabrir") ? "" : "none";
+  document.getElementById("btn-recalcular-todo").style.display = _premiosReabierto && canDo("premios","editar") ? "" : "none";
 }
 
 async function cerrarPremiosPeriodo() {
@@ -950,13 +997,13 @@ async function toggleFormula() {
     `<b>Licencia L/LSG:</b> ${get('lsg_proporcional') ? `descuento proporcional −(base ÷ ${get('dias_base_vacaciones')}) × días L/LSG` : 'anula el premio (→ $0)'}`,
     `<b>Retardo efectivo:</b> min. sistema + (no fichadas × ${get('min_por_no_fichada')} min)`,
     `<b>Puntualidad:</b> 0 min → PERFECTA ($0) · < ${get('umbral_puntualidad_ok_min')} min → OK ($0) · ${get('umbral_puntualidad_ok_min')}–${get('umbral_puntualidad_total_min')} min → PARCIAL (−${get('pct_descuento_puntualidad')}%) · ≥ ${get('umbral_puntualidad_total_min')} min → NO CUMPLE ($0)`,
-    `<b>BPM NO CONFORME:</b> −${get('pct_descuento_bpm')}% del monto base`,
+    ...(get('usa_bpm') ? [`<b>BPM NO CONFORME:</b> −${get('pct_descuento_bpm')}% del monto base`] : []),
     `<b>Desempeño (checkbox manual):</b> −${get('pct_descuento_desempenio')}% del monto base`,
     `<b>Vacaciones:</b> −(base ÷ ${get('dias_base_vacaciones')}) × días de vacación`,
     `<b>Redondeo:</b> al múltiplo de ${get('redondeo') || '—'}`,
   ];
   if (_traposActivo) {
-    pasos.push(`<b>Trapos de cocina:</b> el monto total del mes se divide en partes iguales entre los cargos con "aplica trapos" que tengan premio a cobrar (valor calculado > $0)`);
+    pasos.push(`<b>Trapos de cocina:</b> el monto total del mes se divide en partes iguales entre los cargos con "aplica trapos" que tengan premio a cobrar (valor calculado > $0 y no anulados)`);
   }
   document.getElementById("formula-pasos-premios").innerHTML =
     pasos.map(p => `<div style="padding:2px 0;border-bottom:1px solid #eee">${p}</div>`).join("");

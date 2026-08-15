@@ -936,7 +936,10 @@ async function cerrarPremiosPeriodo() {
   const periodo = document.getElementById("periodo-sel").value;
   if (!periodo) return;
   const [y, m] = periodo.split("-");
-  if (!confirm(`¿Cerrar el período ${_fmtPeriodo(periodo)} de premios?\nUna vez cerrado no se podrán hacer modificaciones.`)) return;
+  const msg = _premiosReabierto
+    ? `¿Cerrar el período ${_fmtPeriodo(periodo)} de premios?\n\nSe cierra con los valores que ves ahora, tal cual. El cierre NO recalcula nada: si no tocaste "Recalcular todo" ni editaste filas, queda idéntico al cierre anterior.\n\nDespués no se podrán hacer modificaciones.`
+    : `¿Cerrar el período ${_fmtPeriodo(periodo)} de premios?\n\nSe congela con los valores actuales; el cierre no recalcula nada.\nDespués no se podrán hacer modificaciones.`;
+  if (!confirm(msg)) return;
   const res = await fetch("/api/premios/periodos-cerrados", {
     method: "POST", headers: {"Content-Type":"application/json"},
     body: JSON.stringify({ anio: parseInt(y), mes: parseInt(m) })

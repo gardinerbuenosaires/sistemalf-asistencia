@@ -398,6 +398,23 @@ def init_db():
                 ON planilla_orden (grupo, posicion);
 
             -- ================================================================
+            -- OVERRIDE DE GRUPO — pisa la clasificación por frecuencia en un mes
+            -- puntual (meses de transición de turno). Se vence solo: al mes
+            -- siguiente la frecuencia ya refleja el turno nuevo.
+            -- ================================================================
+            CREATE TABLE IF NOT EXISTS planilla_grupo_override (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+                mes         TEXT NOT NULL,                       -- 'YYYY-MM'
+                grupo       TEXT NOT NULL CHECK(grupo IN ('TM','TN','CO')),
+                creado_por  INTEGER REFERENCES usuarios(id),
+                creado_en   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                UNIQUE (empleado_id, mes)
+            );
+            CREATE INDEX IF NOT EXISTS idx_planilla_grupo_override_mes
+                ON planilla_grupo_override (mes);
+
+            -- ================================================================
             -- CATÁLOGOS — cargos, departamentos y categorías
             -- ================================================================
             CREATE TABLE IF NOT EXISTS cargos (
@@ -745,6 +762,23 @@ def _migrate(conn):
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_planilla_orden
             ON planilla_orden (grupo, posicion)
+    """)
+
+    # Override de grupo por empleado y mes (meses de transición de turno)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS planilla_grupo_override (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+            mes         TEXT NOT NULL,
+            grupo       TEXT NOT NULL CHECK(grupo IN ('TM','TN','CO')),
+            creado_por  INTEGER REFERENCES usuarios(id),
+            creado_en   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE (empleado_id, mes)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_planilla_grupo_override_mes
+            ON planilla_grupo_override (mes)
     """)
 
     # Filas generadas antes de que es_franco existiera en calendarios_dias:

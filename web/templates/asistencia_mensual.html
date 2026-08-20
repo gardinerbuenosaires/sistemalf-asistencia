@@ -124,6 +124,11 @@ table.planilla tbody td.col-ctrl  { font-size: .68rem; font-weight: bold; paddin
 }
 #ctx-menu a:hover { background: #f0f4ff; color: #2c3e50; }
 #ctx-menu .ctx-sep { border-top: 1px solid #eee; margin: 3px 0; }
+#ctx-menu .ctx-titulo {
+  padding: 4px 16px 2px; font-size: .68rem; color: #999;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+#ctx-menu #ctx-grupo-auto { color: #6c5ce7; font-weight: 600; }
 
 th.domingo { background: #1a3a5c !important; }
 th.feriado  { background: #7d3c27 !important; }
@@ -163,6 +168,9 @@ table.planilla tbody tr.fuera-dispositivo td.col-nombre { background: #fff3cd !i
 .badge-fuera { display:inline-block; background:#e74c3c; color:white;
   font-size:.6rem; font-weight:bold; padding:1px 4px; border-radius:3px;
   margin-left:4px; vertical-align:middle; letter-spacing:.03em; }
+.badge-forzado { display:inline-block; background:#6c5ce7; color:white;
+  font-size:.6rem; font-weight:bold; padding:1px 4px; border-radius:3px;
+  margin-left:4px; vertical-align:middle; letter-spacing:.03em; cursor:help; }
 table.planilla tbody tr.emp-nuevo td { background: #FFF8E1 !important; }
 table.planilla tbody tr.emp-nuevo td.col-nombre { background: #FFF8E1 !important; border-left: 3px solid #FB8C00 !important; }
 table.planilla tbody tr.emp-nuevo td.ctrl-liquidacion { background: #e74c3c !important; color: #ffffff !important; }
@@ -1342,7 +1350,7 @@ function renderGrupoTodos() {
     const clsNuevo = badgeNuevo ? ' emp-nuevo' : '';
     html += `<tr class="${clsFuera}${clsNuevo}">
       <td class="col-cod">${emp.cod || ''}</td>
-      <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}</td>`;
+      <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}${_badgeForzado(emp)}</td>`;
     d.dias.forEach(dia => {
       const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
       if (esCortado) {
@@ -1442,8 +1450,8 @@ function renderGrupo(grupo, dias, empleados) {
     if (fila.tipo === 'sep') {
       html += `<tr class="fila-sep"><td colspan="${totalCols}">${fila.etiqueta || ''}</td></tr>`;
     } else {
-      html += cortado ? filaHtmlCortado(fila.emp, dias, resCols)
-                      : filaHtmlSimple(fila.emp, dias, resCols);
+      html += cortado ? filaHtmlCortado(fila.emp, dias, resCols, grupo)
+                      : filaHtmlSimple(fila.emp, dias, resCols, grupo);
     }
   });
 
@@ -1582,14 +1590,22 @@ function _badgeNuevo(emp) {
   return ` <span class="badge-nuevo" title="Ingreso: ${emp.fecha_ingreso}">${di}-${mi}</span>`;
 }
 
-function filaHtmlSimple(emp, dias, resCols) {
+// Marca las filas cuyo turno fue forzado a mano este mes, para que dentro de
+// unos meses se entienda por qué el empleado está en esta pestaña y no en otra.
+function _badgeForzado(emp) {
+  return emp.grupo_forzado
+    ? ` <span class="badge-forzado" title="Turno forzado a ${emp.grupo_forzado} solo para este mes (click derecho para quitarlo)">${emp.grupo_forzado}★</span>`
+    : '';
+}
+
+function filaHtmlSimple(emp, dias, resCols, grupo) {
   const nombreCompleto = `${emp.apellido}, ${emp.nombre}`;
   const clsFuera = emp.en_dispositivo === 0 ? ' fuera-dispositivo' : '';
   const badgeNuevo = _badgeNuevo(emp);
   const clsNuevo = badgeNuevo ? ' emp-nuevo' : '';
   let h = `<tr class="${clsFuera}${clsNuevo}">
     <td class="col-cod">${emp.cod || ''}</td>
-    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}</td>`;
+    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}" data-grupo="${grupo || ''}" data-forzado="${emp.grupo_forzado || ''}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}${_badgeForzado(emp)}</td>`;
   dias.forEach(dia => {
     const c = emp.celdas[dia.fecha] || {letra:null, tipo:'sin_plan'};
     const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
@@ -1614,14 +1630,14 @@ function filaHtmlSimple(emp, dias, resCols) {
   return h + '</tr>';
 }
 
-function filaHtmlCortado(emp, dias, resCols) {
+function filaHtmlCortado(emp, dias, resCols, grupo) {
   const nombreCompleto = `${emp.apellido}, ${emp.nombre}`;
   const clsFuera = emp.en_dispositivo === 0 ? ' fuera-dispositivo' : '';
   const badgeNuevo = _badgeNuevo(emp);
   const clsNuevo = badgeNuevo ? ' emp-nuevo' : '';
   let h = `<tr class="${clsFuera}${clsNuevo}">
     <td class="col-cod">${emp.cod || ''}</td>
-    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}</td>`;
+    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}" data-grupo="${grupo || ''}" data-forzado="${emp.grupo_forzado || ''}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}${_badgeForzado(emp)}</td>`;
   dias.forEach(dia => {
     const c = emp.celdas[dia.fecha] || {b1:{letra:null,tipo:'sin_plan'}, b2:{letra:null,tipo:'sin_plan'}};
     const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
@@ -2666,6 +2682,23 @@ document.addEventListener('contextmenu', e => {
   document.getElementById('ctx-legajo').href        = `/empleados?id=${eid}`;
   document.getElementById('ctx-asistencia').href    = `/asistencia?empleado=${eid}`;
   document.getElementById('ctx-planificacion').href = `/planificacion?empleado=${encodeURIComponent(nombre)}`;
+
+  // Bloque "turno de este mes": sólo con permiso de edición y período abierto.
+  const grupoActual = td.dataset.grupo || '';
+  const forzado     = td.dataset.forzado || '';
+  const puedeMover  = canDo('asistencia','editar') && !periodoCerrado;
+  document.getElementById('ctx-grupo-sep').style.display    = puedeMover ? '' : 'none';
+  document.getElementById('ctx-grupo-titulo').style.display = puedeMover ? '' : 'none';
+  document.querySelectorAll('#ctx-menu a.ctx-grupo').forEach(a => {
+    // No ofrecer mover al grupo en el que ya está
+    const mostrar = puedeMover && a.dataset.grupo !== grupoActual;
+    a.style.display = mostrar ? '' : 'none';
+    a.onclick = ev => { ev.preventDefault(); forzarGrupo(eid, a.dataset.grupo, nombre); };
+  });
+  const auto = document.getElementById('ctx-grupo-auto');
+  auto.style.display = (puedeMover && forzado) ? '' : 'none';
+  auto.onclick = ev => { ev.preventDefault(); quitarForzado(eid, nombre); };
+
   menu.style.display = 'block';
   const x = Math.min(e.clientX, window.innerWidth  - menu.offsetWidth  - 8);
   const y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 8);
@@ -2682,6 +2715,45 @@ document.addEventListener('keydown', e => {
     limpiarSel();
   }
 });
+
+// ── Turno forzado del mes ─────────────────────────────────────────────────────
+// Pisa la clasificación automática (horario más frecuente del mes) sólo para el
+// mes visible. El mes siguiente vuelve solo al cálculo por frecuencia, así que
+// no queda nada que recordar limpiar.
+async function forzarGrupo(eid, grupo, nombre) {
+  document.getElementById('ctx-menu').style.display = 'none';
+  const res = await fetch('/api/asistencia/grupo-override', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({empleado_id: Number(eid), mes: mesActual, grupo}),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    toast('Error: ' + (e.detail || res.status));
+    return;
+  }
+  toast(`${nombre} → ${grupo} solo para este mes`);
+  await cargarOrdenes();   // el filtro del orden manual depende del grupo
+  // Saltar a la pestaña destino para que se vea dónde quedó (switchTab recarga).
+  // Desde "Todos" no conviene saltar: la vista ya muestra a todos juntos.
+  if (tabActiva === 'TODOS') cargar(); else switchTab(grupo);
+}
+
+async function quitarForzado(eid, nombre) {
+  document.getElementById('ctx-menu').style.display = 'none';
+  const res = await fetch(
+    `/api/asistencia/grupo-override?empleado_id=${encodeURIComponent(eid)}&mes=${encodeURIComponent(mesActual)}`,
+    { method: 'DELETE' }
+  );
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    toast('Error: ' + (e.detail || res.status));
+    return;
+  }
+  toast(`${nombre} vuelve al turno automático`);
+  await cargarOrdenes();
+  cargar();
+}
 
 // ── Saldo inicial francos ──────────────────────────────────────────────────────
 let _sfData = [];
@@ -2879,6 +2951,12 @@ async function guardarSaldoFrancos(i) {
   <a id="ctx-legajo"        href="#">Legajo</a>
   <a id="ctx-asistencia"    href="#">Asistencia</a>
   <a id="ctx-planificacion" href="#">Planificación</a>
+  <div id="ctx-grupo-sep" class="ctx-sep"></div>
+  <div id="ctx-grupo-titulo" class="ctx-titulo">Turno de este mes</div>
+  <a class="ctx-grupo" data-grupo="TM" href="#">Mover a TM este mes</a>
+  <a class="ctx-grupo" data-grupo="TN" href="#">Mover a TN este mes</a>
+  <a class="ctx-grupo" data-grupo="CO" href="#">Mover a CO este mes</a>
+  <a id="ctx-grupo-auto" href="#">↩ Volver al turno automático</a>
 </div>
 <script src="/static/js/session-guard.js"></script>
 <script src="/static/js/nav-brand.js"></script>

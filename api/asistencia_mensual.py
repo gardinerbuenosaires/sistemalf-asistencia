@@ -440,6 +440,12 @@ def _asistencia_datos(mes: str) -> dict:
             (*eids, f0, f1)
         ).fetchall()
 
+        overrides = conn.execute(
+            f"SELECT empleado_id, grupo FROM planilla_grupo_override "
+            f"WHERE empleado_id IN ({ph}) AND mes=?",
+            (*eids, mes)
+        ).fetchall()
+
     # Lookup dicts
     plan_map = {(r["empleado_id"], r["fecha"]): dict(r) for r in planes}
     res_map  = {
@@ -476,23 +482,33 @@ def _asistencia_datos(mes: str) -> dict:
             }
     ali_set       = {(a["empleado_id"], a["fecha"], a["bloque"]) for a in aliviadas}
     transporte_map = {s["empleado_id"]: s["saldo"] for s in saldos}
+    ovr_map       = {o["empleado_id"]: o["grupo"] for o in overrides}
 
     grupos = {"TM": [], "TN": [], "CO": [], "ST": []}
 
     for emp in emp_rows:
-        eid       = emp["id"]
-        turno     = (emp["turno_nombre"] or "").lower()
-        cortado   = emp["hipo"] == "cortado"
-        if cortado:
-            grupo = "CO"
-        elif not emp["turno_nombre"]:
-            if not emp["activo"]:
-                continue
-            grupo = "ST"
-        elif "noche" in turno or "madrugada" in turno:
-            grupo = "TN"
+        eid    = emp["id"]
+        # El override manual pisa la clasificación por frecuencia (mes de
+        # transición de turno). Sólo vale para el mes pedido: al siguiente la
+        # frecuencia ya refleja el turno nuevo y no hay nada que limpiar.
+        forzado = ovr_map.get(eid)
+        if forzado:
+            grupo = forzado
         else:
-            grupo = "TM"
+            turno = (emp["turno_nombre"] or "").lower()
+            if emp["hipo"] == "cortado":
+                grupo = "CO"
+            elif not emp["turno_nombre"]:
+                if not emp["activo"]:
+                    continue
+                grupo = "ST"
+            elif "noche" in turno or "madrugada" in turno:
+                grupo = "TN"
+            else:
+                grupo = "TM"
+        # El grupo manda sobre el render: en CO todos los días van partidos en
+        # dos bloques; en TM/TN/ST cada día se resuelve según su propio horario.
+        cortado = grupo == "CO"
 
         f_ing = (emp["fecha_ingreso"] or "")[:10]
         f_egr = (emp["fecha_egreso"]  or "")[:10]
@@ -588,6 +604,7 @@ def _asistencia_datos(mes: str) -> dict:
             "apellido":   emp["apellido"],
             "cargo":      emp["cargo"] or "",
             "tipo":       emp["tipo_emp"] or "normal",
+            "grupo_forzado": forzado,
             "fecha_ingreso": f_ing or None,
             "fecha_egreso": f_egr or None,
             "celdas":     celdas,
@@ -1081,18 +1098,23 @@ def get_orden(grupo: str, mes: str | None = None, _user=Depends(require_permiso(
             except Exception:
                 return [dict(r) for r in rows]
 
-            # Determinar grupo real de cada empleado para ese mes
+            # Determinar grupo real de cada empleado para ese mes. Mismo criterio
+            # que la planilla (_asistencia_datos): horario más frecuente del mes,
+            # y el override manual por encima. Si acá difiere, el empleado cae al
+            # final de su pestaña y un "Guardar orden" le borra la posición.
             emp_grupo = conn.execute("""
-                WITH ult AS (
+                WITH freq AS (
                     SELECT p.empleado_id,
                            h.tipo, t.nombre AS turno_nombre,
+                           COUNT(*) AS cnt,
                            ROW_NUMBER() OVER (
-                               PARTITION BY p.empleado_id ORDER BY p.fecha DESC
+                               PARTITION BY p.empleado_id ORDER BY COUNT(*) DESC
                            ) AS rn
                     FROM planificacion p
                     JOIN horarios h ON h.id = p.horario_id
                     LEFT JOIN turnos t ON t.id = h.turno_id
                     WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
+                    GROUP BY p.empleado_id, h.tipo, t.nombre
                 )
                 SELECT empleado_id,
                     CASE
@@ -1101,9 +1123,16 @@ def get_orden(grupo: str, mes: str | None = None, _user=Depends(require_permiso(
                           OR lower(COALESCE(turno_nombre,'')) LIKE '%madrugada%' THEN 'TN'
                         ELSE 'TM'
                     END AS grupo
-                FROM ult WHERE rn = 1
+                FROM freq WHERE rn = 1
             """, (f0, f1)).fetchall()
-            ids_del_grupo = {r["empleado_id"] for r in emp_grupo if r["grupo"] == grupo}
+            grupo_por_emp = {r["empleado_id"]: r["grupo"] for r in emp_grupo}
+            grupo_por_emp.update({
+                r["empleado_id"]: r["grupo"] for r in conn.execute(
+                    "SELECT empleado_id, grupo FROM planilla_grupo_override WHERE mes=?",
+                    (mes,)
+                ).fetchall()
+            })
+            ids_del_grupo = {e for e, g in grupo_por_emp.items() if g == grupo}
 
             rows = [r for r in rows
                     if r["empleado_id"] is None or r["empleado_id"] in ids_del_grupo]
@@ -1122,4 +1151,72 @@ def set_orden(grupo: str, items: list[OrdenItem], _user=Depends(require_permiso(
                 "INSERT INTO planilla_orden (grupo, posicion, empleado_id, etiqueta) VALUES (?,?,?,?)",
                 (grupo, pos, item.empleado_id, item.etiqueta),
             )
+    return {"ok": True}
+
+
+# ── Override de grupo (mes de transición de turno) ─────────────────────────────
+class GrupoOverrideIn(BaseModel):
+    empleado_id: int
+    mes:         str            # 'YYYY-MM'
+    grupo:       str            # TM | TN | CO
+
+
+def _validar_mes(mes: str) -> tuple[str, str]:
+    """Valida 'YYYY-MM' y devuelve (mes normalizado, primer día del mes).
+
+    Normalizar importa: la planilla busca el override por 'YYYY-MM' con el mes
+    en dos dígitos, así que guardar '2026-8' lo volvería invisible.
+    """
+    try:
+        d = date(int(mes[:4]), int(mes[5:7]), 1)
+    except Exception:
+        raise HTTPException(400, "Formato de mes inválido (YYYY-MM)")
+    return f"{d.year:04d}-{d.month:02d}", d.isoformat()
+
+
+@router.put("/grupo-override", status_code=200)
+def set_grupo_override(data: GrupoOverrideIn, user=Depends(require_permiso("asistencia", "editar"))):
+    """Fuerza el grupo de un empleado para un mes puntual.
+
+    Sólo aplica al mes indicado: al mes siguiente vuelve a mandar la frecuencia,
+    así que no queda estado que alguien deba acordarse de limpiar.
+    """
+    if data.grupo not in ("TM", "TN", "CO"):
+        raise HTTPException(400, "Grupo inválido (TM, TN o CO)")
+    mes, primer_dia = _validar_mes(data.mes)
+    uid = user.get("sub")
+    uid = int(uid) if str(uid or "").isdigit() else None
+    from api.periodos_cerrados import check_periodo_abierto
+    with db_session() as conn:
+        check_periodo_abierto(conn, primer_dia)
+        if not conn.execute(
+            "SELECT 1 FROM empleados WHERE id=?", (data.empleado_id,)
+        ).fetchone():
+            raise HTTPException(404, "Empleado inexistente")
+        conn.execute(
+            """INSERT INTO planilla_grupo_override (empleado_id, mes, grupo, creado_por)
+               VALUES (?,?,?,?)
+               ON CONFLICT(empleado_id, mes)
+               DO UPDATE SET grupo=excluded.grupo, creado_por=excluded.creado_por,
+                             creado_en=datetime('now','localtime')""",
+            (data.empleado_id, mes, data.grupo, uid),
+        )
+    return {"ok": True, "grupo": data.grupo}
+
+
+@router.delete("/grupo-override", status_code=200)
+def del_grupo_override(
+    empleado_id: int = Query(...),
+    mes: str = Query(...),
+    _user=Depends(require_permiso("asistencia", "editar")),
+):
+    """Quita el override y devuelve al empleado al cálculo por frecuencia."""
+    mes_norm, primer_dia = _validar_mes(mes)
+    from api.periodos_cerrados import check_periodo_abierto
+    with db_session() as conn:
+        check_periodo_abierto(conn, primer_dia)
+        conn.execute(
+            "DELETE FROM planilla_grupo_override WHERE empleado_id=? AND mes=?",
+            (empleado_id, mes_norm),
+        )
     return {"ok": True}

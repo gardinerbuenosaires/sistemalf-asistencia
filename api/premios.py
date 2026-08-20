@@ -426,31 +426,37 @@ _QUERY_EVALUACIONES = """
         WHERE p.fecha >= ? AND p.fecha <= ? AND p.horario_id IS NOT NULL
         GROUP BY p.empleado_id, h.tipo, h.grupo_premios, t.nombre
     )
-    SELECT pe.*, e.apellido, e.nombre,
-           c.nombre AS cargo, d.nombre AS departamento, cat.nombre AS categoria,
-           CASE
-               WHEN u.grupo_premios IS NOT NULL THEN u.grupo_premios
-               WHEN u.tipo = 'cortado' THEN 'CO'
-               WHEN lower(u.turno_nombre) LIKE '%noche%'
-                 OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 'TN'
-               WHEN u.tipo IS NOT NULL THEN 'TM'
-               ELSE NULL
-           END AS grupo
-    FROM premios_evaluacion pe
-    JOIN empleados e ON e.id = pe.empleado_id
-    LEFT JOIN cargos c ON c.id = e.cargo_id
-    LEFT JOIN departamentos d ON d.id = e.departamento_id
-    LEFT JOIN categorias cat ON cat.id = e.categoria_id
-    LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
-    WHERE pe.periodo=?
+    -- La subconsulta aísla el ORDER BY: planilla_grupo_override también tiene una
+    -- columna 'grupo', y sin este envoltorio el ORDER BY se liga a esa columna
+    -- (NULL salvo para los forzados) en vez de al alias calculado.
+    SELECT * FROM (
+        SELECT pe.*, e.apellido, e.nombre,
+               c.nombre AS cargo, d.nombre AS departamento, cat.nombre AS categoria,
+               -- Mismo orden de precedencia que la planilla: override manual del
+               -- mes, luego el override fijo del horario, luego la frecuencia.
+               COALESCE(
+                   ovr.grupo,
+                   u.grupo_premios,
+                   CASE
+                       WHEN u.tipo = 'cortado' THEN 'CO'
+                       WHEN lower(u.turno_nombre) LIKE '%noche%'
+                         OR lower(u.turno_nombre) LIKE '%madrugada%' THEN 'TN'
+                       WHEN u.tipo IS NOT NULL THEN 'TM'
+                   END
+               ) AS grupo
+        FROM premios_evaluacion pe
+        JOIN empleados e ON e.id = pe.empleado_id
+        LEFT JOIN cargos c ON c.id = e.cargo_id
+        LEFT JOIN departamentos d ON d.id = e.departamento_id
+        LEFT JOIN categorias cat ON cat.id = e.categoria_id
+        LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
+        LEFT JOIN planilla_grupo_override ovr
+               ON ovr.empleado_id = e.id AND ovr.mes = pe.periodo
+        WHERE pe.periodo=?
+    )
     ORDER BY
-        CASE
-            WHEN u.grupo_premios = 'CO' OR (u.grupo_premios IS NULL AND u.tipo = 'cortado') THEN 3
-            WHEN u.grupo_premios = 'TN' OR (u.grupo_premios IS NULL AND (lower(u.turno_nombre) LIKE '%noche%' OR lower(u.turno_nombre) LIKE '%madrugada%')) THEN 2
-            WHEN u.tipo IS NOT NULL THEN 1
-            ELSE 4
-        END,
-        e.apellido, e.nombre
+        CASE grupo WHEN 'TM' THEN 1 WHEN 'TN' THEN 2 WHEN 'CO' THEN 3 ELSE 4 END,
+        apellido, nombre
 """
 
 

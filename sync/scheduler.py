@@ -9,7 +9,7 @@ Dos ciclos independientes:
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from config import SYNC_INTERVAL_MINUTES
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,9 @@ _fecha_ultimo_sync_hora: str | None = None
 _mes_ultimo_cierre_auto: str | None = None
 _mes_ultimo_cierre_premios_auto: str | None = None
 _fecha_ultima_limpieza_dispositivo: str | None = None
+
+# Meses completos de planificación que se mantienen por delante del mes en curso.
+MESES_HORIZONTE_PLANIFICACION = 2
 
 
 def _run_sync():
@@ -128,30 +131,61 @@ def _check_y_evaluar():
                 _bloques_evaluados_hoy.add(clave_inicio)
 
 
+def _fin_horizonte_planificacion(hoy: date) -> date:
+    """
+    Último día que debe tener planificación: fin del mes actual + MESES_HORIZONTE
+    meses completos. Con 2 meses, el 21/08 ya hay planificación hasta el 31/10,
+    de modo que la planilla mensual y las vacaciones se pueden cargar con
+    anticipación sin que los empleados caigan en "Sin turno".
+    """
+    a, m = hoy.year, hoy.month + MESES_HORIZONTE_PLANIFICACION + 1
+    a, m = a + (m - 1) // 12, (m - 1) % 12 + 1
+    return date(a, m, 1) - timedelta(days=1)
+
+
+def _cobertura_planificacion(hasta: date) -> bool:
+    """True si ya hay planificación generada hasta el fin del horizonte."""
+    try:
+        from db.database import db_session
+        with db_session() as conn:
+            row = conn.execute("SELECT MAX(fecha) AS m FROM planificacion").fetchone()
+        return bool(row and row["m"] and row["m"] >= str(hasta))
+    except Exception as e:
+        logger.error("No se pudo verificar la cobertura de planificación: %s", e)
+        return True   # ante la duda no generar fuera de la ventana nocturna
+
+
 def _generar_planificacion_auto():
     """
-    Genera planificación automática para la semana actual y la siguiente.
-    Corre una vez por día a la madrugada. Respeta entradas manuales.
+    Genera planificación automática desde la semana actual hasta el fin del
+    horizonte (ver _fin_horizonte_planificacion). Respeta entradas manuales.
+
+    Corre una vez por día: normalmente en la ventana nocturna (1-2 AM), pero
+    también apenas arranca el servicio si la planificación no llega al
+    horizonte. Así, después de un deploy que amplía el horizonte, el hueco se
+    llena solo al reiniciar en vez de esperar a la madrugada siguiente.
     """
     global _fecha_ultima_generacion
     ahora = datetime.now()
     hoy   = str(ahora.date())
+    hasta = _fin_horizonte_planificacion(ahora.date())
 
     if _fecha_ultima_generacion == hoy:
         return
-    if ahora.hour not in (1, 2):
+    if ahora.hour not in (1, 2) and _cobertura_planificacion(hasta):
         return
 
     try:
         from api.calendarios import generar_semana
+        lunes   = ahora.date() - timedelta(days=ahora.date().weekday())
         totales = {"generados": 0, "omitidos": 0}
-        for w in range(5):  # semana actual + 4 semanas más (~1 mes)
-            fecha = str((ahora + timedelta(weeks=w)).date())
-            r = generar_semana(fecha)
+        while lunes <= hasta:
+            r = generar_semana(str(lunes))
             totales["generados"] += r.get("generados", 0)
             totales["omitidos"]  += r.get("omitidos", 0)
+            lunes += timedelta(weeks=1)
         _fecha_ultima_generacion = hoy
-        logger.info("Planificación automática desde %s: %s", hoy, totales)
+        logger.info("Planificación automática %s → %s: %s", hoy, hasta, totales)
     except Exception as e:
         logger.error("Error en generación automática de planificación: %s", e)
 

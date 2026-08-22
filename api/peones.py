@@ -547,6 +547,15 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("p
             if emp_id not in emp_activos or (emp_id, fecha_nueva) in nov_bloq:
                 omitidos_fr += 1
                 continue
+            # No copiar el franco si el empleado ya quedó asignado a un puesto ese día
+            ya_en_puesto = conn.execute(
+                """SELECT id FROM peones_detalle
+                   WHERE distribucion_id=? AND empleado_id=? AND fecha=? AND es_franco=0""",
+                (nueva_id, emp_id, fecha_nueva)
+            ).fetchone()
+            if ya_en_puesto:
+                omitidos_fr += 1
+                continue
             dup = conn.execute(
                 "SELECT id FROM peones_franco WHERE distribucion_id=? AND empleado_id=? AND fecha=?",
                 (nueva_id, emp_id, fecha_nueva)
@@ -591,6 +600,15 @@ def add_detalle(body: DetalleIn, user=Depends(require_permiso("peones", "editar"
         ).fetchone()
         if dup:
             raise HTTPException(409, "El empleado ya está asignado a este puesto ese día")
+
+        # Un empleado no puede trabajar y tener franco el mismo día
+        franco = conn.execute(
+            """SELECT id FROM peones_franco
+               WHERE distribucion_id=? AND empleado_id=? AND fecha=?""",
+            (body.distribucion_id, body.empleado_id, body.fecha)
+        ).fetchone()
+        if franco:
+            raise HTTPException(409, "El empleado tiene franco ese día — quitá el franco antes de asignarlo")
 
         cur = conn.execute(
             """INSERT INTO peones_detalle
@@ -646,19 +664,33 @@ def add_franco(dist_id: int, body: FrancoIn, user=Depends(require_permiso("peone
         turnos_ok = _scope_turnos(conn, user, dist["departamento_id"])
         if dist["turno"] not in turnos_ok:
             raise HTTPException(403, "Sin acceso")
-        try:
-            cur = conn.execute(
-                """INSERT INTO peones_franco (distribucion_id, empleado_id, fecha, creado_por, creado_en)
-                   VALUES (?,?,?,?,datetime('now','localtime'))""",
-                (dist_id, body.empleado_id, body.fecha, uid)
-            )
-            conn.execute(
-                "UPDATE peones_semana SET modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
-                (uid, dist_id)
-            )
-            return {"id": cur.lastrowid}
-        except Exception:
+        dup = conn.execute(
+            """SELECT id FROM peones_franco
+               WHERE distribucion_id=? AND empleado_id=? AND fecha=?""",
+            (dist_id, body.empleado_id, body.fecha)
+        ).fetchone()
+        if dup:
             raise HTTPException(409, "El empleado ya tiene franco asignado ese día")
+
+        # Un empleado no puede tener franco y estar asignado a un puesto el mismo día
+        asignado = conn.execute(
+            """SELECT id FROM peones_detalle
+               WHERE distribucion_id=? AND empleado_id=? AND fecha=? AND es_franco=0""",
+            (dist_id, body.empleado_id, body.fecha)
+        ).fetchone()
+        if asignado:
+            raise HTTPException(409, "El empleado ya está asignado a un puesto ese día — quitalo del puesto antes de darle franco")
+
+        cur = conn.execute(
+            """INSERT INTO peones_franco (distribucion_id, empleado_id, fecha, creado_por, creado_en)
+               VALUES (?,?,?,?,datetime('now','localtime'))""",
+            (dist_id, body.empleado_id, body.fecha, uid)
+        )
+        conn.execute(
+            "UPDATE peones_semana SET modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
+            (uid, dist_id)
+        )
+        return {"id": cur.lastrowid}
 
 
 @router.delete("/semana/{dist_id}/franco/{fid}")
@@ -768,6 +800,31 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
         vac_staged = conn.execute(
             "SELECT * FROM peones_vacacion WHERE distribucion_id=?", (dist_id,)
         ).fetchall()
+
+        # Un empleado no puede tener franco y asignación de trabajo el mismo día:
+        # ambos escriben planificacion (empleado_id, fecha) que es UNIQUE.
+        dias_trabajo = {(d["empleado_id"], d["fecha"]) for d in detalles if not d["es_franco"]}
+        choques = sorted({(f["empleado_id"], f["fecha"]) for f in francos} & dias_trabajo)
+        if choques:
+            emp_ids_choque = list({e for e, _ in choques})
+            ph_c = ",".join("?" * len(emp_ids_choque))
+            nombres = {
+                r["id"]: f"{r['apellido']}, {r['nombre']}"
+                for r in conn.execute(
+                    f"SELECT id, apellido, nombre FROM empleados WHERE id IN ({ph_c})",
+                    emp_ids_choque
+                ).fetchall()
+            }
+            detalle = "; ".join(
+                f"{nombres.get(e, e)} el {f}" for e, f in choques[:5]
+            )
+            if len(choques) > 5:
+                detalle += f" (y {len(choques) - 5} más)"
+            raise HTTPException(
+                409,
+                "Hay empleados con franco y puesto asignado el mismo día. "
+                f"Corregí antes de confirmar: {detalle}"
+            )
 
         lunes_str = dist["semana_inicio"]
         domingo_str = str(date.fromisoformat(lunes_str) + timedelta(days=6))

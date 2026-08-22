@@ -110,9 +110,10 @@ def get_semana(departamento_id: int, semana_inicio: str,
             empleados = conn.execute(
                 f"""SELECT e.id, e.nombre, e.apellido
                     FROM empleados e
-                    WHERE e.activo=1 AND e.tipo != 'acceso' AND e.cargo_id IN ({ph})
+                    WHERE (e.activo=1 OR e.fecha_egreso > ?)
+                      AND e.tipo != 'acceso' AND e.cargo_id IN ({ph})
                     ORDER BY e.apellido, e.nombre""",
-                cargo_ids
+                (semana_inicio, *cargo_ids)
             ).fetchall()
 
         dept_info = conn.execute(

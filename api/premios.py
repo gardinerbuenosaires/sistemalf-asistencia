@@ -53,6 +53,15 @@ def check_premios_abierto(conn, periodo: str):
         raise HTTPException(409, f"El período {anio}-{mes} de premios está cerrado y no puede modificarse")
 
 
+# Un empleado entra en la evaluación del período si sigue activo, o si fue dado de
+# baja pero trabajó el mes COMPLETO (fecha_egreso es el primer día no trabajado, así
+# que tiene que caer en el mes siguiente o después). Mantenerlo es lo que permite
+# liquidarle el premio del último mes trabajado; queda visible mientras el período
+# siga abierto —o sea hasta el cierre del día `dia_cierre_premios`— y desaparece
+# solo del período siguiente, que ya no trabajó completo.
+_SQL_VIGENTE_PREMIOS = "(e.activo = 1 OR e.fecha_egreso >= date(?, '+1 month'))"
+
+
 def es_premios_reabierto(conn, anio: int, mes: int) -> bool:
     return conn.execute(
         "SELECT 1 FROM premios_periodos_reabiertos WHERE anio=? AND mes=?", (anio, mes)
@@ -406,8 +415,8 @@ def _diagnostico(conn, fecha_desde: str, dias_min: int) -> dict:
                                AND date(e.fecha_ingreso, '+' || ? || ' days') <= date(?, '+1 month', '-1 day')) AS incluidos
         FROM empleados e
         LEFT JOIN cargos c ON c.id = e.cargo_id
-        WHERE e.activo = 1 AND e.tipo != 'acceso'
-    """, (dias_min, fecha_desde, dias_min, fecha_desde)).fetchone()
+        WHERE """ + _SQL_VIGENTE_PREMIOS + """ AND e.tipo != 'acceso'
+    """, (dias_min, fecha_desde, dias_min, fecha_desde, fecha_desde)).fetchone()
     return dict(row)
 
 
@@ -615,11 +624,11 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
         empleados = conn.execute("""
             SELECT e.id, c.aplica_trapos FROM empleados e
             JOIN cargos c ON c.id = e.cargo_id
-            WHERE e.activo=1 AND e.tipo != 'acceso'
+            WHERE """ + _SQL_VIGENTE_PREMIOS + """ AND e.tipo != 'acceso'
               AND c.aplica_premio = 1
               AND e.fecha_ingreso IS NOT NULL AND e.fecha_ingreso != ''
               AND date(e.fecha_ingreso, '+' || ? || ' days') <= date(?, '+1 month', '-1 day')
-        """, (dias_min, fecha_desde)).fetchall()
+        """, (fecha_desde, dias_min, fecha_desde)).fetchall()
 
         # Eliminar filas del período para empleados que ya no califican
         ids_calificados = [emp["id"] for emp in empleados]

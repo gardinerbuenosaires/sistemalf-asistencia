@@ -34,12 +34,15 @@ def get_semana(fecha: str, _user=Depends(require_permiso("planificacion", "ver")
     dias = [str(lunes + timedelta(days=i)) for i in range(7)]
 
     with db_session() as conn:
+        # Incluye a los desvinculados con egreso futuro: siguen trabajando esta
+        # semana y hay que poder planificarles/corregirles los días que faltan.
         empleados = conn.execute(
             """SELECT e.id, e.nombre, e.apellido, c.nombre AS cargo, e.tipo
                FROM empleados e
                LEFT JOIN cargos c ON c.id = e.cargo_id
-               WHERE e.activo = 1 AND e.tipo != 'acceso'
-               ORDER BY c.nombre, e.apellido, e.nombre"""
+               WHERE (e.activo = 1 OR e.fecha_egreso > ?) AND e.tipo != 'acceso'
+               ORDER BY c.nombre, e.apellido, e.nombre""",
+            (dias[0],)
         ).fetchall()
 
         plan_rows = conn.execute(

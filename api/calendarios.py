@@ -325,16 +325,24 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
     with db_session() as conn:
         check_rango_abierto(conn, dias[0], dias[-1])
 
-        # Empleados activos con asignación vigente
+        # Empleados con asignación vigente. La baja no borra las asignaciones, así
+        # que hay que excluir explícitamente a los desvinculados: sin este filtro se
+        # les sigue generando planificación después del egreso y el evaluador los
+        # marca ausentes todos los días. `fecha_egreso` es el primer día NO
+        # trabajado, y se compara día a día porque puede caer dentro de la semana.
         asignaciones = conn.execute(
             """
-            SELECT a.empleado_id, a.calendario_id, a.franco_rotativo, a.franco_dia_semana
+            SELECT a.empleado_id, a.calendario_id, a.franco_rotativo, a.franco_dia_semana,
+                   e.fecha_egreso
             FROM asignaciones a
+            JOIN empleados e ON e.id = a.empleado_id
             WHERE a.fecha_desde <= ?
               AND (a.fecha_hasta IS NULL OR a.fecha_hasta > ?)
+              AND e.tipo NOT IN ('acceso', 'parking')
+              AND (e.activo = 1 OR e.fecha_egreso IS NULL OR e.fecha_egreso > ?)
             ORDER BY a.empleado_id, a.fecha_desde DESC, a.id DESC
             """,
-            (dias[6], dias[0])
+            (dias[6], dias[0], dias[0])
         ).fetchall()
 
         # Quedarnos con la asignación más reciente por empleado
@@ -345,6 +353,7 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
                     "calendario_id":    a["calendario_id"],
                     "franco_rotativo":  bool(a["franco_rotativo"]),
                     "franco_dia_semana": a["franco_dia_semana"],
+                    "fecha_egreso":     (a["fecha_egreso"] or "")[:10],
                 }
 
 
@@ -386,7 +395,10 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
         for eid, asig in asig_map.items():
             cid = asig["calendario_id"]
             cal_dias = cal_cache.get(cid, {})
+            f_egr = asig["fecha_egreso"]
             for i, fecha_dia in enumerate(dias):
+                if f_egr and fecha_dia >= f_egr:
+                    continue
                 if (eid, fecha_dia) in manuales:
                     omitidos += 1
                     continue

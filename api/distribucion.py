@@ -380,7 +380,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                     turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%noche%' OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%')"
                 else:  # TM — todo lo que no es noche/madrugada/cortado, incluyendo sin turno asignado
                     turno_cond = "AND (e.turno_id IS NULL OR (lower(COALESCE(t.nombre,'')) NOT LIKE '%noche%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%madrugada%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%cortado%'))"
-                params: list = [lunes_str, lunes_str] + cargo_ids
+                params: list = [lunes_str, lunes_str, lunes_str] + cargo_ids
                 empleados = conn.execute(
                     f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
                            (SELECT COALESCE(a.horario_id,
@@ -395,7 +395,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                            ) AS horario_actual_id
                        FROM empleados e
                        LEFT JOIN turnos t ON t.id = e.turno_id
-                       WHERE e.activo=1 AND e.tipo != 'acceso'
+                       WHERE (e.activo=1 OR e.fecha_egreso > ?) AND e.tipo != 'acceso'
                        {turno_cond}
                        {cargo_filter}
                        ORDER BY e.apellido, e.nombre""",
@@ -419,10 +419,10 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                        ) AS horario_actual_id
                    FROM empleados e
                    JOIN planilla_orden po ON po.empleado_id = e.id AND po.grupo = ?
-                   WHERE e.activo=1 AND e.tipo != 'acceso'
+                   WHERE (e.activo=1 OR e.fecha_egreso > ?) AND e.tipo != 'acceso'
                      AND e.cargo_id IN ({placeholders})
                    ORDER BY e.apellido, e.nombre""",
-                [lunes_str, lunes_str, turno] + cargo_ids
+                [lunes_str, lunes_str, turno, lunes_str] + cargo_ids
             ).fetchall()
         else:
             empleados = conn.execute(
@@ -441,9 +441,9 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                        ) AS horario_actual_id
                    FROM empleados e
                    JOIN planilla_orden po ON po.empleado_id = e.id AND po.grupo = ?
-                   WHERE e.activo=1 AND e.tipo != 'acceso'
+                   WHERE (e.activo=1 OR e.fecha_egreso > ?) AND e.tipo != 'acceso'
                    ORDER BY e.apellido, e.nombre""",
-                (lunes_str, lunes_str, turno)
+                (lunes_str, lunes_str, turno, lunes_str)
             ).fetchall()
 
         horarios = conn.execute(

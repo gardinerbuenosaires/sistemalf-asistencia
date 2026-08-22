@@ -516,8 +516,8 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
                JOIN empleados e ON e.id = p.empleado_id
                LEFT JOIN cargos c ON c.id = e.cargo_id
                WHERE p.fecha = ? AND p.es_franco = 0 AND p.horario_id IS NOT NULL
-               AND e.activo = 1 AND e.tipo != 'jerarquico'""",
-            (hoy,)
+               AND (e.activo = 1 OR e.fecha_egreso > ?) AND e.tipo != 'jerarquico'""",
+            (hoy, hoy)
         ).fetchall()
 
         eids_con_plan = {p["empleado_id"] for p in planes}
@@ -529,8 +529,8 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
                FROM planificacion p
                JOIN empleados e ON e.id = p.empleado_id
                LEFT JOIN cargos c ON c.id = e.cargo_id
-               WHERE p.fecha = ? AND p.es_franco = 1 AND e.activo = 1""",
-            (hoy,)
+               WHERE p.fecha = ? AND p.es_franco = 1 AND (e.activo = 1 OR e.fecha_egreso > ?)""",
+            (hoy, hoy)
         ).fetchall()
         eids_con_franco = {f["empleado_id"] for f in francos_hoy}
 
@@ -567,11 +567,12 @@ def presencia_hoy(_user=Depends(require_permiso("dashboard", "ver"))):
             """SELECT f.empleado_id, f.timestamp,
                       e.user_id, e.nombre, e.apellido, c.nombre AS cargo
                FROM fichajes f
-               JOIN empleados e ON e.id = f.empleado_id AND e.activo = 1
+               JOIN empleados e ON e.id = f.empleado_id
+                 AND (e.activo = 1 OR e.fecha_egreso > ?)
                LEFT JOIN cargos c ON c.id = e.cargo_id
                WHERE date(f.timestamp) IN (?,?,?)
                ORDER BY f.empleado_id, f.timestamp""",
-            (ayer, hoy, manana)
+            (hoy, ayer, hoy, manana)
         ).fetchall()
 
     fich_map: dict = defaultdict(list)

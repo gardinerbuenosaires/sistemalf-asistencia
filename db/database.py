@@ -1377,6 +1377,67 @@ def _migrate(conn):
             UNIQUE(distribucion_id, empleado_id, fecha)
         )
     """)
+    # Un peón no puede tener franco y estar asignado a un puesto el mismo día:
+    # al confirmar, ambos escriben planificacion(empleado_id, fecha), que es UNIQUE.
+    # Los triggers cierran TODOS los caminos de escritura, no sólo los endpoints.
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS trg_peones_franco_sin_puesto
+        BEFORE INSERT ON peones_franco
+        WHEN EXISTS (
+            SELECT 1 FROM peones_detalle d
+            WHERE d.distribucion_id = NEW.distribucion_id
+              AND d.empleado_id     = NEW.empleado_id
+              AND d.fecha           = NEW.fecha
+              AND d.es_franco       = 0
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'El empleado ya está asignado a un puesto ese día');
+        END
+    """)
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS trg_peones_detalle_sin_franco
+        BEFORE INSERT ON peones_detalle
+        WHEN NEW.es_franco = 0 AND EXISTS (
+            SELECT 1 FROM peones_franco f
+            WHERE f.distribucion_id = NEW.distribucion_id
+              AND f.empleado_id     = NEW.empleado_id
+              AND f.fecha           = NEW.fecha
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'El empleado tiene franco ese día');
+        END
+    """)
+    # Mismo criterio para distribución. Ojo: acá SÍ son válidos un empleado en dos
+    # puestos el mismo día y la comida de personal (marcador sin puesto ni horario),
+    # así que el trigger sólo prohíbe la contradicción franco ↔ puesto real.
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS trg_distribucion_franco_sin_puesto
+        BEFORE INSERT ON distribucion_franco
+        WHEN EXISTS (
+            SELECT 1 FROM distribucion_detalle d
+            WHERE d.distribucion_id     = NEW.distribucion_id
+              AND d.empleado_id         = NEW.empleado_id
+              AND d.fecha               = NEW.fecha
+              AND d.es_franco           = 0
+              AND d.es_comida_personal  = 0
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'El empleado ya está asignado a un puesto ese día');
+        END
+    """)
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS trg_distribucion_detalle_sin_franco
+        BEFORE INSERT ON distribucion_detalle
+        WHEN NEW.es_franco = 0 AND NEW.es_comida_personal = 0 AND EXISTS (
+            SELECT 1 FROM distribucion_franco f
+            WHERE f.distribucion_id = NEW.distribucion_id
+              AND f.empleado_id     = NEW.empleado_id
+              AND f.fecha           = NEW.fecha
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'El empleado tiene franco ese día');
+        END
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS peones_vacacion (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,

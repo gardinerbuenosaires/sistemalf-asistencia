@@ -1219,6 +1219,10 @@ async function abrirModalFranco(fecha) {
   const francoHoy = new Set(_francos.filter(f => f.fecha === fecha).map(f => f.empleado_id));
   const novHoy = new Map(_novedades.filter(n => n.fecha === fecha).map(n => [n.empleado_id, n]));
   const vacStagedFranco = new Set(_vacDist.filter(v => v.fecha === fecha).map(v => v.empleado_id));
+  // _detalles ya viene sin comida de personal, que no es un turno y no impide el franco
+  const asignadoAPuesto = new Set(
+    _detalles.filter(x => x.fecha === fecha && x.empleado_id && !x.es_franco).map(x => x.empleado_id)
+  );
 
   const lista = document.getElementById('lista-opciones');
   lista.innerHTML = '';
@@ -1231,6 +1235,10 @@ async function abrirModalFranco(fecha) {
     if (francoHoy.has(e.id)) {
       opt.innerHTML = `${nombre} <span class="nov-badge">Ya en franco</span>`;
       opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#ffc107;color:#856404';
+    } else if (asignadoAPuesto.has(e.id)) {
+      opt.innerHTML = `${nombre} <span class="nov-badge">Asignado a un puesto</span>`;
+      opt.title = 'Quitalo del puesto antes de darle franco';
+      opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
     } else if (vacStagedFranco.has(e.id)) {
       opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#d0e8f8;color:#1a3a5c">Vacaciones</span>`;
       opt.style.cssText = 'opacity:.5;cursor:default;pointer-events:none;border-color:#95B3D7';
@@ -1414,7 +1422,11 @@ async function agregarFranco(fecha, empleadoId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ empleado_id: empleadoId, fecha })
     });
-    if (!r.ok) { toast('Error al asignar franco', true); return; }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      toast(err.detail || 'Error al asignar franco', true);
+      return;
+    }
     await cargarGrilla();
     toast('Franco asignado');
   } catch(e) {

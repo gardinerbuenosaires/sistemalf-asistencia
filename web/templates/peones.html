@@ -809,8 +809,8 @@ function renderGrilla() {
 
     // Filas de novedades (excluye V — tiene fila propia)
     const NOV_LABELS_GRID = { ILT:'ILT', E:'ENFERMEDAD', L:'LICENCIA',
-                               LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
-                               FD:'FRANCO DÍA', CP:'COMIDA PERSO' };
+                               LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRABAJADO',
+                               FD:'FRANCO DEVUELTO', CP:'COMIDA PERSO' };
     const NOV_COLORS = { ILT:'#fff2cc', E:'#fff2cc', L:'#d9ead3',
                          LSG:'#d9ead3', S:'#f4cccc', FT:'#ead1dc', FD:'#ead1dc',
                          CP:'#fce5cd' };
@@ -1378,8 +1378,8 @@ async function imprimirGrilla() {
 
   const DIAS_CORTOS = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
   const NOV_LABELS = { V:'VACACIONES', ILT:'ILT', E:'ENFERMEDAD', L:'LICENCIA',
-                       LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRANSF.',
-                       FD:'FRANCO DÍA', CP:'COMIDA PERSO' };
+                       LSG:'LIC. S/GOCE', S:'SUSPENSIÓN', FT:'FRANCO TRABAJADO',
+                       FD:'FRANCO DEVUELTO', CP:'COMIDA PERSO' };
 
   const filasPuesto = _puestos.map(p => {
     const dias = Object.fromEntries(_dias.map(d => {

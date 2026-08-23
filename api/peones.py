@@ -515,10 +515,13 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("p
         omitidos_det = 0
         copiados_fr  = 0
         omitidos_fr  = 0
+        hoy_str = str(date.today())  # no copiar sobre días ya transcurridos (<= hoy)
 
         for det in detalles_ant:
             fecha_nueva = str(date.fromisoformat(det["fecha"]) + timedelta(days=7))
             if fecha_nueva not in dias_nuevos:
+                continue
+            if fecha_nueva <= hoy_str:  # días <= hoy no se modifican
                 continue
             emp_id = det["empleado_id"]
             if emp_id not in emp_activos or (emp_id, fecha_nueva) in nov_bloq:
@@ -542,6 +545,8 @@ def copiar_semana_anterior(body: CopiarSemanaIn, user=Depends(require_permiso("p
         for fr in francos_ant:
             fecha_nueva = str(date.fromisoformat(fr["fecha"]) + timedelta(days=7))
             if fecha_nueva not in dias_nuevos:
+                continue
+            if fecha_nueva <= hoy_str:  # días <= hoy no se modifican
                 continue
             emp_id = fr["empleado_id"]
             if emp_id not in emp_activos or (emp_id, fecha_nueva) in nov_bloq:
@@ -801,9 +806,12 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
             "SELECT * FROM peones_vacacion WHERE distribucion_id=?", (dist_id,)
         ).fetchall()
 
+        hoy_str = str(date.today())  # los horarios aplican solo a futuro (> hoy)
+
         # Un empleado no puede tener franco y asignación de trabajo el mismo día:
         # ambos escriben planificacion (empleado_id, fecha) que es UNIQUE.
-        dias_trabajo = {(d["empleado_id"], d["fecha"]) for d in detalles if not d["es_franco"]}
+        dias_trabajo = {(d["empleado_id"], d["fecha"]) for d in detalles
+                        if not d["es_franco"] and d["fecha"] > hoy_str}
         choques = sorted({(f["empleado_id"], f["fecha"]) for f in francos} & dias_trabajo)
         if choques:
             emp_ids_choque = list({e for e, _ in choques})
@@ -855,7 +863,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
                 [lunes_str, domingo_str] + emp_ids
             ).fetchall()
             ids_borrar = [r["id"] for r in all_plan
-                          if (r["empleado_id"], r["fecha"]) not in bloqueantes]
+                          if (r["empleado_id"], r["fecha"]) not in bloqueantes
+                          and r["fecha"] > hoy_str]
             if ids_borrar:
                 ph2 = ",".join("?" * len(ids_borrar))
                 conn.execute(f"DELETE FROM planificacion WHERE id IN ({ph2})", ids_borrar)
@@ -864,6 +873,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
         vac_dias: set[tuple] = {(v["empleado_id"], v["fecha"]) for v in vac_staged}
 
         for fr in francos:
+            if fr["fecha"] <= hoy_str:  # no modificar días ya transcurridos
+                continue
             if (fr["empleado_id"], fr["fecha"]) in bloqueantes:
                 continue
             conn.execute(
@@ -873,6 +884,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
             )
 
         for det in detalles:
+            if det["fecha"] <= hoy_str:  # no modificar días ya transcurridos
+                continue
             if (det["empleado_id"], det["fecha"]) in bloqueantes:
                 continue
             if (det["empleado_id"], det["fecha"]) in vac_dias:
@@ -907,6 +920,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
 
         # Escribir vacaciones staged a novedades (si no hay novedad real bloqueante)
         for v in vac_staged:
+            if v["fecha"] <= hoy_str:  # no modificar días ya transcurridos
+                continue
             if (v["empleado_id"], v["fecha"]) in bloqueantes:
                 continue
             conn.execute(

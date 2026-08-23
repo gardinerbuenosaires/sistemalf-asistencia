@@ -477,6 +477,16 @@ function getLunes(d) {
   return dt;
 }
 
+// Desde el sábado ya se planifica la semana siguiente: es la que se abre por
+// defecto. El botón "Hoy" sigue llevando a la semana en curso.
+function getLunesDefault() {
+  const d = new Date();
+  const l = getLunes(d);
+  const dow = d.getDay();                 // 0=domingo, 6=sábado
+  if (dow === 6 || dow === 0) l.setDate(l.getDate() + 7);
+  return l;
+}
+
 function fmtDate(d) { return ymdLocal(d); }
 
 function fmtLabel(lunes) {
@@ -1628,7 +1638,7 @@ function toast(msg, err = false) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
-  _lunes = getLunes(new Date());
+  _lunes = getLunesDefault();
   document.getElementById('label-semana').textContent = fmtLabel(_lunes);
 
   try {

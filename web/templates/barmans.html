@@ -397,6 +397,17 @@ function lunes(fecha) {
 
 function hoy() { return todayLocal(); }
 
+// Desde el sábado ya se planifica la semana siguiente: es la que se abre por
+// defecto. El botón "Hoy" sigue llevando a la semana en curso.
+function lunesDefault() {
+  const d = new Date(hoy() + 'T00:00:00');
+  const dow = d.getDay();                 // 0=domingo, 6=sábado
+  if (dow !== 6 && dow !== 0) return lunes(hoy());
+  const l = new Date(lunes(hoy()) + 'T00:00:00');
+  l.setDate(l.getDate() + 7);
+  return ymdLocal(l);
+}
+
 function formatSemana(lunesStr) {
   const d  = new Date(lunesStr + 'T00:00:00');
   const d2 = new Date(lunesStr + 'T00:00:00'); d2.setDate(d2.getDate() + 13);
@@ -424,7 +435,7 @@ async function init() {
     return;
   }
 
-  _semanaInicio = lunes(hoy());
+  _semanaInicio = lunesDefault();
   await cargar();
 }
 

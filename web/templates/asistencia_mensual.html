@@ -1918,9 +1918,14 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   const canHorario = !bloqueado && canDo('planificacion','editar') && letraActual !== 'F';
   const canFranco = !bloqueado && !periodoCerrado && canDo('planificacion','editar')
     && letraActual !== 'F' && letraActual !== 'FT' && letraActual !== 'FD';
-  // Quitar franco: solo en una celda que hoy es franco de día completo (no cortado)
+  // Quitar franco: en un día planificado como franco (aunque haya venido a trabajar → FT).
+  // En cortado, solo si el día completo es franco (ambos bloques F/FT), no un franco de un bloque.
+  const _esFrancoPlan = (l) => l === 'F' || l === 'FT';
+  const francoDiaCompleto = esCortado
+    ? (_esFrancoPlan(celda?.b1?.letra) && _esFrancoPlan(celda?.b2?.letra))
+    : _esFrancoPlan(letraActual);
   const canQuitarFranco = !bloqueado && !periodoCerrado && canDo('planificacion','editar')
-    && !esCortado && letraActual === 'F';
+    && francoDiaCompleto;
   document.getElementById('mtab-ft').style.display     = canHorario ? 'inline-block' : 'none';
   document.getElementById('mtab-franco').style.display = canFranco ? 'inline-block' : 'none';
   document.getElementById('mtab-quitar-franco').style.display = canQuitarFranco ? 'inline-block' : 'none';

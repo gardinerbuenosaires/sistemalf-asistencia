@@ -262,6 +262,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    LEFT JOIN puestos p ON p.id = dd.puesto_id
                    LEFT JOIN horarios h ON h.id = dd.horario_id
                    WHERE dd.distribucion_id=?
+                     AND (e.fecha_egreso IS NULL OR dd.fecha < e.fecha_egreso)
                    ORDER BY dd.fecha, p.orden""",
                 (dist["id"],)
             ).fetchall()
@@ -271,6 +272,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    FROM peones_franco df
                    LEFT JOIN empleados e ON e.id = df.empleado_id
                    WHERE df.distribucion_id=?
+                     AND (e.fecha_egreso IS NULL OR df.fecha < e.fecha_egreso)
                    ORDER BY df.fecha, e.apellido, e.nombre""",
                 (dist["id"],)
             ).fetchall()
@@ -808,11 +810,26 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
 
         hoy_str = str(date.today())  # los horarios aplican solo a futuro (> hoy)
 
+        # `fecha_egreso` es el primer dia NO trabajado. Se compara dia a dia porque
+        # puede caer dentro de la semana o de las que se replican mas adelante.
+        egresos = {
+            r["id"]: r["fecha_egreso"][:10]
+            for r in conn.execute(
+                "SELECT id, fecha_egreso FROM empleados WHERE fecha_egreso IS NOT NULL"
+            ).fetchall() if r["fecha_egreso"]
+        }
+
+        def _egresado(emp_id, fecha):
+            f = egresos.get(emp_id)
+            return bool(f and fecha >= f)
+
         # Un empleado no puede tener franco y asignación de trabajo el mismo día:
         # ambos escriben planificacion (empleado_id, fecha) que es UNIQUE.
         dias_trabajo = {(d["empleado_id"], d["fecha"]) for d in detalles
-                        if not d["es_franco"] and d["fecha"] > hoy_str}
-        choques = sorted({(f["empleado_id"], f["fecha"]) for f in francos} & dias_trabajo)
+                        if not d["es_franco"] and d["fecha"] > hoy_str
+                        and not _egresado(d["empleado_id"], d["fecha"])}
+        choques = sorted({(f["empleado_id"], f["fecha"]) for f in francos
+                          if not _egresado(f["empleado_id"], f["fecha"])} & dias_trabajo)
         if choques:
             emp_ids_choque = list({e for e, _ in choques})
             ph_c = ",".join("?" * len(emp_ids_choque))
@@ -875,6 +892,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
         for fr in francos:
             if fr["fecha"] <= hoy_str:  # no modificar días ya transcurridos
                 continue
+            if _egresado(fr["empleado_id"], fr["fecha"]):
+                continue
             if (fr["empleado_id"], fr["fecha"]) in bloqueantes:
                 continue
             conn.execute(
@@ -885,6 +904,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
 
         for det in detalles:
             if det["fecha"] <= hoy_str:  # no modificar días ya transcurridos
+                continue
+            if _egresado(det["empleado_id"], det["fecha"]):
                 continue
             if (det["empleado_id"], det["fecha"]) in bloqueantes:
                 continue
@@ -962,6 +983,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
                 fecha_orig = date.fromisoformat(det["fecha"])
                 dow = fecha_orig.weekday()
                 fecha_fut = str(lunes_fut + timedelta(days=dow))
+                if _egresado(det["empleado_id"], fecha_fut):
+                    continue
                 conn.execute(
                     """INSERT INTO peones_detalle
                        (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
@@ -973,6 +996,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
                 fecha_orig = date.fromisoformat(fr["fecha"])
                 dow = fecha_orig.weekday()
                 fecha_fut = str(lunes_fut + timedelta(days=dow))
+                if _egresado(fr["empleado_id"], fecha_fut):
+                    continue
                 conn.execute(
                     """INSERT OR IGNORE INTO peones_franco
                        (distribucion_id, empleado_id, fecha, creado_por, creado_en)

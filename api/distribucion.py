@@ -311,6 +311,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    LEFT JOIN puestos p ON p.id = dd.puesto_id
                    LEFT JOIN horarios h ON h.id = dd.horario_id
                    WHERE dd.distribucion_id=? AND dd.es_comida_personal=0
+                     AND (e.fecha_egreso IS NULL OR dd.fecha < e.fecha_egreso)
                    ORDER BY dd.fecha, p.orden""",
                 (dist["id"],)
             ).fetchall()
@@ -320,6 +321,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    FROM distribucion_detalle dd
                    JOIN empleados e ON e.id = dd.empleado_id
                    WHERE dd.distribucion_id=? AND dd.es_comida_personal=1
+                     AND (e.fecha_egreso IS NULL OR dd.fecha < e.fecha_egreso)
                    ORDER BY dd.fecha""",
                 (dist["id"],)
             ).fetchall()
@@ -329,6 +331,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    FROM distribucion_franco df
                    LEFT JOIN empleados e ON e.id = df.empleado_id
                    WHERE df.distribucion_id=?
+                     AND (e.fecha_egreso IS NULL OR df.fecha < e.fecha_egreso)
                    ORDER BY df.fecha, e.apellido, e.nombre""",
                 (dist["id"],)
             ).fetchall()
@@ -342,6 +345,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    FROM distribucion_licencia dl
                    LEFT JOIN empleados e ON e.id = dl.empleado_id
                    WHERE dl.distribucion_id=?
+                     AND (e.fecha_egreso IS NULL OR dl.fecha < e.fecha_egreso)
                    ORDER BY dl.fecha""",
                 (dist["id"],)
             ).fetchall()
@@ -1094,6 +1098,19 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
         domingo_str = str(date.fromisoformat(lunes_str) + timedelta(days=6))
         hoy_str = str(date.today())  # los horarios aplican solo a futuro (> hoy)
 
+        # `fecha_egreso` es el primer dia NO trabajado. Se compara dia a dia porque
+        # puede caer dentro de la semana o de las que se replican mas adelante.
+        egresos = {
+            r["id"]: r["fecha_egreso"][:10]
+            for r in conn.execute(
+                "SELECT id, fecha_egreso FROM empleados WHERE fecha_egreso IS NOT NULL"
+            ).fetchall() if r["fecha_egreso"]
+        }
+
+        def _egresado(emp_id, fecha):
+            f = egresos.get(emp_id)
+            return bool(f and fecha >= f)
+
         # Franco y puesto el mismo día se contradicen: ambos escriben
         # planificacion(empleado_id, fecha), que es UNIQUE. No se puede adivinar
         # cuál vale, así que lo frenamos acá con un mensaje claro.
@@ -1102,8 +1119,10 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
         dias_trabajo = {
             (d["empleado_id"], d["fecha"]) for d in detalles
             if not d["es_franco"] and not d["es_comida_personal"] and d["fecha"] > hoy_str
+            and not _egresado(d["empleado_id"], d["fecha"])
         }
-        choques = sorted({(f["empleado_id"], f["fecha"]) for f in francos} & dias_trabajo)
+        choques = sorted({(f["empleado_id"], f["fecha"]) for f in francos
+                          if not _egresado(f["empleado_id"], f["fecha"])} & dias_trabajo)
         if choques:
             emp_ids_choque = list({e for e, _ in choques})
             ph_c = ",".join("?" * len(emp_ids_choque))
@@ -1190,6 +1209,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
         for fr in francos:
             if fr["fecha"] <= hoy_str:  # no modificar días ya transcurridos
                 continue
+            if _egresado(fr["empleado_id"], fr["fecha"]):
+                continue
             if (fr["empleado_id"], fr["fecha"]) in cambio_out_dias:  # cambió de turno: no escribe origen
                 continue
             if (fr["empleado_id"], fr["fecha"]) in bloqueantes:
@@ -1211,6 +1232,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
             if det["es_comida_personal"]:
                 continue
             if det["fecha"] <= hoy_str:  # no modificar días ya transcurridos
+                continue
+            if _egresado(det["empleado_id"], det["fecha"]):
                 continue
             if (det["empleado_id"], det["fecha"]) in cambio_out_dias:  # cambió de turno: no escribe origen
                 continue
@@ -1345,6 +1368,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                 fecha_orig = date.fromisoformat(det["fecha"])
                 dow = fecha_orig.weekday()
                 fecha_fut = str(lunes_fut + timedelta(days=dow))
+                if _egresado(det["empleado_id"], fecha_fut):
+                    continue
                 conn.execute(
                     """INSERT INTO distribucion_detalle
                        (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
@@ -1356,6 +1381,8 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("distribucion", 
                 fecha_orig = date.fromisoformat(fr["fecha"])
                 dow = fecha_orig.weekday()
                 fecha_fut = str(lunes_fut + timedelta(days=dow))
+                if _egresado(fr["empleado_id"], fecha_fut):
+                    continue
                 conn.execute(
                     """INSERT OR IGNORE INTO distribucion_franco
                        (distribucion_id, empleado_id, fecha, creado_por, creado_en)

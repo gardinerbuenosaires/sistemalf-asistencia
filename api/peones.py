@@ -263,6 +263,9 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                    LEFT JOIN horarios h ON h.id = dd.horario_id
                    WHERE dd.distribucion_id=?
                      AND (e.fecha_egreso IS NULL OR dd.fecha < e.fecha_egreso)
+                     AND NOT EXISTS (SELECT 1 FROM novedades n
+                         WHERE n.empleado_id = dd.empleado_id AND n.fecha = dd.fecha
+                           AND n.bloque = 0 AND n.tipo IN ('ILT','LSG','L','E','V','S'))
                    ORDER BY dd.fecha, p.orden""",
                 (dist["id"],)
             ).fetchall()
@@ -617,6 +620,16 @@ def add_detalle(body: DetalleIn, user=Depends(require_permiso("peones", "editar"
         if franco:
             raise HTTPException(409, "El empleado tiene franco ese día — quitá el franco antes de asignarlo")
 
+        # Vacaciones, licencia o enfermedad ese día impiden ocupar una plaza.
+        nov = conn.execute(
+            """SELECT tipo FROM novedades
+               WHERE empleado_id=? AND fecha=? AND bloque=0
+                 AND tipo IN ('ILT','LSG','L','E','V','S')""",
+            (body.empleado_id, body.fecha)
+        ).fetchone()
+        if nov:
+            raise HTTPException(409, f"El empleado tiene {nov['tipo']} ese día — no se lo puede asignar")
+
         cur = conn.execute(
             """INSERT INTO peones_detalle
                (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
@@ -956,64 +969,6 @@ def confirmar_semana(dist_id: int, user=Depends(require_permiso("peones", "confi
             "UPDATE peones_semana SET estado='confirmado', modificado_por=?, modificado_en=datetime('now','localtime') WHERE id=?",
             (uid, dist_id)
         )
-
-        # Replicar como borrador en las próximas 4 semanas (si no tienen distribución propia)
-        lunes_actual = date.fromisoformat(dist["semana_inicio"])
-        for semanas_adelante in range(1, 5):
-            lunes_fut = lunes_actual + timedelta(weeks=semanas_adelante)
-            lunes_fut_str = str(lunes_fut)
-
-            ya_existe = conn.execute(
-                "SELECT id FROM peones_semana WHERE departamento_id=? AND turno=? AND semana_inicio=?",
-                (dist["departamento_id"], dist["turno"], lunes_fut_str)
-            ).fetchone()
-            if ya_existe:
-                continue
-
-            cur_fut = conn.execute(
-                """INSERT INTO peones_semana
-                   (departamento_id, turno, semana_inicio, estado, creado_por, creado_en)
-                   VALUES (?,?,?,'borrador',?,datetime('now','localtime'))""",
-                (dist["departamento_id"], dist["turno"], lunes_fut_str, uid)
-            )
-            dist_fut_id = cur_fut.lastrowid
-
-            # Copiar detalles y francos mapeando fechas al día de semana equivalente
-            for det in detalles:
-                fecha_orig = date.fromisoformat(det["fecha"])
-                dow = fecha_orig.weekday()
-                fecha_fut = str(lunes_fut + timedelta(days=dow))
-                if _egresado(det["empleado_id"], fecha_fut):
-                    continue
-                conn.execute(
-                    """INSERT INTO peones_detalle
-                       (distribucion_id, empleado_id, puesto_id, fecha, es_franco, horario_id, creado_por, creado_en)
-                       VALUES (?,?,?,?,?,?,?,datetime('now','localtime'))""",
-                    (dist_fut_id, det["empleado_id"], det["puesto_id"],
-                     fecha_fut, det["es_franco"], det["horario_id"], uid)
-                )
-            for fr in francos:
-                fecha_orig = date.fromisoformat(fr["fecha"])
-                dow = fecha_orig.weekday()
-                fecha_fut = str(lunes_fut + timedelta(days=dow))
-                if _egresado(fr["empleado_id"], fecha_fut):
-                    continue
-                conn.execute(
-                    """INSERT OR IGNORE INTO peones_franco
-                       (distribucion_id, empleado_id, fecha, creado_por, creado_en)
-                       VALUES (?,?,?,?,datetime('now','localtime'))""",
-                    (dist_fut_id, fr["empleado_id"], fecha_fut, uid)
-                )
-            for v in vac_staged:
-                fecha_orig = date.fromisoformat(v["fecha"])
-                dow = fecha_orig.weekday()
-                fecha_fut = str(lunes_fut + timedelta(days=dow))
-                conn.execute(
-                    """INSERT OR IGNORE INTO peones_vacacion
-                       (distribucion_id, empleado_id, fecha, creado_por, creado_en)
-                       VALUES (?,?,?,?,datetime('now','localtime'))""",
-                    (dist_fut_id, v["empleado_id"], fecha_fut, uid)
-                )
 
     return {"ok": True}
 

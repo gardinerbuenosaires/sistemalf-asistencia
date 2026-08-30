@@ -1070,6 +1070,14 @@ function abrirModal(puestoId, fecha) {
       .map(x => x.empleado_id)
   );
   const asignadosModal = new Set(_detalles.filter(x => x.fecha === fecha && x.empleado_id && !x.es_franco).map(x => x.empleado_id));
+  // El chef ocupa un solo lugar por día: si ya está en la fila CHEF, asignarlo a una
+  // plaza lo mueve (sale de CHEF), no lo duplica. Se avisa en la opción.
+  const enChef = new Map(
+    _detalles
+      .filter(x => x.fecha === fecha && x.empleado_id && !x.es_franco
+               && _puestos.find(p => p.id === x.puesto_id)?.es_chef)
+      .map(x => [x.empleado_id, _puestos.find(p => p.id === x.puesto_id)?.nombre || 'CHEF'])
+  );
   const francoHoy = new Set([
     ..._francos.filter(f => f.fecha === fecha).map(f => f.empleado_id),
     ..._planBase.filter(p => p.es_franco && p.fecha === fecha
@@ -1142,7 +1150,13 @@ function abrirModal(puestoId, fecha) {
       opt.style.cssText = 'opacity:.45;cursor:default;pointer-events:none;border-color:#ddd;color:#999';
       noDispEls.push(opt);
     } else {
-      opt.textContent = nombre;
+      const chefDe = enChef.get(e.id);
+      if (chefDe) {
+        opt.innerHTML = `${nombre} <span class="nov-badge" style="background:#f3e5f5;color:#6a1b9a">pasa de ${chefDe}</span>`;
+        opt.title = `Está en ${chefDe}. Al asignarlo acá sale de esa fila.`;
+      } else {
+        opt.textContent = nombre;
+      }
       opt.classList.add('disp-opt');
       const planHorario = _planBase.find(p => p.empleado_id === e.id && p.fecha === fecha)?.horario_id;
       opt.onclick = () => asignar(puestoId, fecha, e.id, false, planHorario || e.horario_actual_id || null);

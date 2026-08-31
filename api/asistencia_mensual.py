@@ -350,7 +350,11 @@ def _asistencia_datos(mes: str) -> dict:
             ).fetchall()
         }
 
-        # Empleados: activos + desvinculados cuyo fecha_egreso cae dentro del mes
+        # Empleados: activos + desvinculados que trabajaron algun dia del mes.
+        # `fecha_egreso` es el primer dia NO trabajado, asi que basta con que sea
+        # posterior al 1ro: quien se fue el 1ro del mes siguiente trabajo el mes
+        # entero y tiene que aparecer. Exigir ademas `<= fin de mes` lo dejaba
+        # afuera de los dos meses, el trabajado y el siguiente.
         emp_rows = conn.execute("""
             WITH freq AS (
                 SELECT p.empleado_id, h.tipo, t.nombre AS turno_nombre,
@@ -373,10 +377,9 @@ def _asistencia_datos(mes: str) -> dict:
             LEFT JOIN freq u ON u.empleado_id = e.id AND u.rn = 1
             WHERE e.tipo NOT IN ('acceso', 'parking')
               AND (e.fecha_ingreso IS NULL OR e.fecha_ingreso <= ?)
-              AND (e.activo = 1
-               OR (e.fecha_egreso > ? AND e.fecha_egreso <= ?))
+              AND (e.activo = 1 OR e.fecha_egreso > ?)
             ORDER BY e.apellido, e.nombre
-        """, (f0, f1, f1, f0, f1)).fetchall()
+        """, (f0, f1, f1, f0)).fetchall()
 
         if not emp_rows:
             return {"mes": mes, "dias": _build_dias(fechas, feriados),

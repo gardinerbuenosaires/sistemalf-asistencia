@@ -4,15 +4,19 @@ a partir de su asignacion de calendario activa.
 
 Solo inserta dias que no tienen planificacion existente.
 """
-import sqlite3
+import sys
 import os
 from datetime import date, timedelta
 
-DB_PATH = os.environ.get("DB_PATH", "data/fichajes.db")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from db.database import get_connection
+
 SEMANAS = int(os.environ.get("SEMANAS", "8"))  # cuantas semanas hacia adelante generar
 
-conn = sqlite3.connect(DB_PATH)
-conn.row_factory = sqlite3.Row
+# get_connection aplica PRAGMA foreign_keys=ON, así que un empleado_id u
+# horario_id inexistente falla acá en vez de entrar como fila colgada.
+conn = get_connection()
 
 hoy = date.today()
 hasta = hoy + timedelta(weeks=SEMANAS)

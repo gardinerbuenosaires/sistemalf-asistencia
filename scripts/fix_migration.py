@@ -1,16 +1,22 @@
-"""
+r"""
 Aplica migraciones faltantes directamente sobre la DB.
 Ejecutar desde C:\SistemAlf con:
     set DB_PATH=C:\ProgramData\SistemAlf\fichajes.db && python scripts/fix_migration.py
 """
-import sqlite3
+import sys
 import os
 
-DB_PATH = os.getenv("DB_PATH", "fichajes.db")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config import DB_PATH
+from db.database import get_connection
+
 print(f"DB: {os.path.abspath(DB_PATH)}")
 
-conn = sqlite3.connect(DB_PATH)
-conn.row_factory = sqlite3.Row
+# Por get_connection y no sqlite3.connect a secas: así el script hereda el
+# PRAGMA foreign_keys=ON. Sin él las FK no se aplican y un DELETE no cascadea,
+# que es como quedaron 362 permisos colgando de roles ya borrados.
+conn = get_connection()
 cambios = 0
 
 

@@ -1537,16 +1537,33 @@ def _migrate(conn):
         if n:
             logger.info("Migración: asistencia:fichaje_manual otorgado a %d rol(es) con asistencia:editar", n)
 
-    # Permisos de roles que ya no existen. Los dejó el sembrado duplicado de roles
-    # default que arrastraba ensure_admin, cuando esos duplicados se borraron sin
-    # que la FK cascadeara. Son inalcanzables porque roles.id es AUTOINCREMENT y
-    # nunca reasigna un id, pero ensucian la tabla.
+    # Filas de permisos que no pueden corresponder a nada. Se recalcula en cada
+    # arranque a propósito: son invariantes, no una migración de una sola vez.
+    #
+    # 1) De roles que ya no existen. Los dejó el sembrado duplicado de roles default
+    #    que arrastraba ensure_admin, cuando esos duplicados se borraron sin que la
+    #    FK cascadeara. Son inalcanzables porque roles.id es AUTOINCREMENT y nunca
+    #    reasigna un id, pero ensucian la tabla.
     huerfanos = conn.execute(
         "SELECT COUNT(*) FROM permisos WHERE rol_id NOT IN (SELECT id FROM roles)"
     ).fetchone()[0]
     if huerfanos:
         conn.execute("DELETE FROM permisos WHERE rol_id NOT IN (SELECT id FROM roles)")
         logger.info("Migración: %d permisos de roles inexistentes eliminados", huerfanos)
+
+    # 2) De combinaciones módulo+acción que el código ya no reconoce, como
+    #    empleados:eliminar (nunca hubo baja física de empleados). No las otorga
+    #    nadie ni las consulta nadie, pero quedan tildadas en la base.
+    #    Import local: auth.core importa este módulo, al revés sería circular.
+    from auth.core import MODULO_ACCIONES
+    validas = {(m, a) for m, acs in MODULO_ACCIONES.items() for a in acs}
+    sobrantes = [
+        r["id"] for r in conn.execute("SELECT id, modulo, accion FROM permisos").fetchall()
+        if (r["modulo"], r["accion"]) not in validas
+    ]
+    if sobrantes:
+        conn.executemany("DELETE FROM permisos WHERE id=?", [(i,) for i in sobrantes])
+        logger.info("Migración: %d permisos de acciones inexistentes eliminados", len(sobrantes))
 
     for orden, (puesto_nombre, dept_nombre) in enumerate(_puestos_default):
         dept = conn.execute("SELECT id FROM departamentos WHERE nombre=?", (dept_nombre,)).fetchone()

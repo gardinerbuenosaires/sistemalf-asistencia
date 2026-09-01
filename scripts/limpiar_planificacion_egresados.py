@@ -14,9 +14,16 @@ Uso:  python scripts/limpiar_planificacion_egresados.py [--aplicar]
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pathlib import Path
+
+from config import DB_PATH
 from db.database import db_session
 
 APLICAR = "--aplicar" in sys.argv
+
+# Sin DB_PATH el default es relativo al directorio actual, así que es fácil
+# terminar leyendo una base que no es. Mostrarla antes de tocar nada.
+print(f"Base: {Path(DB_PATH).resolve()}")
 
 with db_session() as conn:
     egresados = conn.execute(

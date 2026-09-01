@@ -202,7 +202,9 @@ def page_usuarios(request: Request):
 
 @app.get("/roles", include_in_schema=False)
 def page_roles(request: Request):
-    return _page(request, "web/templates/roles.html", "roles")
+    # La edición de roles vive en Configuración → Usuarios. La ruta se mantiene
+    # para no romper favoritos viejos.
+    return RedirectResponse("/configuracion")
 
 @app.get("/configuracion", include_in_schema=False)
 def page_configuracion(request: Request):

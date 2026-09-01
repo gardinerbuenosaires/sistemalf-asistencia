@@ -4,7 +4,8 @@ from typing import Optional
 from db.database import db_session
 from auth.core import (verify_password, create_token, get_current_user,
                        hash_password, require_permiso, invalidar_cache,
-                       MODULOS, ACCIONES, MODULO_ACCIONES, INACTIVITY_TTL)
+                       MODULOS, ACCIONES, MODULO_ACCIONES, MODULO_GRUPOS,
+                       INACTIVITY_TTL)
 
 router = APIRouter(tags=["auth"])
 
@@ -235,4 +236,5 @@ def delete_rol(rid: int, user=Depends(require_permiso("roles", "eliminar"))):
 @router.get("/api/roles/modulos")
 def get_modulos(user=Depends(get_current_user)):
     return {"modulos": MODULOS, "acciones": ACCIONES,
-            "modulo_acciones": MODULO_ACCIONES}
+            "modulo_acciones": MODULO_ACCIONES,
+            "grupos": [{"nombre": n, "modulos": ms} for n, ms in MODULO_GRUPOS]}

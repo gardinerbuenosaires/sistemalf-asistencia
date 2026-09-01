@@ -57,6 +57,16 @@ MODULO_ACCIONES = {
     "peones":        ["ver", "editar", "confirmar"],
 }
 
+# Cómo se agrupan los módulos en la pantalla de Roles. Un módulo que no figure
+# acá cae en "Otros", así que agregarlo a un grupo es opcional pero conviene.
+MODULO_GRUPOS = [
+    ("Asistencia",   ["asistencia", "resultados", "periodos", "sync"]),
+    ("Programación", ["horarios", "planificacion", "calendarios"]),
+    ("Distribución", ["distribucion", "mozos", "barmans", "peones"]),
+    ("Personal",     ["empleados", "vacaciones", "premios"]),
+    ("Sistema",      ["dashboard", "usuarios", "roles"]),
+]
+
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}
 _cache: dict[int, tuple[float, set]] = {}
 _CACHE_TTL = 30  # segundos

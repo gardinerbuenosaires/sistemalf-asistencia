@@ -122,16 +122,43 @@
 
   /* Roles — editor de permisos */
   .form-row-3 { display: grid; grid-template-columns: 1fr 1fr 70px; gap: 12px; margin-bottom: 16px; }
-  .matriz { width: 100%; border-collapse: collapse; font-size: .82rem; }
-  .matriz th { padding: 6px 8px; background: #f8f9fa; border-bottom: 2px solid #dee2e6;
-               font-size: .72rem; text-transform: uppercase; color: #666; text-align: center; }
-  .matriz th.col-modulo { text-align: left; min-width: 120px; }
-  .matriz td { padding: 5px 8px; border-bottom: 1px solid #f0f0f0; text-align: center; vertical-align: middle; }
-  .matriz td.modulo-name { text-align: left; font-size: .82rem; }
-  .matriz tr:hover td { background: #fafafa; }
-  .chk-perm, .chk-all { width: 15px; height: 15px; cursor: pointer; accent-color: #2c3e50; }
-  .chk-perm:disabled { visibility: hidden; }
-  .col-all { background: #f0f4f8; }
+
+  /* Permisos — tarjetas por módulo */
+  .perm-grupo { margin-bottom: 18px; }
+  .perm-grupo-tit { font-size: .68rem; font-weight: 700; text-transform: uppercase;
+                    color: #95a5a6; letter-spacing: .06em; margin-bottom: 6px;
+                    border-bottom: 1px solid #ecf0f1; padding-bottom: 4px; }
+  .perm-fila { display: flex; align-items: baseline; gap: 12px; padding: 7px 4px;
+               border-bottom: 1px solid #f4f6f8; }
+  .perm-fila:hover { background: #fbfcfd; }
+  .perm-mod { flex: 0 0 130px; font-size: .84rem; font-weight: 600; color: #2c3e50; }
+  .perm-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+  .perm-chip { display: inline-flex; }
+  .perm-chip input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .perm-chip span { display: inline-block; padding: 3px 10px; border-radius: 11px;
+                    font-size: .76rem; border: 1px solid #dfe4e8; background: #fff;
+                    color: #8a97a2; cursor: pointer; user-select: none;
+                    transition: background .12s, border-color .12s, color .12s; }
+  /* Sólo los no otorgados: si no, el :hover le gana al :checked por especificidad
+     y deja texto gris sobre el relleno oscuro. */
+  .perm-chip input:not(:disabled):not(:checked) + span:hover { border-color: #b6c2cc; color: #55636e; }
+  .perm-chip input:checked:not(:disabled) + span:hover { opacity: .88; }
+  .perm-chip input:checked + span { background: #2c3e50; border-color: #2c3e50; color: #fff; }
+  .perm-chip input:disabled + span { cursor: default; opacity: .55; }
+  .perm-chip-todo span { border-style: dashed; font-weight: 600; }
+  .perm-chip-todo input:checked + span { background: #5d6d7e; border-color: #5d6d7e; }
+
+  /* Comparación contra otro rol. Sólo el verde se rellena: un chip lleno quiere
+     decir "lo tiene", y el naranja es justamente el que no. */
+  .perm-chip.cmp-solo-aca input:checked + span { background: #27ae60; border-color: #27ae60; color: #fff; }
+  .perm-chip.cmp-solo-otro span { border-color: #e67e22; border-style: dashed; color: #c96a12; }
+  .cmp-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+             margin-bottom: 12px; font-size: .8rem; color: #666; }
+  .cmp-bar select { padding: 4px 8px; border: 1px solid #ced4da; border-radius: 5px; font-size: .8rem; }
+  .cmp-ref { font-size: .72rem; color: #8a97a2; display: inline-flex; align-items: center; gap: 8px; }
+  .cmp-muestra { padding: 2px 9px; border-radius: 11px; font-size: .72rem; border: 1px solid; }
+  .cmp-m-aca  { background: #27ae60; border-color: #27ae60; color: #fff; }
+  .cmp-m-otro { border-color: #e67e22; border-style: dashed; color: #c96a12; background: #fff; }
   .nivel-bar { height: 3px; border-radius: 2px; background: #2c3e50; margin-top: 4px; }
   .rol-desc-small { font-size: .72rem; color: #888; margin-top: 1px; }
   .rol-nivel-tag { font-size: .7rem; color: #aaa; flex-shrink: 0; }
@@ -1163,7 +1190,12 @@ const ACCION_LABELS = {
 // por /api/roles/modulos, así la matriz no se desincroniza del código.
 let MODULO_ACCIONES_VALIDAS = {};
 
-let rolesList = [], modulos = [], acciones = [], rolEditandoId = null;
+let rolesList = [], modulos = [], acciones = [], gruposModulos = [], rolEditandoId = null;
+
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 async function cargarRoles() {
   const [rRes, mRes] = await Promise.all([fetch("/api/roles"), fetch("/api/roles/modulos")]);
@@ -1172,6 +1204,7 @@ async function cargarRoles() {
   modulos  = m.modulos;
   acciones = m.acciones;
   MODULO_ACCIONES_VALIDAS = m.modulo_acciones || {};
+  gruposModulos = m.grupos || [];
   renderRolesList();
 }
 
@@ -1190,6 +1223,7 @@ function renderRolesList() {
 
 function nuevoRol() {
   rolEditandoId = null;
+  baseRolId = null;
   document.getElementById("rol-editor-titulo").textContent = "Nuevo rol";
   document.querySelectorAll("#roles-lista .usr-item").forEach(el => el.classList.remove("activo"));
   renderRolEditor();
@@ -1197,6 +1231,7 @@ function nuevoRol() {
 
 function editarRol(id) {
   rolEditandoId = id;
+  baseRolId = null;
   const rol = rolesList.find(r => r.id === id);
   document.getElementById("rol-editor-titulo").textContent = rol.nombre;
   document.querySelectorAll("#roles-lista .usr-item").forEach(el => el.classList.remove("activo"));
@@ -1212,11 +1247,11 @@ function renderRolEditor(rol={}) {
     <div class="form-row-3">
       <div class="form-group">
         <label>Nombre</label>
-        <input type="text" id="rf-nombre" value="${rol.nombre||''}" ${dis}>
+        <input type="text" id="rf-nombre" value="${escHtml(rol.nombre||'')}" ${dis}>
       </div>
       <div class="form-group">
         <label>Descripción</label>
-        <input type="text" id="rf-desc" value="${rol.descripcion||''}" ${dis}>
+        <input type="text" id="rf-desc" value="${escHtml(rol.descripcion||'')}" ${dis}>
       </div>
     </div>
     <div class="form-row-3" style="margin-top:8px">
@@ -1241,37 +1276,8 @@ function renderRolEditor(rol={}) {
       </div>
     </div>
     <div style="font-size:.75rem;font-weight:bold;color:#666;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Permisos</div>
-    <div class="matriz-wrap">
-    <table class="matriz">
-      <thead><tr>
-        <th class="col-modulo">Módulo</th>
-        ${acciones.map(a => `<th>${ACCION_LABELS[a]||a}</th>`).join("")}
-        <th class="col-all">Todo</th>
-      </tr></thead>
-      <tbody>
-        ${modulos.map(m => {
-          const validasM = MODULO_ACCIONES_VALIDAS[m] || acciones;
-          const todosCheck = validasM.every(a => permsActuales.has(`${m}|${a}`));
-          return `<tr>
-            <td class="modulo-name">${MODULO_LABELS[m]||m}</td>
-            ${acciones.map(a => {
-              const aplica = (MODULO_ACCIONES_VALIDAS[m] || acciones).includes(a);
-              return `<td style="${aplica ? '' : 'background:#f4f6f8'}">
-                <input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
-                  ${aplica && permsActuales.has(`${m}|${a}`) ? " checked" : ""}
-                  ${aplica && editable ? `onchange="onPermChange(this)"` : "disabled"}
-                  style="${aplica ? '' : 'opacity:.2;cursor:default'}"></td>`;
-            }).join("")}
-            <td class="col-all">
-              <input type="checkbox" class="chk-all" data-m="${m}"
-                ${todosCheck ? " checked" : ""}
-                ${editable ? `onchange="toggleModulo(this,'${m}')"` : "disabled"}>
-            </td>
-          </tr>`;
-        }).join("")}
-      </tbody>
-    </table>
-    </div>
+    ${rol.id ? renderCmpBar(rol) : renderBaseBar()}
+    ${renderPermGrupos(permsActuales, editable, rol.id)}
     <div class="form-footer">
       ${rol.id && canDo('roles','eliminar') ? `<button class="btn btn-danger btn-sm" onclick="eliminarRol(${rol.id})">Eliminar</button>` : ""}
       <button class="btn btn-secondary btn-sm" onclick="cancelarRol()">Cancelar</button>
@@ -1279,18 +1285,138 @@ function renderRolEditor(rol={}) {
     </div>`;
 }
 
+// Rol contra el que se compara la grilla de permisos (null = sin comparar).
+let cmpRolId = null;
+// Rol del que se copian los permisos al crear uno nuevo (null = arrancar vacío).
+let baseRolId = null;
+
+function renderBaseBar() {
+  const otros = rolesList.filter(r => r.id);
+  if (!otros.length) return '';
+  const base = baseRolId ? rolesList.find(r => r.id === baseRolId) : null;
+  return `<div class="cmp-bar">
+    <label for="base-rol">Basar en</label>
+    <select id="base-rol" onchange="setBaseRol(this.value)">
+      <option value="">— empezar vacío —</option>
+      ${otros.map(r => `<option value="${r.id}"${baseRolId === r.id ? ' selected' : ''}>${escHtml(r.nombre)}</option>`).join('')}
+    </select>
+    ${base ? `<span class="cmp-ref">copia los permisos y la página de inicio de
+        <b>${escHtml(base.nombre)}</b>; podés ajustarlos antes de guardar</span>` : ''}
+  </div>`;
+}
+
+function setBaseRol(v) {
+  baseRolId = v ? parseInt(v) : null;
+  const base = baseRolId ? rolesList.find(r => r.id === baseRolId) : null;
+  // Se redibuja el editor entero, así que hay que conservar lo ya tipeado.
+  renderRolEditor({
+    nombre:        document.getElementById('rf-nombre').value,
+    descripcion:   document.getElementById('rf-desc').value,
+    pagina_inicio: base ? base.pagina_inicio
+                        : document.getElementById('rf-pagina-inicio').value,
+    permisos:      base ? base.permisos : [],
+  });
+}
+
+function renderCmpBar(rol) {
+  const otros = rolesList.filter(r => r.id && r.id !== rol.id);
+  if (!otros.length) return '';
+  return `<div class="cmp-bar">
+    <label for="cmp-rol">Comparar con</label>
+    <select id="cmp-rol" onchange="setCmpRol(this.value)">
+      <option value="">— ninguno —</option>
+      ${otros.map(r => `<option value="${r.id}"${cmpRolId === r.id ? ' selected' : ''}>${escHtml(r.nombre)}</option>`).join('')}
+    </select>
+    ${cmpRolId ? `<span class="cmp-ref">
+        <span class="cmp-muestra cmp-m-aca">sólo acá</span>
+        <span class="cmp-muestra cmp-m-otro">sólo en el otro rol</span></span>` : ''}
+  </div>`;
+}
+
+function setCmpRol(v) {
+  cmpRolId = v ? parseInt(v) : null;
+  // Re-render conservando lo tildado en pantalla, que puede diferir de lo guardado.
+  const enPantalla = new Set([...document.querySelectorAll('.chk-perm:checked')]
+    .map(c => `${c.dataset.m}|${c.dataset.a}`));
+  const rol = rolesList.find(r => r.id === rolEditandoId) || {};
+  document.getElementById('perm-grupos').outerHTML =
+    renderPermGrupos(enPantalla, canDo('roles','editar'), rol.id);
+  document.querySelector('.cmp-bar').outerHTML = renderCmpBar(rol);
+}
+
+function renderPermGrupos(permsActuales, editable, rolId) {
+  // Permisos del rol de comparación, para marcar las diferencias.
+  const cmpRol = cmpRolId ? rolesList.find(r => r.id === cmpRolId) : null;
+  const cmpPerms = cmpRol
+    ? new Set((cmpRol.permisos || []).map(p => `${p.modulo}|${p.accion}`))
+    : null;
+
+  const enGrupos = new Set(gruposModulos.flatMap(g => g.modulos));
+  const sueltos  = modulos.filter(m => !enGrupos.has(m));
+  const grupos   = [...gruposModulos, ...(sueltos.length ? [{nombre: 'Otros', modulos: sueltos}] : [])];
+
+  return `<div id="perm-grupos">` + grupos.map(g => {
+    const mods = g.modulos.filter(m => modulos.includes(m));
+    if (!mods.length) return '';
+    return `<div class="perm-grupo">
+      <div class="perm-grupo-tit">${escHtml(g.nombre)}</div>
+      ${mods.map(m => {
+        const validas = MODULO_ACCIONES_VALIDAS[m] || acciones;
+        const todos   = validas.every(a => permsActuales.has(`${m}|${a}`));
+        return `<div class="perm-fila">
+          <div class="perm-mod">${MODULO_LABELS[m]||m}</div>
+          <div class="perm-chips">
+            ${validas.map(a => {
+              const tiene = permsActuales.has(`${m}|${a}`);
+              let cmp = '';
+              if (cmpPerms) {
+                const otro = cmpPerms.has(`${m}|${a}`);
+                if (tiene && !otro) cmp = ' cmp-solo-aca';
+                else if (!tiene && otro) cmp = ' cmp-solo-otro';
+              }
+              return `<label class="perm-chip${cmp}">
+                <input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
+                  ${tiene ? 'checked' : ''}
+                  ${editable ? `onchange="onPermChange(this)"` : 'disabled'}>
+                <span>${ACCION_LABELS[a]||a}</span></label>`;
+            }).join('')}
+            ${validas.length > 1 ? `<label class="perm-chip perm-chip-todo">
+              <input type="checkbox" class="chk-all" data-m="${m}" ${todos ? 'checked' : ''}
+                ${editable ? `onchange="toggleModulo(this,'${m}')"` : 'disabled'}>
+              <span>Todo</span></label>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('') + `</div>`;
+}
+
 function onPermChange(chk) {
   const m = chk.dataset.m;
   const validas = MODULO_ACCIONES_VALIDAS[m] || acciones;
   const aplicables = [...document.querySelectorAll(`.chk-perm[data-m="${m}"]`)]
     .filter(c => validas.includes(c.dataset.a));
-  document.querySelector(`.chk-all[data-m="${m}"]`).checked = aplicables.every(c => c.checked);
+  const todo = document.querySelector(`.chk-all[data-m="${m}"]`);
+  if (todo) todo.checked = aplicables.every(c => c.checked);
+  marcarCmp(chk);
+}
+
+// Recalcula la marca de diferencia de un chip sin volver a dibujar todo.
+function marcarCmp(chk) {
+  if (!cmpRolId) return;
+  const cmpRol = rolesList.find(r => r.id === cmpRolId);
+  const otras  = new Set((cmpRol?.permisos || []).map(p => `${p.modulo}|${p.accion}`));
+  const chip = chk.closest('.perm-chip');
+  if (!chip) return;
+  const otro = otras.has(`${chk.dataset.m}|${chk.dataset.a}`);
+  chip.classList.toggle('cmp-solo-aca',   chk.checked && !otro);
+  chip.classList.toggle('cmp-solo-otro', !chk.checked &&  otro);
 }
 
 function toggleModulo(chk, modulo) {
   const validas = MODULO_ACCIONES_VALIDAS[modulo] || acciones;
   document.querySelectorAll(`.chk-perm[data-m="${modulo}"]`).forEach(c => {
-    if (validas.includes(c.dataset.a)) c.checked = chk.checked;
+    if (validas.includes(c.dataset.a)) { c.checked = chk.checked; marcarCmp(c); }
   });
 }
 

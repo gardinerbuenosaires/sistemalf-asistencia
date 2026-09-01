@@ -456,7 +456,7 @@ _QUERY_EVALUACIONES = """
         FROM premios_evaluacion pe
         JOIN empleados e ON e.id = pe.empleado_id
         LEFT JOIN cargos c ON c.id = e.cargo_id
-        LEFT JOIN departamentos d ON d.id = e.departamento_id
+        LEFT JOIN departamentos d ON d.id = c.departamento_id
         LEFT JOIN categorias cat ON cat.id = e.categoria_id
         LEFT JOIN ult u ON u.empleado_id = e.id AND u.rn = 1
         LEFT JOIN planilla_grupo_override ovr

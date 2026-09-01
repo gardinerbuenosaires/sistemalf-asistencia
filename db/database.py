@@ -987,7 +987,9 @@ def _migrate(conn):
         "contacto_emergencia_parentesco": "TEXT",
         "nivel_estudio_id":               "INTEGER",
         "cargo_id":                       "INTEGER",
-        "departamento_id":                "INTEGER",
+        # departamento_id NO va acá: se elimina más arriba porque se deriva de
+        # cargos. Si vuelve a esta lista, una migración la borra y la otra la
+        # recrea vacía en cada arranque.
         "categoria_id":                   "INTEGER",
         "dom_calle":                      "TEXT",
         "dom_numero":                     "TEXT",

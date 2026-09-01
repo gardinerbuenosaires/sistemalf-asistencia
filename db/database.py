@@ -1521,6 +1521,17 @@ def _migrate(conn):
         ("PROD PASTAS",    "Cocineros"),
         ("PROD PASTAS",    "Cocineros"),
     ]
+    # Permisos de roles que ya no existen. Los dejó el sembrado duplicado de roles
+    # default que arrastraba ensure_admin, cuando esos duplicados se borraron sin
+    # que la FK cascadeara. Son inalcanzables porque roles.id es AUTOINCREMENT y
+    # nunca reasigna un id, pero ensucian la tabla.
+    huerfanos = conn.execute(
+        "SELECT COUNT(*) FROM permisos WHERE rol_id NOT IN (SELECT id FROM roles)"
+    ).fetchone()[0]
+    if huerfanos:
+        conn.execute("DELETE FROM permisos WHERE rol_id NOT IN (SELECT id FROM roles)")
+        logger.info("Migración: %d permisos de roles inexistentes eliminados", huerfanos)
+
     for orden, (puesto_nombre, dept_nombre) in enumerate(_puestos_default):
         dept = conn.execute("SELECT id FROM departamentos WHERE nombre=?", (dept_nombre,)).fetchone()
         if not dept:

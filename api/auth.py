@@ -4,7 +4,7 @@ from typing import Optional
 from db.database import db_session
 from auth.core import (verify_password, create_token, get_current_user,
                        hash_password, require_permiso, invalidar_cache,
-                       MODULOS, ACCIONES, INACTIVITY_TTL)
+                       MODULOS, ACCIONES, MODULO_ACCIONES, INACTIVITY_TTL)
 
 router = APIRouter(tags=["auth"])
 
@@ -212,7 +212,7 @@ def set_permisos(rid: int, data: PermisosIn, user=Depends(require_permiso("roles
         conn.execute("DELETE FROM permisos WHERE rol_id=?", (rid,))
         for p in data.permisos:
             m, a = p.get("modulo"), p.get("accion")
-            if m in MODULOS and a in ACCIONES:
+            if a in MODULO_ACCIONES.get(m, ()):
                 conn.execute(
                     "INSERT OR IGNORE INTO permisos (rol_id,modulo,accion) VALUES (?,?,?)",
                     (rid, m, a)
@@ -234,4 +234,5 @@ def delete_rol(rid: int, user=Depends(require_permiso("roles", "eliminar"))):
 
 @router.get("/api/roles/modulos")
 def get_modulos(user=Depends(get_current_user)):
-    return {"modulos": MODULOS, "acciones": ACCIONES}
+    return {"modulos": MODULOS, "acciones": ACCIONES,
+            "modulo_acciones": MODULO_ACCIONES}

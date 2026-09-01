@@ -31,6 +31,29 @@ MODULOS = [
 ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion"]
 # corregir → asistencia:corregir (novedades en planilla)
 
+# Acciones que cada módulo realmente usa. Es la fuente única: la matriz de roles
+# se dibuja con esto y set_permisos rechaza lo que no figure acá. Al agregar un
+# require_permiso() con una acción nueva, sumarla al módulo correspondiente.
+MODULO_ACCIONES = {
+    "dashboard":     ["ver"],
+    "empleados":     ["ver", "editar", "jubilacion"],
+    "horarios":      ["ver", "editar", "eliminar"],
+    "planificacion": ["ver", "editar"],
+    "calendarios":   ["ver", "editar", "eliminar"],
+    "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos"],
+    "resultados":    ["ver", "procesar"],
+    "usuarios":      ["ver", "editar", "eliminar"],
+    "roles":         ["ver", "editar", "eliminar"],
+    "sync":          ["procesar"],
+    "premios":       ["ver", "editar", "corregir", "cerrar", "reabrir"],
+    "vacaciones":    ["ver", "editar", "carga_inicial"],
+    "periodos":      ["ver", "cerrar", "reabrir"],
+    "distribucion":  ["ver", "editar", "confirmar"],
+    "mozos":         ["ver", "editar", "confirmar"],
+    "barmans":       ["ver", "editar", "confirmar"],
+    "peones":        ["ver", "editar", "confirmar"],
+}
+
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}
 _cache: dict[int, tuple[float, set]] = {}
 _CACHE_TTL = 30  # segundos
@@ -146,7 +169,7 @@ ROLES_DEFAULT = [
 ]
 
 PERMISOS_DEFAULT = {
-    "sistema":        {m: list(ACCIONES) for m in MODULOS},
+    "sistema":        {m: list(MODULO_ACCIONES[m]) for m in MODULOS},
     "rrhh":           {
         "dashboard":     ["ver"],
         "empleados":     ["ver","editar"],

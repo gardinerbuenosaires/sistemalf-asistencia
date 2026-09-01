@@ -1150,31 +1150,17 @@ const MODULO_LABELS = {
   dashboard:"Dashboard", empleados:"Empleados", horarios:"Horarios",
   planificacion:"Planificación", calendarios:"Calendarios", asistencia:"Asistencia",
   resultados:"Resultados", usuarios:"Usuarios", roles:"Roles", sync:"Sincronización",
-  premios:"Premios", vacaciones:"Vacaciones", periodos:"Períodos", distribucion:"Horarios Cocina"
+  premios:"Premios", vacaciones:"Vacaciones", periodos:"Períodos", distribucion:"Horarios Cocina",
+  mozos:"Mozos", barmans:"Barmans", peones:"Peones"
 };
 const ACCION_LABELS = {
   ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
   corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir", carga_inicial:"Carga inicial",
   ver_todos:"Ver todos", confirmar:"Confirmar", jubilacion:"Jubilación"
 };
-const MODULO_ACCIONES_VALIDAS = {
-  dashboard:     ["ver"],
-  empleados:     ["ver","editar","eliminar","jubilacion"],
-  horarios:      ["ver","editar","eliminar"],
-  planificacion: ["ver","editar"],
-  calendarios:   ["ver","editar","eliminar"],
-  asistencia:    ["ver","editar","corregir","carga_inicial","ver_todos"],
-  resultados:    ["ver","procesar"],
-  usuarios:      ["ver","editar","eliminar"],
-  roles:         ["ver","editar","eliminar"],
-  sync:          ["procesar"],
-  premios:       ["ver","editar","corregir","cerrar","reabrir"],
-  vacaciones:    ["ver","editar","carga_inicial"],
-  periodos:      ["ver","cerrar","reabrir"],
-  distribucion:  ["ver","editar","confirmar"],
-  mozos:         ["ver","editar","confirmar"],
-  barmans:       ["ver","editar","confirmar"],
-};
+// Qué acciones aplica cada módulo: lo define el backend (auth/core.py) y llega
+// por /api/roles/modulos, así la matriz no se desincroniza del código.
+let MODULO_ACCIONES_VALIDAS = {};
 
 let rolesList = [], modulos = [], acciones = [], rolEditandoId = null;
 
@@ -1184,6 +1170,7 @@ async function cargarRoles() {
   const m = await mRes.json();
   modulos  = m.modulos;
   acciones = m.acciones;
+  MODULO_ACCIONES_VALIDAS = m.modulo_acciones || {};
   renderRolesList();
 }
 
@@ -1262,14 +1249,15 @@ function renderRolEditor(rol={}) {
       </tr></thead>
       <tbody>
         ${modulos.map(m => {
-          const todosCheck = acciones.every(a => permsActuales.has(`${m}|${a}`));
+          const validasM = MODULO_ACCIONES_VALIDAS[m] || acciones;
+          const todosCheck = validasM.every(a => permsActuales.has(`${m}|${a}`));
           return `<tr>
             <td class="modulo-name">${MODULO_LABELS[m]||m}</td>
             ${acciones.map(a => {
               const aplica = (MODULO_ACCIONES_VALIDAS[m] || acciones).includes(a);
               return `<td style="${aplica ? '' : 'background:#f4f6f8'}">
                 <input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
-                  ${permsActuales.has(`${m}|${a}`) ? " checked" : ""}
+                  ${aplica && permsActuales.has(`${m}|${a}`) ? " checked" : ""}
                   ${aplica && editable ? `onchange="onPermChange(this)"` : "disabled"}
                   style="${aplica ? '' : 'opacity:.2;cursor:default'}"></td>`;
             }).join("")}

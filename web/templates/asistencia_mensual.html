@@ -100,9 +100,10 @@ table.planilla tbody td.col-ctrl  { font-size: .68rem; font-weight: bold; paddin
 .ctrl-ausentes-sc { background: #7b0000; color: #ffffff; }
 .ctrl-vacio       { color: #bbb; }
 .informe-comentarios { margin-top: 8px; border-top: 2px solid #dee2e6; padding: 10px 4px 4px; }
-.informe-wrapper { display: flex; gap: 24px; align-items: flex-start; }
+.informe-wrapper { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
 .informe-col { flex: 1; min-width: 0; }
 .informe-col-co { flex: 0 0 320px; border-left: 2px solid #e8f4fd; padding-left: 16px; }
+.informe-col-fm { flex: 0 0 340px; border-left: 2px solid #e8f4fd; padding-left: 16px; }
 .informe-titulo { font-size: .68rem; font-weight: 700; text-transform: uppercase; color: #888; letter-spacing: .05em; margin-bottom: 6px; }
 .informe-fila { display: flex; align-items: baseline; gap: 8px; font-size: .78rem; padding: 3px 0; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
 .informe-nombre { font-weight: 600; min-width: 160px; }
@@ -1164,8 +1165,18 @@ function renderFichajesParking(fichajes, madrugada) {
     const btnDel = (f.es_manual && puedeEditar)
       ? `<button onclick="eliminarFichajeParking(${f.id})" style="background:none;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;padding:2px 8px;font-size:.78rem;cursor:pointer">Eliminar</button>`
       : '';
+    let detalle = '';
+    if (f.es_manual) {
+      const partes = [];
+      if (f.cargado_por_nombre) partes.push(`✎ ${escHtml(f.cargado_por_nombre)}`);
+      if (f.creado_en) partes.push(escHtml(f.creado_en.substring(0, 16)));
+      if (f.motivo_manual) partes.push(escHtml(f.motivo_manual));
+      if (partes.length) {
+        detalle = `<div style="font-size:.72rem;color:#888;margin-top:2px">${partes.join(' · ')}</div>`;
+      }
+    }
     html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px solid #f0f0f0">
-      <span style="font-size:.88rem">${fDate} <strong>${hora}</strong>${tagMad}${tagMan}</span>
+      <span style="font-size:.88rem">${fDate} <strong>${hora}</strong>${tagMad}${tagMan}${detalle}</span>
       ${btnDel}
     </div>`;
   }
@@ -1486,7 +1497,21 @@ function renderGrupo(grupo, dias, empleados) {
     (e.cambios_plan || []).map(c => ({nombre: `${e.apellido}, ${e.nombre}`, ...c}))
   ).sort((a,b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
 
-  if (novsRegulares.length || novsComentarios.length || cambiosPlan.length) {
+  // Un empleado suele tener entrada y salida manual el mismo día: van en una sola
+  // línea (mismo autor y motivo), así una carga masiva no infla el informe.
+  const fichManuales = empleados.flatMap(e => {
+    const porDia = new Map();
+    (e.fichajes_manuales || []).forEach(f => {
+      const k = `${f.fecha}|${f.quien || ''}|${f.motivo || ''}`;
+      if (!porDia.has(k)) {
+        porDia.set(k, {nombre: `${e.apellido}, ${e.nombre}`, ...f, horas: []});
+      }
+      porDia.get(k).horas.push(f.hora);
+    });
+    return [...porDia.values()];
+  }).sort((a,b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
+
+  if (novsRegulares.length || novsComentarios.length || cambiosPlan.length || fichManuales.length) {
     html += '<div class="informe-comentarios"><div class="informe-wrapper">';
 
     if (novsRegulares.length) {
@@ -1522,6 +1547,22 @@ function renderGrupo(grupo, dias, empleados) {
           <span class="informe-fecha">${_fmtD(c.fecha)}</span>
           <span class="informe-co-texto">${escHtml(c.horario_nombre)}</span>
           <span class="informe-autor">${escHtml(c.quien)}</span>
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    if (fichManuales.length) {
+      html += '<div class="informe-col-fm">';
+      html += '<div class="informe-titulo">Fichajes manuales</div>';
+      fichManuales.forEach(f => {
+        const quien  = f.quien ? escHtml(f.quien) : '—';
+        const motivo = f.motivo
+          ? ` <span class="informe-desc">${escHtml(f.motivo)}</span>` : '';
+        html += `<div class="informe-fila">
+          <span class="informe-nombre">${escHtml(f.nombre)}</span>
+          <span class="informe-fecha">${_fmtD(f.fecha)} ${escHtml(f.horas.join(' · '))}</span>
+          <span class="informe-autor">✎ ${quien}</span>${motivo}
         </div>`;
       });
       html += '</div>';
@@ -2526,10 +2567,15 @@ function _tipShow(e) {
     if (!fichs || fichs.length === 0) {
       html += `<div class="tip-vacio">Sin fichajes</div>`;
     } else {
-      html += fichs.map(f =>
-        `<div class="tip-fich">${f.timestamp.substring(11,16)}` +
-        (f.es_manual ? ` <span class="tip-manual">✎</span>` : '') + `</div>`
-      ).join('');
+      html += fichs.map(f => {
+        let fila = `<div class="tip-fich">${f.timestamp.substring(11,16)}`;
+        if (f.es_manual) {
+          fila += ` <span class="tip-manual">✎</span>`;
+          if (f.cargado_por_nombre) fila += ` <span class="tip-vacio" style="font-size:.68rem">${escHtml(f.cargado_por_nombre)}</span>`;
+          if (f.motivo_manual) fila += `<div class="tip-manual" style="white-space:normal;max-width:180px;font-size:.68rem">${escHtml(f.motivo_manual)}</div>`;
+        }
+        return fila + `</div>`;
+      }).join('');
     }
     const tipSrc = e.target.closest('[data-desc]') || cel;
     const isCp  = e.target.closest('[data-cp]')?.dataset.cp === '1' || cel.dataset.cp === '1';

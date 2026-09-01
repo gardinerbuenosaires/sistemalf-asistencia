@@ -202,8 +202,10 @@ def fichajes_dia(
     """Fichajes de un empleado en una fecha (para tooltip en planilla)."""
     with db_session() as conn:
         rows = conn.execute(
-            "SELECT id, timestamp, es_manual FROM fichajes "
-            "WHERE empleado_id=? AND date(timestamp)=? ORDER BY timestamp",
+            "SELECT f.id, f.timestamp, f.es_manual, f.motivo_manual, f.creado_en, "
+            "       u.nombre AS cargado_por_nombre "
+            "FROM fichajes f LEFT JOIN usuarios u ON u.id = f.cargado_por "
+            "WHERE f.empleado_id=? AND date(f.timestamp)=? ORDER BY f.timestamp",
             (empleado_id, fecha),
         ).fetchall()
     return [dict(r) for r in rows]

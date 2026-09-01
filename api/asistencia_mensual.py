@@ -436,10 +436,13 @@ def _asistencia_datos(mes: str) -> dict:
         ).fetchall()
 
         fichajes_manuales = conn.execute(
-            f"SELECT empleado_id, date(timestamp) AS fecha "
-            f"FROM fichajes "
-            f"WHERE empleado_id IN ({ph}) AND date(timestamp)>=? AND date(timestamp)<=? AND es_manual=1 "
-            f"GROUP BY empleado_id, date(timestamp)",
+            f"SELECT f.empleado_id, date(f.timestamp) AS fecha, "
+            f"       substr(f.timestamp, 12, 5) AS hora, f.motivo_manual, "
+            f"       u.nombre AS quien, f.creado_en "
+            f"FROM fichajes f LEFT JOIN usuarios u ON u.id = f.cargado_por "
+            f"WHERE f.empleado_id IN ({ph}) AND date(f.timestamp)>=? AND date(f.timestamp)<=? "
+            f"  AND f.es_manual=1 "
+            f"ORDER BY f.timestamp",
             (*eids, f0, f1)
         ).fetchall()
 
@@ -460,9 +463,18 @@ def _asistencia_datos(mes: str) -> dict:
         for r in resultados
     }
 
-    fm_count: dict[int, int] = defaultdict(int)
+    fm_dias: dict[int, set] = defaultdict(set)
+    fm_map: dict[int, list] = defaultdict(list)
     for f in fichajes_manuales:
-        fm_count[f["empleado_id"]] += 1
+        fm_dias[f["empleado_id"]].add(f["fecha"])
+        fm_map[f["empleado_id"]].append({
+            "fecha":  f["fecha"],
+            "hora":   f["hora"],
+            "quien":  f["quien"],
+            "motivo": f["motivo_manual"],
+            "cuando": f["creado_en"][:10] if f["creado_en"] else None,
+        })
+    fm_count = {eid: len(d) for eid, d in fm_dias.items()}
     nov_map  = {}
     co_map: dict[tuple, dict] = {}
     comentarios_map: dict[int, list] = defaultdict(list)
@@ -613,6 +625,7 @@ def _asistencia_datos(mes: str) -> dict:
             "celdas":     celdas,
             "control":    control,
             "comentarios": comentarios_map.get(eid, []),
+            "fichajes_manuales": fm_map.get(eid, []),
             "totales": {
                 **{k: _fmt(v) for k, v in tots.items()},
                 "transporte":         _fmt(transporte),

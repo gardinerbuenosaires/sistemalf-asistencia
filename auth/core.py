@@ -28,8 +28,11 @@ MODULOS = [
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
     "periodos", "distribucion", "mozos", "barmans", "peones",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion"]
-# corregir → asistencia:corregir (novedades en planilla)
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual"]
+# corregir       → asistencia:corregir (novedades en planilla)
+# fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
+#                  individuales o por fuerza mayor). Separado de "editar" porque
+#                  inventa una marca que el reloj nunca registró.
 
 # Acciones que cada módulo realmente usa. Es la fuente única: la matriz de roles
 # se dibuja con esto y set_permisos rechaza lo que no figure acá. Al agregar un
@@ -40,7 +43,7 @@ MODULO_ACCIONES = {
     "horarios":      ["ver", "editar", "eliminar"],
     "planificacion": ["ver", "editar"],
     "calendarios":   ["ver", "editar", "eliminar"],
-    "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos"],
+    "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos", "fichaje_manual"],
     "resultados":    ["ver", "procesar"],
     "usuarios":      ["ver", "editar", "eliminar"],
     "roles":         ["ver", "editar", "eliminar"],
@@ -176,7 +179,7 @@ PERMISOS_DEFAULT = {
         "horarios":      ["ver","editar","eliminar"],
         "planificacion": ["ver","editar"],
         "calendarios":   ["ver","editar","eliminar"],
-        "asistencia":    ["ver","editar","corregir"],
+        "asistencia":    ["ver","editar","corregir","fichaje_manual"],
         "resultados":    ["ver","procesar"],
         "sync":          ["procesar"],
         "premios":       ["ver"],

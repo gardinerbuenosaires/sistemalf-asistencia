@@ -263,7 +263,7 @@
 
     <div class="modal-tabs">
       <button id="mtab-ind" class="activo" onclick="modalTab('individual')">Individual</button>
-      <button id="mtab-grp" onclick="modalTab('grupal')">Grupal (fuerza mayor)</button>
+      <button id="mtab-grp" data-perm="asistencia:fichaje_manual" onclick="modalTab('grupal')">Grupal (fuerza mayor)</button>
     </div>
 
     <!-- Panel individual -->
@@ -280,7 +280,7 @@
       </div>
 
       <div class="tipo-btns">
-        <button id="btn-fm" class="activo" onclick="tipoCorr('fm')">Fichaje manual</button>
+        <button id="btn-fm" class="activo" data-perm="asistencia:fichaje_manual" onclick="tipoCorr('fm')">Fichaje manual</button>
         <button id="btn-nf" onclick="tipoCorr('nf')">NF — no fichó</button>
       </div>
 
@@ -706,7 +706,7 @@ function abrirModal(empId = null, fecha = null) {
   document.getElementById('m-entrada').value = "";
   document.getElementById('m-salida').value = "";
   document.getElementById('m-motivo').value = "";
-  tipoCorr('fm');
+  tipoCorr(canDo('asistencia', 'fichaje_manual') ? 'fm' : 'nf');
   modalTab('individual');
   document.getElementById('modal-corr').classList.add('open');
 }

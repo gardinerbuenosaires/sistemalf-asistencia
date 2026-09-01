@@ -1521,6 +1521,22 @@ def _migrate(conn):
         ("PROD PASTAS",    "Cocineros"),
         ("PROD PASTAS",    "Cocineros"),
     ]
+    # asistencia:fichaje_manual se separó de asistencia:editar. Los roles que ya
+    # venían corrigiendo asistencia lo conservan, para no cortar la operación al
+    # actualizar; sacárselo a alguno es después una decisión de la pantalla de Roles.
+    ya_migrado = conn.execute(
+        "SELECT COUNT(*) FROM permisos WHERE modulo='asistencia' AND accion='fichaje_manual'"
+    ).fetchone()[0]
+    if not ya_migrado:
+        n = conn.execute(
+            """INSERT OR IGNORE INTO permisos (rol_id, modulo, accion)
+               SELECT p.rol_id, 'asistencia', 'fichaje_manual'
+               FROM permisos p JOIN roles r ON r.id = p.rol_id
+               WHERE p.modulo='asistencia' AND p.accion='editar'"""
+        ).rowcount
+        if n:
+            logger.info("Migración: asistencia:fichaje_manual otorgado a %d rol(es) con asistencia:editar", n)
+
     # Permisos de roles que ya no existen. Los dejó el sembrado duplicado de roles
     # default que arrastraba ensure_admin, cuando esos duplicados se borraron sin
     # que la FK cascadeara. Son inalcanzables porque roles.id es AUTOINCREMENT y

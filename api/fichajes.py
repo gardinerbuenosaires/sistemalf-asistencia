@@ -44,7 +44,7 @@ def _normalizar_ts(ts: str) -> str:
 def horarios_sugeridos(
     fecha: str,
     ids: str,
-    _user=Depends(require_permiso("asistencia", "editar")),
+    _user=Depends(require_permiso("asistencia", "fichaje_manual")),
 ):
     """
     Devuelve los horarios planificados para los empleados indicados en esa fecha.
@@ -99,7 +99,7 @@ def horarios_sugeridos(
 @router.post("", status_code=201)
 def crear_fichaje_manual(
     data: FichajeManualIn,
-    user=Depends(require_permiso("asistencia", "editar")),
+    user=Depends(require_permiso("asistencia", "fichaje_manual")),
 ):
     """Agrega un fichaje manual para un empleado (entrada o salida individual)."""
     ts = _normalizar_ts(data.timestamp)
@@ -141,7 +141,7 @@ def crear_fichaje_manual(
 @router.post("/grupal", status_code=201)
 def crear_fichajes_grupal(
     data: FichajeGrupalIn,
-    user=Depends(require_permiso("asistencia", "editar")),
+    user=Depends(require_permiso("asistencia", "fichaje_manual")),
 ):
     """
     Fuerza mayor: crea fichajes manuales de entrada y/o salida para
@@ -214,7 +214,7 @@ def fichajes_dia(
 @router.delete("/{fichaje_id}")
 def eliminar_fichaje(
     fichaje_id: int,
-    _user=Depends(require_permiso("asistencia", "editar")),
+    _user=Depends(require_permiso("asistencia", "fichaje_manual")),
 ):
     """Elimina un fichaje manual. No permite borrar fichajes biométricos."""
     from sync.evaluador import recalcular_resultado

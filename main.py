@@ -10,8 +10,8 @@ from contextlib import asynccontextmanager
 from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from config import API_HOST, API_PORT, DATA_DIR
-from db.database import init_db
+from config import API_HOST, API_PORT, DATA_DIR, DB_PATH
+from db.database import init_db, db_session
 from sync.scheduler import start_scheduler
 from api.horarios import router as horarios_router
 from api.planificacion import router as planificacion_router
@@ -50,12 +50,35 @@ FOTOS_DIR            = DATA_DIR / "fotos"
 FOTOS_PENDIENTES_DIR = DATA_DIR / "fotos_pendientes"
 
 
+def _avisar_si_base_vacia():
+    """Una base sin empleados casi siempre significa DB_PATH mal apuntada.
+
+    SQLite crea el archivo en vez de fallar, así que el sistema levanta
+    funcional pero vacío y parece pérdida de datos. En una instalación nueva
+    es lo correcto y el aviso sobra, pero sale barato.
+    """
+    try:
+        with db_session() as conn:
+            empleados = conn.execute("SELECT COUNT(*) FROM empleados").fetchone()[0]
+    except Exception:
+        return          # nunca impedir el arranque por el chequeo en sí
+    if empleados:
+        return
+    logger.warning("=" * 68)
+    logger.warning("LA BASE NO TIENE EMPLEADOS: %s", Path(DB_PATH).resolve())
+    logger.warning("Si esta es una instalación nueva, es lo esperado.")
+    logger.warning("Si no, DB_PATH apunta al lugar equivocado y SQLite creó una")
+    logger.warning("base vacía. Revisá la variable antes de cargar nada.")
+    logger.warning("=" * 68)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     FOTOS_DIR.mkdir(parents=True, exist_ok=True)
     FOTOS_PENDIENTES_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
     ensure_admin()
+    _avisar_si_base_vacia()
     start_scheduler()
     yield
 

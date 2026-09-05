@@ -236,6 +236,32 @@ def delete_categoria(cid: int, _user=Depends(require_permiso("empleados", "edita
 
 # ── Turnos del legajo ──────────────────────────────────────────────────────────
 
+# `empleados.turno_id` apunta a `turnos_legajo`, no a `turnos` (esa la referencian
+# los horarios). Los nombres de `turnos_legajo` los edita el usuario y difieren
+# entre instalaciones — "TN" en una, "Turno Noche" en otra — así que el grupo se
+# reconoce por patrón y no por igualdad. CO tiene prioridad sobre TN para que los
+# tres grupos sean una partición, y todo lo que no cae en CO ni TN queda en TM.
+
+JOIN_TURNO_LEGAJO = "LEFT JOIN turnos_legajo tl ON tl.id = e.turno_id"
+
+_TL_NOMBRE = "trim(lower(COALESCE(tl.nombre,'')))"
+_TL_ES_CO  = f"({_TL_NOMBRE} = 'co' OR {_TL_NOMBRE} LIKE '%cortado%')"
+_TL_ES_TN  = (f"({_TL_NOMBRE} = 'tn' OR {_TL_NOMBRE} LIKE '%noche%'"
+              f" OR {_TL_NOMBRE} LIKE '%madrugada%')")
+
+
+def cond_turno_legajo(grupo: str) -> str:
+    """
+    Condición SQL que filtra el roster por grupo de grilla (TM/TN/CO).
+    Requiere que la consulta incluya JOIN_TURNO_LEGAJO.
+    """
+    if grupo == "CO":
+        return f"AND {_TL_ES_CO}"
+    if grupo == "TN":
+        return f"AND NOT {_TL_ES_CO} AND {_TL_ES_TN}"
+    return f"AND NOT {_TL_ES_CO} AND NOT {_TL_ES_TN}"
+
+
 @router.get("/api/turnos-legajo")
 def list_turnos_legajo(_user=Depends(get_current_user)):
     with db_session() as conn:

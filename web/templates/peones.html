@@ -64,6 +64,7 @@
     border: 1px solid #dee2e6; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
   .tag-completo { display: inline-block; background: #d4edda; color: #155724;
     border: 1px solid #c3e6cb; border-radius: 10px; padding: 2px 8px; font-weight: bold; white-space: nowrap; }
+  .tag-neutro { display: inline-block; color: #999; padding: 2px 8px; white-space: nowrap; }
 
   tbody tr:hover td { background: #fafafa; }
   td { padding: 4px 4px; border-bottom: 2px solid #8a9ab0; vertical-align: middle; }
@@ -369,15 +370,15 @@ let _distribucion = null; // objeto de la semana cargada
 let _puestos = [];
 let _empleados = [];
 let _detalles = [];
-let _novedades = []; // [{empleado_id, fecha, tipo, descripcion}]
+let _novedades = []; // [{empleado_id, fecha, tipo, descripcion, emp_nombre, emp_apellido}]
 let _dias = [];
 let _misAccesos = { departamentos: [] };
 let _francos = [];         // [{id, empleado_id, fecha, emp_nombre, emp_apellido}]
 let _comidaPersonal = [];
 let _horarios = [];  // [{id, nombre, tipo, turno_nombre}]
 let _vacBalance = {};    // {empleado_id: dias_disponibles}
-let _vacDist = [];       // [{id, empleado_id, fecha}] — staging, antes de confirmar
-let _planBase  = [];     // [{empleado_id, fecha, es_franco, horario_id}] desde planificacion auto
+let _vacDist = [];       // [{id, empleado_id, fecha, emp_nombre, emp_apellido}] — staging, antes de confirmar
+let _planBase  = [];     // [{empleado_id, fecha, es_franco, horario_id, emp_nombre, emp_apellido}] desde planificacion auto
 let _planFrancoHide = new Set(); // "empId_fecha" — plan francos quitados manualmente esta sesión
 let _francoMode = false; // true cuando el modal de empleado es para la fila FRANCO
 let _editandoPuestos = false; // modo edición estructural de puestos
@@ -386,6 +387,12 @@ let _puestoEditId = null; // para modal de puesto
 let _reemplazandoDetId = null; // cuando se cambia horario: det a borrar antes de insertar
 
 const DIAS_ES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+// El nombre de lo ya dibujado viaja en la propia fila desde el backend (emp_nombre /
+// emp_apellido): buscarlo en el roster lo haría desaparecer en cuanto la persona
+// cambia de turno o se da de baja, porque el roster es el de hoy y estas filas son
+// historia de la semana que se está mirando.
+const nombreDe = (r) => `${r.emp_apellido || ''}, ${r.emp_nombre || ''}`.replace(/^, |, $/g, '') || '?';
 const NOV_LABEL = {
   V:'Vacaciones', L:'Licencia', LSG:'Lic. sin sueldo',
   S:'Suspendido', E:'Enfermedad', ILT:'Accidente', NF:'No fichó', CP:'Compensación',
@@ -616,7 +623,15 @@ function renderGrilla() {
   const btnConf  = document.getElementById('btn-confirmar');
   const btnEditar = document.getElementById('btn-editar');
   const confirmado = _distribucion && _distribucion.estado === 'confirmado';
+  const hoyStr = hoy();
+  // Bloqueo de días ya transcurridos: la planificación de días <= hoy no se modifica.
+  const esPasado = (d) => d <= hoyStr;
+  // Un día que ya ocurrió no puede quedar "sin asignar": confirmar no lo escribe
+  // (el backend sólo toca fecha > hoy) y su verdad está en los fichajes. Además el
+  // roster es el de hoy, así que un cambio de turno o una baja bloquearía la
+  // confirmación de una semana que ya estaba completa.
   const todosAsignados = _dias.every(d => {
+    if (esPasado(d)) return true;
     const novIds = new Set([
       ..._novedades.filter(n => n.fecha === d).map(n => n.empleado_id),
       ..._vacDist.filter(v => v.fecha === d).map(v => v.empleado_id)
@@ -633,11 +648,8 @@ function renderGrilla() {
   btnConf.textContent = 'Confirmar semana';
   btnEditar.style.display = confirmado && canDo('peones', 'confirmar') ? '' : 'none';
 
-  const hoyStr = hoy();
   const puedoEditar = canDo('peones', 'editar') && !confirmado;
   const puedeEditarPuestos = puedoEditar && _editandoPuestos;
-  // Bloqueo de días ya transcurridos: la planificación de días <= hoy no se modifica.
-  const esPasado = (d) => d <= hoyStr;
   const legPas = document.getElementById('leyenda-pasado');
   if (legPas) legPas.style.display = (_dias || []).some(d => d <= hoyStr) ? 'flex' : 'none';
 
@@ -652,6 +664,9 @@ function renderGrilla() {
 
   const contadores = _dias.map((d, i) => {
     const esHoy = d === hoyStr;
+    const clases = `col-dia contador-cell${esHoy ? ' hoy' : ''}${esPasado(d) ? ' pasado' : ''}`;
+    // Ver todosAsignados: sobre un día pasado el contador no significa nada.
+    if (esPasado(d)) return `<th class="${clases}"><span class="tag-neutro" title="Los días hasta hoy no se editan — la asistencia sale de los fichajes">—</span></th>`;
     const novedades = new Set([
       ..._novedades.filter(n => n.fecha === d).map(n => n.empleado_id),
       ..._vacDist.filter(v => v.fecha === d).map(v => v.empleado_id)
@@ -672,7 +687,7 @@ function renderGrilla() {
     const tag = (presentes.length === 0 || sinAsignar > 0)
       ? `<span class="tag-pendiente">${sinAsignar} sin asignar</span>`
       : `<span class="tag-completo">✓ Completo</span>`;
-    return `<th class="col-dia contador-cell${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}">${tag}</th>`;
+    return `<th class="${clases}">${tag}</th>`;
   }).join('');
 
   thead.innerHTML = `
@@ -771,9 +786,7 @@ function renderGrilla() {
           && !_planFrancoHide.has(`${p.empleado_id}_${p.fecha}`)
           && !asignadosEsteDay.has(p.empleado_id))
         .map(p => {
-          const emp = _empleados.find(e => e.id === p.empleado_id);
-          if (!emp) return '';
-          const nombre = `${emp.apellido}, ${emp.nombre}`;
+          const nombre = nombreDe(p);
           if (puedoEditarDia) {
             return `<span class="badge-franco removable" style="opacity:.75" title="Franco según planificación automática — clic ✕ para quitar" onclick="quitarPlanFranco(${p.empleado_id},'${p.fecha}')">${nombre} ✕</span>`;
           }
@@ -801,17 +814,14 @@ function renderGrilla() {
       const stagedIds = new Set(stagedHoy.map(v => v.empleado_id));
       const realVHoy = _novedades.filter(n => n.fecha === d && n.tipo === 'V' && !stagedIds.has(n.empleado_id));
       const badgesStaged = stagedHoy.map(v => {
-        const emp = _empleados.find(e => e.id === v.empleado_id);
-        const nombre = emp ? `${emp.apellido}, ${emp.nombre}` : '?';
+        const nombre = nombreDe(v);
         if (puedoEditarDia) {
           return `<span class="badge-franco" style="background:#d0e8f8;color:#1a3a5c;border-color:#95B3D7;cursor:pointer" onclick="quitarVacaciones('${d}', ${v.empleado_id})" title="Quitar vacaciones">${nombre} ✕</span>`;
         }
         return `<span class="badge-franco" style="background:#d0e8f8;color:#1a3a5c;border-color:#95B3D7">${nombre}</span>`;
       }).join('');
       const badgesReal = realVHoy.flatMap(n => {
-        const emp = _empleados.find(e => e.id === n.empleado_id);
-        if (!emp) return [];  // ignorar empleados fuera de esta distribución
-        const nombre = `${emp.apellido}, ${emp.nombre}`;
+        const nombre = nombreDe(n);
         if (puedoEditarDia && n.descripcion === 'Desde distribución') {
           // V escrita por el código anterior — se puede quitar
           return [`<span class="badge-franco" style="background:#d0e8f8;color:#1a3a5c;border-color:#95B3D7;cursor:pointer" onclick="quitarVacaciones('${d}', ${n.empleado_id})" title="Quitar vacaciones">${nombre} ✕</span>`];
@@ -843,10 +853,8 @@ function renderGrilla() {
     const novByTipo = {};
     for (const n of _novedades) {
       if (!NOV_LABELS_GRID[n.tipo]) continue;
-      const emp = _empleados.find(e => e.id === n.empleado_id);
-      if (!emp) continue;
       if (!novByTipo[n.tipo]) novByTipo[n.tipo] = {};
-      if (!novByTipo[n.tipo][n.empleado_id]) novByTipo[n.tipo][n.empleado_id] = { emp, dias: new Set() };
+      if (!novByTipo[n.tipo][n.empleado_id]) novByTipo[n.tipo][n.empleado_id] = { nombre: nombreDe(n), dias: new Set() };
       novByTipo[n.tipo][n.empleado_id].dias.add(n.fecha);
     }
 
@@ -858,7 +866,7 @@ function renderGrilla() {
         const esHoy = d === hoyStr;
         const nombres = Object.values(emps)
           .filter(({ dias }) => dias.has(d))
-          .map(({ emp }) => emp.apellido ? `${emp.apellido}, ${emp.nombre}` : emp.nombre);
+          .map(({ nombre }) => nombre);
         return `<td class="col-dia${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}" style="background:${nombres.length ? color : ''};font-size:.78rem">${nombres.join('<br>')}</td>`;
       }).join('');
       novedadesHtml += `<tr>
@@ -1435,9 +1443,7 @@ async function imprimirGrilla() {
   const novByTipo = {};
   for (const n of _novedades) {
     if (!NOV_LABELS[n.tipo]) continue;
-    const emp = _empleados.find(e => e.id === n.empleado_id);
-    if (!emp) continue;
-    const nombre = `${emp.apellido || ''}, ${emp.nombre || ''}`.trim().replace(/^,\s*/, '');
+    const nombre = nombreDe(n);
     if (!novByTipo[n.tipo]) novByTipo[n.tipo] = {};
     if (!novByTipo[n.tipo][n.fecha]) novByTipo[n.tipo][n.fecha] = [];
     if (!novByTipo[n.tipo][n.fecha].includes(nombre))

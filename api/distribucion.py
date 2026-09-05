@@ -5,6 +5,7 @@ from datetime import date, timedelta, datetime
 from db.database import db_session
 from auth.core import require_permiso, get_current_user
 from api.vacaciones import _calcular_dias_formula, _get_arrastre
+from api.catalogos import JOIN_TURNO_LEGAJO, cond_turno_legajo
 
 router = APIRouter(prefix="/api/distribucion", tags=["distribucion"])
 
@@ -378,15 +379,10 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             if not cargo_ids:
                 empleados = []
             else:
-                # Filtra por turno_id del empleado usando la misma lógica de grupo TM/TN/CO
+                # Filtra por el turno del legajo (TM/TN/CO), ver cond_turno_legajo
                 ph = ",".join("?" * len(cargo_ids))
                 cargo_filter = f"AND e.cargo_id IN ({ph})"
-                if turno == "CO":
-                    turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%cortado%')"
-                elif turno == "TN":
-                    turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%noche%' OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%')"
-                else:  # TM — todo lo que no es noche/madrugada/cortado, incluyendo sin turno asignado
-                    turno_cond = "AND (e.turno_id IS NULL OR (lower(COALESCE(t.nombre,'')) NOT LIKE '%noche%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%madrugada%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%cortado%'))"
+                turno_cond = cond_turno_legajo(turno)
                 params: list = [lunes_str, lunes_str, lunes_str] + cargo_ids
                 empleados = conn.execute(
                     f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
@@ -401,7 +397,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                             ORDER BY a.fecha_desde DESC LIMIT 1
                            ) AS horario_actual_id
                        FROM empleados e
-                       LEFT JOIN turnos t ON t.id = e.turno_id
+                       {JOIN_TURNO_LEGAJO}
                        WHERE (e.activo=1 OR e.fecha_egreso > ?) AND e.tipo != 'acceso'
                        {turno_cond}
                        {cargo_filter}

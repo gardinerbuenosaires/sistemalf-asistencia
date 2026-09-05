@@ -5,6 +5,7 @@ from datetime import date, timedelta, datetime
 from db.database import db_session
 from auth.core import require_permiso, get_current_user
 from api.vacaciones import _calcular_dias_formula, _get_arrastre
+from api.catalogos import JOIN_TURNO_LEGAJO, cond_turno_legajo
 
 router = APIRouter(prefix="/api/peones", tags=["peones"])
 
@@ -280,7 +281,11 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                 (dist["id"],)
             ).fetchall()
             vac_dist = conn.execute(
-                "SELECT id, empleado_id, fecha FROM peones_vacacion WHERE distribucion_id=?",
+                """SELECT v.id, v.empleado_id, v.fecha,
+                          e.nombre AS emp_nombre, e.apellido AS emp_apellido
+                   FROM peones_vacacion v
+                   LEFT JOIN empleados e ON e.id = v.empleado_id
+                   WHERE v.distribucion_id=?""",
                 (dist["id"],)
             ).fetchall()
 
@@ -299,15 +304,10 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
             if not cargo_ids:
                 empleados = []
             else:
-                # Filtra por turno_id del empleado usando la misma lógica de grupo TM/TN/CO
+                # Filtra por el turno del legajo (TM/TN/CO), ver cond_turno_legajo
                 ph = ",".join("?" * len(cargo_ids))
                 cargo_filter = f"AND e.cargo_id IN ({ph})"
-                if turno == "CO":
-                    turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%cortado%')"
-                elif turno == "TN":
-                    turno_cond = "AND (lower(COALESCE(t.nombre,'')) LIKE '%noche%' OR lower(COALESCE(t.nombre,'')) LIKE '%madrugada%')"
-                else:  # TM — todo lo que no es noche/madrugada/cortado, incluyendo sin turno asignado
-                    turno_cond = "AND (e.turno_id IS NULL OR (lower(COALESCE(t.nombre,'')) NOT LIKE '%noche%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%madrugada%' AND lower(COALESCE(t.nombre,'')) NOT LIKE '%cortado%'))"
+                turno_cond = cond_turno_legajo(turno)
                 params: list = [lunes_str, lunes_str, lunes_str] + cargo_ids
                 empleados = conn.execute(
                     f"""SELECT DISTINCT e.id, e.nombre, e.apellido, e.tipo,
@@ -322,7 +322,7 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
                             ORDER BY a.fecha_desde DESC LIMIT 1
                            ) AS horario_actual_id
                        FROM empleados e
-                       LEFT JOIN turnos t ON t.id = e.turno_id
+                       {JOIN_TURNO_LEGAJO}
                        WHERE (e.activo=1 OR e.fecha_egreso > ?) AND e.tipo != 'acceso'
                        {turno_cond}
                        {cargo_filter}
@@ -384,24 +384,43 @@ def get_semana(departamento_id: int, turno: str, semana_inicio: str,
 
         emp_ids_list = [e["id"] for e in empleados]
 
-        # Novedades de la semana — excluye CO (observaciones, no bloquean asignación)
-        novedades_rows = conn.execute(
-            """SELECT n.empleado_id, n.fecha, n.tipo, n.descripcion
-               FROM novedades n
-               WHERE n.fecha >= ? AND n.fecha <= ?
-               AND n.bloque = 0 AND n.tipo != 'CO'""",
-            (dias[0], dias[6])
-        ).fetchall()
-        novedades = [dict(r) for r in novedades_rows]
+        # Novedades de la semana — excluye CO (observaciones, no bloquean asignación).
+        # Se acotan a la gente de esta grilla: el roster de hoy (a quién puedo
+        # asignar) más todo el que ya está dibujado en la semana. Lo dibujado va
+        # aparte porque el roster es presente y no lo incluye si desde entonces
+        # cambió de turno o de cargo, o se dio de baja. El nombre viaja con la
+        # novedad para que el frontend no tenga que buscarlo en el roster.
+        emp_ids_grilla = sorted(
+            set(emp_ids_list)
+            | {d["empleado_id"] for d in detalles if d["empleado_id"]}
+            | {f["empleado_id"] for f in francos if f["empleado_id"]}
+            | {v["empleado_id"] for v in vac_dist if v["empleado_id"]}
+        )
+        novedades = []
+        if emp_ids_grilla:
+            ph_nov = ",".join("?" * len(emp_ids_grilla))
+            novedades_rows = conn.execute(
+                f"""SELECT n.empleado_id, n.fecha, n.tipo, n.descripcion,
+                           e.nombre AS emp_nombre, e.apellido AS emp_apellido
+                    FROM novedades n
+                    LEFT JOIN empleados e ON e.id = n.empleado_id
+                    WHERE n.fecha >= ? AND n.fecha <= ?
+                      AND n.bloque = 0 AND n.tipo != 'CO'
+                      AND n.empleado_id IN ({ph_nov})""",
+                [dias[0], dias[6]] + emp_ids_grilla
+            ).fetchall()
+            novedades = [dict(r) for r in novedades_rows]
 
         # Plan base desde planificacion — para pre-poblar cuando no hay borrador
         plan_base = []
         if emp_ids_list:
             ph = ",".join("?" * len(emp_ids_list))
             plan_rows = conn.execute(
-                f"""SELECT empleado_id, fecha, es_franco, horario_id
-                    FROM planificacion
-                    WHERE fecha >= ? AND fecha <= ? AND empleado_id IN ({ph})""",
+                f"""SELECT p.empleado_id, p.fecha, p.es_franco, p.horario_id,
+                           e.nombre AS emp_nombre, e.apellido AS emp_apellido
+                    FROM planificacion p
+                    LEFT JOIN empleados e ON e.id = p.empleado_id
+                    WHERE p.fecha >= ? AND p.fecha <= ? AND p.empleado_id IN ({ph})""",
                 [dias[0], dias[6]] + emp_ids_list
             ).fetchall()
             plan_base = [dict(r) for r in plan_rows]

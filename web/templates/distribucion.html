@@ -64,6 +64,7 @@
     border: 1px solid #dee2e6; border-radius: 10px; padding: 2px 8px; white-space: nowrap; }
   .tag-completo { display: inline-block; background: #d4edda; color: #155724;
     border: 1px solid #c3e6cb; border-radius: 10px; padding: 2px 8px; font-weight: bold; white-space: nowrap; }
+  .tag-neutro { display: inline-block; color: #999; padding: 2px 8px; white-space: nowrap; }
 
   tbody tr:hover td { background: #fafafa; }
   td { padding: 4px 4px; border-bottom: 2px solid #8a9ab0; vertical-align: middle; }
@@ -692,16 +693,20 @@ function renderGrilla() {
     return { falta, total: presentes.length + entrantes.length };
   }
 
-  const todosAsignados = _dias.every(d => _sinAsignarDia(d).falta === 0);
+  const hoyStr = hoy();
+  // Bloqueo de días ya transcurridos: la planificación de días <= hoy no se modifica.
+  const esPasado = (d) => d <= hoyStr;
+  // Un día que ya ocurrió no puede quedar "sin asignar": confirmar no lo escribe
+  // (el backend sólo toca fecha > hoy) y su verdad está en los fichajes. Además el
+  // roster es el de hoy, así que un cambio de turno o una baja bloquearía la
+  // confirmación de una semana que ya estaba completa.
+  const todosAsignados = _dias.every(d => esPasado(d) || _sinAsignarDia(d).falta === 0);
   btnConf.disabled = confirmado || !_distribucion || !todosAsignados;
   btnConf.textContent = 'Confirmar semana';
   btnEditar.style.display = confirmado && canDo('distribucion', 'confirmar') ? '' : 'none';
 
-  const hoyStr = hoy();
   const puedoEditarBase = canDo('distribucion', 'editar') && !confirmado;
   const puedeEditarPuestos = puedoEditarBase && _editandoPuestos;
-  // Bloqueo de días ya transcurridos: la planificación de días <= hoy no se modifica.
-  const esPasado = (d) => d <= hoyStr;
   const legPas = document.getElementById('leyenda-pasado');
   if (legPas) legPas.style.display = (_dias || []).some(d => d <= hoyStr) ? 'flex' : 'none';
 
@@ -716,11 +721,14 @@ function renderGrilla() {
 
   const contadores = _dias.map((d, i) => {
     const esHoy = d === hoyStr;
+    const clases = `col-dia contador-cell${esHoy ? ' hoy' : ''}${esPasado(d) ? ' pasado' : ''}`;
+    // Ver todosAsignados: sobre un día pasado el contador no significa nada.
+    if (esPasado(d)) return `<th class="${clases}"><span class="tag-neutro" title="Los días hasta hoy no se editan — la asistencia sale de los fichajes">—</span></th>`;
     const { falta, total } = _sinAsignarDia(d);
     const tag = (total === 0 || falta > 0)
       ? `<span class="tag-pendiente">${falta} sin asignar</span>`
       : `<span class="tag-completo">✓ Completo</span>`;
-    return `<th class="col-dia contador-cell${esHoy ? ' hoy' : ''}${d <= hoyStr ? ' pasado' : ''}">${tag}</th>`;
+    return `<th class="${clases}">${tag}</th>`;
   }).join('');
 
   thead.innerHTML = `

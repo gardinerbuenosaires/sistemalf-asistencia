@@ -77,11 +77,14 @@ def me(user=Depends(get_current_user)):
                WHERE u.id=?""",
             (user["sub"],)
         ).fetchone()
+        modulos_ocultos = _modulos_ocultos(conn)
     if not row:
         raise HTTPException(404)
     from auth.core import get_permisos_rol
     perms = list(get_permisos_rol(row["rol_id"] or 0))
-    return {**dict(row), "permisos": [{"modulo": m, "accion": a} for m, a in perms]}
+    return {**dict(row),
+            "permisos": [{"modulo": m, "accion": a} for m, a in perms
+                         if m not in modulos_ocultos]}
 
 
 @router.post("/api/auth/cambiar-clave")
@@ -233,8 +236,26 @@ def delete_rol(rid: int, user=Depends(require_permiso("roles", "eliminar"))):
     return {"ok": True}
 
 
+def _modulos_ocultos(conn) -> set:
+    """Módulos apagados por bandera de configuración.
+
+    Un módulo oculto no existe para nadie: no devuelve permisos en /me —así el
+    link del nav queda escondido, porque el nav se dibuja con `data-perm`— y no
+    aparece en la matriz de roles. Sus rutas responden 404 por su cuenta.
+    """
+    from db.uniformes_schema import uniformes_activo
+    ocultos = set()
+    if not uniformes_activo(conn):
+        ocultos.add("uniformes")
+    return ocultos
+
+
 @router.get("/api/roles/modulos")
 def get_modulos(user=Depends(get_current_user)):
-    return {"modulos": MODULOS, "acciones": ACCIONES,
-            "modulo_acciones": MODULO_ACCIONES,
-            "grupos": [{"nombre": n, "modulos": ms} for n, ms in MODULO_GRUPOS]}
+    with db_session() as conn:
+        ocultos = _modulos_ocultos(conn)
+    modulos = [m for m in MODULOS if m not in ocultos]
+    return {"modulos": modulos, "acciones": ACCIONES,
+            "modulo_acciones": {m: a for m, a in MODULO_ACCIONES.items() if m not in ocultos},
+            "grupos": [{"nombre": n, "modulos": [m for m in ms if m not in ocultos]}
+                       for n, ms in MODULO_GRUPOS]}

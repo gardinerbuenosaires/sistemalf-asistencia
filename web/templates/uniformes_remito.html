@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Constancia de entrega — MAQUETA</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; background: #aaa; color: #111; }
+
+/* ---- BARRA (no se imprime) ---- */
+.print-bar {
+  background: #2c3e50; color: white; padding: 10px 24px;
+  display: flex; align-items: center; gap: 14px;
+  position: sticky; top: 0; z-index: 100;
+}
+.print-bar span { font-size: .85rem; color: #ccc; }
+.btn-print {
+  background: white; color: #2c3e50; border: none; padding: 7px 18px;
+  border-radius: 5px; cursor: pointer; font-size: .88rem; font-weight: bold;
+}
+.btn-print:hover { background: #ecf0f1; }
+
+/* ---- HOJA ---- */
+.page {
+  background: white;
+  width: 210mm; min-height: 297mm;
+  margin: 20px auto; padding: 12mm 12mm;
+  box-shadow: 0 4px 20px rgba(0,0,0,.35);
+  display: flex; flex-direction: column;
+}
+
+/* ---- MEMBRETE ---- */
+.membrete { margin-bottom: 5mm; text-align: center; }
+.membrete img { height: 14mm; width: auto; }
+
+/* ---- TITULO ---- */
+.enc-titulo {
+  border: 1.5px solid #000; padding: 5px 8px;
+  text-align: center; font-size: 12.5pt; font-weight: bold;
+  letter-spacing: .01em;
+}
+.enc-numero {
+  text-align: right; font-size: 8.5pt; color: #333;
+  padding: 3px 2px 1px 0;
+}
+
+/* ---- ENCABEZADO DE DATOS ---- */
+.enc { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.enc td { border: 1px solid #000; padding: 4px 6px; font-size: 9.5pt; height: 9mm; }
+.enc .lbl { background: #ededed; font-weight: bold; font-size: 8.5pt; }
+.enc .val { text-align: center; }
+.enc .val-izq { text-align: left; }
+
+/* ---- GRILLA DE RENGLONES ---- */
+.items { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 5px; }
+.items th {
+  border: 1px solid #000; background: #ededed;
+  font-size: 8pt; padding: 5px 3px; text-align: center; line-height: 1.15;
+}
+.items td {
+  border: 1px solid #000; font-size: 9pt; padding: 3px 5px;
+  height: 11mm; vertical-align: middle;
+}
+.items .c { text-align: center; }
+.items .n { text-align: center; font-size: 8pt; color: #444; }
+
+/* ---- PIE ---- */
+.conformidad {
+  margin-top: 8mm; font-size: 9pt; line-height: 1.4;
+}
+.pie-firma { margin-top: 12mm; display: flex; gap: 20mm; }
+.pie-firma > div { flex: 1; }
+.pie-linea { border-bottom: 1px solid #000; height: 16mm; }
+.pie-lbl { font-size: 8pt; padding-top: 3px; text-align: center; }
+
+.nota-maqueta {
+  margin-top: auto; padding-top: 8mm;
+  font-size: 7pt; color: #888; text-align: center;
+}
+
+/* ---- PRINT ---- */
+@media print {
+  body { background: white; }
+  .print-bar { display: none !important; }
+  .page { margin: 0; padding: 10mm 10mm; box-shadow: none; width: 100%; min-height: unset; }
+  @page { size: A4 portrait; margin: 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="print-bar">
+  <button class="btn-print" onclick="window.print()">Imprimir</button>
+  <span>MAQUETA con datos de ejemplo — una hoja por entrega, una sola firma al pie</span>
+</div>
+
+
+<div class="page">
+
+  <div class="membrete">
+    <img src="../static/uploads/logo_empresa.png" alt="">
+  </div>
+
+  <div class="enc-titulo">
+    CONSTANCIA DE ENTREGA DE ROPA DE TRABAJO Y ELEMENTOS DE PROTECCIÓN PERSONAL
+  </div>
+  <div class="enc-numero">Constancia N° 000123</div>
+
+  <table class="enc">
+    <colgroup>
+      <col style="width:17%"><col style="width:43%">
+      <col style="width:12%"><col style="width:28%">
+    </colgroup>
+    <tr>
+      <td class="lbl">RAZÓN SOCIAL:</td>
+      <td class="val">HAPPENING SA</td>
+      <td class="lbl">C.U.I.T.:</td>
+      <td class="val">30-57094528-5</td>
+    </tr>
+  </table>
+
+  <table class="enc">
+    <colgroup>
+      <col style="width:17%"><col style="width:28%">
+      <col style="width:13%"><col style="width:13%">
+      <col style="width:7%"><col style="width:8%">
+      <col style="width:14%">
+    </colgroup>
+    <tr>
+      <td class="lbl">DIRECCIÓN:</td>
+      <td class="val">AV. RAFAEL OBLIGADO 7030</td>
+      <td class="lbl">LOCALIDAD:</td>
+      <td class="val">CABA</td>
+      <td class="lbl">C.P.:</td>
+      <td class="val">1428</td>
+      <td class="val">BUENOS AIRES</td>
+    </tr>
+  </table>
+
+  <table class="enc">
+    <colgroup>
+      <col style="width:24%"><col style="width:76%">
+    </colgroup>
+    <tr>
+      <td class="lbl">APELLIDO Y NOMBRE:</td>
+      <td class="val-izq">GONZÁLEZ ECHEVERRÍA, MARÍA DE LOS ÁNGELES</td>
+    </tr>
+  </table>
+
+  <table class="enc">
+    <colgroup>
+      <col style="width:10%"><col style="width:18%">
+      <col style="width:12%"><col style="width:34%">
+      <col style="width:10%"><col style="width:16%">
+    </colgroup>
+    <tr>
+      <td class="lbl">D.N.I.:</td>
+      <td class="val-izq">28.456.789</td>
+      <td class="lbl">PUESTO:</td>
+      <td class="val-izq">Cocinero</td>
+      <td class="lbl">FECHA:</td>
+      <td class="val">09/09/2026</td>
+    </tr>
+  </table>
+
+  <table class="items">
+    <colgroup>
+      <col style="width:4%">
+      <col style="width:26%">
+      <col style="width:24%">
+      <col style="width:17%">
+      <col style="width:16%">
+      <col style="width:13%">
+    </colgroup>
+    <thead>
+      <tr>
+        <th></th>
+        <th>PRODUCTO</th>
+        <th>TIPO/MODELO</th>
+        <th>MARCA</th>
+        <th>POSEE CERTIF. (S/N)</th>
+        <th>CANTIDAD</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="n">1</td>
+        <td>Chaqueta de cocina</td>
+        <td>Grafa — T. L</td>
+        <td>Ombú</td>
+        <td class="c">N</td>
+        <td class="c">2</td>
+      </tr>
+      <tr>
+        <td class="n">2</td>
+        <td>Pantalón cargo</td>
+        <td>Grafa — T. 42</td>
+        <td>Ombú</td>
+        <td class="c">N</td>
+        <td class="c">2</td>
+      </tr>
+      <tr>
+        <td class="n">3</td>
+        <td>Calzado de seguridad</td>
+        <td>Puntera compuesta — T. 43</td>
+        <td>Funcional</td>
+        <td class="c">S</td>
+        <td class="c">1</td>
+      </tr>
+      <tr>
+        <td class="n">4</td>
+        <td>Guantes anticorte</td>
+        <td>Nivel 5</td>
+        <td>Ansell</td>
+        <td class="c">S</td>
+        <td class="c">3</td>
+      </tr>
+      <tr>
+        <td class="n">5</td>
+        <td>Delantal impermeable</td>
+        <td>PVC</td>
+        <td>Sin marca</td>
+        <td class="c">N</td>
+        <td class="c">1</td>
+      </tr>
+      <tr>
+        <td class="n">6</td>
+        <td>Gorro de cocina</td>
+        <td>Tela — Ajustable</td>
+        <td>Ombú</td>
+        <td class="c">N</td>
+        <td class="c">3</td>
+      </tr>
+      <tr>
+        <td class="n">7</td>
+        <td>Zueco antideslizante</td>
+        <td>Suela EVA — T. 43</td>
+        <td>Birkenstock</td>
+        <td class="c">S</td>
+        <td class="c">1</td>
+      </tr>
+      <tr>
+        <td class="n">8</td>
+        <td>Camisa de servicio</td>
+        <td>Oxford — T. L</td>
+        <td>Ombú</td>
+        <td class="c">N</td>
+        <td class="c">2</td>
+      </tr>
+      <tr>
+        <td class="n">9</td>
+        <td>Chaleco de salón</td>
+        <td>Gabardina — T. L</td>
+        <td>Ombú</td>
+        <td class="c">N</td>
+        <td class="c">1</td>
+      </tr>
+      <tr>
+        <td class="n">10</td>
+        <td>Corbata</td>
+        <td>Poliéster — Negra</td>
+        <td>Sin marca</td>
+        <td class="c">N</td>
+        <td class="c">2</td>
+      </tr>
+      <tr>
+        <td class="n">11</td>
+        <td>Guantes térmicos para horno</td>
+        <td>Kevlar hasta 250 °C</td>
+        <td>Ansell</td>
+        <td class="c">S</td>
+        <td class="c">1</td>
+      </tr>
+      <tr>
+        <td class="n">12</td>
+        <td>Antiparras de seguridad</td>
+        <td>Policarbonato incoloro</td>
+        <td>3M</td>
+        <td class="c">S</td>
+        <td class="c">1</td>
+      </tr>
+      <tr>
+        <td class="n">13</td>
+        <td>Barbijo descartable</td>
+        <td>Tricapa — Caja x 50</td>
+        <td>3M</td>
+        <td class="c">S</td>
+        <td class="c">1</td>
+      </tr>
+      <tr>
+        <td class="n">14</td>
+        <td>Faja lumbar</td>
+        <td>Elástica — T. M</td>
+        <td>Libus</td>
+        <td class="c">S</td>
+        <td class="c">1</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="conformidad">
+    Recibí de conformidad los elementos detallados en la presente constancia.
+  </div>
+
+  <div class="pie-firma">
+    <div>
+      <div class="pie-linea"></div>
+      <div class="pie-lbl">Firma del trabajador</div>
+    </div>
+    <div>
+      <div class="pie-linea"></div>
+      <div class="pie-lbl">Aclaración</div>
+    </div>
+  </div>
+
+  <div class="nota-maqueta">
+    Maqueta de diseño — datos de ejemplo. No es una constancia válida.
+  </div>
+</div>
+
+</body>
+</html>

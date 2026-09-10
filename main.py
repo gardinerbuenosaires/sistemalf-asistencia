@@ -33,6 +33,7 @@ from api.peones import router as peones_router
 from api.mozos import router as mozos_router
 from api.barmans import router as barmans_router
 from api.parking import router as parking_router
+from api.uniformes import router as uniformes_router
 from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
 
 logging.basicConfig(
@@ -168,6 +169,7 @@ app.include_router(peones_router)
 app.include_router(mozos_router)
 app.include_router(barmans_router)
 app.include_router(parking_router)
+app.include_router(uniformes_router)
 
 
 def _page(request: Request, template: str, modulo: str, accion: str = "ver"):
@@ -272,6 +274,16 @@ def page_mozos(request: Request):
 @app.get("/barmans", include_in_schema=False)
 def page_barmans(request: Request):
     return _page(request, "web/templates/barmans.html", "barmans")
+
+@app.get("/uniformes", include_in_schema=False)
+def page_uniformes(request: Request):
+    # Con la bandera apagada la página no existe, igual que las rutas de la API.
+    from fastapi import HTTPException
+    from db.uniformes_schema import uniformes_activo
+    with db_session() as conn:
+        if not uniformes_activo(conn):
+            raise HTTPException(404)
+    return _page(request, "web/templates/uniformes.html", "uniformes")
 
 @app.get("/manual-encargado", include_in_schema=False)
 def page_manual_encargado(request: Request):

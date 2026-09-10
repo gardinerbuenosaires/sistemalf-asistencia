@@ -26,7 +26,7 @@ INACTIVITY_TTL  = 600  # segundos — 10 minutos sin actividad desloguea
 MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
-    "periodos", "distribucion", "mozos", "barmans", "peones",
+    "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
 ]
 ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual"]
 # corregir       → asistencia:corregir (novedades en planilla)
@@ -55,6 +55,11 @@ MODULO_ACCIONES = {
     "mozos":         ["ver", "editar", "confirmar"],
     "barmans":       ["ver", "editar", "confirmar"],
     "peones":        ["ver", "editar", "confirmar"],
+    # uniformes:carga_inicial → cargar constancias anteriores al sistema desde el
+    #   papel. Separado de "editar" para poder dárselo a RRHH mientras dure la
+    #   digitalización y sacárselo después.
+    # uniformes:eliminar      → anular una constancia emitida, con motivo obligatorio.
+    "uniformes":      ["ver", "editar", "carga_inicial", "eliminar"],
 }
 
 # Cómo se agrupan los módulos en la pantalla de Roles. Un módulo que no figure
@@ -63,7 +68,7 @@ MODULO_GRUPOS = [
     ("Asistencia",   ["asistencia", "resultados", "periodos", "sync"]),
     ("Programación", ["horarios", "planificacion", "calendarios"]),
     ("Distribución", ["distribucion", "mozos", "barmans", "peones"]),
-    ("Personal",     ["empleados", "vacaciones", "premios"]),
+    ("Personal",     ["empleados", "vacaciones", "premios", "uniformes"]),
     ("Sistema",      ["dashboard", "usuarios", "roles"]),
 ]
 
@@ -199,6 +204,10 @@ PERMISOS_DEFAULT = {
         "mozos":         ["ver","editar","confirmar"],
         "barmans":       ["ver","editar","confirmar"],
         "peones":        ["ver","editar","confirmar"],
+        # La anulación queda en RRHH y no solo en sistema: el que se equivoca
+        # emitiendo es RRHH y a los diez minutos quiere corregirlo. Lo que cubre
+        # el riesgo es la trazabilidad (motivo obligatorio + quién + cuándo).
+        "uniformes":      ["ver","editar","carga_inicial","eliminar"],
     },
     "administracion": {
         "dashboard":     ["ver"],
@@ -206,12 +215,14 @@ PERMISOS_DEFAULT = {
         "asistencia":    ["ver"],
         "planificacion": ["ver"],
         "resultados":    ["ver"],
+        "uniformes":      ["ver"],
     },
     "gerencia": {
         "dashboard":     ["ver"],
         "asistencia":    ["ver"],
         "resultados":    ["ver"],
         "empleados":     ["ver"],
+        "uniformes":      ["ver"],
     },
     "encargado": {
         "dashboard":     ["ver"],

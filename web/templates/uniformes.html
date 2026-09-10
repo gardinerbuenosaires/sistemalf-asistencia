@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<title>Entrega de uniformes y EPP — Sistema de Fichaje</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: Arial, sans-serif; background: #f4f6f9; color: #333; display: flex; flex-direction: column; }
+  header { flex-shrink: 0; background: #F1EFE8; border-bottom: 1px solid #D3D1C7; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  nav a { color: #2C2C2A; font-size: .9rem; text-decoration: none; opacity: .75; }
+  nav a:hover { opacity: 1; }
+  nav a.activo { opacity: 1; font-weight: bold; }
+  .nav-group { position: relative; display: inline-flex; align-items: center; }
+  .nav-trigger { color: #2C2C2A; font-size: .9rem; cursor: default; opacity: .75; user-select: none; white-space: nowrap; }
+  .nav-group:hover .nav-trigger { opacity: 1; }
+  .nav-dropdown { display: none; position: absolute; top: 100%; left: 0; background: white; border: 1px solid #D3D1C7; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.1); min-width: 160px; z-index: 200; padding: 4px 0; }
+  .nav-group:hover .nav-dropdown { display: block; }
+  .nav-dropdown a { display: block; padding: 8px 16px; }
+  .nav-dropdown a:hover { background: #f4f6f9; }
+  [data-perm] { display: none !important; }
+
+  main { flex: 1; display: flex; flex-direction: column; padding: 20px; overflow: hidden; }
+
+  .toolbar { flex-shrink: 0; display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar h1 { font-size: 1.1rem; flex: 1; min-width: 120px; }
+  .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: .88rem; font-weight: bold; }
+  .btn-secondary { background: #eee; color: #555; }
+  .btn-secondary:hover { background: #ddd; }
+  .btn-sm { padding: 5px 12px; font-size: .8rem; font-weight: normal; }
+
+  /* Tabla principal */
+  #cards-arrastre { flex-shrink: 0; }
+  .table-wrap { flex: 1; overflow: auto; background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th { position: sticky; top: 0; z-index: 3; background: #f8f9fa; border-bottom: 2px solid #dee2e6; padding: 8px 10px; white-space: nowrap; font-size: .76rem; text-align: center; }
+  th.col-emp { text-align: left; position: sticky; top: 0; left: 0; z-index: 4; background: #f8f9fa; }
+  td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; text-align: center; white-space: nowrap; }
+  td.col-emp { text-align: left; position: sticky; left: 0; background: white; z-index: 1; min-width: 180px; }
+  tr:hover td { background: #eef2f7 !important; }
+  tr:hover td.col-emp { background: #eef2f7 !important; }
+  .col-num { font-variant-numeric: tabular-nums; }
+  .restan-ok  { background: #d4edda !important; color: #155724; font-weight: bold; }
+  .restan-neg { background: #f8d7da !important; color: #721c24; font-weight: bold; }
+  .restan-cero { background: #fff3cd !important; color: #856404; font-weight: bold; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { background: #e9ecef; }
+  th.sort-asc::after  { content: ' ▲'; font-size: .65rem; }
+  th.sort-desc::after { content: ' ▼'; font-size: .65rem; }
+
+  /* Carga inicial (modal) */
+  #modal-ci input[type=number] { width: 72px; padding: 3px 6px; border: 1px solid #ced4da; border-radius: 4px; text-align: center; font-size: .82rem; }
+  #modal-ci input[type=number]:focus { outline: 2px solid #2c3e50; border-color: transparent; }
+  #modal-ci td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; }
+  #modal-ci tr.row-ok td { background: #f0fff4; }
+
+  /* Modal info */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal-box { background: white; border-radius: 10px; padding: 24px; max-width: 600px; width: 95%; box-shadow: 0 8px 32px rgba(0,0,0,.2); max-height: 90vh; overflow-y: auto; }
+  .modal-box h3 { margin-bottom: 14px; font-size: 1.05rem; }
+  .modal-box table th { font-size: .8rem; }
+  .modal-box table td { font-size: .84rem; border-bottom: 1px solid #f0f0f0; }
+
+  /* Toast */
+  .rec-fila { display: flex; align-items: baseline; gap: 12px; padding: 6px 0;
+              border-bottom: 1px solid #f0efea; font-size: .85rem; }
+  .rec-fila:last-child { border-bottom: none; }
+  .rec-tipo { width: 170px; flex-shrink: 0; color: #555; }
+  .rec-vals { flex: 1; }
+  .rec-val { display: inline-block; margin-right: 16px; color: #333; }
+  .rec-val b { color: #2c3e50; }
+  .rec-total { color: #999; font-size: .78rem; white-space: nowrap; }
+  .rec-total.falta { color: #a8712a; }
+  #tabla-talles th.grupo { text-align: center; border-bottom: 1px solid #D3D1C7; }
+  #tabla-talles th.sub { text-align: center; font-weight: normal; font-size: .72rem; color: #777; }
+  #tabla-talles .ini-grupo { border-left: 2px solid #D3D1C7; }
+  .talle-tiene { font-size: .7rem; color: #888; margin-top: 3px; line-height: 1.25; }
+  .talle-tiene b { color: #2c3e50; font-weight: bold; }
+  .celda-talle { padding: 3px 4px; font-size: .82rem; min-width: 62px; transition: background .3s; }
+  #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 10px 18px; border-radius: 6px; font-size: .85rem; display: none; z-index: 9999; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/"><img src="/static/img/logo_horizontal_plano.svg" alt="SistemAlf" style="height:44px"></a><span id="nav-brand-empresa" style="display:none;margin-left:12px"></span>
+  <nav style="display:flex;gap:16px;align-items:center">
+    <div class="nav-group">
+      <span class="nav-trigger">Programación ▾</span>
+      <div class="nav-dropdown">
+        <a href="/horarios" data-perm="horarios:ver">Horarios</a>
+        <a href="/planificacion" data-perm="planificacion:ver">Planificación</a>
+        <a href="/calendarios" data-perm="calendarios:ver">Calendarios</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Horarios semanales ▾</span>
+      <div class="nav-dropdown">
+        <a href="/distribucion" data-perm="distribucion:ver">Cocina</a>
+        <a href="/mozos" data-perm="mozos:ver">Mozos Salón</a>
+        <a href="/barmans" data-perm="barmans:ver">Barra</a>
+        <a href="/peones" data-perm="peones:ver">Peones</a>
+      </div>
+    </div>
+    <div class="nav-group">
+      <span class="nav-trigger">Registro ▾</span>
+      <div class="nav-dropdown">
+        <a href="/asistencia" data-perm="asistencia:ver">Asistencia</a>
+        <a href="/fichajes" data-perm="asistencia:ver">Fichajes</a>
+        <a href="/asistencia-mensual" data-perm="asistencia:ver">Planilla</a>
+      </div>
+    </div>
+    <div class="nav-group activo">
+      <span class="nav-trigger">Personal ▾</span>
+      <div class="nav-dropdown">
+        <a href="/empleados" data-perm="empleados:ver">Listado</a>
+        <a href="/premios" data-perm="premios:ver">Premios</a>
+        <a href="/vacaciones" data-perm="vacaciones:ver">Vacaciones</a>
+        <a href="/uniformes" data-perm="uniformes:ver" class="activo">Uniformes y EPP</a>
+      </div>
+    </div>
+    <a href="/configuracion" data-perm="usuarios:ver">Configuración</a>
+    <a href="/manual-encargado" data-perm="asistencia:ver" target="_blank">Ayuda</a>
+    <span id="user-info" style="font-size:.78rem;color:#666;margin-left:8px"></span>
+    <a href="#" onclick="logout()">Salir</a>
+  </nav>
+</header>
+
+<style>
+  main { flex: 1; overflow: auto; padding: 20px 24px; }
+  .titulo-pag { font-size: 1.15rem; font-weight: bold; color: #2c3e50; margin-bottom: 14px; }
+
+  .tabs { display: flex; gap: 2px; border-bottom: 2px solid #D3D1C7; margin-bottom: 18px; }
+  .tab { padding: 8px 20px; border: none; background: none; cursor: pointer;
+         font-size: .9rem; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+  .tab:hover { color: #2c3e50; background: #f8f9fa; }
+  .tab.activa { color: #2c3e50; font-weight: bold; border-bottom-color: #2c3e50; background: #f8f9fa; }
+  .panel { display: none; }
+  .panel.activo { display: block; }
+
+  .card { background: white; border: 1px solid #e1e0da; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .card h3 { font-size: .92rem; color: #2c3e50; margin-bottom: 12px; }
+  .ayuda { font-size: .78rem; color: #777; margin-bottom: 12px; line-height: 1.45; }
+
+  table.grid { width: 100%; border-collapse: collapse; font-size: .85rem; background: white; }
+  table.grid th { background: #F1EFE8; text-align: left; padding: 8px 10px; font-size: .78rem;
+                  color: #555; border-bottom: 1px solid #D3D1C7; white-space: nowrap; }
+  table.grid td { padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  table.grid tr.inactivo td { color: #aaa; }
+  table.grid tr:hover td { background: #fafaf8; }
+  .vacio { padding: 22px; text-align: center; color: #999; font-size: .85rem; }
+
+  input[type=text], input[type=number], select {
+    padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: .85rem;
+    font-family: inherit; background: white;
+  }
+  input[type=text]:focus, input[type=number]:focus, select:focus { outline: 2px solid #b9d3ea; border-color: #7fa8cc; }
+  label.chk { display: inline-flex; align-items: center; gap: 5px; font-size: .82rem; color: #444; cursor: pointer; }
+
+  .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: .82rem; font-family: inherit; }
+  .btn-primary { background: #2c3e50; color: white; }
+  .btn-primary:hover { background: #22303d; }
+  .btn-sm { padding: 4px 9px; font-size: .76rem; }
+  .btn-link { background: none; color: #2c6fa8; padding: 2px 4px; }
+  .btn-link:hover { text-decoration: underline; }
+  .btn-link.peligro { color: #b03a3a; }
+
+  .form-linea { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+  .campo { display: flex; flex-direction: column; gap: 3px; }
+  .campo label { font-size: .74rem; color: #666; }
+
+  .tipos-layout { display: grid; grid-template-columns: 300px 1fr; gap: 18px; align-items: start; }
+  .tipo-item { padding: 8px 10px; border: 1px solid #e1e0da; border-radius: 5px; margin-bottom: 6px;
+               cursor: pointer; background: white; display: flex; justify-content: space-between; gap: 8px; }
+  .tipo-item:hover { border-color: #b9c8d4; }
+  .tipo-item.sel { border-color: #2c3e50; background: #f4f7fa; font-weight: bold; }
+  .tipo-item small { color: #999; font-weight: normal; }
+  .valor-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #d5d3cb;
+                border-radius: 14px; padding: 3px 6px 3px 12px; margin: 0 6px 6px 0; font-size: .82rem; background: white; }
+  .valor-chip.inactivo { color: #aaa; background: #f7f7f5; }
+
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+           background: #2c3e50; color: white; padding: 10px 20px; border-radius: 6px;
+           font-size: .85rem; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 500; max-width: 70vw; }
+  #toast.ver { opacity: 1; }
+  #toast.error { background: #b03a3a; }
+</style>
+
+<main>
+
+  <div class="titulo-pag">Entrega de uniformes y EPP</div>
+
+  <div class="tabs">
+    <button class="tab activa" onclick="verTab('constancias')" id="tab-constancias">Constancias</button>
+    <button class="tab" onclick="verTab('talles')" id="tab-talles">Talles</button>
+    <button class="tab" onclick="verTab('elementos')" id="tab-elementos">Elementos</button>
+    <button class="tab" onclick="verTab('rubros')" id="tab-rubros">Rubros</button>
+    <button class="tab" onclick="verTab('tipos')" id="tab-tipos">Tipos de talle</button>
+  </div>
+
+
+  <!-- ═══════════════ CONSTANCIAS ═══════════════ -->
+  <section id="panel-constancias" class="panel activo">
+
+    <!-- ── Formulario de alta ── -->
+    <div class="card" id="cn-form" style="display:none">
+      <h3 id="cn-form-titulo">Nueva constancia de entrega</h3>
+
+      <div class="form-linea" style="align-items:flex-start">
+        <div class="campo" style="min-width:320px">
+          <label>Empleado</label>
+          <input type="text" id="cn-buscar" placeholder="Buscar por apellido, nombre o DNI…"
+                 oninput="filtrarEmpleados()" autocomplete="off">
+          <select id="cn-empleado" size="1" onchange="empleadoElegido()"
+                  style="margin-top:4px;width:100%"></select>
+          <div id="cn-datos-emp" class="ayuda" style="margin:6px 0 0"></div>
+        </div>
+        <div class="campo">
+          <label>Fecha</label>
+          <input type="date" id="cn-fecha">
+        </div>
+        <div class="campo" id="cn-historico-wrap" style="display:none">
+          <label>&nbsp;</label>
+          <label class="chk" title="Para digitalizar constancias que ya están firmadas en papel">
+            <input type="checkbox" id="cn-historico" onchange="marcarHistorico()">
+            Carga histórica
+          </label>
+        </div>
+      </div>
+
+      <div id="cn-aviso-historico" class="ayuda"
+           style="display:none;background:#fdf6e3;border:1px solid #e8dcc0;border-radius:5px;padding:8px 10px">
+        <b>Carga histórica.</b> Es una constancia que ya está firmada en papel y archivada en el
+        legajo. No lleva número y no se imprime: emitir un papel nuevo que dice lo mismo que uno
+        firmado es la forma de terminar con dos documentos que no coinciden.
+      </div>
+
+      <table class="grid" style="margin-top:12px">
+        <thead>
+          <tr>
+            <th style="width:34px"></th>
+            <th>Elemento</th>
+            <th style="width:90px">Cantidad</th>
+            <th style="width:130px">Talle</th>
+            <th>Observación</th>
+            <th style="width:40px"></th>
+          </tr>
+        </thead>
+        <tbody id="cn-items"></tbody>
+      </table>
+
+      <div class="form-linea" style="margin-top:10px">
+        <button class="btn btn-sm" id="cn-agregar" onclick="agregarRenglon()">+ Agregar renglón</button>
+        <span id="cn-tope" class="ayuda" style="margin:0"></span>
+      </div>
+
+      <div class="campo" style="margin-top:10px;max-width:520px">
+        <label>Observaciones de la constancia (opcional)</label>
+        <input type="text" id="cn-obs" placeholder="Queda impreso al pie">
+      </div>
+
+      <div class="form-linea" style="margin-top:14px">
+        <button class="btn btn-primary" id="cn-guardar" onclick="guardarConstancia()">
+          Guardar y emitir
+        </button>
+        <button class="btn btn-link" onclick="cerrarFormulario()">Cancelar</button>
+        <span class="ayuda" style="margin:0">
+          Guardar es emitir: asigna el número y sella los datos. No se puede editar después.
+        </span>
+      </div>
+    </div>
+
+    <!-- ── Filtros y listado ── -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+        <div>
+          <h3>Constancias emitidas</h3>
+          <div class="ayuda">
+            Cada constancia es una hoja: se imprime, se firma de puño y letra y se archiva en el
+            legajo físico. Una vez emitida no se edita — si algo salió mal, se anula con motivo
+            y se hace una nueva.
+          </div>
+        </div>
+        <button class="btn btn-primary" id="cn-nueva" onclick="abrirFormulario()"
+                style="flex-shrink:0">Nueva constancia</button>
+      </div>
+
+      <div class="form-linea" style="margin-top:6px">
+        <div class="campo" style="min-width:200px">
+          <label>Empleado</label>
+          <select id="cn-f-empleado" onchange="cargarConstancias()"></select>
+        </div>
+        <div class="campo"><label>Desde</label><input type="date" id="cn-f-desde" onchange="cargarConstancias()"></div>
+        <div class="campo"><label>Hasta</label><input type="date" id="cn-f-hasta" onchange="cargarConstancias()"></div>
+        <div class="campo">
+          <label>Estado</label>
+          <select id="cn-f-estado" onchange="cargarConstancias()">
+            <option value="">Todas</option>
+            <option value="emitida">Emitidas</option>
+            <option value="anulada">Anuladas</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label>Origen</label>
+          <select id="cn-f-origen" onchange="cargarConstancias()">
+            <option value="">Todos</option>
+            <option value="sistema">Del sistema</option>
+            <option value="historico">Históricas</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <table class="grid">
+      <thead>
+        <tr>
+          <th style="width:70px">N°</th>
+          <th style="width:95px">Fecha</th>
+          <th>Empleado</th>
+          <th>Puesto</th>
+          <th style="width:110px;text-align:center">Renglones</th>
+          <th style="width:110px">Estado</th>
+          <th style="width:150px"></th>
+        </tr>
+      </thead>
+      <tbody id="cn-listado"></tbody>
+    </table>
+    <div id="cn-vacio" class="vacio" style="display:none">
+      Todavía no hay constancias con esos filtros.
+    </div>
+  </section>
+
+  <!-- ═══════════════ TALLES DEL PERSONAL ═══════════════ -->
+  <section id="panel-talles" class="panel">
+    <div class="card">
+      <h3>Talles del personal</h3>
+      <div class="ayuda">
+        Para comprar hacen falta los talles de <b>todo</b> el personal, no solo de quien ya recibió
+        algo. Cargalos una vez acá y después, al registrar una entrega, el sistema propone solo el
+        que corresponde. Al pie de la grilla está el recuento por talle, que es lo que sirve para pedir.
+        <br><br>Los tipos que se llamen <b>«Prenda (escala)»</b> se agrupan solos bajo la prenda:
+        nombrar dos tipos <i>Pantalón (número)</i> y <i>Pantalón (letra)</i> alcanza para que la
+        grilla los muestre como dos escalas de una misma prenda.
+      </div>
+      <div class="form-linea">
+        <div class="campo" style="min-width:170px">
+          <label>Departamento</label>
+          <select id="tl-depto" onchange="cargarTalles()"></select>
+        </div>
+        <div class="campo" style="min-width:170px">
+          <label>Cargo</label>
+          <select id="tl-cargo" onchange="cargarTalles()"></select>
+        </div>
+        <div class="campo">
+          <label>&nbsp;</label>
+          <label class="chk">
+            <input type="checkbox" id="tl-inactivos" onchange="cargarTalles()"> Incluir egresados
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div id="talles-sin-tipos" class="vacio" style="display:none">
+      Todavía no hay ningún tipo de talle cargado, así que la grilla no tiene columnas.<br>
+      Creá el primero en la pestaña <b>Tipos de talle</b> — por ejemplo «Calzado», y su escala 38 a 45.
+    </div>
+
+    <div id="talles-grid-wrap" style="overflow-x:auto">
+      <table class="grid" id="tabla-talles">
+        <thead id="thead-talles"></thead>
+        <tbody id="tbody-talles"></tbody>
+      </table>
+    </div>
+
+    <div id="talles-vacio" class="vacio" style="display:none">
+      Ningún empleado con esos filtros.
+    </div>
+
+    <div id="talles-recuento"></div>
+  </section>
+
+  <!-- ═══════════════ ELEMENTOS ═══════════════ -->
+  <section id="panel-elementos" class="panel">
+    <div class="card" id="form-elemento-card">
+      <h3 id="form-elemento-titulo">Nuevo elemento</h3>
+      <div class="ayuda">
+        Es el catálogo de artículos. Las cuatro primeras columnas son las que se imprimen en la
+        constancia; al cargar una entrega se completan solas con solo elegir el elemento.
+      </div>
+      <div class="form-linea">
+        <div class="campo" style="min-width:200px">
+          <label>Producto</label>
+          <input type="text" id="el-nombre" placeholder="Chaqueta de cocina">
+        </div>
+        <div class="campo" style="min-width:170px">
+          <label>Tipo / Modelo</label>
+          <input type="text" id="el-tipo" placeholder="Grafa">
+        </div>
+        <div class="campo" style="min-width:140px">
+          <label>Marca</label>
+          <input type="text" id="el-marca" placeholder="Ombú">
+        </div>
+        <div class="campo">
+          <label>Rubro</label>
+          <select id="el-rubro"></select>
+        </div>
+        <div class="campo">
+          <label>Tipo de talle</label>
+          <select id="el-talle"></select>
+        </div>
+        <div class="campo">
+          <label>&nbsp;</label>
+          <label class="chk"><input type="checkbox" id="el-cert"> Posee certificado</label>
+        </div>
+        <div class="campo">
+          <label>&nbsp;</label>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-primary" onclick="guardarElemento()" id="btn-guardar-elemento">Agregar</button>
+            <button class="btn btn-link" onclick="cancelarElemento()" id="btn-cancelar-elemento" style="display:none">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Producto</th><th>Tipo / Modelo</th><th>Marca</th>
+          <th style="text-align:center">Certif.</th>
+          <th>Rubro</th><th>Talle</th>
+          <th style="text-align:center">Entregado</th>
+          <th style="width:150px"></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-elementos"></tbody>
+    </table>
+    <div id="vacio-elementos" class="vacio" style="display:none">
+      Todavía no hay elementos cargados. Agregá el primero arriba.
+    </div>
+  </section>
+
+
+  <!-- ═══════════════ RUBROS ═══════════════ -->
+  <section id="panel-rubros" class="panel">
+    <div class="card">
+      <h3>Rubros</h3>
+      <div class="ayuda">
+        Agrupan los elementos y definen <b>a los cuántos meses avisar</b> que a alguien le toca
+        reposición. El umbral es por rubro y no general: seis meses tiene sentido para la ropa y
+        ninguno para los guantes, que se reponen cuando se rompen. Vacío = nunca avisa, solo informa.
+        <b>El aviso pinta, nunca bloquea</b>: no impide registrar una entrega.
+      </div>
+      <div class="form-linea">
+        <div class="campo" style="min-width:220px">
+          <label>Nombre</label>
+          <input type="text" id="ru-nombre" placeholder="Ropa de trabajo">
+        </div>
+        <div class="campo" style="width:150px">
+          <label>Avisar a los (meses)</label>
+          <input type="number" id="ru-meses" min="1" placeholder="sin aviso">
+        </div>
+        <div class="campo">
+          <label>&nbsp;</label>
+          <button class="btn btn-primary" onclick="crearRubro()">Agregar</button>
+        </div>
+      </div>
+    </div>
+
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Rubro</th>
+          <th style="width:180px">Avisar a los (meses)</th>
+          <th style="text-align:center;width:110px">Elementos</th>
+          <th style="width:150px"></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-rubros"></tbody>
+    </table>
+  </section>
+
+
+  <!-- ═══════════════ TIPOS DE TALLE ═══════════════ -->
+  <section id="panel-tipos" class="panel">
+    <div class="card">
+      <h3>Tipos de talle</h3>
+      <div class="ayuda">
+        Cada elemento usa un tipo de talle, y cada tipo tiene su propia escala de valores.
+        Si una prenda viene en escalas distintas según la marca —una persona es 42 en una y L en
+        otra— se cargan <b>dos tipos</b>, por ejemplo «Pantalón» y «Pantalón (letra)», y cada
+        elemento apunta al que le corresponde.
+      </div>
+      <div class="form-linea">
+        <div class="campo" style="min-width:220px">
+          <label>Nombre</label>
+          <input type="text" id="tt-nombre" placeholder="Calzado">
+        </div>
+        <div class="campo">
+          <label>&nbsp;</label>
+          <button class="btn btn-primary" onclick="crearTipoTalle()">Agregar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tipos-layout">
+      <div>
+        <div id="lista-tipos"></div>
+      </div>
+      <div class="card" id="card-valores" style="display:none">
+        <h3 id="valores-titulo"></h3>
+        <div class="ayuda">
+          Los valores se eligen de esta lista al cargar el talle de alguien, no se escriben.
+          El orden en que los agregás es el orden en que se muestran.
+        </div>
+        <div id="lista-valores" style="margin-bottom:12px"></div>
+        <div class="form-linea">
+          <div class="campo" style="width:130px">
+            <label>Nuevo valor</label>
+            <input type="text" id="tv-valor" placeholder="42  ·  L">
+          </div>
+          <div class="campo">
+            <label>&nbsp;</label>
+            <button class="btn btn-primary btn-sm" onclick="crearValor()">Agregar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast"></div>
+
+<script src="/static/js/session.js"></script>
+<script src="/static/js/user-menu.js"></script>
+<script>
+// ── Sesión y permisos ────────────────────────────────────────────────────────
+let _perms = new Set();
+function canDo(m, a) { return _perms.has(`${m}:${a}`); }
+
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  window.location.href = "/login";
+}
+
+// ── Utilidades ───────────────────────────────────────────────────────────────
+let _toastTimer = null;
+function toast(msg, esError) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "ver" + (esError ? " error" : "");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.className = "", esError ? 4500 : 2200);
+}
+
+async function api(url, opciones) {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...opciones
+  });
+  if (!res.ok) {
+    let detalle = `Error ${res.status}`;
+    try { const j = await res.json(); if (j.detail) detalle = j.detail; } catch (e) {}
+    throw new Error(detalle);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function esc(s) {
+  return (s ?? "").toString()
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function verTab(tab) {
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("activo"));
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("activa"));
+  document.getElementById("panel-" + tab).classList.add("activo");
+  document.getElementById("tab-" + tab).classList.add("activa");
+}
+
+// ── Estado ───────────────────────────────────────────────────────────────────
+let _rubros = [];
+let _tipos = [];
+let _elementos = [];
+let _tipoSel = null;
+let _editandoElemento = null;
+
+// ── Rubros ───────────────────────────────────────────────────────────────────
+async function cargarRubros() {
+  _rubros = await api("/api/uniformes/rubros");
+  const puedeEditar = canDo("uniformes", "editar");
+  document.getElementById("tbody-rubros").innerHTML = _rubros.map(r => `
+    <tr class="${r.activo ? "" : "inactivo"}">
+      <td>${esc(r.nombre)}${r.activo ? "" : " <small>(inactivo)</small>"}</td>
+      <td>${r.meses_alerta == null
+            ? '<span style="color:#999">sin aviso</span>'
+            : r.meses_alerta + (r.meses_alerta == 1 ? " mes" : " meses")}</td>
+      <td style="text-align:center">${r.elementos}</td>
+      <td>${puedeEditar ? `
+        <button class="btn btn-link" onclick="editarMesesRubro(${r.id})">Aviso</button>
+        <button class="btn btn-link" onclick="toggleRubro(${r.id}, ${r.activo ? 0 : 1})">${r.activo ? "Desactivar" : "Activar"}</button>
+        <button class="btn btn-link peligro" onclick="borrarRubro(${r.id})">Eliminar</button>` : ""}
+      </td>
+    </tr>`).join("");
+  llenarSelectRubros();
+}
+
+function llenarSelectRubros() {
+  const sel = document.getElementById("el-rubro");
+  const actual = sel.value;
+  sel.innerHTML = '<option value="">— sin rubro —</option>' +
+    _rubros.filter(r => r.activo).map(r => `<option value="${r.id}">${esc(r.nombre)}</option>`).join("");
+  sel.value = actual;
+}
+
+async function crearRubro() {
+  const nombre = document.getElementById("ru-nombre").value.trim();
+  const meses = document.getElementById("ru-meses").value.trim();
+  if (!nombre) return toast("Poné un nombre", true);
+  try {
+    await api("/api/uniformes/rubros", {
+      method: "POST",
+      body: JSON.stringify({ nombre, meses_alerta: meses === "" ? null : parseInt(meses) })
+    });
+    document.getElementById("ru-nombre").value = "";
+    document.getElementById("ru-meses").value = "";
+    await cargarRubros();
+    toast("Rubro agregado");
+  } catch (e) { toast(e.message, true); }
+}
+
+async function editarMesesRubro(id) {
+  const r = _rubros.find(x => x.id === id);
+  const txt = prompt(
+    `¿A los cuántos meses avisar que hay que reponer «${r.nombre}»?\n\n` +
+    `Dejalo vacío para que no avise nunca.`,
+    r.meses_alerta == null ? "" : r.meses_alerta);
+  if (txt === null) return;
+  const limpio = txt.trim();
+  if (limpio !== "" && (isNaN(parseInt(limpio)) || parseInt(limpio) < 1))
+    return toast("Tiene que ser un número de meses, o vacío", true);
+  try {
+    await api(`/api/uniformes/rubros/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ meses_alerta: limpio === "" ? null : parseInt(limpio) })
+    });
+    await cargarRubros();
+    toast("Aviso actualizado");
+  } catch (e) { toast(e.message, true); }
+}
+
+async function toggleRubro(id, activo) {
+  try {
+    await api(`/api/uniformes/rubros/${id}`, { method: "PATCH", body: JSON.stringify({ activo: !!activo }) });
+    await cargarRubros();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function borrarRubro(id) {
+  const r = _rubros.find(x => x.id === id);
+  if (!confirm(`¿Eliminar el rubro «${r.nombre}»?`)) return;
+  try {
+    await api(`/api/uniformes/rubros/${id}`, { method: "DELETE" });
+    await cargarRubros();
+    toast("Rubro eliminado");
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Tipos de talle ───────────────────────────────────────────────────────────
+async function cargarTipos() {
+  _tipos = await api("/api/uniformes/tipos-talle");
+  const puedeEditar = canDo("uniformes", "editar");
+  const cont = document.getElementById("lista-tipos");
+  if (!_tipos.length) {
+    cont.innerHTML = '<div class="vacio">Ningún tipo de talle todavía.</div>';
+  } else {
+    cont.innerHTML = _tipos.map(t => `
+      <div class="tipo-item ${_tipoSel === t.id ? "sel" : ""}" onclick="verValores(${t.id})">
+        <span>${esc(t.nombre)}${t.activo ? "" : " <small>(inactivo)</small>"}</span>
+        <small>${t.valores} valor${t.valores === 1 ? "" : "es"}</small>
+      </div>`).join("");
+  }
+  llenarSelectTipos();
+  if (_tipoSel && !_tipos.some(t => t.id === _tipoSel)) {
+    _tipoSel = null;
+    document.getElementById("card-valores").style.display = "none";
+  }
+  if (_tipoSel) await verValores(_tipoSel);
+}
+
+function llenarSelectTipos() {
+  const sel = document.getElementById("el-talle");
+  const actual = sel.value;
+  sel.innerHTML = '<option value="">— no lleva talle —</option>' +
+    _tipos.filter(t => t.activo).map(t => `<option value="${t.id}">${esc(t.nombre)}</option>`).join("");
+  sel.value = actual;
+}
+
+async function crearTipoTalle() {
+  const nombre = document.getElementById("tt-nombre").value.trim();
+  if (!nombre) return toast("Poné un nombre", true);
+  try {
+    await api("/api/uniformes/tipos-talle", { method: "POST", body: JSON.stringify({ nombre }) });
+    document.getElementById("tt-nombre").value = "";
+    await cargarTipos();
+    toast("Tipo de talle agregado");
+  } catch (e) { toast(e.message, true); }
+}
+
+async function verValores(tid) {
+  _tipoSel = tid;
+  const t = _tipos.find(x => x.id === tid);
+  if (!t) return;
+  document.querySelectorAll(".tipo-item").forEach(el => el.classList.remove("sel"));
+  const idx = _tipos.findIndex(x => x.id === tid);
+  const items = document.querySelectorAll(".tipo-item");
+  if (items[idx]) items[idx].classList.add("sel");
+
+  const puedeEditar = canDo("uniformes", "editar");
+  document.getElementById("card-valores").style.display = "";
+  document.getElementById("valores-titulo").innerHTML =
+    `Valores de «${esc(t.nombre)}» ` +
+    (puedeEditar ? `<button class="btn btn-link peligro btn-sm" style="float:right"
+        onclick="borrarTipoTalle(${t.id})">Eliminar tipo</button>` : "");
+
+  const valores = await api(`/api/uniformes/tipos-talle/${tid}/valores`);
+  const cont = document.getElementById("lista-valores");
+  cont.innerHTML = valores.length
+    ? valores.map(v => `
+        <span class="valor-chip ${v.activo ? "" : "inactivo"}">
+          ${esc(v.valor)}
+          ${puedeEditar ? `<button class="btn btn-link peligro btn-sm"
+              onclick="borrarValor(${v.id})" title="Quitar">×</button>` : ""}
+        </span>`).join("")
+    : '<span style="color:#999;font-size:.85rem">Sin valores. Agregá la escala abajo.</span>';
+}
+
+async function crearValor() {
+  const valor = document.getElementById("tv-valor").value.trim();
+  if (!valor) return toast("Poné un valor", true);
+  if (!_tipoSel) return toast("Elegí un tipo de talle", true);
+  try {
+    await api(`/api/uniformes/tipos-talle/${_tipoSel}/valores`,
+              { method: "POST", body: JSON.stringify({ valor }) });
+    document.getElementById("tv-valor").value = "";
+    document.getElementById("tv-valor").focus();
+    await cargarTipos();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function borrarValor(vid) {
+  try {
+    await api(`/api/uniformes/talle-valores/${vid}`, { method: "DELETE" });
+    await cargarTipos();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function borrarTipoTalle(tid) {
+  const t = _tipos.find(x => x.id === tid);
+  if (!confirm(`¿Eliminar el tipo de talle «${t.nombre}» y toda su escala de valores?`)) return;
+  try {
+    await api(`/api/uniformes/tipos-talle/${tid}`, { method: "DELETE" });
+    _tipoSel = null;
+    document.getElementById("card-valores").style.display = "none";
+    await cargarTipos();
+    toast("Tipo de talle eliminado");
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Elementos ────────────────────────────────────────────────────────────────
+async function cargarElementos() {
+  _elementos = await api("/api/uniformes/elementos");
+  const puedeEditar = canDo("uniformes", "editar");
+  document.getElementById("vacio-elementos").style.display = _elementos.length ? "none" : "";
+  document.getElementById("tbody-elementos").innerHTML = _elementos.map(e => `
+    <tr class="${e.activo ? "" : "inactivo"}">
+      <td>${esc(e.nombre)}${e.activo ? "" : " <small>(inactivo)</small>"}</td>
+      <td>${esc(e.tipo_modelo) || "—"}</td>
+      <td>${esc(e.marca) || "—"}</td>
+      <td style="text-align:center">${e.posee_certificado ? "S" : "N"}</td>
+      <td>${esc(e.categoria_nombre) || '<span style="color:#bbb">—</span>'}</td>
+      <td>${esc(e.tipo_talle_nombre) || '<span style="color:#bbb">sin talle</span>'}</td>
+      <td style="text-align:center">${e.entregado_veces || "—"}</td>
+      <td>${puedeEditar ? `
+        <button class="btn btn-link" onclick="editarElemento(${e.id})">Editar</button>
+        <button class="btn btn-link" onclick="toggleElemento(${e.id}, ${e.activo ? 0 : 1})">${e.activo ? "Desactivar" : "Activar"}</button>
+        <button class="btn btn-link peligro" onclick="borrarElemento(${e.id})">Eliminar</button>` : ""}
+      </td>
+    </tr>`).join("");
+}
+
+function editarElemento(id) {
+  const e = _elementos.find(x => x.id === id);
+  _editandoElemento = id;
+  document.getElementById("el-nombre").value = e.nombre || "";
+  document.getElementById("el-tipo").value = e.tipo_modelo || "";
+  document.getElementById("el-marca").value = e.marca || "";
+  document.getElementById("el-rubro").value = e.categoria_id || "";
+  document.getElementById("el-talle").value = e.tipo_talle_id || "";
+  document.getElementById("el-cert").checked = !!e.posee_certificado;
+  document.getElementById("form-elemento-titulo").textContent = `Editando «${e.nombre}»`;
+  document.getElementById("btn-guardar-elemento").textContent = "Guardar";
+  document.getElementById("btn-cancelar-elemento").style.display = "";
+  document.getElementById("el-nombre").focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function cancelarElemento() {
+  _editandoElemento = null;
+  ["el-nombre", "el-tipo", "el-marca"].forEach(i => document.getElementById(i).value = "");
+  document.getElementById("el-rubro").value = "";
+  document.getElementById("el-talle").value = "";
+  document.getElementById("el-cert").checked = false;
+  document.getElementById("form-elemento-titulo").textContent = "Nuevo elemento";
+  document.getElementById("btn-guardar-elemento").textContent = "Agregar";
+  document.getElementById("btn-cancelar-elemento").style.display = "none";
+}
+
+async function guardarElemento() {
+  const cuerpo = {
+    nombre: document.getElementById("el-nombre").value.trim(),
+    tipo_modelo: document.getElementById("el-tipo").value.trim(),
+    marca: document.getElementById("el-marca").value.trim(),
+    categoria_id: document.getElementById("el-rubro").value || null,
+    tipo_talle_id: document.getElementById("el-talle").value || null,
+    posee_certificado: document.getElementById("el-cert").checked
+  };
+  if (!cuerpo.nombre) return toast("Poné el nombre del producto", true);
+  if (cuerpo.categoria_id) cuerpo.categoria_id = parseInt(cuerpo.categoria_id);
+  if (cuerpo.tipo_talle_id) cuerpo.tipo_talle_id = parseInt(cuerpo.tipo_talle_id);
+  try {
+    if (_editandoElemento) {
+      await api(`/api/uniformes/elementos/${_editandoElemento}`,
+                { method: "PATCH", body: JSON.stringify(cuerpo) });
+      toast("Elemento actualizado");
+    } else {
+      await api("/api/uniformes/elementos", { method: "POST", body: JSON.stringify(cuerpo) });
+      toast("Elemento agregado");
+    }
+    cancelarElemento();
+    await cargarElementos();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function toggleElemento(id, activo) {
+  try {
+    await api(`/api/uniformes/elementos/${id}`, { method: "PATCH", body: JSON.stringify({ activo: !!activo }) });
+    await cargarElementos();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function borrarElemento(id) {
+  const e = _elementos.find(x => x.id === id);
+  if (!confirm(`¿Eliminar «${e.nombre}» del catálogo?`)) return;
+  try {
+    await api(`/api/uniformes/elementos/${id}`, { method: "DELETE" });
+    await cargarElementos();
+    toast("Elemento eliminado");
+  } catch (e) { toast(e.message, true); }
+}
+
+
+// ── Talles del personal ──────────────────────────────────────────────────────
+let _tallesDatos = { tipos: [], empleados: [] };
+
+async function cargarFiltrosTalles() {
+  const [cargos, deptos] = await Promise.all([
+    api("/api/cargos"), api("/api/departamentos")
+  ]);
+  const selD = document.getElementById("tl-depto");
+  selD.innerHTML = '<option value="">Todos los departamentos</option>' +
+    deptos.map(d => `<option value="${d.id}">${esc(d.nombre)}</option>`).join("");
+  const selC = document.getElementById("tl-cargo");
+  selC.innerHTML = '<option value="">Todos los cargos</option>' +
+    '<option value="sin">— Sin cargo asignado —</option>' +
+    cargos.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("");
+}
+
+// Agrupa por nombre: «Pantalón (número)» y «Pantalón (letra)» caen juntos bajo
+// «Pantalón». Un tipo sin paréntesis es su propio grupo y ocupa las dos filas.
+function agruparTipos(tipos) {
+  const grupos = [];
+  for (const t of tipos) {
+    const m = t.nombre.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+    const base = m ? m[1].trim() : t.nombre;
+    const sub = m ? m[2].trim() : null;
+    const ultimo = grupos[grupos.length - 1];
+    if (sub && ultimo && ultimo.partido && ultimo.base === base) {
+      ultimo.cols.push({ ...t, sub });
+    } else {
+      grupos.push({ base, partido: !!sub, cols: [{ ...t, sub }] });
+    }
+  }
+  return grupos;
+}
+
+async function cargarTalles() {
+  const p = new URLSearchParams();
+  const depto = document.getElementById("tl-depto").value;
+  const cargo = document.getElementById("tl-cargo").value;
+  if (depto) p.set("departamento_id", depto);
+  if (cargo === "sin") p.set("sin_cargo", "true");
+  else if (cargo) p.set("cargo_id", cargo);
+  if (document.getElementById("tl-inactivos").checked) p.set("incluir_inactivos", "true");
+
+  try {
+    _tallesDatos = await api("/api/uniformes/talles?" + p.toString());
+  } catch (e) { return toast(e.message, true); }
+
+  const { tipos, empleados } = _tallesDatos;
+  const sinTipos = tipos.length === 0;
+  document.getElementById("talles-sin-tipos").style.display = sinTipos ? "" : "none";
+  document.getElementById("talles-grid-wrap").style.display = sinTipos ? "none" : "";
+  document.getElementById("talles-recuento").style.display = sinTipos ? "none" : "";
+  if (sinTipos) { document.getElementById("talles-vacio").style.display = "none"; return; }
+
+  document.getElementById("talles-vacio").style.display = empleados.length ? "none" : "";
+
+  const grupos = agruparTipos(tipos);
+  const iniGrupo = new Set(grupos.map(g => g.cols[0].id));
+
+  const fila1 = '<tr><th rowspan="2">Empleado</th><th rowspan="2">Cargo</th>' +
+    grupos.map(g => g.partido
+      ? `<th class="grupo ini-grupo" colspan="${g.cols.length}">${esc(g.base)}</th>`
+      : `<th class="grupo ini-grupo" rowspan="2">${esc(g.base)}</th>`).join("") + "</tr>";
+  const fila2 = "<tr>" + grupos.filter(g => g.partido).flatMap(g =>
+      g.cols.map((c, i) => `<th class="sub${i === 0 ? " ini-grupo" : ""}">${esc(c.sub)}</th>`)
+    ).join("") + "</tr>";
+  document.getElementById("thead-talles").innerHTML = fila1 + fila2;
+
+  const puedeEditar = canDo("uniformes", "editar");
+  document.getElementById("tbody-talles").innerHTML = empleados.map(e => `
+    <tr class="${e.activo ? "" : "inactivo"}">
+      <td style="white-space:nowrap">${esc(e.apellido)}, ${esc(e.nombre)}${e.activo ? "" : " <small>(egresado)</small>"}</td>
+      <td>${esc(e.cargo) || '<span style="color:#bbb">—</span>'}</td>
+      ${tipos.map(t => {
+        const actual = e.talles[String(t.id)] || "";
+        const borde = iniGrupo.has(t.id) ? " ini-grupo" : "";
+        if (!t.escala.length)
+          return `<td class="${borde}" style="text-align:center;color:#bbb" title="Este tipo de talle no tiene escala cargada">sin escala</td>`;
+        if (!puedeEditar)
+          return `<td class="${borde}" style="text-align:center">${esc(actual) || '<span style="color:#ccc">—</span>'}</td>`;
+        return `<td class="${borde}" style="text-align:center">
+          <select class="celda-talle" data-emp="${e.id}" data-tipo="${t.id}"
+                  onchange="guardarTalle(this)">
+            <option value=""${actual ? "" : " selected"}>—</option>
+            ${t.escala.map(v => `<option value="${esc(v)}"${v === actual ? " selected" : ""}>${esc(v)}</option>`).join("")}
+          </select></td>`;
+      }).join("")}
+    </tr>`).join("");
+
+  dibujarRecuento();
+}
+
+async function guardarTalle(sel) {
+  const empleado_id = parseInt(sel.dataset.emp);
+  const tipo_talle_id = parseInt(sel.dataset.tipo);
+  const valor = sel.value;
+  const previo = sel.dataset.previo ?? "";
+  try {
+    await api("/api/uniformes/talles", {
+      method: "PUT",
+      body: JSON.stringify({ empleado_id, tipo_talle_id, valor: valor || null })
+    });
+    sel.dataset.previo = valor;
+    const emp = _tallesDatos.empleados.find(x => x.id === empleado_id);
+    if (emp) {
+      if (valor) emp.talles[String(tipo_talle_id)] = valor;
+      else delete emp.talles[String(tipo_talle_id)];
+    }
+    // Mantener sincronizada la copia que usa el formulario de constancias.
+    const enForm = _cnEmpleados.find(x => x.id === empleado_id);
+    if (enForm) {
+      enForm.talles = enForm.talles || {};
+      if (valor) enForm.talles[String(tipo_talle_id)] = valor;
+      else delete enForm.talles[String(tipo_talle_id)];
+    }
+    sel.style.background = "#e8f5e9";
+    setTimeout(() => sel.style.background = "", 700);
+    dibujarRecuento();
+  } catch (e) {
+    sel.value = previo;
+    toast(e.message, true);
+  }
+}
+
+function dibujarRecuento() {
+  const { tipos, empleados } = _tallesDatos;
+  const total = empleados.length;
+  if (!total) { document.getElementById("talles-recuento").innerHTML = ""; return; }
+
+  const bloques = tipos.filter(t => t.escala.length).map(t => {
+    const cuenta = {};
+    let cargados = 0;
+    for (const e of empleados) {
+      const v = e.talles[String(t.id)];
+      if (v) { cuenta[v] = (cuenta[v] || 0) + 1; cargados++; }
+    }
+    // El orden es el de la escala, no el alfabetico: S, M, L, XL y no L, M, S, XL.
+    const celdas = t.escala.filter(v => cuenta[v]).map(v =>
+      `<span class="rec-val"><b>${esc(v)}</b> ${cuenta[v]}</span>`).join("");
+    return `<div class="rec-fila">
+      <div class="rec-tipo">${esc(t.nombre)}</div>
+      <div class="rec-vals">${celdas || '<span style="color:#bbb">nadie cargado todavía</span>'}</div>
+      <div class="rec-total ${cargados < total ? "falta" : ""}">${cargados} de ${total}</div>
+    </div>`;
+  }).join("");
+
+  document.getElementById("talles-recuento").innerHTML = bloques ? `
+    <div class="card" style="margin-top:16px">
+      <h3>Recuento para comprar</h3>
+      <div class="ayuda">Sobre los ${total} empleados que estás viendo con los filtros de arriba.</div>
+      ${bloques}
+    </div>` : "";
+}
+
+
+// ── Constancias ──────────────────────────────────────────────────────────────
+let _cnEmpleados = [];
+let _cnElementos = [];
+let _cnEscalas = {};          // tipo_talle_id -> [valores]
+let _cnTipos = [];            // los tipos de talle, con su nombre
+let _cnMaxItems = 14;
+let _cnEmpSel = null;
+let _cnAbierta = null;        // id de la constancia con el detalle desplegado
+
+async function cargarDatosConstancias() {
+  const [emps, els, tipos] = await Promise.all([
+    api("/api/uniformes/empleados"),
+    api("/api/uniformes/elementos?solo_activos=true"),
+    api("/api/uniformes/tipos-talle"),
+  ]);
+  _cnEmpleados = emps;
+  _cnElementos = els;
+  _cnEscalas = {};
+  _cnTipos = tipos.filter(t => t.activo);
+  await Promise.all(tipos.filter(t => t.activo).map(async t => {
+    const vals = await api(`/api/uniformes/tipos-talle/${t.id}/valores`);
+    _cnEscalas[t.id] = vals.filter(v => v.activo).map(v => v.valor);
+  }));
+
+  filtrarEmpleados();
+  const f = document.getElementById("cn-f-empleado");
+  f.innerHTML = '<option value="">Todos los empleados</option>' +
+    _cnEmpleados.map(e => `<option value="${e.id}">${esc(e.apellido)}, ${esc(e.nombre)}` +
+      ` (${esc(e.cargo) || "sin cargo"})</option>`).join("");
+
+  if (canDo("uniformes", "carga_inicial"))
+    document.getElementById("cn-historico-wrap").style.display = "";
+  if (!canDo("uniformes", "editar"))
+    document.getElementById("cn-nueva").style.display = "none";
+}
+
+function filtrarEmpleados() {
+  const q = document.getElementById("cn-buscar").value.trim().toLowerCase();
+  const sel = document.getElementById("cn-empleado");
+  const previo = sel.value;
+  const lista = _cnEmpleados.filter(e =>
+    !q || `${e.apellido} ${e.nombre} ${e.dni || ""}`.toLowerCase().includes(q));
+  sel.size = lista.length > 1 && q ? Math.min(8, lista.length) : 1;
+  sel.innerHTML = '<option value="">— elegí un empleado —</option>' +
+    lista.map(e => `<option value="${e.id}">${esc(e.apellido)}, ${esc(e.nombre)}` +
+      ` (${esc(e.cargo) || "sin cargo"})${e.activo ? "" : "  ·  egresado"}</option>`).join("");
+  if (lista.some(e => String(e.id) === previo)) sel.value = previo;
+  else if (lista.length === 1 && q) { sel.value = lista[0].id; empleadoElegido(); }
+}
+
+function empleadoElegido() {
+  const sel = document.getElementById("cn-empleado");
+  const id = parseInt(sel.value);
+  _cnEmpSel = _cnEmpleados.find(e => e.id === id) || null;
+
+  if (_cnEmpSel) {
+    // Ya eligio: se limpia la busqueda y se cierra la lista, si no los
+    // resultados quedan desplegados tapando el nombre seleccionado.
+    // filtrarEmpleados() conserva la seleccion y, con la busqueda vacia,
+    // devuelve el desplegable a una sola linea.
+    document.getElementById("cn-buscar").value = "";
+    filtrarEmpleados();
+    sel.blur();
+  }
+
+  const d = document.getElementById("cn-datos-emp");
+  if (!_cnEmpSel) { d.innerHTML = ""; return; }
+  const faltaCargo = !_cnEmpSel.cargo;
+  d.innerHTML =
+    `D.N.I.: <b>${esc(_cnEmpSel.dni) || '<span style="color:#b03a3a">sin cargar</span>'}</b>` +
+    ` &nbsp;·&nbsp; Puesto: <b>${esc(_cnEmpSel.cargo) ||
+      '<span style="color:#b03a3a">sin cargo — va a salir en blanco</span>'}</b>` +
+    (faltaCargo || !_cnEmpSel.dni
+      ? '<br><span style="color:#a8712a">Estos datos salen impresos en la constancia.</span>' : "");
+  // Repropone los talles de la persona en los renglones ya cargados.
+  document.querySelectorAll("#cn-items tr").forEach(tr => refrescarTalle(tr));
+}
+
+function marcarHistorico() {
+  const h = document.getElementById("cn-historico").checked;
+  document.getElementById("cn-aviso-historico").style.display = h ? "" : "none";
+  document.getElementById("cn-form-titulo").textContent =
+    h ? "Cargar constancia histórica (ya firmada en papel)" : "Nueva constancia de entrega";
+  document.getElementById("cn-guardar").textContent = h ? "Guardar" : "Guardar y emitir";
+}
+
+async function abrirFormulario() {
+  // Los talles se cargan en la pestaña de al lado: hay que releerlos, si no el
+  // formulario propone lo que habia cuando se abrio la pantalla.
+  try { _cnEmpleados = await api("/api/uniformes/empleados"); } catch (e) {}
+
+  document.getElementById("cn-form").style.display = "";
+  document.getElementById("cn-fecha").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("cn-items").innerHTML = "";
+  document.getElementById("cn-obs").value = "";
+  document.getElementById("cn-buscar").value = "";
+  document.getElementById("cn-historico").checked = false;
+  marcarHistorico();
+  filtrarEmpleados();
+  empleadoElegido();
+  agregarRenglon();
+  document.getElementById("cn-buscar").focus();
+  document.getElementById("cn-form").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function cerrarFormulario() {
+  document.getElementById("cn-form").style.display = "none";
+}
+
+function agregarRenglon() {
+  const tb = document.getElementById("cn-items");
+  if (tb.children.length >= _cnMaxItems) return;
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td class="n"></td>
+    <td>
+      <select class="cn-el" onchange="refrescarTalle(this.closest('tr'))" style="width:100%">
+        <option value="">— elegí un elemento —</option>
+        ${_cnElementos.map(e => `<option value="${e.id}">${esc(e.nombre)}` +
+          `${e.marca ? " · " + esc(e.marca) : ""}</option>`).join("")}
+      </select>
+    </td>
+    <td><input type="number" class="cn-cant" value="1" min="1" style="width:70px"></td>
+    <td>
+      <select class="cn-talle" style="width:100%" disabled><option value="">—</option></select>
+      <div class="talle-tiene"></div>
+    </td>
+    <td><input type="text" class="cn-obs-item" placeholder="opcional" style="width:100%"></td>
+    <td><button class="btn btn-link peligro btn-sm" onclick="quitarRenglon(this)" title="Quitar">×</button></td>`;
+  tb.appendChild(tr);
+  renumerarRenglones();
+}
+
+function quitarRenglon(btn) {
+  btn.closest("tr").remove();
+  renumerarRenglones();
+}
+
+function renumerarRenglones() {
+  const filas = [...document.querySelectorAll("#cn-items tr")];
+  filas.forEach((tr, i) => tr.querySelector(".n").textContent = i + 1);
+  document.getElementById("cn-agregar").disabled = filas.length >= _cnMaxItems;
+  document.getElementById("cn-tope").textContent =
+    filas.length >= _cnMaxItems
+      ? `Tope de ${_cnMaxItems} renglones: la constancia entra en una sola hoja. Si hacen falta más, son dos constancias.`
+      : `${filas.length} de ${_cnMaxItems} renglones`;
+}
+
+// «Pantalón (letra)» -> «Pantalón». Misma regla que agrupa las columnas de la
+// grilla de talles.
+function basePrenda(nombre) {
+  return (nombre || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+}
+
+// Los tipos que son la misma prenda en otra escala, el propio primero.
+function escalasDeLaPrenda(tipoId) {
+  const t = _cnTipos.find(x => x.id === tipoId);
+  if (!t) return [];
+  const base = basePrenda(t.nombre);
+  const hermanos = _cnTipos.filter(x => basePrenda(x.nombre) === base);
+  hermanos.sort((a, b) => (a.id === tipoId ? -1 : b.id === tipoId ? 1 : 0));
+  return hermanos;
+}
+
+function refrescarTalle(tr) {
+  const elId = parseInt(tr.querySelector(".cn-el").value);
+  const el = _cnElementos.find(x => x.id === elId);
+  const sel = tr.querySelector(".cn-talle");
+  const previo = sel.value;
+  if (!el || !el.tipo_talle_id) {
+    sel.innerHTML = '<option value="">—</option>';
+    sel.disabled = true;
+    return;
+  }
+
+  // Se ofrecen todas las escalas de la prenda, no solo la del elemento: si el
+  // artículo que se entrega vino en la otra escala, hay que poder registrarlo.
+  const escalas = escalasDeLaPrenda(el.tipo_talle_id);
+  const talles = _cnEmpSel ? (_cnEmpSel.talles || {}) : {};
+
+  // Precarga: primero el talle que la persona tiene en la escala del elemento;
+  // si no tiene, el de cualquier otra escala de la misma prenda.
+  let sugerido = talles[String(el.tipo_talle_id)] || null;
+  if (!sugerido)
+    for (const h of escalas) { if (talles[String(h.id)]) { sugerido = talles[String(h.id)]; break; } }
+
+  let html = '<option value="">— sin talle —</option>';
+  const todos = [];
+  for (const h of escalas) {
+    const vals = _cnEscalas[h.id] || [];
+    if (!vals.length) continue;
+    const opciones = vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    if (escalas.length > 1) {
+      const m = h.nombre.match(/\(([^)]*)\)/);
+      html += `<optgroup label="${esc(m ? m[1] : h.nombre)}">${opciones}</optgroup>`;
+    } else {
+      html += opciones;
+    }
+    todos.push(...vals);
+  }
+
+  sel.disabled = false;
+  sel.innerHTML = html;
+  sel.value = todos.includes(previo) ? previo : (todos.includes(sugerido) ? sugerido : "");
+
+  // Qué tiene registrado la persona en cada escala de esta prenda. Si no se
+  // muestra, el valor de la otra escala queda invisible hasta abrir la lista.
+  const pista = tr.querySelector(".talle-tiene");
+  if (pista) {
+    const tiene = escalas
+      .filter(h => talles[String(h.id)])
+      .map(h => {
+        const m = h.nombre.match(/\(([^)]*)\)/);
+        const etiqueta = m ? m[1] : "";
+        return `<b>${esc(talles[String(h.id)])}</b>${etiqueta ? " " + esc(etiqueta) : ""}`;
+      });
+    pista.innerHTML = tiene.length
+      ? "usa " + tiene.join(" · ")
+      : '<span style="color:#bbb">sin talle registrado</span>';
+  }
+}
+
+async function guardarConstancia() {
+  if (!_cnEmpSel) return toast("Elegí un empleado", true);
+  const fecha = document.getElementById("cn-fecha").value;
+  if (!fecha) return toast("Poné la fecha", true);
+
+  const items = [];
+  for (const tr of document.querySelectorAll("#cn-items tr")) {
+    const elId = parseInt(tr.querySelector(".cn-el").value);
+    if (!elId) continue;
+    items.push({
+      elemento_id: elId,
+      cantidad: parseInt(tr.querySelector(".cn-cant").value) || 0,
+      talle: tr.querySelector(".cn-talle").value || null,
+      observacion: tr.querySelector(".cn-obs-item").value.trim() || null,
+    });
+  }
+  if (!items.length) return toast("Agregá al menos un renglón con su elemento", true);
+
+  const historico = document.getElementById("cn-historico").checked;
+  const btn = document.getElementById("cn-guardar");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/uniformes/constancias", {
+      method: "POST",
+      body: JSON.stringify({
+        empleado_id: _cnEmpSel.id,
+        fecha,
+        origen: historico ? "historico" : "sistema",
+        observaciones: document.getElementById("cn-obs").value.trim() || null,
+        items,
+      })
+    });
+    toast(r.numero ? `Constancia N° ${String(r.numero).padStart(6, "0")} emitida` : "Constancia histórica cargada");
+    cerrarFormulario();
+    await cargarDatosConstancias();   // los talles pueden haber cambiado
+    await cargarConstancias();
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function cargarConstancias() {
+  const p = new URLSearchParams();
+  for (const [campo, id] of [["empleado_id", "cn-f-empleado"], ["desde", "cn-f-desde"],
+                             ["hasta", "cn-f-hasta"], ["estado", "cn-f-estado"],
+                             ["origen", "cn-f-origen"]]) {
+    const v = document.getElementById(id).value;
+    if (v) p.set(campo, v);
+  }
+  let filas;
+  try { filas = await api("/api/uniformes/constancias?" + p.toString()); }
+  catch (e) { return toast(e.message, true); }
+
+  document.getElementById("cn-vacio").style.display = filas.length ? "none" : "";
+  const puedeAnular = canDo("uniformes", "eliminar");
+  document.getElementById("cn-listado").innerHTML = filas.map(c => {
+    const anulada = c.estado === "anulada";
+    const numero = c.numero
+      ? String(c.numero).padStart(6, "0")
+      : '<span style="color:#999" title="Las constancias históricas no llevan número">papel</span>';
+    return `
+    <tr class="${anulada ? "inactivo" : ""}">
+      <td>${numero}</td>
+      <td>${esc(c.fecha)}</td>
+      <td>${esc(c.empleado_apellido_nombre)}</td>
+      <td>${esc(c.cargo_nombre) || '<span style="color:#bbb">—</span>'}</td>
+      <td style="text-align:center">${c.renglones} <span style="color:#999">(${c.unidades} u.)</span></td>
+      <td>${anulada
+            ? '<span style="color:#b03a3a">Anulada</span>'
+            : (c.origen === "historico" ? '<span style="color:#777">Histórica</span>' : "Emitida")}</td>
+      <td>
+        <button class="btn btn-link" onclick="verDetalle(${c.id})">Ver</button>
+        ${!anulada && puedeAnular ? `<button class="btn btn-link peligro" onclick="anularConstancia(${c.id})">Anular</button>` : ""}
+      </td>
+    </tr>
+    <tr id="det-${c.id}" style="display:none"><td colspan="7" style="background:#fafaf8"></td></tr>`;
+  }).join("");
+  _cnAbierta = null;
+}
+
+async function verDetalle(cid) {
+  const fila = document.getElementById("det-" + cid);
+  if (_cnAbierta === cid) {
+    fila.style.display = "none";
+    _cnAbierta = null;
+    return;
+  }
+  document.querySelectorAll('[id^="det-"]').forEach(f => f.style.display = "none");
+  let d;
+  try { d = await api(`/api/uniformes/constancias/${cid}`); }
+  catch (e) { return toast(e.message, true); }
+
+  const items = d.items.map((i, n) => `
+    <tr>
+      <td style="width:30px;color:#888">${n + 1}</td>
+      <td>${esc(i.elemento_nombre)}</td>
+      <td>${esc(i.tipo_modelo) || "—"}</td>
+      <td>${esc(i.marca) || "—"}</td>
+      <td style="text-align:center">${i.posee_certificado ? "S" : "N"}</td>
+      <td style="text-align:center">${i.cantidad}</td>
+      <td style="text-align:center">${esc(i.talle) || "—"}</td>
+      <td>${esc(i.observacion) || ""}</td>
+    </tr>`).join("");
+
+  fila.querySelector("td").innerHTML = `
+    <div style="padding:10px 4px">
+      <table class="grid" style="background:transparent">
+        <thead><tr>
+          <th></th><th>Producto</th><th>Tipo/Modelo</th><th>Marca</th>
+          <th style="text-align:center">Certif.</th><th style="text-align:center">Cant.</th>
+          <th style="text-align:center">Talle</th><th>Observación</th>
+        </tr></thead>
+        <tbody>${items}</tbody>
+      </table>
+      <div class="ayuda" style="margin:10px 0 0">
+        ${d.observaciones ? `Observaciones: ${esc(d.observaciones)}<br>` : ""}
+        Cargada por ${esc(d.creado_por)} el ${esc(d.creado_en)}.
+        ${d.estado === "anulada"
+          ? `<br><b style="color:#b03a3a">Anulada</b> por ${esc(d.anulada_por)} el ${esc(d.anulada_en)} — ${esc(d.motivo_anulacion)}`
+          : ""}
+      </div>
+    </div>`;
+  fila.style.display = "";
+  _cnAbierta = cid;
+}
+
+async function anularConstancia(cid) {
+  const motivo = prompt(
+    "¿Por qué se anula esta constancia?\n\n" +
+    "El motivo queda guardado con tu nombre y la fecha. La constancia no se borra: " +
+    "queda marcada como anulada.");
+  if (motivo === null) return;
+  if (!motivo.trim()) return toast("El motivo es obligatorio", true);
+  try {
+    await api(`/api/uniformes/constancias/${cid}/anular`,
+              { method: "POST", body: JSON.stringify({ motivo }) });
+    toast("Constancia anulada");
+    await cargarConstancias();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Arranque ─────────────────────────────────────────────────────────────────
+(async function init() {
+  try {
+    const u = await api("/api/auth/me");
+    document.getElementById("user-info").textContent = u.nombre;
+    _perms = new Set((u.permisos || []).map(p => `${p.modulo}:${p.accion}`));
+    document.querySelectorAll("[data-perm]").forEach(el => {
+      if (_perms.has(el.dataset.perm)) el.removeAttribute("data-perm");
+    });
+    document.querySelectorAll(".nav-group").forEach(g => {
+      const links = g.querySelectorAll("a[href]");
+      if (links.length && [...links].every(a => a.hasAttribute("data-perm"))) g.style.display = "none";
+    });
+  } catch (e) { /* session.js se encarga de la sesión vencida */ }
+
+  if (!canDo("uniformes", "editar")) {
+    document.querySelectorAll(".card .form-linea").forEach(f => f.style.display = "none");
+    document.getElementById("form-elemento-card").querySelector("h3").style.display = "none";
+  }
+
+  try {
+    await cargarRubros();
+    await cargarTipos();
+    await cargarElementos();
+    await cargarFiltrosTalles();
+    await cargarTalles();
+    await cargarDatosConstancias();
+    await cargarConstancias();
+  } catch (e) { toast(e.message, true); }
+})();
+</script>
+
+</body>
+</html>

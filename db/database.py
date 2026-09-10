@@ -1584,3 +1584,8 @@ def _migrate(conn):
                 (puesto_nombre, dept["id"], orden)
             )
             logger.info("Puesto creado: %s (%s)", puesto_nombre, dept_nombre)
+
+    # Entrega de uniformes y EPP. Todo el esquema del módulo vive en su propio
+    # archivo para que este punto de contacto sea una sola línea.
+    from db.uniformes_schema import migrar_uniformes
+    migrar_uniformes(conn)

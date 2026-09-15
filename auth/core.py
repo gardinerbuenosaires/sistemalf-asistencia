@@ -250,16 +250,46 @@ def ensure_admin():
                     (nombre, desc, nivel)
                 )
 
-        # Crear permisos default para cada rol (case-insensitive)
+        # Permisos default: cada uno se aplica UNA sola vez por rol.
+        #
+        # Reinsertarlos en cada arranque no distingue un permiso que nunca
+        # existió de uno que alguien sacó a propósito desde Roles: la decisión
+        # se deshacía sola en el reinicio siguiente. Con el registro de lo ya
+        # aplicado, lo que se saca queda sacado, y un módulo o acción nueva
+        # —que nunca se aplicó— sigue llegando sola. La primera vez el registro
+        # está vacío, así que se comporta como antes y no cambia nada.
+        #
+        # Sistema es la excepción: recibe todo en cada arranque, para que nunca
+        # quede el sistema sin un rol que lo administre.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS permisos_default_aplicados (
+                rol_id      INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+                modulo      TEXT NOT NULL,
+                accion      TEXT NOT NULL,
+                aplicado_en TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                PRIMARY KEY (rol_id, modulo, accion)
+            )
+        """)
         for rol_nombre, modulos in PERMISOS_DEFAULT.items():
             rol = conn.execute("SELECT id FROM roles WHERE lower(nombre)=lower(?)", (rol_nombre,)).fetchone()
             if not rol:
                 continue
             rid = rol["id"]
+            siempre = rol_nombre.lower() == "sistema"
             for modulo, acciones in modulos.items():
                 for accion in acciones:
+                    ya_aplicado = conn.execute(
+                        "SELECT 1 FROM permisos_default_aplicados WHERE rol_id=? AND modulo=? AND accion=?",
+                        (rid, modulo, accion)
+                    ).fetchone()
+                    if ya_aplicado and not siempre:
+                        continue
                     conn.execute(
                         "INSERT OR IGNORE INTO permisos (rol_id, modulo, accion) VALUES (?,?,?)",
+                        (rid, modulo, accion)
+                    )
+                    conn.execute(
+                        "INSERT OR IGNORE INTO permisos_default_aplicados (rol_id, modulo, accion) VALUES (?,?,?)",
                         (rid, modulo, accion)
                     )
 

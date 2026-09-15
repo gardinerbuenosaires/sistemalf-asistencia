@@ -49,6 +49,12 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
 - **La línea «Recibí de conformidad…»** arriba de la firma: confirmada.
 - **El alta de una constancia reemplaza al listado** mientras está abierta, con cabecera
   propia. Compartiendo pantalla y estilo, no se distinguía en qué modo se estaba.
+- **`carga_inicial` se puede sacar de verdad gracias a la rama `fix/permisos-default`, que
+  tiene que mergearse ANTES que este módulo.** Sin ese arreglo, el sistema reinsertaba los
+  permisos por defecto en cada arranque: si a RRHH se le sacaba la carga histórica desde
+  Roles, la recuperaba sola en el primer reinicio. El arreglo aplica cada permiso por
+  defecto una sola vez por rol; se comprobó en seco que las dos ramas se juntan sin
+  conflictos.
 
 ## El problema
 

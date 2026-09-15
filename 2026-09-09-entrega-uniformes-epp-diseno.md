@@ -1,12 +1,54 @@
-# Entrega de uniformes y EPP — diseño cerrado, sin código escrito
+# Uniformes y EPP — diseño y estado del módulo
 
-> **Qué es esto.** Diseño de un módulo nuevo, conversado y cerrado con el usuario entre el
-> 2026-09-02 y el 2026-09-09. **No se escribió una sola línea de código** y no se tocó
-> ninguna tabla: el pedido explícito fue pensarlo bien antes de implementar. Todo lo que
-> sigue son decisiones tomadas, con el porqué de cada una. Este documento es autocontenido
-> y reemplaza a la versión anterior, que quedó desactualizada al ver la planilla real.
+> **Qué es esto.** Diseño del módulo de entrega de uniformes y EPP, conversado y cerrado
+> con el usuario entre el 2026-09-02 y el 2026-09-09 **antes de escribir código**, y
+> actualizado a medida que se implementó. Cada decisión lleva su porqué. Es autocontenido.
 >
-> Las referencias a archivos y líneas están verificadas contra el código al 2026-09-09.
+> El módulo se llamó `entregas` durante el diseño y se renombró a `uniformes` al empezar a
+> implementarlo (ver *Decisiones cerradas*). La rama conserva el nombre `feat/entregas`.
+
+## Estado al 2026-09-15
+
+Tandas 0 a 4 implementadas y probadas (115 chequeos), en la rama `feat/entregas`,
+publicada en GitHub. **No está en `main` ni en producción.**
+
+| Tanda | Qué | Estado |
+|---|---|---|
+| 0 | Maqueta de la constancia, impresa y comparada contra el papel | hecha |
+| 1 | Tablas, catálogos, bandera `uniformes_activo` | hecha |
+| 2 | Talles del personal, con recuento para comprar | hecha |
+| 3 | Constancias: emitir, anular, carga histórica | hecha |
+| 4 | Constancia imprimible con datos reales, datos fiscales | hecha |
+| 5 | Botón en la ficha del empleado, y reportes | pendiente |
+
+### Decisiones que surgieron implementando
+
+No estaban en el diseño original; se tomaron al ver el sistema funcionando.
+
+- **Se excluyen los empleados de tipo `acceso`**: existen solo para abrir puertas con la
+  huella, no son personal. Constante `EXCLUIR_NO_PERSONAL`, mismo criterio que
+  `distribucion.py` y `barmans.py`. Los de `parking` quedan adentro (ver *Sin decidir*).
+- **Un tipo de talle por escala.** `Pantalón (número)` y `Pantalón (letra)` son dos tipos,
+  así una misma persona puede tener 42 y L al mismo tiempo. Se descartaron dos campos fijos
+  en la tabla porque atan a exactamente dos escalas: una tercera obligaría a cambiar el
+  esquema.
+- **La «misma prenda» se deduce del nombre**, con la forma `Prenda (escala)`. De esa regla
+  salen el encabezado agrupado de la grilla de talles y el desplegable de la constancia.
+- **El talle de un renglón acepta cualquier escala de la misma prenda.** El elemento define
+  la escala esperada —de ahí sale la precarga—, pero si el artículo que se entrega vino en
+  la otra, se puede registrar: el sistema anota lo que pasó, no lo que debía pasar. El valor
+  se guarda en la escala a la que pertenece y no pisa el de la otra.
+- **La hoja imprimible lee los datos de empresa de `/api/uniformes/empresa`**, no de
+  `/api/configuracion`, que exige `usuarios:ver`: RRHH no lo tiene y no habría podido
+  imprimir lo que emite.
+- **Flujo de impresión.** Al emitir aparece un aviso con botón *Imprimir*; no se abre sola
+  porque los navegadores bloquean las ventanas que no provoca un clic directo. Se reimprime
+  desde el listado. Las anuladas salen con ANULADA cruzado; las históricas no se imprimen.
+- **Datos fiscales** en Configuración → Sistema, dentro de la sección de empresa, visibles
+  solo con la bandera prendida.
+- **La línea «Recibí de conformidad…»** arriba de la firma: confirmada.
+- **El alta de una constancia reemplaza al listado** mientras está abierta, con cabecera
+  propia. Compartiendo pantalla y estilo, no se distinguía en qué modo se estaba.
 
 ## El problema
 
@@ -537,6 +579,16 @@ sin que aparezca nada, y se prende desde Configuración cuando se quiera, sin re
 Y resuelve algo que la rama no resuelve: son **dos instancias**. Si una lo quiere y la otra
 no, la bandera lo decide por base.
 
+**La instancia de desarrollo nunca toca el reloj real.** La copia de la base trae la
+configuración de producción, incluida la IP del ZKTeco y la limpieza automática de los días
+1 y 15. Si una instancia de desarrollo corriera en la red del restaurante, sincronizaría los
+fichajes a su copia, y en la pasada siguiente la limpieza vería «0 registros nuevos» y
+borraría el reloj: producción perdería lo que todavía no había bajado. `iniciar-dev.ps1`
+fuerza `device_ip=127.0.0.1` y la limpieza apagada **en cada arranque**, así sobrevive a
+volver a copiar la base. Se descubrió porque la instancia de desarrollo quedó corriendo un
+fin de semana e intentó sincronizar con el reloj 408 veces (todas fallaron: esa PC no
+llega al reloj).
+
 ---
 
 ## Orden de trabajo
@@ -591,7 +643,4 @@ todavía no haya ni una entrega cargada.
   entregas. Esa hoja tiene layout cerrado de una página y una lista de largo variable la
   desarma; si se quiere, conviene una **hoja anexa** que se imprima solo si hay entregas, no
   meterlo en la hoja actual.
-- Si se mantiene la línea *"Recibí de conformidad los elementos detallados en la presente
-  constancia"* arriba de la firma. Se agregó al pasar a firma única, para que quede explícito
-  que esa firma cubre todos los renglones.
 - Los nombres definitivos de los rubros iniciales y sus `meses_alerta`.

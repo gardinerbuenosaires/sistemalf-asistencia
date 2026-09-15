@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Constancia de entrega — MAQUETA</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<title>Constancia de entrega</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; background: #aaa; color: #111; }
@@ -14,7 +15,9 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; background: #
   display: flex; align-items: center; gap: 14px;
   position: sticky; top: 0; z-index: 100;
 }
-.print-bar span { font-size: .85rem; color: #ccc; }
+.print-bar a { color: #ccc; font-size: .85rem; text-decoration: none; }
+.print-bar a:hover { color: white; }
+.print-bar span { font-size: .85rem; color: #f3c3c3; }
 .btn-print {
   background: white; color: #2c3e50; border: none; padding: 7px 18px;
   border-radius: 5px; cursor: pointer; font-size: .88rem; font-weight: bold;
@@ -23,12 +26,14 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; background: #
 
 /* ---- HOJA ---- */
 .page {
-  background: white;
+  background: white; position: relative;
   width: 210mm; min-height: 297mm;
   margin: 20px auto; padding: 12mm 12mm;
   box-shadow: 0 4px 20px rgba(0,0,0,.35);
   display: flex; flex-direction: column;
 }
+.mensaje { margin: 40mm auto 0; max-width: 130mm; text-align: center; color: #444; font-size: 11pt; line-height: 1.5; }
+.mensaje small { display: block; margin-top: 4mm; color: #777; font-size: 9.5pt; }
 
 /* ---- MEMBRETE ---- */
 .membrete { margin-bottom: 5mm; text-align: center; }
@@ -66,17 +71,23 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; background: #
 .items .n { text-align: center; font-size: 8pt; color: #444; }
 
 /* ---- PIE ---- */
-.conformidad {
-  margin-top: 8mm; font-size: 9pt; line-height: 1.4;
-}
+.obs { margin-top: 5mm; font-size: 9pt; line-height: 1.4; }
+.conformidad { margin-top: 8mm; font-size: 9pt; line-height: 1.4; }
 .pie-firma { margin-top: 12mm; display: flex; gap: 20mm; }
 .pie-firma > div { flex: 1; }
 .pie-linea { border-bottom: 1px solid #000; height: 16mm; }
 .pie-lbl { font-size: 8pt; padding-top: 3px; text-align: center; }
 
-.nota-maqueta {
-  margin-top: auto; padding-top: 8mm;
-  font-size: 7pt; color: #888; text-align: center;
+/* ---- ANULADA ---- */
+/* Una copia de una constancia anulada nunca puede pasar por válida. */
+.anulada-info { margin-top: 2mm; font-size: 8.5pt; color: #b03a3a; text-align: right; }
+.page.anulada::after {
+  content: "ANULADA";
+  position: absolute; top: 45%; left: 50%;
+  transform: translate(-50%, -50%) rotate(-28deg);
+  font-size: 80pt; font-weight: bold; letter-spacing: .06em;
+  color: rgba(176, 58, 58, .28); border: 7px solid rgba(176, 58, 58, .28);
+  padding: 3mm 12mm; pointer-events: none;
 }
 
 /* ---- PRINT ---- */
@@ -84,6 +95,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; background: #
   body { background: white; }
   .print-bar { display: none !important; }
   .page { margin: 0; padding: 10mm 10mm; box-shadow: none; width: 100%; min-height: unset; }
+  .page.anulada::after, .anulada-info { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   @page { size: A4 portrait; margin: 0; }
 }
 </style>
@@ -91,233 +103,200 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; background: #
 <body>
 
 <div class="print-bar">
-  <button class="btn-print" onclick="window.print()">Imprimir</button>
-  <span>MAQUETA con datos de ejemplo — una hoja por entrega, una sola firma al pie</span>
+  <button class="btn-print" id="btn-print" onclick="window.print()" style="display:none">Imprimir</button>
+  <a href="javascript:window.close()">&larr; Cerrar</a>
+  <span id="aviso-bar"></span>
 </div>
 
-
-<div class="page">
-
-  <div class="membrete">
-    <img src="../static/uploads/logo_empresa.png" alt="">
-  </div>
-
-  <div class="enc-titulo">
-    CONSTANCIA DE ENTREGA DE ROPA DE TRABAJO Y ELEMENTOS DE PROTECCIÓN PERSONAL
-  </div>
-  <div class="enc-numero">Constancia N° 000123</div>
-
-  <table class="enc">
-    <colgroup>
-      <col style="width:17%"><col style="width:43%">
-      <col style="width:12%"><col style="width:28%">
-    </colgroup>
-    <tr>
-      <td class="lbl">RAZÓN SOCIAL:</td>
-      <td class="val">HAPPENING SA</td>
-      <td class="lbl">C.U.I.T.:</td>
-      <td class="val">30-57094528-5</td>
-    </tr>
-  </table>
-
-  <table class="enc">
-    <colgroup>
-      <col style="width:17%"><col style="width:28%">
-      <col style="width:13%"><col style="width:13%">
-      <col style="width:7%"><col style="width:8%">
-      <col style="width:14%">
-    </colgroup>
-    <tr>
-      <td class="lbl">DIRECCIÓN:</td>
-      <td class="val">AV. RAFAEL OBLIGADO 7030</td>
-      <td class="lbl">LOCALIDAD:</td>
-      <td class="val">CABA</td>
-      <td class="lbl">C.P.:</td>
-      <td class="val">1428</td>
-      <td class="val">BUENOS AIRES</td>
-    </tr>
-  </table>
-
-  <table class="enc">
-    <colgroup>
-      <col style="width:24%"><col style="width:76%">
-    </colgroup>
-    <tr>
-      <td class="lbl">APELLIDO Y NOMBRE:</td>
-      <td class="val-izq">GONZÁLEZ ECHEVERRÍA, MARÍA DE LOS ÁNGELES</td>
-    </tr>
-  </table>
-
-  <table class="enc">
-    <colgroup>
-      <col style="width:10%"><col style="width:18%">
-      <col style="width:12%"><col style="width:34%">
-      <col style="width:10%"><col style="width:16%">
-    </colgroup>
-    <tr>
-      <td class="lbl">D.N.I.:</td>
-      <td class="val-izq">28.456.789</td>
-      <td class="lbl">PUESTO:</td>
-      <td class="val-izq">Cocinero</td>
-      <td class="lbl">FECHA:</td>
-      <td class="val">09/09/2026</td>
-    </tr>
-  </table>
-
-  <table class="items">
-    <colgroup>
-      <col style="width:4%">
-      <col style="width:26%">
-      <col style="width:24%">
-      <col style="width:17%">
-      <col style="width:16%">
-      <col style="width:13%">
-    </colgroup>
-    <thead>
-      <tr>
-        <th></th>
-        <th>PRODUCTO</th>
-        <th>TIPO/MODELO</th>
-        <th>MARCA</th>
-        <th>POSEE CERTIF. (S/N)</th>
-        <th>CANTIDAD</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td class="n">1</td>
-        <td>Chaqueta de cocina</td>
-        <td>Grafa — T. L</td>
-        <td>Ombú</td>
-        <td class="c">N</td>
-        <td class="c">2</td>
-      </tr>
-      <tr>
-        <td class="n">2</td>
-        <td>Pantalón cargo</td>
-        <td>Grafa — T. 42</td>
-        <td>Ombú</td>
-        <td class="c">N</td>
-        <td class="c">2</td>
-      </tr>
-      <tr>
-        <td class="n">3</td>
-        <td>Calzado de seguridad</td>
-        <td>Puntera compuesta — T. 43</td>
-        <td>Funcional</td>
-        <td class="c">S</td>
-        <td class="c">1</td>
-      </tr>
-      <tr>
-        <td class="n">4</td>
-        <td>Guantes anticorte</td>
-        <td>Nivel 5</td>
-        <td>Ansell</td>
-        <td class="c">S</td>
-        <td class="c">3</td>
-      </tr>
-      <tr>
-        <td class="n">5</td>
-        <td>Delantal impermeable</td>
-        <td>PVC</td>
-        <td>Sin marca</td>
-        <td class="c">N</td>
-        <td class="c">1</td>
-      </tr>
-      <tr>
-        <td class="n">6</td>
-        <td>Gorro de cocina</td>
-        <td>Tela — Ajustable</td>
-        <td>Ombú</td>
-        <td class="c">N</td>
-        <td class="c">3</td>
-      </tr>
-      <tr>
-        <td class="n">7</td>
-        <td>Zueco antideslizante</td>
-        <td>Suela EVA — T. 43</td>
-        <td>Birkenstock</td>
-        <td class="c">S</td>
-        <td class="c">1</td>
-      </tr>
-      <tr>
-        <td class="n">8</td>
-        <td>Camisa de servicio</td>
-        <td>Oxford — T. L</td>
-        <td>Ombú</td>
-        <td class="c">N</td>
-        <td class="c">2</td>
-      </tr>
-      <tr>
-        <td class="n">9</td>
-        <td>Chaleco de salón</td>
-        <td>Gabardina — T. L</td>
-        <td>Ombú</td>
-        <td class="c">N</td>
-        <td class="c">1</td>
-      </tr>
-      <tr>
-        <td class="n">10</td>
-        <td>Corbata</td>
-        <td>Poliéster — Negra</td>
-        <td>Sin marca</td>
-        <td class="c">N</td>
-        <td class="c">2</td>
-      </tr>
-      <tr>
-        <td class="n">11</td>
-        <td>Guantes térmicos para horno</td>
-        <td>Kevlar hasta 250 °C</td>
-        <td>Ansell</td>
-        <td class="c">S</td>
-        <td class="c">1</td>
-      </tr>
-      <tr>
-        <td class="n">12</td>
-        <td>Antiparras de seguridad</td>
-        <td>Policarbonato incoloro</td>
-        <td>3M</td>
-        <td class="c">S</td>
-        <td class="c">1</td>
-      </tr>
-      <tr>
-        <td class="n">13</td>
-        <td>Barbijo descartable</td>
-        <td>Tricapa — Caja x 50</td>
-        <td>3M</td>
-        <td class="c">S</td>
-        <td class="c">1</td>
-      </tr>
-      <tr>
-        <td class="n">14</td>
-        <td>Faja lumbar</td>
-        <td>Elástica — T. M</td>
-        <td>Libus</td>
-        <td class="c">S</td>
-        <td class="c">1</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div class="conformidad">
-    Recibí de conformidad los elementos detallados en la presente constancia.
-  </div>
-
-  <div class="pie-firma">
-    <div>
-      <div class="pie-linea"></div>
-      <div class="pie-lbl">Firma del trabajador</div>
-    </div>
-    <div>
-      <div class="pie-linea"></div>
-      <div class="pie-lbl">Aclaración</div>
-    </div>
-  </div>
-
-  <div class="nota-maqueta">
-    Maqueta de diseño — datos de ejemplo. No es una constancia válida.
-  </div>
+<div class="page" id="hoja">
+  <div id="contenido" class="mensaje">Cargando…</div>
 </div>
+
+<script>
+function esc(s) {
+  return (s ?? "").toString()
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// "2026-09-15" -> "15/09/2026"
+function fmtFecha(iso) {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).slice(0, 10).split("-");
+  return d && m && y ? `${d}/${m}/${y}` : esc(iso);
+}
+
+function mensaje(html) {
+  document.getElementById("contenido").className = "mensaje";
+  document.getElementById("contenido").innerHTML = html;
+}
+
+async function cargar() {
+  // /uniformes/{id}/constancia
+  const id = location.pathname.split("/")[2];
+  let c, emp;
+  try {
+    const [rc, re] = await Promise.all([
+      fetch(`/api/uniformes/constancias/${id}`),
+      fetch("/api/uniformes/empresa"),
+    ]);
+    if (rc.status === 404) return mensaje("Constancia no encontrada.");
+    if (!rc.ok || !re.ok) return mensaje("No se pudieron cargar los datos de la constancia.");
+    c = await rc.json();
+    emp = await re.json();
+  } catch (e) {
+    return mensaje("Error al cargar los datos.");
+  }
+
+  // Las históricas no se imprimen: la firma ya está en el papel original,
+  // archivado en el legajo. Un segundo papel igual es la forma de terminar con
+  // dos documentos que no coinciden.
+  if (c.origen === "historico") {
+    return mensaje("Las constancias históricas no se imprimen." +
+      "<small>Es una entrega cargada desde el papel: la firma ya está en la hoja " +
+      "original, archivada en el legajo físico.</small>");
+  }
+
+  const numero = c.numero ? String(c.numero).padStart(6, "0") : "";
+  const anulada = c.estado === "anulada";
+  // El título es el nombre del archivo al guardar como PDF.
+  document.title = `Constancia ${numero} - ${c.empleado_apellido_nombre || ""}`;
+  if (anulada) {
+    document.getElementById("hoja").classList.add("anulada");
+    document.getElementById("aviso-bar").textContent =
+      "Esta constancia está anulada: se imprime marcada, para que ninguna copia pase por válida.";
+  }
+
+  // El talle va pegado al tipo/modelo: el formulario de papel no tiene columna
+  // propia para el talle.
+  const renglones = (c.items || []).map((it, i) => {
+    const tipo = [it.tipo_modelo, it.talle ? `T. ${it.talle}` : ""].filter(Boolean).join(" — ");
+    return `
+      <tr>
+        <td class="n">${i + 1}</td>
+        <td>${esc(it.elemento_nombre)}</td>
+        <td>${esc(tipo)}</td>
+        <td>${esc(it.marca)}</td>
+        <td class="c">${it.posee_certificado ? "S" : "N"}</td>
+        <td class="c">${esc(it.cantidad)}</td>
+      </tr>`;
+  }).join("");
+
+  const cont = document.getElementById("contenido");
+  cont.className = "";
+  cont.innerHTML = `
+    ${emp.logo ? `<div class="membrete"><img src="${esc(emp.logo)}" alt=""
+        onerror="this.parentNode.remove()"></div>` : ""}
+
+    <div class="enc-titulo">
+      CONSTANCIA DE ENTREGA DE ROPA DE TRABAJO Y ELEMENTOS DE PROTECCIÓN PERSONAL
+    </div>
+    <div class="enc-numero">Constancia N° ${numero}</div>
+    ${anulada ? `<div class="anulada-info">ANULADA el ${fmtFecha(c.anulada_en)}
+        por ${esc(c.anulada_por)} — ${esc(c.motivo_anulacion)}</div>` : ""}
+
+    <table class="enc">
+      <colgroup>
+        <col style="width:17%"><col style="width:43%">
+        <col style="width:12%"><col style="width:28%">
+      </colgroup>
+      <tr>
+        <td class="lbl">RAZÓN SOCIAL:</td>
+        <td class="val">${esc(emp.razon_social)}</td>
+        <td class="lbl">C.U.I.T.:</td>
+        <td class="val">${esc(emp.cuit)}</td>
+      </tr>
+    </table>
+
+    <table class="enc">
+      <colgroup>
+        <col style="width:13%"><col style="width:25%">
+        <col style="width:11%"><col style="width:13%">
+        <col style="width:6%"><col style="width:7%">
+        <col style="width:11%"><col style="width:14%">
+      </colgroup>
+      <tr>
+        <td class="lbl">DIRECCIÓN:</td>
+        <td class="val">${esc(emp.direccion)}</td>
+        <td class="lbl">LOCALIDAD:</td>
+        <td class="val">${esc(emp.localidad)}</td>
+        <td class="lbl">C.P.:</td>
+        <td class="val">${esc(emp.cp)}</td>
+        <td class="lbl">PROVINCIA:</td>
+        <td class="val">${esc(emp.provincia)}</td>
+      </tr>
+    </table>
+
+    <table class="enc">
+      <colgroup>
+        <col style="width:24%"><col style="width:76%">
+      </colgroup>
+      <tr>
+        <td class="lbl">APELLIDO Y NOMBRE:</td>
+        <td class="val-izq">${esc(c.empleado_apellido_nombre)}</td>
+      </tr>
+    </table>
+
+    <table class="enc">
+      <colgroup>
+        <col style="width:10%"><col style="width:18%">
+        <col style="width:12%"><col style="width:34%">
+        <col style="width:10%"><col style="width:16%">
+      </colgroup>
+      <tr>
+        <td class="lbl">D.N.I.:</td>
+        <td class="val-izq">${esc(c.empleado_dni)}</td>
+        <td class="lbl">PUESTO:</td>
+        <td class="val-izq">${esc(c.cargo_nombre)}</td>
+        <td class="lbl">FECHA:</td>
+        <td class="val">${fmtFecha(c.fecha)}</td>
+      </tr>
+    </table>
+
+    <table class="items">
+      <colgroup>
+        <col style="width:4%">
+        <col style="width:26%">
+        <col style="width:24%">
+        <col style="width:17%">
+        <col style="width:16%">
+        <col style="width:13%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th></th>
+          <th>PRODUCTO</th>
+          <th>TIPO/MODELO</th>
+          <th>MARCA</th>
+          <th>POSEE CERTIF. (S/N)</th>
+          <th>CANTIDAD</th>
+        </tr>
+      </thead>
+      <tbody>${renglones}</tbody>
+    </table>
+
+    ${c.observaciones ? `<div class="obs"><b>Observaciones:</b> ${esc(c.observaciones)}</div>` : ""}
+
+    <div class="conformidad">
+      Recibí de conformidad los elementos detallados en la presente constancia.
+    </div>
+
+    <div class="pie-firma">
+      <div>
+        <div class="pie-linea"></div>
+        <div class="pie-lbl">Firma del trabajador</div>
+      </div>
+      <div>
+        <div class="pie-linea"></div>
+        <div class="pie-lbl">Aclaración</div>
+      </div>
+    </div>`;
+
+  document.getElementById("btn-print").style.display = "";
+}
+
+cargar();
+</script>
 
 </body>
 </html>

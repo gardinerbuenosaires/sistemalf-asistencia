@@ -88,6 +88,12 @@
   .alta-cuerpo { padding: 18px 20px 20px; }
   tr.recien td { background: #e3f2e5 !important; }
   #cn-listado tr td { transition: background .8s; }
+  .aviso-emitida { display: flex; align-items: center; gap: 14px; background: #eaf5ec;
+                   border: 1px solid #b9dcbf; border-left: 4px solid #3f8f4f; border-radius: 6px;
+                   padding: 12px 16px; margin-bottom: 14px; font-size: .9rem; color: #234d2c; }
+  .aviso-emitida b { font-size: 1rem; }
+  .aviso-emitida .cerrar { margin-left: auto; background: none; border: none; font-size: 1.2rem;
+                           color: #6a8f71; cursor: pointer; line-height: 1; }
   .talle-tiene { font-size: .7rem; color: #888; margin-top: 3px; line-height: 1.25; }
   .talle-tiene b { color: #2c3e50; font-weight: bold; }
   .celda-talle { padding: 3px 4px; font-size: .82rem; min-width: 62px; transition: background .3s; }
@@ -291,6 +297,7 @@
 
     <!-- ── Filtros y listado: se oculta mientras el alta está abierta ── -->
     <div id="cn-vista-listado">
+    <div id="cn-aviso-emitida" class="aviso-emitida" style="display:none"></div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
         <div>
@@ -340,7 +347,7 @@
           <th>Puesto</th>
           <th style="width:110px;text-align:center">Renglones</th>
           <th style="width:110px">Estado</th>
-          <th style="width:150px"></th>
+          <th style="width:210px"></th>
         </tr>
       </thead>
       <tbody id="cn-listado"></tbody>
@@ -1144,6 +1151,7 @@ async function abrirFormulario() {
   try { _cnEmpleados = await api("/api/uniformes/empleados"); } catch (e) {}
 
   document.getElementById("cn-vista-listado").style.display = "none";
+  document.getElementById("cn-aviso-emitida").style.display = "none";
   document.getElementById("cn-form").style.display = "";
   document.getElementById("cn-fecha").value = todayLocal();
   document.getElementById("cn-items").innerHTML = "";
@@ -1161,6 +1169,29 @@ async function abrirFormulario() {
 function cerrarFormulario() {
   document.getElementById("cn-form").style.display = "none";
   document.getElementById("cn-vista-listado").style.display = "";
+}
+
+// La hoja imprimible, en una pestaña nueva. Siempre desde un clic directo: los
+// navegadores bloquean las ventanas que se abren solas después de guardar.
+function imprimirConstancia(id) {
+  window.open(`/uniformes/${id}/constancia`, "_blank");
+}
+
+// Aviso fijo arriba del listado: el momento natural de imprimir es justo después
+// de emitir, con el empleado todavía enfrente para firmar.
+function mostrarAvisoEmitida(r) {
+  const a = document.getElementById("cn-aviso-emitida");
+  if (r.numero) {
+    const numero = String(r.numero).padStart(6, "0");
+    a.innerHTML = `<span>Constancia <b>N° ${numero}</b> emitida.</span>
+      <button class="btn btn-primary btn-sm" onclick="imprimirConstancia(${r.id})">Imprimir</button>
+      <span style="font-size:.8rem;color:#4d7555">Imprimila ahora para que el empleado la firme.</span>
+      <button class="cerrar" title="Cerrar" onclick="this.parentNode.style.display='none'">&times;</button>`;
+  } else {
+    a.innerHTML = `<span>Constancia histórica cargada. No se imprime: la firma ya está en el papel del legajo.</span>
+      <button class="cerrar" title="Cerrar" onclick="this.parentNode.style.display='none'">&times;</button>`;
+  }
+  a.style.display = "";
 }
 
 // La constancia recién emitida se resalta un momento, para que se vea dónde quedó.
@@ -1317,10 +1348,10 @@ async function guardarConstancia() {
         items,
       })
     });
-    toast(r.numero ? `Constancia N° ${String(r.numero).padStart(6, "0")} emitida` : "Constancia histórica cargada");
     cerrarFormulario();
     await cargarDatosConstancias();   // los talles pueden haber cambiado
     await cargarConstancias();
+    mostrarAvisoEmitida(r);
     resaltarFila(r.id);
   } catch (e) {
     toast(e.message, true);
@@ -1360,6 +1391,7 @@ async function cargarConstancias() {
             : (c.origen === "historico" ? '<span style="color:#777">Histórica</span>' : "Emitida")}</td>
       <td>
         <button class="btn btn-link" onclick="verDetalle(${c.id})">Ver</button>
+        ${c.origen !== "historico" ? `<button class="btn btn-link" onclick="imprimirConstancia(${c.id})">Imprimir</button>` : ""}
         ${!anulada && puedeAnular ? `<button class="btn btn-link peligro" onclick="anularConstancia(${c.id})">Anular</button>` : ""}
       </td>
     </tr>

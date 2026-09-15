@@ -872,3 +872,39 @@ def anular_constancia(cid: int, data: AnulacionIn, user=Depends(require_permiso(
         )
         row = conn.execute("SELECT * FROM uniformes_movimientos WHERE id=?", (cid,)).fetchone()
     return dict(row)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# IMPRESIÓN
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/api/uniformes/empresa")
+def datos_empresa(_u=Depends(ver)):
+    """El encabezado de la constancia impresa.
+
+    Endpoint propio, y no /api/configuracion, porque ése exige usuarios:ver, que
+    RRHH no tiene: sin esto, a quien emite la constancia le fallaría al
+    imprimirla.
+
+    Si la razón social está vacía se usa el nombre comercial, para que la hoja
+    nunca salga con el membrete en blanco.
+    """
+    claves = ("empresa_razon_social", "empresa_cuit", "empresa_direccion",
+              "empresa_localidad", "empresa_cp", "empresa_provincia",
+              "nombre_empresa", "logo_empresa")
+    with db_session() as conn:
+        rows = conn.execute(
+            f"SELECT clave, valor FROM configuracion "
+            f"WHERE clave IN ({','.join('?' * len(claves))})",
+            claves,
+        ).fetchall()
+    c = {r["clave"]: (r["valor"] or "").strip() for r in rows}
+    return {
+        "razon_social": c.get("empresa_razon_social") or c.get("nombre_empresa") or "",
+        "cuit":         c.get("empresa_cuit", ""),
+        "direccion":    c.get("empresa_direccion", ""),
+        "localidad":    c.get("empresa_localidad", ""),
+        "cp":           c.get("empresa_cp", ""),
+        "provincia":    c.get("empresa_provincia", ""),
+        "logo":         c.get("logo_empresa") or None,
+    }

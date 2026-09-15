@@ -285,6 +285,16 @@ def page_uniformes(request: Request):
             raise HTTPException(404)
     return _page(request, "web/templates/uniformes.html", "uniformes")
 
+@app.get("/uniformes/{cid}/constancia", include_in_schema=False)
+def page_constancia_imprimible(cid: int, request: Request):
+    # Misma bandera que el resto del módulo: apagada, la hoja no existe.
+    from fastapi import HTTPException
+    from db.uniformes_schema import uniformes_activo
+    with db_session() as conn:
+        if not uniformes_activo(conn):
+            raise HTTPException(404)
+    return _page(request, "web/templates/uniformes_remito.html", "uniformes")
+
 @app.get("/manual-encargado", include_in_schema=False)
 def page_manual_encargado(request: Request):
     return _page(request, "web/templates/manual_encargado.html", "asistencia")

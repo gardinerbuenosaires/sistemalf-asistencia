@@ -2225,7 +2225,6 @@ function switchCfgTab(tab) {
   if (tab === 'parking') cargarParkingCorte();
 }
 
-// ── Logo ──────────────────────────────────────────────────────────────────────
 // ── Datos fiscales (módulo de uniformes) ──────────────────────────────────────
 const CLAVES_FISCALES = ["empresa_razon_social", "empresa_cuit", "empresa_direccion",
                          "empresa_localidad", "empresa_cp", "empresa_provincia"];
@@ -2260,6 +2259,7 @@ async function guardarDatosFiscales() {
   toast(fallidos ? "Error al guardar algunos datos fiscales" : "Datos fiscales guardados");
 }
 
+// ── Logo ──────────────────────────────────────────────────────────────────────
 async function cargarNombreEmpresa() {
   try {
     const data = await fetch("/api/config/nombre-empresa").then(r => r.json());

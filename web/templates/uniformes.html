@@ -78,6 +78,16 @@
   #tabla-talles th.grupo { text-align: center; border-bottom: 1px solid #D3D1C7; }
   #tabla-talles th.sub { text-align: center; font-weight: normal; font-size: .72rem; color: #777; }
   #tabla-talles .ini-grupo { border-left: 2px solid #D3D1C7; }
+  .alta { background: white; border: 1px solid #d9d6cc; border-top: 4px solid #2c3e50;
+          border-radius: 8px; margin-bottom: 16px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+  .alta-cabecera { padding: 12px 20px 14px; background: #f5f4ef; border-bottom: 1px solid #e6e3da;
+                   border-radius: 4px 4px 0 0; }
+  .alta-cabecera h2 { font-size: 1.2rem; color: #2c3e50; margin-top: 8px; }
+  .alta-volver { font-size: .82rem; color: #2c6fa8; text-decoration: none; }
+  .alta-volver:hover { text-decoration: underline; }
+  .alta-cuerpo { padding: 18px 20px 20px; }
+  tr.recien td { background: #e3f2e5 !important; }
+  #cn-listado tr td { transition: background .8s; }
   .talle-tiene { font-size: .7rem; color: #888; margin-top: 3px; line-height: 1.25; }
   .talle-tiene b { color: #2c3e50; font-weight: bold; }
   .celda-talle { padding: 3px 4px; font-size: .82rem; min-width: 62px; transition: background .3s; }
@@ -206,9 +216,13 @@
   <!-- ═══════════════ CONSTANCIAS ═══════════════ -->
   <section id="panel-constancias" class="panel activo">
 
-    <!-- ── Formulario de alta ── -->
-    <div class="card" id="cn-form" style="display:none">
-      <h3 id="cn-form-titulo">Nueva constancia de entrega</h3>
+    <!-- ── Formulario de alta: reemplaza al listado mientras está abierto ── -->
+    <div id="cn-form" class="alta" style="display:none">
+      <div class="alta-cabecera">
+        <a href="#" class="alta-volver" onclick="cerrarFormulario(); return false">&larr; Volver a las constancias</a>
+        <h2 id="cn-form-titulo">Nueva constancia de entrega</h2>
+      </div>
+      <div class="alta-cuerpo">
 
       <div class="form-linea" style="align-items:flex-start">
         <div class="campo" style="min-width:320px">
@@ -272,9 +286,11 @@
           Guardar es emitir: asigna el número y sella los datos. No se puede editar después.
         </span>
       </div>
+      </div>
     </div>
 
-    <!-- ── Filtros y listado ── -->
+    <!-- ── Filtros y listado: se oculta mientras el alta está abierta ── -->
+    <div id="cn-vista-listado">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
         <div>
@@ -331,6 +347,7 @@
     </table>
     <div id="cn-vacio" class="vacio" style="display:none">
       Todavía no hay constancias con esos filtros.
+    </div>
     </div>
   </section>
 
@@ -535,6 +552,7 @@
 
 <div id="toast"></div>
 
+<script src="/static/js/date-utils.js"></script>
 <script src="/static/js/session.js"></script>
 <script src="/static/js/user-menu.js"></script>
 <script>
@@ -574,6 +592,20 @@ function esc(s) {
   return (s ?? "").toString()
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// "2026-09-15" -> "15/09/2026", como el resto del sistema.
+function fmtFecha(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = String(iso).slice(0, 10).split("-");
+  return d && m && y ? `${d}/${m}/${y}` : esc(iso);
+}
+
+// "2026-09-15 11:30:00" -> "15/09/2026 11:30". Para cuándo se cargó o anuló.
+function fmtFechaHora(dt) {
+  if (!dt) return "—";
+  const hora = String(dt).slice(11, 16);
+  return fmtFecha(dt) + (hora ? " " + hora : "");
 }
 
 function verTab(tab) {
@@ -1111,8 +1143,9 @@ async function abrirFormulario() {
   // formulario propone lo que habia cuando se abrio la pantalla.
   try { _cnEmpleados = await api("/api/uniformes/empleados"); } catch (e) {}
 
+  document.getElementById("cn-vista-listado").style.display = "none";
   document.getElementById("cn-form").style.display = "";
-  document.getElementById("cn-fecha").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("cn-fecha").value = todayLocal();
   document.getElementById("cn-items").innerHTML = "";
   document.getElementById("cn-obs").value = "";
   document.getElementById("cn-buscar").value = "";
@@ -1122,11 +1155,21 @@ async function abrirFormulario() {
   empleadoElegido();
   agregarRenglon();
   document.getElementById("cn-buscar").focus();
-  document.getElementById("cn-form").scrollIntoView({ behavior: "smooth", block: "start" });
+  window.scrollTo({ top: 0 });
 }
 
 function cerrarFormulario() {
   document.getElementById("cn-form").style.display = "none";
+  document.getElementById("cn-vista-listado").style.display = "";
+}
+
+// La constancia recién emitida se resalta un momento, para que se vea dónde quedó.
+function resaltarFila(id) {
+  const f = document.getElementById("fila-" + id);
+  if (!f) return;
+  f.scrollIntoView({ behavior: "smooth", block: "center" });
+  f.classList.add("recien");
+  setTimeout(() => f.classList.remove("recien"), 2500);
 }
 
 function agregarRenglon() {
@@ -1278,6 +1321,7 @@ async function guardarConstancia() {
     cerrarFormulario();
     await cargarDatosConstancias();   // los talles pueden haber cambiado
     await cargarConstancias();
+    resaltarFila(r.id);
   } catch (e) {
     toast(e.message, true);
   } finally {
@@ -1305,9 +1349,9 @@ async function cargarConstancias() {
       ? String(c.numero).padStart(6, "0")
       : '<span style="color:#999" title="Las constancias históricas no llevan número">papel</span>';
     return `
-    <tr class="${anulada ? "inactivo" : ""}">
+    <tr id="fila-${c.id}" class="${anulada ? "inactivo" : ""}">
       <td>${numero}</td>
-      <td>${esc(c.fecha)}</td>
+      <td>${fmtFecha(c.fecha)}</td>
       <td>${esc(c.empleado_apellido_nombre)}</td>
       <td>${esc(c.cargo_nombre) || '<span style="color:#bbb">—</span>'}</td>
       <td style="text-align:center">${c.renglones} <span style="color:#999">(${c.unidades} u.)</span></td>
@@ -1360,9 +1404,9 @@ async function verDetalle(cid) {
       </table>
       <div class="ayuda" style="margin:10px 0 0">
         ${d.observaciones ? `Observaciones: ${esc(d.observaciones)}<br>` : ""}
-        Cargada por ${esc(d.creado_por)} el ${esc(d.creado_en)}.
+        Cargada por ${esc(d.creado_por)} el ${fmtFechaHora(d.creado_en)}.
         ${d.estado === "anulada"
-          ? `<br><b style="color:#b03a3a">Anulada</b> por ${esc(d.anulada_por)} el ${esc(d.anulada_en)} — ${esc(d.motivo_anulacion)}`
+          ? `<br><b style="color:#b03a3a">Anulada</b> por ${esc(d.anulada_por)} el ${fmtFechaHora(d.anulada_en)} — ${esc(d.motivo_anulacion)}`
           : ""}
       </div>
     </div>`;

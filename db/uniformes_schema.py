@@ -187,6 +187,21 @@ CREATE INDEX IF NOT EXISTS ix_uniformes_items_mov
 
 CREATE INDEX IF NOT EXISTS ix_uniformes_items_elemento
     ON uniformes_items (elemento_id);
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- PUESTOS QUE NO RECIBEN UNIFORME
+-- ══════════════════════════════════════════════════════════════════════════
+
+-- Solo sirve para que el reporte de última entrega no llene su parte de arriba
+-- con gente que nunca va a recibir nada. Se marca lo que NO recibe: un cargo
+-- nuevo, sin marcar, sigue apareciendo hasta que alguien decida. Tabla propia
+-- para no tocar `cargos`, que usan otros módulos.
+CREATE TABLE IF NOT EXISTS uniformes_cargos_sin_uniforme (
+    cargo_id    INTEGER PRIMARY KEY REFERENCES cargos(id) ON DELETE CASCADE,
+    marcado_por TEXT,
+    marcado_en  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
 """
 
 

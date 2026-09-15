@@ -9,7 +9,7 @@ cada ruta responde 404, igual que si el módulo no existiera.
 
 import re
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -908,3 +908,372 @@ def datos_empresa(_u=Depends(ver)):
         "provincia":    c.get("empresa_provincia", ""),
         "logo":         c.get("logo_empresa") or None,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# REPORTES
+# ══════════════════════════════════════════════════════════════════════════════
+# Dicen lo que SÍ se entregó, nunca lo que falta: no hay registro de qué le
+# corresponde a cada puesto. Cuentan solo entregas emitidas —las anuladas no
+# existen para los reportes, las devoluciones no son entregas— e incluyen las
+# históricas, que son entregas reales cargadas desde el papel.
+
+_CONTABLE = "m.tipo = 'entrega' AND m.estado = 'emitida'"
+
+_FROM_ENTREGAS = """
+    FROM uniformes_items i
+    JOIN uniformes_movimientos m          ON m.id = i.movimiento_id
+    JOIN empleados e                      ON e.id = m.empleado_id
+    LEFT JOIN cargos c                    ON c.id = e.cargo_id
+    LEFT JOIN uniformes_elementos el      ON el.id = i.elemento_id
+    LEFT JOIN uniformes_categorias r      ON r.id = el.categoria_id
+"""
+
+_ORDEN_LETRAS = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"]
+
+
+def _clave_talle(talle):
+    """42 antes que 44, y S antes que M antes que L — no alfabético."""
+    try:
+        return (0, float(talle), "")
+    except (TypeError, ValueError):
+        u = (talle or "").upper()
+        return (1, _ORDEN_LETRAS.index(u) if u in _ORDEN_LETRAS else 99, u)
+
+
+def _dmy(iso):
+    iso = (iso or "")[:10]
+    return f"{iso[8:10]}/{iso[5:7]}/{iso[:4]}" if len(iso) == 10 else ""
+
+
+def _filtros_entregas(desde, hasta, empleado_id, cargo_id, departamento_id, rubro_id):
+    """El cargo y el rubro se filtran por id —el cargo actual del empleado y el
+    rubro actual del elemento—, no por el texto que quedó copiado en cada
+    constancia: así un cambio de nombre no parte el reporte en dos."""
+    where, params = [_CONTABLE], []
+    if desde:
+        where.append("m.fecha >= ?"); params.append(_fecha_valida(desde))
+    if hasta:
+        where.append("m.fecha <= ?"); params.append(_fecha_valida(hasta))
+    if empleado_id:
+        where.append("m.empleado_id = ?"); params.append(empleado_id)
+    if cargo_id:
+        where.append("e.cargo_id = ?"); params.append(cargo_id)
+    if departamento_id:
+        where.append("c.departamento_id = ?"); params.append(departamento_id)
+    if rubro_id:
+        where.append("el.categoria_id = ?"); params.append(rubro_id)
+    return " AND ".join(where), params
+
+
+def _consulta_entregas(vista, desde, hasta, empleado_id, cargo_id, departamento_id, rubro_id):
+    if vista not in ("detalle", "resumen"):
+        raise HTTPException(400, "La vista tiene que ser detalle o resumen")
+    where, params = _filtros_entregas(desde, hasta, empleado_id, cargo_id, departamento_id, rubro_id)
+
+    with db_session() as conn:
+        if vista == "detalle":
+            # El detalle muestra lo que se imprimió: los datos copiados en la
+            # constancia, no los del catálogo de hoy.
+            filas = [dict(f) for f in conn.execute(f"""
+                SELECT m.id AS constancia_id, m.numero, m.fecha, m.origen,
+                       m.empleado_apellido_nombre AS empleado, m.cargo_nombre AS cargo,
+                       i.elemento_nombre AS elemento, i.categoria_nombre AS rubro,
+                       i.talle, i.cantidad
+                {_FROM_ENTREGAS}
+                WHERE {where}
+                ORDER BY m.fecha DESC, m.id DESC, i.orden
+            """, params).fetchall()]
+        else:
+            # El resumen agrupa por elemento (el id), con el nombre de hoy.
+            filas = [dict(f) for f in conn.execute(f"""
+                SELECT i.elemento_id,
+                       COALESCE(el.nombre, MAX(i.elemento_nombre))  AS elemento,
+                       COALESCE(r.nombre, MAX(i.categoria_nombre))  AS rubro,
+                       SUM(i.cantidad)                              AS unidades,
+                       COUNT(DISTINCT m.id)                         AS constancias,
+                       COUNT(DISTINCT m.empleado_id)                AS personas
+                {_FROM_ENTREGAS}
+                WHERE {where}
+                GROUP BY i.elemento_id
+                ORDER BY unidades DESC, elemento
+            """, params).fetchall()]
+            por_elemento = {}
+            for x in conn.execute(f"""
+                SELECT i.elemento_id, i.talle, SUM(i.cantidad) AS unidades
+                {_FROM_ENTREGAS}
+                WHERE {where} AND i.talle IS NOT NULL AND i.talle != ''
+                GROUP BY i.elemento_id, i.talle
+            """, params).fetchall():
+                por_elemento.setdefault(x["elemento_id"], []).append(
+                    {"talle": x["talle"], "unidades": x["unidades"]})
+            for f in filas:
+                f["talles"] = sorted(por_elemento.get(f["elemento_id"], []),
+                                     key=lambda z: _clave_talle(z["talle"]))
+
+    unidades = sum(f.get("unidades", f.get("cantidad", 0)) or 0 for f in filas)
+    return {"vista": vista, "filas": filas,
+            "totales": {"filas": len(filas), "unidades": unidades}}
+
+
+def _antiguedad(fecha_iso, hoy):
+    d = date.fromisoformat(fecha_iso[:10])
+    meses = (hoy.year - d.year) * 12 + (hoy.month - d.month) - (1 if hoy.day < d.day else 0)
+    return {"fecha": fecha_iso[:10], "meses": max(meses, 0), "dias": (hoy - d).days}
+
+
+def _consulta_antiguedad(cargo_id, departamento_id, rubro_id, incluir_inactivos,
+                         incluir_sin_uniforme=False):
+    """Última entrega por persona y por rubro.
+
+    Se arma desde la lista de empleados y no desde las entregas: los que nunca
+    recibieron nada no tienen ninguna fila de entrega, y son justamente los que
+    tienen que aparecer primero.
+    """
+    hoy = date.today()
+    with db_session() as conn:
+        rubros = [dict(r) for r in conn.execute(
+            "SELECT id, nombre, meses_alerta FROM uniformes_categorias WHERE activo=1 ORDER BY nombre")]
+
+        sql = f"""SELECT e.id, e.apellido, e.nombre, e.activo, c.nombre AS cargo,
+                         (s.cargo_id IS NOT NULL) AS sin_uniforme
+                  FROM empleados e LEFT JOIN cargos c ON c.id = e.cargo_id
+                  LEFT JOIN uniformes_cargos_sin_uniforme s ON s.cargo_id = e.cargo_id
+                  WHERE {EXCLUIR_NO_PERSONAL}"""
+        params = []
+        if not incluir_inactivos:
+            sql += " AND e.activo = 1"
+        if cargo_id:
+            sql += " AND e.cargo_id = ?"; params.append(cargo_id)
+        if departamento_id:
+            sql += " AND c.departamento_id = ?"; params.append(departamento_id)
+        empleados = conn.execute(sql, params).fetchall()
+
+        ultimas = {}
+        for x in conn.execute(f"""
+            SELECT m.empleado_id, el.categoria_id AS rubro_id, MAX(m.fecha) AS fecha
+            FROM uniformes_items i
+            JOIN uniformes_movimientos m     ON m.id = i.movimiento_id
+            LEFT JOIN uniformes_elementos el ON el.id = i.elemento_id
+            WHERE {_CONTABLE}
+            GROUP BY m.empleado_id, el.categoria_id
+        """).fetchall():
+            ultimas.setdefault(x["empleado_id"], {})[x["rubro_id"]] = x["fecha"]
+
+    umbral = {r["id"]: r["meses_alerta"] for r in rubros}
+    filas, ocultos = [], 0
+    for e in empleados:
+        suyas = ultimas.get(e["id"], {})
+        # Un puesto que no recibe uniforme oculta solo el «nunca»: si esa
+        # persona alguna vez recibió algo, aparece igual, con su fecha.
+        if e["sin_uniforme"] and not incluir_sin_uniforme and not any(suyas.values()):
+            ocultos += 1
+            continue
+        por_rubro = {}
+        for r in rubros:
+            f = suyas.get(r["id"])
+            if f is None:
+                por_rubro[str(r["id"])] = None
+                continue
+            a = _antiguedad(f, hoy)
+            # El aviso pinta, nunca bloquea: es solo una marca en el reporte.
+            a["alerta"] = umbral[r["id"]] is not None and a["meses"] >= umbral[r["id"]]
+            por_rubro[str(r["id"])] = a
+        todas = [f for f in suyas.values() if f]
+        filas.append({
+            "id": e["id"],
+            "empleado": f'{e["apellido"]}, {e["nombre"]}',
+            "cargo": e["cargo"],
+            "activo": e["activo"],
+            "sin_uniforme": bool(e["sin_uniforme"]),
+            "ultima": _antiguedad(max(todas), hoy) if todas else None,
+            "rubros": por_rubro,
+        })
+
+    # Arriba quien nunca recibió; después, del más viejo al más reciente.
+    def clave(f):
+        ref = f["rubros"].get(str(rubro_id)) if rubro_id else f["ultima"]
+        return (0, "", f["empleado"]) if ref is None else (1, ref["fecha"], f["empleado"])
+    filas.sort(key=clave)
+    return {"rubros": rubros, "filas": filas, "ordenado_por": rubro_id,
+            "ocultos_sin_uniforme": ocultos}
+
+
+def _describir_filtros(desde=None, hasta=None, empleado_id=None, cargo_id=None,
+                       departamento_id=None, rubro_id=None):
+    partes = []
+    with db_session() as conn:
+        for valor, sql, etiqueta in (
+            (empleado_id, "SELECT apellido || ', ' || nombre FROM empleados WHERE id=?", "Empleado"),
+            (cargo_id, "SELECT nombre FROM cargos WHERE id=?", "Cargo"),
+            (departamento_id, "SELECT nombre FROM departamentos WHERE id=?", "Departamento"),
+            (rubro_id, "SELECT nombre FROM uniformes_categorias WHERE id=?", "Rubro"),
+        ):
+            if valor:
+                fila = conn.execute(sql, (valor,)).fetchone()
+                partes.append(f"{etiqueta}: {fila[0] if fila else valor}")
+        emp = conn.execute(
+            "SELECT clave, valor FROM configuracion WHERE clave IN ('empresa_razon_social','nombre_empresa')"
+        ).fetchall()
+    if desde or hasta:
+        partes.append(f"Período: {_dmy(desde) or 'desde el inicio'} a {_dmy(hasta) or 'hoy'}")
+    c = {r["clave"]: (r["valor"] or "").strip() for r in emp}
+    empresa = c.get("empresa_razon_social") or c.get("nombre_empresa") or ""
+    return empresa, " · ".join(partes) or "Sin filtros"
+
+
+def _excel(titulo, subtitulo, encabezados, filas, anchos, archivo, alertas=None):
+    """Arma el .xlsx. `alertas` es un conjunto de (fila, columna) a pintar."""
+    import openpyxl
+    from io import BytesIO
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from fastapi.responses import StreamingResponse
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = titulo[:31]
+    ws.append([titulo])
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.append([subtitulo])
+    ws["A2"].font = Font(italic=True, color="666666")
+    ws.append([])
+    ws.append(encabezados)
+    for celda in ws[4]:
+        celda.font = Font(bold=True)
+        celda.fill = PatternFill("solid", fgColor="EDEDED")
+    rojo = PatternFill("solid", fgColor="F8D7D7")
+    for n, fila in enumerate(filas):
+        ws.append(fila)
+        for col, valor in enumerate(fila, 1):
+            celda = ws.cell(row=5 + n, column=col)
+            if isinstance(valor, date):
+                celda.number_format = "DD/MM/YYYY"
+            if alertas and (n, col - 1) in alertas:
+                celda.fill = rojo
+    for i, ancho in enumerate(anchos, 1):
+        ws.column_dimensions[get_column_letter(i)].width = ancho
+    ws.freeze_panes = "A5"
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{archivo}"'},
+    )
+
+
+@router.get("/api/uniformes/reportes/entregas")
+def reporte_entregas(vista: str = "detalle", desde: str | None = None, hasta: str | None = None,
+                     empleado_id: int | None = None, cargo_id: int | None = None,
+                     departamento_id: int | None = None, rubro_id: int | None = None,
+                     _u=Depends(ver)):
+    return _consulta_entregas(vista, desde, hasta, empleado_id, cargo_id, departamento_id, rubro_id)
+
+
+@router.get("/api/uniformes/reportes/entregas.xlsx")
+def reporte_entregas_excel(vista: str = "detalle", desde: str | None = None, hasta: str | None = None,
+                           empleado_id: int | None = None, cargo_id: int | None = None,
+                           departamento_id: int | None = None, rubro_id: int | None = None,
+                           _u=Depends(ver)):
+    datos = _consulta_entregas(vista, desde, hasta, empleado_id, cargo_id, departamento_id, rubro_id)
+    empresa, filtros = _describir_filtros(desde, hasta, empleado_id, cargo_id, departamento_id, rubro_id)
+    sub = f"{empresa} · {filtros} · Generado el {date.today().strftime('%d/%m/%Y')}".lstrip(" ·")
+    if vista == "detalle":
+        filas = [[date.fromisoformat(f["fecha"][:10]),
+                  str(f["numero"]).zfill(6) if f["numero"] else "papel",
+                  "Histórica" if f["origen"] == "historico" else "Sistema",
+                  f["empleado"], f["cargo"] or "", f["elemento"], f["rubro"] or "",
+                  f["talle"] or "", f["cantidad"]] for f in datos["filas"]]
+        return _excel("Entregas — detalle", sub,
+                      ["Fecha", "N°", "Origen", "Empleado", "Puesto", "Elemento", "Rubro", "Talle", "Cantidad"],
+                      filas, [12, 9, 11, 32, 20, 30, 18, 8, 10],
+                      f"uniformes_entregas_detalle_{date.today().isoformat()}.xlsx")
+    filas = [[f["elemento"], f["rubro"] or "", f["unidades"], f["constancias"], f["personas"],
+              " · ".join(f'{x["talle"]}: {x["unidades"]}' for x in f["talles"])] for f in datos["filas"]]
+    return _excel("Entregas — resumen", sub,
+                  ["Elemento", "Rubro", "Unidades", "Constancias", "Personas", "Por talle"],
+                  filas, [32, 18, 10, 12, 10, 50],
+                  f"uniformes_entregas_resumen_{date.today().isoformat()}.xlsx")
+
+
+@router.get("/api/uniformes/reportes/antiguedad")
+def reporte_antiguedad(cargo_id: int | None = None, departamento_id: int | None = None,
+                       rubro_id: int | None = None, incluir_inactivos: bool = False,
+                       incluir_sin_uniforme: bool = False, _u=Depends(ver)):
+    return _consulta_antiguedad(cargo_id, departamento_id, rubro_id, incluir_inactivos,
+                                incluir_sin_uniforme)
+
+
+@router.get("/api/uniformes/reportes/antiguedad.xlsx")
+def reporte_antiguedad_excel(cargo_id: int | None = None, departamento_id: int | None = None,
+                             rubro_id: int | None = None, incluir_inactivos: bool = False,
+                             incluir_sin_uniforme: bool = False, _u=Depends(ver)):
+    datos = _consulta_antiguedad(cargo_id, departamento_id, rubro_id, incluir_inactivos,
+                                 incluir_sin_uniforme)
+    empresa, filtros = _describir_filtros(cargo_id=cargo_id, departamento_id=departamento_id,
+                                          rubro_id=rubro_id)
+    if datos["ocultos_sin_uniforme"]:
+        filtros += (f" · Sin las {datos['ocultos_sin_uniforme']} personas de puestos que no "
+                    f"reciben uniforme y nunca recibieron nada")
+    sub = f"{empresa} · {filtros} · Generado el {date.today().strftime('%d/%m/%Y')}".lstrip(" ·")
+    encabezados = ["Empleado", "Cargo", "Estado", "Última entrega", "Meses"]
+    for r in datos["rubros"]:
+        encabezados += [f"{r['nombre']} — última", f"{r['nombre']} — meses"]
+    filas, alertas = [], set()
+    for n, f in enumerate(datos["filas"]):
+        u = f["ultima"]
+        fila = [f["empleado"], f["cargo"] or "", "Activo" if f["activo"] else "Egresado",
+                date.fromisoformat(u["fecha"]) if u else "nunca", u["meses"] if u else ""]
+        for r in datos["rubros"]:
+            a = f["rubros"].get(str(r["id"]))
+            if a and a.get("alerta"):
+                alertas.update({(n, len(fila)), (n, len(fila) + 1)})
+            fila += [date.fromisoformat(a["fecha"]) if a else "nunca", a["meses"] if a else ""]
+        filas.append(fila)
+    anchos = [32, 20, 10, 14, 8] + [18, 10] * len(datos["rubros"])
+    return _excel("Última entrega por persona", sub, encabezados, filas, anchos,
+                  f"uniformes_ultima_entrega_{date.today().isoformat()}.xlsx", alertas)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PUESTOS QUE NO RECIBEN UNIFORME
+# ══════════════════════════════════════════════════════════════════════════════
+
+class PuestoIn(BaseModel):
+    recibe: bool
+
+
+@router.get("/api/uniformes/puestos")
+def list_puestos(_u=Depends(ver)):
+    with db_session() as conn:
+        rows = conn.execute(f"""
+            SELECT c.id, c.nombre, d.nombre AS departamento,
+                   (SELECT COUNT(*) FROM empleados e
+                     WHERE e.cargo_id = c.id AND e.activo = 1 AND {EXCLUIR_NO_PERSONAL}) AS empleados,
+                   (s.cargo_id IS NULL) AS recibe,
+                   s.marcado_por, s.marcado_en
+            FROM cargos c
+            LEFT JOIN departamentos d                ON d.id = c.departamento_id
+            LEFT JOIN uniformes_cargos_sin_uniforme s ON s.cargo_id = c.id
+            ORDER BY c.nombre
+        """).fetchall()
+    return [{**dict(r), "recibe": bool(r["recibe"])} for r in rows]
+
+
+@router.put("/api/uniformes/puestos/{cargo_id}")
+def set_puesto(cargo_id: int, data: PuestoIn, user=Depends(editar)):
+    with db_session() as conn:
+        if not conn.execute("SELECT id FROM cargos WHERE id=?", (cargo_id,)).fetchone():
+            raise HTTPException(404, "Cargo no encontrado")
+        if data.recibe:
+            conn.execute("DELETE FROM uniformes_cargos_sin_uniforme WHERE cargo_id=?", (cargo_id,))
+        else:
+            conn.execute(
+                """INSERT INTO uniformes_cargos_sin_uniforme (cargo_id, marcado_por) VALUES (?,?)
+                   ON CONFLICT (cargo_id) DO NOTHING""",
+                (cargo_id, _nombre_usuario(conn, user)),
+            )
+    return {"ok": True, "cargo_id": cargo_id, "recibe": data.recibe}

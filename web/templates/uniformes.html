@@ -94,6 +94,16 @@
   .aviso-emitida b { font-size: 1rem; }
   .aviso-emitida .cerrar { margin-left: auto; background: none; border: none; font-size: 1.2rem;
                            color: #6a8f71; cursor: pointer; line-height: 1; }
+  .subtabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .subtab { padding: 6px 14px; border: 1px solid #d5d3cb; background: white; border-radius: 16px;
+            cursor: pointer; font-size: .82rem; color: #555; font-family: inherit; }
+  .subtab.activa { background: #2c3e50; border-color: #2c3e50; color: white; }
+  #rp-antiguedad-res td.nunca { color: #a8712a; font-style: italic; }
+  #rp-antiguedad-res td.alerta { background: #fbe9e9; }
+  #rp-antiguedad-res td .hace { font-size: .74rem; color: #888; }
+  #rp-antiguedad-res td.alerta .hace { color: #b03a3a; font-weight: bold; }
+  .subpanel { display: none; }
+  .subpanel.activo { display: block; }
   .talle-tiene { font-size: .7rem; color: #888; margin-top: 3px; line-height: 1.25; }
   .talle-tiene b { color: #2c3e50; font-weight: bold; }
   .celda-talle { padding: 3px 4px; font-size: .82rem; min-width: 62px; transition: background .3s; }
@@ -213,9 +223,8 @@
   <div class="tabs">
     <button class="tab activa" onclick="verTab('constancias')" id="tab-constancias">Constancias</button>
     <button class="tab" onclick="verTab('talles')" id="tab-talles">Talles</button>
-    <button class="tab" onclick="verTab('elementos')" id="tab-elementos">Elementos</button>
-    <button class="tab" onclick="verTab('rubros')" id="tab-rubros">Rubros</button>
-    <button class="tab" onclick="verTab('tipos')" id="tab-tipos">Tipos de talle</button>
+    <button class="tab" onclick="verTab('reportes')" id="tab-reportes">Reportes</button>
+    <button class="tab" onclick="verTab('config')" id="tab-config">Configuración</button>
   </div>
 
 
@@ -390,7 +399,7 @@
 
     <div id="talles-sin-tipos" class="vacio" style="display:none">
       Todavía no hay ningún tipo de talle cargado, así que la grilla no tiene columnas.<br>
-      Creá el primero en la pestaña <b>Tipos de talle</b> — por ejemplo «Calzado», y su escala 38 a 45.
+      Creá el primero en <b>Configuración → Tipos de talle</b> — por ejemplo «Calzado», y su escala 38 a 45.
     </div>
 
     <div id="talles-grid-wrap" style="overflow-x:auto">
@@ -407,8 +416,88 @@
     <div id="talles-recuento"></div>
   </section>
 
+  <!-- ═══════════════ REPORTES ═══════════════ -->
+  <section id="panel-reportes" class="panel">
+    <div class="subtabs">
+      <button class="subtab activa" id="rp-sub-entregas" onclick="verReporte('entregas')">Entregas</button>
+      <button class="subtab" id="rp-sub-antiguedad" onclick="verReporte('antiguedad')">Última entrega por persona</button>
+    </div>
+    <div class="ayuda">
+      Los reportes muestran lo que <b>sí</b> se entregó, nunca lo que falta. Cuentan solo las
+      constancias emitidas: las anuladas no existen para los reportes, y las históricas cargadas
+      desde el papel sí cuentan.
+    </div>
+
+    <!-- ── Entregas ── -->
+    <div id="rp-entregas">
+      <div class="card">
+        <div class="form-linea">
+          <div class="campo" style="min-width:230px"><label>Empleado</label>
+            <select id="rp-empleado" onchange="consultarEntregas()"></select></div>
+          <div class="campo" style="min-width:160px"><label>Cargo</label>
+            <select id="rp-cargo" onchange="consultarEntregas()"></select></div>
+          <div class="campo" style="min-width:160px"><label>Departamento</label>
+            <select id="rp-depto" onchange="consultarEntregas()"></select></div>
+          <div class="campo" style="min-width:150px"><label>Rubro</label>
+            <select id="rp-rubro" onchange="consultarEntregas()"></select></div>
+          <div class="campo"><label>Desde</label><input type="date" id="rp-desde" onchange="consultarEntregas()"></div>
+          <div class="campo"><label>Hasta</label><input type="date" id="rp-hasta" onchange="consultarEntregas()"></div>
+        </div>
+        <div class="form-linea" style="margin-top:12px;align-items:center;gap:18px">
+          <label class="chk"><input type="radio" name="rp-vista" value="detalle" checked onchange="consultarEntregas()">
+            Detalle — una fila por cada renglón entregado</label>
+          <label class="chk"><input type="radio" name="rp-vista" value="resumen" onchange="consultarEntregas()">
+            Resumen — por elemento, con totales y talles</label>
+          <button class="btn btn-sm" style="margin-left:auto" onclick="exportarEntregas()">Descargar Excel</button>
+        </div>
+      </div>
+      <div id="rp-entregas-tot" class="ayuda"></div>
+      <div id="rp-entregas-res" style="overflow-x:auto"></div>
+    </div>
+
+    <!-- ── Última entrega por persona ── -->
+    <div id="rp-antiguedad" style="display:none">
+      <div class="card">
+        <div class="ayuda">
+          Arriba quien hace más tiempo que no recibe nada, y antes que nadie quien <b>nunca</b>
+          recibió. El <b>&#9888;</b> marca los rubros que pasaron su umbral de aviso: pinta,
+          nunca bloquea.
+        </div>
+        <div class="form-linea">
+          <div class="campo" style="min-width:160px"><label>Cargo</label>
+            <select id="ra-cargo" onchange="consultarAntiguedad()"></select></div>
+          <div class="campo" style="min-width:160px"><label>Departamento</label>
+            <select id="ra-depto" onchange="consultarAntiguedad()"></select></div>
+          <div class="campo" style="min-width:190px"><label>Ordenar por</label>
+            <select id="ra-rubro" onchange="consultarAntiguedad()"></select></div>
+          <div class="campo"><label>&nbsp;</label>
+            <label class="chk"><input type="checkbox" id="ra-inactivos" onchange="consultarAntiguedad()"> Incluir egresados</label></div>
+          <div class="campo"><label>&nbsp;</label>
+            <label class="chk"><input type="checkbox" id="ra-sinunif" onchange="consultarAntiguedad()"> Mostrar puestos que no reciben uniforme</label></div>
+          <div class="campo" style="margin-left:auto"><label>&nbsp;</label>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-sm" id="btn-puestos" onclick="irAPuestos()" title="Ir a Configuración → Puestos">&#9881; Puestos que no reciben uniforme</button>
+              <button class="btn btn-sm" onclick="exportarAntiguedad()">Descargar Excel</button>
+            </div></div>
+        </div>
+      </div>
+      <div id="rp-antiguedad-tot" class="ayuda"></div>
+      <div id="rp-antiguedad-res" style="overflow-x:auto"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ CONFIGURACIÓN ═══════════════ -->
+  <!-- Lo que se configura una vez: cada catálogo en su sub-pestaña. -->
+  <section id="panel-config" class="panel">
+    <div class="subtabs">
+      <button class="subtab activa" id="cfg-tab-elementos" onclick="verConfig('elementos')">Elementos</button>
+      <button class="subtab" id="cfg-tab-rubros" onclick="verConfig('rubros')">Rubros</button>
+      <button class="subtab" id="cfg-tab-tipos" onclick="verConfig('tipos')">Tipos de talle</button>
+      <button class="subtab" id="cfg-tab-puestos" onclick="verConfig('puestos')">Puestos</button>
+    </div>
+
   <!-- ═══════════════ ELEMENTOS ═══════════════ -->
-  <section id="panel-elementos" class="panel">
+  <section id="cfg-elementos" class="subpanel activo">
     <div class="card" id="form-elemento-card">
       <h3 id="form-elemento-titulo">Nuevo elemento</h3>
       <div class="ayuda">
@@ -469,7 +558,7 @@
 
 
   <!-- ═══════════════ RUBROS ═══════════════ -->
-  <section id="panel-rubros" class="panel">
+  <section id="cfg-rubros" class="subpanel">
     <div class="card">
       <h3>Rubros</h3>
       <div class="ayuda">
@@ -509,7 +598,7 @@
 
 
   <!-- ═══════════════ TIPOS DE TALLE ═══════════════ -->
-  <section id="panel-tipos" class="panel">
+  <section id="cfg-tipos" class="subpanel">
     <div class="card">
       <h3>Tipos de talle</h3>
       <div class="ayuda">
@@ -554,6 +643,31 @@
       </div>
     </div>
   </section>
+
+  <!-- ═══════════════ PUESTOS ═══════════════ -->
+  <section id="cfg-puestos" class="subpanel">
+    <div class="card">
+      <h3>Puestos que reciben uniforme</h3>
+      <div class="ayuda">
+        Sacale la tilde a los puestos que nunca reciben ropa ni EPP. Solo afecta al reporte de
+        <b>última entrega por persona</b>: quienes tienen ese puesto y nunca recibieron nada dejan de
+        aparecer arriba de todo como «nunca». Si alguno llega a recibir algo, vuelve a aparecer solo,
+        con su fecha. Un puesto nuevo aparece tildado hasta que alguien decida.
+      </div>
+      <div id="puestos-aviso" class="ayuda" style="color:#a8712a;margin-bottom:0"></div>
+    </div>
+    <table class="grid">
+      <thead><tr>
+        <th>Puesto</th><th>Departamento</th>
+        <th style="text-align:center;width:110px">Empleados</th>
+        <th style="text-align:center;width:150px">Recibe uniforme</th>
+      </tr></thead>
+      <tbody id="tbody-puestos"></tbody>
+    </table>
+  </section>
+
+  </section>
+  <!-- ═══════════════ /CONFIGURACIÓN ═══════════════ -->
 
 </main>
 
@@ -1461,6 +1575,190 @@ async function anularConstancia(cid) {
   } catch (e) { toast(e.message, true); }
 }
 
+
+// ── Puestos que reciben uniforme ─────────────────────────────────────────────
+async function cargarPuestos() {
+  const puestos = await api("/api/uniformes/puestos");
+  const puede = canDo("uniformes", "editar");
+  document.getElementById("tbody-puestos").innerHTML = puestos.map(p => `
+    <tr class="${p.recibe ? "" : "inactivo"}">
+      <td>${esc(p.nombre)}</td>
+      <td>${esc(p.departamento) || '<span style="color:#bbb">—</span>'}</td>
+      <td style="text-align:center">${p.empleados}</td>
+      <td style="text-align:center">
+        <input type="checkbox" ${p.recibe ? "checked" : ""} ${puede ? "" : "disabled"}
+               onchange="marcarPuesto(${p.id}, this.checked, this)"
+               title="${p.recibe ? "" : `Marcado por ${esc(p.marcado_por)} el ${fmtFechaHora(p.marcado_en)}`}">
+      </td>
+    </tr>`).join("");
+  const marcados = puestos.filter(p => !p.recibe).length;
+  document.getElementById("btn-puestos").innerHTML =
+    `&#9881; Puestos que no reciben uniforme${marcados ? ` (${marcados})` : ""}`;
+  document.getElementById("puestos-aviso").textContent =
+    puede ? "" : "Solo quien tiene permiso para editar uniformes puede cambiarlo.";
+}
+
+// Configuración: los catálogos se cambian una vez cada tanto, así que viven
+// juntos en una pestaña, cada uno en su sub-pestaña.
+function verConfig(sub) {
+  document.querySelectorAll("#panel-config .subpanel")
+    .forEach(p => p.classList.toggle("activo", p.id === "cfg-" + sub));
+  document.querySelectorAll("#panel-config .subtab")
+    .forEach(b => b.classList.toggle("activa", b.id === "cfg-tab-" + sub));
+}
+
+// Atajo desde el reporte de última entrega, que es donde se ve el efecto.
+function irAPuestos() {
+  verTab("config");
+  verConfig("puestos");
+  window.scrollTo({ top: 0 });
+}
+
+async function marcarPuesto(id, recibe, chk) {
+  try {
+    await api(`/api/uniformes/puestos/${id}`, { method: "PUT", body: JSON.stringify({ recibe }) });
+    await cargarPuestos();
+    await consultarAntiguedad();
+    toast(recibe ? "El puesto vuelve a recibir uniforme" : "Puesto marcado: no recibe uniforme");
+  } catch (e) {
+    chk.checked = !recibe;
+    toast(e.message, true);
+  }
+}
+
+// ── Reportes ─────────────────────────────────────────────────────────────────
+function verReporte(cual) {
+  document.getElementById("rp-entregas").style.display = cual === "entregas" ? "" : "none";
+  document.getElementById("rp-antiguedad").style.display = cual === "antiguedad" ? "" : "none";
+  document.getElementById("rp-sub-entregas").classList.toggle("activa", cual === "entregas");
+  document.getElementById("rp-sub-antiguedad").classList.toggle("activa", cual === "antiguedad");
+}
+
+async function cargarFiltrosReportes() {
+  const [emps, cargos, deptos, rubros] = await Promise.all([
+    api("/api/uniformes/empleados"), api("/api/cargos"),
+    api("/api/departamentos"), api("/api/uniformes/rubros"),
+  ]);
+  const opc = (lista, todos, texto) => `<option value="">${todos}</option>` +
+    lista.map(x => `<option value="${x.id}">${esc(texto(x))}</option>`).join("");
+  document.getElementById("rp-empleado").innerHTML = opc(emps, "Todos los empleados",
+    e => `${e.apellido}, ${e.nombre}${e.activo ? "" : "  (egresado)"}`);
+  for (const id of ["rp-cargo", "ra-cargo"])
+    document.getElementById(id).innerHTML = opc(cargos, "Todos los cargos", c => c.nombre);
+  for (const id of ["rp-depto", "ra-depto"])
+    document.getElementById(id).innerHTML = opc(deptos, "Todos los departamentos", d => d.nombre);
+  const activos = rubros.filter(r => r.activo);
+  document.getElementById("rp-rubro").innerHTML = opc(activos, "Todos los rubros", r => r.nombre);
+  document.getElementById("ra-rubro").innerHTML = opc(activos, "Cualquier entrega", r => r.nombre);
+  await consultarEntregas();
+  await consultarAntiguedad();
+}
+
+function paramsEntregas() {
+  const p = new URLSearchParams();
+  p.set("vista", document.querySelector('input[name="rp-vista"]:checked').value);
+  for (const [clave, id] of [["empleado_id", "rp-empleado"], ["cargo_id", "rp-cargo"],
+                             ["departamento_id", "rp-depto"], ["rubro_id", "rp-rubro"],
+                             ["desde", "rp-desde"], ["hasta", "rp-hasta"]]) {
+    const v = document.getElementById(id).value;
+    if (v) p.set(clave, v);
+  }
+  return p;
+}
+
+async function consultarEntregas() {
+  let d;
+  try { d = await api("/api/uniformes/reportes/entregas?" + paramsEntregas()); }
+  catch (e) { return toast(e.message, true); }
+  const cont = document.getElementById("rp-entregas-res");
+  const tot = document.getElementById("rp-entregas-tot");
+  if (!d.filas.length) {
+    tot.textContent = "";
+    cont.innerHTML = '<div class="vacio">Ninguna entrega con esos filtros.</div>';
+    return;
+  }
+  if (d.vista === "detalle") {
+    tot.textContent = `${d.totales.filas} renglones · ${d.totales.unidades} unidades`;
+    cont.innerHTML = `<table class="grid"><thead><tr>
+        <th>Fecha</th><th>N°</th><th>Empleado</th><th>Puesto</th><th>Elemento</th>
+        <th>Rubro</th><th style="text-align:center">Talle</th><th style="text-align:center">Cant.</th>
+      </tr></thead><tbody>${d.filas.map(f => `<tr>
+        <td>${fmtFecha(f.fecha)}</td>
+        <td>${f.numero ? String(f.numero).padStart(6, "0") : '<span style="color:#999" title="Carga histórica">papel</span>'}</td>
+        <td>${esc(f.empleado)}</td><td>${esc(f.cargo) || "—"}</td>
+        <td>${esc(f.elemento)}</td><td>${esc(f.rubro) || "—"}</td>
+        <td style="text-align:center">${esc(f.talle) || "—"}</td>
+        <td style="text-align:center">${f.cantidad}</td></tr>`).join("")}</tbody></table>`;
+  } else {
+    tot.textContent = `${d.totales.filas} elementos · ${d.totales.unidades} unidades`;
+    cont.innerHTML = `<table class="grid"><thead><tr>
+        <th>Elemento</th><th>Rubro</th><th style="text-align:center">Unidades</th>
+        <th style="text-align:center">Constancias</th><th style="text-align:center">Personas</th><th>Por talle</th>
+      </tr></thead><tbody>${d.filas.map(f => `<tr>
+        <td>${esc(f.elemento)}</td><td>${esc(f.rubro) || "—"}</td>
+        <td style="text-align:center"><b>${f.unidades}</b></td>
+        <td style="text-align:center">${f.constancias}</td>
+        <td style="text-align:center">${f.personas}</td>
+        <td>${f.talles.length ? f.talles.map(x => `<span class="rec-val"><b>${esc(x.talle)}</b> ${x.unidades}</span>`).join("")
+                              : '<span style="color:#bbb">sin talle</span>'}</td></tr>`).join("")}</tbody></table>`;
+  }
+}
+
+function exportarEntregas() {
+  window.location.href = "/api/uniformes/reportes/entregas.xlsx?" + paramsEntregas();
+}
+
+function paramsAntiguedad() {
+  const p = new URLSearchParams();
+  for (const [clave, id] of [["cargo_id", "ra-cargo"], ["departamento_id", "ra-depto"], ["rubro_id", "ra-rubro"]]) {
+    const v = document.getElementById(id).value;
+    if (v) p.set(clave, v);
+  }
+  if (document.getElementById("ra-inactivos").checked) p.set("incluir_inactivos", "true");
+  if (document.getElementById("ra-sinunif").checked) p.set("incluir_sin_uniforme", "true");
+  return p;
+}
+
+// "hace 18 meses", o en días si todavía no pasó un mes.
+function haceCuanto(a) {
+  if (a.meses >= 1) return `hace ${a.meses} ${a.meses === 1 ? "mes" : "meses"}`;
+  return a.dias <= 0 ? "hoy" : `hace ${a.dias} ${a.dias === 1 ? "día" : "días"}`;
+}
+
+function celdaAntiguedad(a, conAlerta) {
+  if (!a) return '<td class="nunca">nunca</td>';
+  const alerta = conAlerta && a.alerta;
+  return `<td class="${alerta ? "alerta" : ""}">${fmtFecha(a.fecha)}
+    <div class="hace">${alerta ? "&#9888; " : ""}${haceCuanto(a)}</div></td>`;
+}
+
+async function consultarAntiguedad() {
+  let d;
+  try { d = await api("/api/uniformes/reportes/antiguedad?" + paramsAntiguedad()); }
+  catch (e) { return toast(e.message, true); }
+  const nunca = d.filas.filter(f => !(d.ordenado_por ? f.rubros[String(d.ordenado_por)] : f.ultima)).length;
+  const alertas = d.filas.filter(f => Object.values(f.rubros).some(a => a && a.alerta)).length;
+  document.getElementById("rp-antiguedad-tot").textContent =
+    `${d.filas.length} personas · ${nunca} nunca recibieron` +
+    (d.ordenado_por ? " en ese rubro" : "") + ` · ${alertas} con algún rubro vencido` +
+    (d.ocultos_sin_uniforme ? ` · ${d.ocultos_sin_uniforme} ocultas por ser de puestos que no reciben uniforme` : "");
+  document.getElementById("rp-antiguedad-res").innerHTML = d.filas.length
+    ? `<table class="grid"><thead><tr>
+        <th>Empleado</th><th>Cargo</th><th>Última entrega</th>
+        ${d.rubros.map(r => `<th>${esc(r.nombre)}${r.meses_alerta ? ` <span style="font-weight:normal;color:#999">(aviso ${r.meses_alerta} m)</span>` : ""}</th>`).join("")}
+      </tr></thead><tbody>${d.filas.map(f => `<tr class="${f.activo ? "" : "inactivo"}">
+        <td style="white-space:nowrap">${esc(f.empleado)}${f.activo ? "" : " <small>(egresado)</small>"}</td>
+        <td>${esc(f.cargo) || '<span style="color:#bbb">—</span>'}${f.sin_uniforme ? ' <small style="color:#999">(no recibe)</small>' : ""}</td>
+        ${celdaAntiguedad(f.ultima, false)}
+        ${d.rubros.map(r => celdaAntiguedad(f.rubros[String(r.id)], true)).join("")}
+      </tr>`).join("")}</tbody></table>`
+    : '<div class="vacio">Ningún empleado con esos filtros.</div>';
+}
+
+function exportarAntiguedad() {
+  window.location.href = "/api/uniformes/reportes/antiguedad.xlsx?" + paramsAntiguedad();
+}
+
 // ── Arranque ─────────────────────────────────────────────────────────────────
 (async function init() {
   try {
@@ -1483,12 +1781,14 @@ async function anularConstancia(cid) {
 
   try {
     await cargarRubros();
+    await cargarPuestos();
     await cargarTipos();
     await cargarElementos();
     await cargarFiltrosTalles();
     await cargarTalles();
     await cargarDatosConstancias();
     await cargarConstancias();
+    await cargarFiltrosReportes();
   } catch (e) { toast(e.message, true); }
 })();
 </script>

@@ -9,7 +9,7 @@
 
 ## Estado al 2026-09-15
 
-Tandas 0 a 4 implementadas y probadas (115 chequeos), en la rama `feat/entregas`,
+Tandas 0 a 5a implementadas y probadas (165 chequeos), en la rama `feat/entregas`,
 publicada en GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
@@ -19,7 +19,8 @@ publicada en GitHub. **No está en `main` ni en producción.**
 | 2 | Talles del personal, con recuento para comprar | hecha |
 | 3 | Constancias: emitir, anular, carga histórica | hecha |
 | 4 | Constancia imprimible con datos reales, datos fiscales | hecha |
-| 5 | Botón en la ficha del empleado, y reportes | pendiente |
+| 5a | Reportes, puestos que no reciben uniforme, pestaña Configuración | hecha |
+| 5b | Botón con resumen en la ficha del empleado | pendiente |
 
 ### Decisiones que surgieron implementando
 
@@ -55,6 +56,26 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   Roles, la recuperaba sola en el primer reinicio. El arreglo aplica cada permiso por
   defecto una sola vez por rol; se comprobó en seco que las dos ramas se juntan sin
   conflictos.
+- **Reportes: una consulta, no tres.** Filtros por empleado, cargo, departamento, rubro y
+  período. *Detalle* muestra lo que se imprimió (la copia de la constancia); *resumen* agrupa
+  por elemento —por id, con el nombre de hoy— con el desglose por talle, que es el dato para
+  comprar. Cuentan solo entregas emitidas: las anuladas y las devoluciones no suman, las
+  históricas sí. El cargo y el rubro se filtran por el dato actual, no por el texto copiado.
+- **Última entrega por persona** se arma desde la lista de empleados, no desde las entregas:
+  quien nunca recibió nada no tiene fila de entrega y es justamente quien tiene que ir arriba.
+  Los meses se calculan en el servidor.
+- **Excel** en los dos reportes, con fechas reales de Excel (se ordenan y filtran) y los filtros
+  aplicados en el título.
+- **Puestos que no reciben uniforme** (tabla `uniformes_cargos_sin_uniforme`, la octava). Sin
+  ellos, el reporte de última entrega llenaba su parte de arriba con gente que nunca va a
+  recibir nada. Se marca por cargo —el reparto real es limpio por puesto—, se marca lo que
+  **no** recibe —un cargo nuevo sigue a la vista hasta que alguien decida— y la marca oculta
+  solo el «nunca»: si alguien de un puesto marcado recibe algo, aparece igual. Editable con
+  `uniformes:editar`. En producción hay que cargarla en cada instancia: es un dato.
+- **Pestaña Configuración.** Elementos, Rubros, Tipos de talle y Puestos son sub-pestañas de
+  una sola pestaña: arriba quedan solo las del uso diario. Puestos estuvo primero debajo de
+  Rubros y después en un diálogo del reporte, y en los dos lugares quedaba escondido; el
+  botón del reporte quedó como atajo.
 
 ## El problema
 
@@ -126,7 +147,8 @@ contacto con `sync/evaluador.py`, `fichajes`, `resultados_dia`, `planificacion` 
 
 ## Modelo de datos
 
-Siete tablas nuevas, todas con prefijo `uniformes_`.
+Ocho tablas nuevas, todas con prefijo `uniformes_`. La octava, de puestos que no reciben
+uniforme, se describe en *Decisiones que surgieron implementando*.
 
 ### `uniformes_categorias` — los rubros
 
@@ -399,10 +421,12 @@ pendientes y QR). No hace falta CSS nuevo.
 en [configuracion.html:228](web/templates/configuracion.html#L228):
 
 ```
-Entregas | Talles | Elementos | Rubros | Tipos de talle
+Constancias | Talles | Reportes | Configuración
+                                  └ Elementos · Rubros · Tipos de talle · Puestos
 ```
 
-Los catálogos van en el módulo propio y **no** como pestaña de Configuración a propósito:
+Los catálogos van en el módulo propio —en su pestaña Configuración— y **no** en la pantalla
+de Configuración del sistema, a propósito:
 `configuracion.html` es un archivo grande y muy tocado, y meter mano ahí es pedir un
 conflicto de merge.
 

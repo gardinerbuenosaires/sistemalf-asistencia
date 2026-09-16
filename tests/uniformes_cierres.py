@@ -7,7 +7,7 @@ persona de la bandeja y funciona como fecha de corte.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _base import preparar, token_sistema
+from _base import preparar, token_sistema, RAIZ
 
 DB = preparar()   # una COPIA de la base: la real nunca se toca
 
@@ -122,6 +122,8 @@ chequear("ya no figura en la bandeja", A not in ids)
 con_cerrados = cli.get("/api/uniformes/egresados?incluir_cerrados=true").json()["filas"]
 chequear("pero se lo puede ver pidiendo los cerrados",
          any(f["id"] == A and f["cierre"] for f in con_cerrados))
+chequear("y la ficha del empleado se entera de que su baja quedo completa",
+         cli.get(f"/api/uniformes/resumen/{A}").json().get("cierre") is not None)
 chequear("dos cierres vigentes para la misma persona -> 409",
          cli.post("/api/uniformes/cierres",
                   json={"empleado_id": A, "resultado": "devolvio_todo"}).status_code == 409)
@@ -195,6 +197,26 @@ if sin:
     otro.cookies.set("session", create_token(999, "prueba@local", sin["id"], "prueba"))
     chequear("un rol sin uniformes:ver no ve la bandeja",
              otro.get("/api/uniformes/egresados").status_code == 403)
+
+print("\n=== LAS PANTALLAS ===")
+uni = open(os.path.join(RAIZ, "web", "templates", "uniformes.html"), encoding="utf-8-sig").read()
+chequear("la bandeja de egresados es una sub-pestaña de Reportes", 'id="rp-sub-egresados"' in uni)
+chequear("se filtra por fecha de egreso y se pueden ver los ya cerrados",
+         'id="eg-desde"' in uni and 'id="eg-cerrados"' in uni)
+chequear("el panel de ropa pendiente se dibuja dentro de la ficha", "panelPendientes(pend)" in uni)
+chequear("y se pide junto con el resumen, en una sola vuelta",
+         "/api/uniformes/pendientes/${id}" in uni and "Promise.all" in uni)
+chequear("el cierre ofrece los tres resultados",
+         all(f'value="{r}"' in uni for r in ("devolvio_todo", "devolvio_parcial", "no_devolvio")))
+chequear("con observacion libre, sin exigir constancia de devolucion", 'id="cierre-obs"' in uni)
+chequear("reabrir existe y pide permiso de eliminar",
+         "reabrirCierre" in uni and 'canDo("uniformes", "eliminar")' in uni)
+chequear("la ventana se configura en su propia sub-pestaña",
+         'id="cfg-tab-parametros"' in uni and 'id="cfg-meses"' in uni)
+chequear("las fechas salen del helper local, nunca de toISOString",
+         "ymdLocal(" in uni and "toISOString" not in uni)
+emp = open(os.path.join(RAIZ, "web", "templates", "empleados.html"), encoding="utf-8-sig").read()
+chequear("la ficha del empleado avisa cuando la ropa quedo cerrada", "unif-cerrado" in emp)
 
 print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")

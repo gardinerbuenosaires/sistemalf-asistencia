@@ -1309,6 +1309,12 @@ def resumen_empleado(empleado_id: int, _u=Depends(ver)):
             f"SELECT COUNT(*) FROM uniformes_movimientos m WHERE m.empleado_id = ? AND {_CONTABLE}",
             (empleado_id,),
         ).fetchone()[0]
+        # El cierre del circuito, para que la ficha del empleado pueda decir que
+        # la baja ya quedó completa y no haya que entrar al módulo a mirarlo.
+        cierre = conn.execute(
+            """SELECT id, fecha, resultado, observacion, cerrado_por
+               FROM uniformes_cierres WHERE empleado_id=? AND estado='vigente'""",
+            (empleado_id,)).fetchone()
     rubros = []
     for r in datos["rubros"]:
         a = fila["rubros"].get(str(r["id"]))
@@ -1323,6 +1329,7 @@ def resumen_empleado(empleado_id: int, _u=Depends(ver)):
         "ultima": fila["ultima"],
         "rubros": rubros,
         "alertas": [{"rubro": x["nombre"], "meses": x["ultima"]["meses"]} for x in rubros if x["alerta"]],
+        "cierre": dict(cierre) if cierre else None,
     }
 
 

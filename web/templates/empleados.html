@@ -122,6 +122,7 @@
   .unif-titulo { font-size: .72rem; font-weight: bold; color: #888; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
   .unif-lineas { font-size: .85rem; line-height: 1.55; margin-bottom: 10px; color: #333; }
   .unif-alerta { color: #b03a3a; font-weight: bold; }
+  .unif-cerrado { color: #5b7a5b; }
   .foto-url { font-size: .68rem; color: #aaa; word-break: break-all; }
   .foto-acciones { display: flex; flex-direction: row; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   .foto-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -1177,7 +1178,8 @@ async function cargarResumenUniformes(id) {
       d.constancias ? `${d.constancias} ${d.constancias === 1 ? "constancia" : "constancias"}` : "Sin constancias",
       d.ultima ? `última ${hace(d.ultima)}` : "nunca recibió nada",
       ...d.alertas.map(a => `<span class="unif-alerta">\u26a0 ${escH(a.rubro.split(" ")[0].toLowerCase())} ${a.meses} meses</span>`),
-    ].join("<br>");
+      d.cierre ? `<span class="unif-cerrado">ropa cerrada el ${escH(d.cierre.fecha.slice(0, 10).split("-").reverse().join("/"))}</span>` : "",
+    ].filter(Boolean).join("<br>");
   } catch (err) { cont.textContent = "—"; }
 }
 

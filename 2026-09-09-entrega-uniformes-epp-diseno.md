@@ -9,10 +9,9 @@
 
 ## Estado al 2026-09-15
 
-Tandas 0 a 5b implementadas y probadas, y de la tanda 6 —la ropa pendiente al momento de
-la baja— está hecha la API con sus pruebas; faltan las pantallas. Son 257 chequeos, que
-corren sobre una copia temporal de la base, en la rama `feat/entregas`, publicada en
-GitHub. **No está en `main` ni en producción.**
+**El módulo está completo, incluida la ropa pendiente al momento de la baja.** Tandas 0 a 6
+implementadas y probadas —268 chequeos, que corren sobre una copia temporal de la base—, en
+la rama `feat/entregas`, publicada en GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
 |---|---|---|
@@ -24,7 +23,7 @@ GitHub. **No está en `main` ni en producción.**
 | 5a | Reportes, puestos que no reciben uniforme, pestaña Configuración | hecha |
 | 5b | Resumen en la ficha del empleado y ficha por persona | hecha |
 | 6a | Ropa pendiente, bandeja de egresados y cierre del circuito (API) | hecha |
-| 6b | Las pantallas de la tanda 6 | pendiente |
+| 6b | Las pantallas de la tanda 6 | hecha |
 
 ### Decisiones que surgieron implementando
 
@@ -140,6 +139,11 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   Gardiner: si la bandeja nace mostrándolas a todas, el reporte es inservible el primer día.
   El cierre masivo las marca como anteriores al sistema, simula por defecto y va con el
   permiso de carga inicial.
+- **Dónde vive cada cosa.** La bandeja es una sub-pestaña de Reportes, al lado de los otros dos
+  reportes; el panel de ropa pendiente es parte de la ficha de la persona dentro del módulo,
+  debajo de los talles; la ventana de meses es una sub-pestaña de Configuración. En la ficha del
+  empleado, en cambio, solo aparece una línea diciendo que la ropa quedó cerrada: el detalle no
+  se duplica fuera del módulo.
 
 ## El problema
 

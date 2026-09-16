@@ -105,6 +105,27 @@
   .subpanel { display: none; }
   .subpanel.activo { display: block; }
   .ficha h3 { margin-bottom: 4px; }
+  .pend { margin-top: 14px; border-top: 1px solid #ecebe5; padding-top: 12px; }
+  .pend-tit { font-size: .78rem; font-weight: bold; color: #888; text-transform: uppercase;
+              letter-spacing: .04em; display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .pend-tit span { font-weight: normal; text-transform: none; letter-spacing: 0; color: #aaa; }
+  .pend-tit button { margin-left: auto; }
+  .pend table { font-size: .85rem; }
+  .pend-antes { font-size: .82rem; color: #999; margin-top: 8px; }
+  .pend-vacio { font-size: .85rem; color: #999; }
+  .pend-cerrado { background: #eef4ee; border: 1px solid #cfe0cf; border-radius: 6px;
+                  padding: 10px 12px; font-size: .85rem; }
+  .pend-obs { color: #555; margin-top: 4px; }
+  .pend-quien { color: #999; font-size: .78rem; margin: 4px 0 8px; }
+  .modal-fondo { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 50;
+                 display: flex; align-items: center; justify-content: center; }
+  .modal-caja { background: white; border-radius: 8px; padding: 20px 22px; width: 460px;
+                max-width: 94vw; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+  .modal-caja h3 { margin: 0 0 4px; }
+  .modal-caja .campo { margin-bottom: 12px; }
+  .modal-caja textarea { width: 100%; min-height: 62px; font: inherit; padding: 6px 8px;
+                         border: 1px solid #d5d3cb; border-radius: 4px; }
+  .modal-pie { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
   .ficha-rubros { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
   .ficha-rubro { border: 1px solid #e1e0da; border-radius: 6px; padding: 8px 12px; font-size: .85rem;
                  display: flex; flex-direction: column; gap: 2px; min-width: 170px; }
@@ -431,6 +452,7 @@
     <div class="subtabs">
       <button class="subtab activa" id="rp-sub-entregas" onclick="verReporte('entregas')">Entregas</button>
       <button class="subtab" id="rp-sub-antiguedad" onclick="verReporte('antiguedad')">Última entrega por persona</button>
+      <button class="subtab" id="rp-sub-egresados" onclick="verReporte('egresados')">Egresados</button>
     </div>
     <div class="ayuda">
       Los reportes muestran lo que <b>sí</b> se entregó, nunca lo que falta. Cuentan solo las
@@ -494,6 +516,32 @@
       <div id="rp-antiguedad-tot" class="ayuda"></div>
       <div id="rp-antiguedad-res" style="overflow-x:auto"></div>
     </div>
+
+    <!-- ── Egresados: la bandeja de la liquidación final ── -->
+    <div id="rp-egresados" style="display:none">
+      <div class="card">
+        <div class="ayuda">
+          Quién se fue y todavía figura con ropa. Se cuenta lo entregado en los últimos
+          <b id="eg-ventana">6</b> meses, que es lo que se puede suponer que todavía tiene; lo
+          anterior no se pierde, se ve en la ficha de cada uno. <b>El sistema no sabe qué
+          conserva</b>: decide quien liquida, y el cierre deja asentada esa decisión.
+        </div>
+        <div class="form-linea">
+          <div class="campo"><label>Egresados desde</label>
+            <input type="date" id="eg-desde" onchange="consultarEgresados()"></div>
+          <div class="campo"><label>Hasta</label>
+            <input type="date" id="eg-hasta" onchange="consultarEgresados()"></div>
+          <div class="campo"><label>&nbsp;</label>
+            <label class="chk"><input type="checkbox" id="eg-cerrados" onchange="consultarEgresados()"> Incluir los ya cerrados</label></div>
+          <div class="campo"><label>&nbsp;</label>
+            <label class="chk"><input type="checkbox" id="eg-todos" onchange="consultarEgresados()"> Mostrar también los que no tienen nada</label></div>
+          <div class="campo" style="margin-left:auto"><label>&nbsp;</label>
+            <button class="btn btn-sm" onclick="exportarEgresados()">Descargar Excel</button></div>
+        </div>
+      </div>
+      <div id="rp-egresados-tot" class="ayuda"></div>
+      <div id="rp-egresados-res" style="overflow-x:auto"></div>
+    </div>
   </section>
 
   <!-- ═══════════════ CONFIGURACIÓN ═══════════════ -->
@@ -504,9 +552,28 @@
       <button class="subtab" id="cfg-tab-rubros" onclick="verConfig('rubros')">Rubros</button>
       <button class="subtab" id="cfg-tab-tipos" onclick="verConfig('tipos')">Tipos de talle</button>
       <button class="subtab" id="cfg-tab-puestos" onclick="verConfig('puestos')">Puestos</button>
+      <button class="subtab" id="cfg-tab-parametros" onclick="verConfig('parametros')">Parámetros</button>
     </div>
 
   <!-- ═══════════════ ELEMENTOS ═══════════════ -->
+  <section id="cfg-parametros" class="subpanel">
+    <div class="card">
+      <h3>Ropa pendiente</h3>
+      <div class="ayuda">
+        Cuántos meses hacia atrás se consideran «lo que la persona todavía tiene», para el panel
+        de su ficha y para la bandeja de egresados. Si el uniforme se entrega una vez al año,
+        conviene una ventana amplia; si se repone seguido, una corta. Lo entregado antes de la
+        ventana no desaparece: se muestra aparte, con su fecha.
+      </div>
+      <div class="form-linea" style="align-items:flex-end">
+        <div class="campo" style="max-width:150px"><label>Meses</label>
+          <input type="number" id="cfg-meses" min="1" max="120" value="6"></div>
+        <div class="campo"><label>&nbsp;</label>
+          <button class="btn btn-primary btn-sm" onclick="guardarParametros()">Guardar</button></div>
+      </div>
+    </div>
+  </section>
+
   <section id="cfg-elementos" class="subpanel activo">
     <div class="card" id="form-elemento-card">
       <h3 id="form-elemento-titulo">Nuevo elemento</h3>
@@ -1640,10 +1707,10 @@ async function marcarPuesto(id, recibe, chk) {
 
 // ── Reportes ─────────────────────────────────────────────────────────────────
 function verReporte(cual) {
-  document.getElementById("rp-entregas").style.display = cual === "entregas" ? "" : "none";
-  document.getElementById("rp-antiguedad").style.display = cual === "antiguedad" ? "" : "none";
-  document.getElementById("rp-sub-entregas").classList.toggle("activa", cual === "entregas");
-  document.getElementById("rp-sub-antiguedad").classList.toggle("activa", cual === "antiguedad");
+  for (const x of ["entregas", "antiguedad", "egresados"]) {
+    document.getElementById("rp-" + x).style.display = x === cual ? "" : "none";
+    document.getElementById("rp-sub-" + x).classList.toggle("activa", x === cual);
+  }
 }
 
 async function cargarFiltrosReportes() {
@@ -1662,8 +1729,17 @@ async function cargarFiltrosReportes() {
   const activos = rubros.filter(r => r.activo);
   document.getElementById("rp-rubro").innerHTML = opc(activos, "Todos los rubros", r => r.nombre);
   document.getElementById("ra-rubro").innerHTML = opc(activos, "Cualquier entrega", r => r.nombre);
+  // La bandeja arranca en los últimos 90 días: los que se fueron hace más de
+  // tres meses ya se liquidaron.
+  const desde = document.getElementById("eg-desde");
+  if (!desde.value) {
+    const d = new Date();
+    d.setDate(d.getDate() - 90);
+    desde.value = ymdLocal(d);
+  }
   await consultarEntregas();
   await consultarAntiguedad();
+  await consultarEgresados();
 }
 
 function paramsEntregas() {
@@ -1771,6 +1847,175 @@ function exportarAntiguedad() {
   window.location.href = "/api/uniformes/reportes/antiguedad.xlsx?" + paramsAntiguedad();
 }
 
+// ── Ropa pendiente y cierre del circuito ─────────────────────────────────────
+// El sistema no sabe qué ropa tiene alguien: sabe qué se le entregó y cuándo.
+// Por eso acá no hay una deuda calculada sino una lista corta y fechada, y el
+// cierre es lo que convierte eso en una decisión asentada.
+
+const RESULTADOS_CIERRE = {
+  devolvio_todo: "Devolvió todo",
+  devolvio_parcial: "Devolvió parte",
+  no_devolvio: "No devolvió",
+  previo_al_sistema: "Anterior al sistema",
+};
+
+let _cierreEmpleado = null;
+
+async function cargarParametros() {
+  try {
+    const p = await api("/api/uniformes/parametros");
+    document.getElementById("cfg-meses").value = p.meses_pendientes;
+    document.getElementById("eg-ventana").textContent = p.meses_pendientes;
+  } catch (e) { /* queda el valor de la pantalla */ }
+}
+
+async function guardarParametros() {
+  const meses = parseInt(document.getElementById("cfg-meses").value);
+  try {
+    await api("/api/uniformes/parametros",
+              { method: "PUT", body: JSON.stringify({ meses_pendientes: meses }) });
+    document.getElementById("eg-ventana").textContent = meses;
+    await consultarEgresados();
+    await dibujarFicha();
+    toast(`Se miran los últimos ${meses} meses`);
+  } catch (e) { toast(e.message, true); }
+}
+
+function paramsEgresados() {
+  const p = new URLSearchParams();
+  for (const [clave, id] of [["desde", "eg-desde"], ["hasta", "eg-hasta"]]) {
+    const v = document.getElementById(id).value;
+    if (v) p.set(clave, v);
+  }
+  if (document.getElementById("eg-cerrados").checked) p.set("incluir_cerrados", "true");
+  if (document.getElementById("eg-todos").checked) p.set("solo_con_pendientes", "false");
+  return p;
+}
+
+async function consultarEgresados() {
+  let d;
+  try { d = await api("/api/uniformes/egresados?" + paramsEgresados()); }
+  catch (e) { return toast(e.message, true); }
+  document.getElementById("eg-ventana").textContent = d.meses;
+  document.getElementById("rp-egresados-tot").textContent =
+    `${d.totales.filas} personas · ${d.totales.unidades} prendas sin devolver` +
+    (d.totales.cerrados ? ` · ${d.totales.cerrados} con el circuito ya cerrado` : "");
+  document.getElementById("rp-egresados-res").innerHTML = d.filas.length
+    ? `<table class="grid"><thead><tr>
+        <th>Empleado</th><th>Cargo</th><th>Egreso</th>
+        <th style="text-align:center">Sin devolver</th><th>Prendas</th><th></th>
+      </tr></thead><tbody>${d.filas.map(f => `<tr class="${f.cierre ? "inactivo" : ""}">
+        <td style="white-space:nowrap">${esc(f.empleado)}</td>
+        <td>${esc(f.cargo) || '<span style="color:#bbb">—</span>'}</td>
+        <td>${fmtFecha(f.fecha_egreso)}</td>
+        <td style="text-align:center"><b>${f.total_pendiente || "—"}</b></td>
+        <td>${f.cierre
+              ? `<span style="color:#5b7a5b">cerrado el ${fmtFecha(f.cierre.fecha)} · ${esc(RESULTADOS_CIERRE[f.cierre.resultado] || f.cierre.resultado)}</span>`
+              : (f.prendas.map(p => `${esc(p.elemento)}${p.pendiente > 1 ? ` (${p.pendiente})` : ""}`).join(" · ")
+                 || (f.anteriores ? `<span style="color:#999">solo entregas anteriores a la ventana</span>` : "—"))}</td>
+        <td style="white-space:nowrap;text-align:right">
+          <button class="btn btn-sm" onclick="verFichaDe(${f.id})">Ver ficha</button>
+          ${!f.cierre && canDo("uniformes", "editar")
+            ? `<button class="btn btn-sm btn-primary" onclick="abrirCierre(${f.id})">Cerrar</button>` : ""}
+        </td></tr>`).join("")}</tbody></table>`
+    : '<div class="vacio">Ningún egresado con esos filtros.</div>';
+}
+
+function exportarEgresados() {
+  window.location.href = "/api/uniformes/egresados.xlsx?" + paramsEgresados();
+}
+
+// Desde la bandeja a la ficha de esa persona, que es donde está el detalle.
+async function verFichaDe(id) {
+  document.getElementById("cn-f-empleado").value = String(id);
+  verTab("constancias");
+  await cargarConstancias();
+  window.scrollTo({ top: 0 });
+}
+
+// El panel de la ficha. No repite las constancias: el listado de abajo ya es
+// exactamente eso, y con el historial completo.
+function panelPendientes(p) {
+  if (p.cierre) {
+    const c = p.cierre;
+    return `<div class="pend"><div class="pend-cerrado">
+      <b>Circuito cerrado el ${fmtFecha(c.fecha)}</b> · ${esc(RESULTADOS_CIERRE[c.resultado] || c.resultado)}
+      ${c.observacion ? `<div class="pend-obs">${esc(c.observacion)}</div>` : ""}
+      <div class="pend-quien">Cerrado por ${esc(c.cerrado_por) || "—"}${
+        p.cierres && p.cierres.length > 1 ? ` · ${p.cierres.length} cierres en su historia` : ""}</div>
+      ${canDo("uniformes", "eliminar")
+        ? `<button class="btn btn-sm" onclick="reabrirCierre(${c.id})">Reabrir</button>` : ""}
+    </div></div>`;
+  }
+  const boton = canDo("uniformes", "editar")
+    ? `<button class="btn btn-sm" onclick="abrirCierre(${p.empleado_id})">Cerrar circuito</button>` : "";
+  const antes = p.anteriores.length
+    ? `<div class="pend-antes">Antes de esa fecha: ${p.anteriores.map(a =>
+        `${esc(a.elemento)} (${haceCuanto(a.antiguedad)})`).join(" · ")}</div>`
+    : "";
+  if (!p.prendas.length)
+    return `<div class="pend"><div class="pend-tit">Ropa sin devolver
+        <span>últimos ${p.meses} meses</span>${boton}</div>
+      <div class="pend-vacio">Nada entregado en ese período.</div>${antes}</div>`;
+  return `<div class="pend">
+    <div class="pend-tit">Ropa sin devolver <span>últimos ${p.meses} meses</span>${boton}</div>
+    <table class="grid"><thead><tr>
+      <th>Prenda</th><th style="text-align:center">Sin devolver</th>
+      <th style="text-align:center">Entregado</th><th style="text-align:center">Devuelto</th><th>Cuándo</th>
+    </tr></thead><tbody>${p.prendas.map(x => `<tr>
+      <td>${esc(x.elemento)}</td>
+      <td style="text-align:center"><b>${x.pendiente || "—"}</b></td>
+      <td style="text-align:center">${x.entregado}</td>
+      <td style="text-align:center">${x.devuelto || "—"}</td>
+      <td>${x.fechas.map(f => `${fmtFecha(f.fecha)}${f.cantidad > 1 ? ` (${f.cantidad})` : ""}`).join(" · ") || "—"}</td>
+    </tr>`).join("")}</tbody></table>${antes}</div>`;
+}
+
+// ── El cierre ────────────────────────────────────────────────────────────────
+function abrirCierre(id) {
+  const e = _cnEmpleados.find(x => x.id === id);
+  _cierreEmpleado = id;
+  document.getElementById("cierre-quien").textContent = e ? `${e.apellido}, ${e.nombre}` : "";
+  document.getElementById("cierre-fecha").value = todayLocal();
+  document.getElementById("cierre-obs").value = "";
+  document.querySelector('input[name="cierre-resultado"][value="devolvio_todo"]').checked = true;
+  document.getElementById("cierre-modal").style.display = "flex";
+}
+
+function cerrarModalCierre() {
+  document.getElementById("cierre-modal").style.display = "none";
+  _cierreEmpleado = null;
+}
+
+async function guardarCierre() {
+  if (!_cierreEmpleado) return;
+  const cuerpo = {
+    empleado_id: _cierreEmpleado,
+    fecha: document.getElementById("cierre-fecha").value,
+    resultado: document.querySelector('input[name="cierre-resultado"]:checked').value,
+    observacion: document.getElementById("cierre-obs").value.trim() || null,
+  };
+  try {
+    await api("/api/uniformes/cierres", { method: "POST", body: JSON.stringify(cuerpo) });
+    cerrarModalCierre();
+    await consultarEgresados();
+    await dibujarFicha();
+    toast("Circuito cerrado");
+  } catch (e) { toast(e.message, true); }
+}
+
+async function reabrirCierre(cid) {
+  const motivo = prompt("¿Por qué se reabre? El cierre no se borra: queda con su motivo.");
+  if (motivo === null) return;
+  try {
+    await api(`/api/uniformes/cierres/${cid}/reabrir`,
+              { method: "POST", body: JSON.stringify({ motivo }) });
+    await consultarEgresados();
+    await dibujarFicha();
+    toast("Circuito reabierto");
+  } catch (e) { toast(e.message, true); }
+}
+
 // ── Ficha por persona ────────────────────────────────────────────────────────
 // Aparece arriba del listado cuando se filtra por un empleado: lo que recibió
 // por rubro, sus talles y, abajo, su historial con Ver e Imprimir. Es también
@@ -1780,9 +2025,11 @@ async function dibujarFicha() {
   const valor = document.getElementById("cn-f-empleado").value;
   const id = parseInt(valor);
   if (!id) { cont.style.display = "none"; cont.innerHTML = ""; return; }
-  let r;
-  try { r = await api(`/api/uniformes/resumen/${id}`); }
-  catch (e) { cont.style.display = "none"; return; }
+  let r, pend;
+  try {
+    [r, pend] = await Promise.all([api(`/api/uniformes/resumen/${id}`),
+                                   api(`/api/uniformes/pendientes/${id}`)]);
+  } catch (e) { cont.style.display = "none"; return; }
   if (document.getElementById("cn-f-empleado").value !== valor) return;   // cambió mientras cargaba
 
   const emp = _cnEmpleados.find(x => x.id === id) || {};
@@ -1809,6 +2056,7 @@ async function dibujarFicha() {
       </div>
       <div class="ficha-rubros">${rubros}</div>
       <div class="ficha-talles"><span class="lbl">Talles:</span>${talles}</div>
+      ${panelPendientes(pend)}
     </div>`;
   cont.style.display = "";
 }
@@ -1860,11 +2108,42 @@ async function abrirFichaDesdeUrl() {
     await cargarTalles();
     await cargarDatosConstancias();
     await cargarConstancias();
+    await cargarParametros();
     await cargarFiltrosReportes();
     await abrirFichaDesdeUrl();
   } catch (e) { toast(e.message, true); }
 })();
 </script>
+
+<!-- El cierre del circuito. Tres campos: no exige constancia de devolución, así
+     que lo devuelto se escribe acá si no hubo papel que firmar. -->
+<div id="cierre-modal" class="modal-fondo" style="display:none">
+  <div class="modal-caja">
+    <h3>Cerrar el circuito de ropa</h3>
+    <div class="ayuda" style="margin-top:0">
+      <b id="cierre-quien"></b> deja de figurar en la bandeja de egresados. Lo que quede
+      pendiente hoy se guarda tal cual, y lo que se le entregue después vuelve a contar.
+    </div>
+    <div class="form-linea">
+      <div class="campo" style="max-width:170px"><label>Fecha</label>
+        <input type="date" id="cierre-fecha"></div>
+    </div>
+    <div class="campo">
+      <label>Resultado</label>
+      <label class="chk"><input type="radio" name="cierre-resultado" value="devolvio_todo" checked> Devolvió todo</label>
+      <label class="chk"><input type="radio" name="cierre-resultado" value="devolvio_parcial"> Devolvió parte</label>
+      <label class="chk"><input type="radio" name="cierre-resultado" value="no_devolvio"> No devolvió</label>
+    </div>
+    <div class="campo">
+      <label>Observación (opcional)</label>
+      <textarea id="cierre-obs" placeholder="Qué devolvió, o si se le descontó de la liquidación"></textarea>
+    </div>
+    <div class="modal-pie">
+      <button class="btn btn-sm" onclick="cerrarModalCierre()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="guardarCierre()">Cerrar circuito</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>

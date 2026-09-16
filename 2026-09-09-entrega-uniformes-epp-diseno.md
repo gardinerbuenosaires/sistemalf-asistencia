@@ -94,6 +94,14 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   abierta en solo lectura: nunca modifican una base real. Si la base no tiene el módulo, la copia
   se migra y se siembra sola, así sirven para ensayar contra copias de producción antes de salir.
   Se corren con `python tests/correr_todo.py [--origen ruta.db]`.
+- **El talle se carga solo desde la entrega**, y por eso la grilla de Talles casi no hay que
+  tocarla a mano: lo que se le entregó a alguien es la mejor evidencia de qué talle usa. El valor
+  se guarda en la escala a la que pertenece, así entregar un pantalón «L» completa el talle en
+  letra sin borrar el número. Quién pisa y quién no: **una entrega del sistema pisa** el talle
+  anterior, porque se está cargando hoy; **una carga histórica solo completa el que falte**, ya
+  que la hoja puede ser de hace dos años y la persona pudo cambiar; **una devolución no toca
+  nada**. Anular una constancia no revierte el talle: el talle es el estado de hoy, no un
+  historial, y si quedó mal se corrige en la grilla.
 
 ## El problema
 

@@ -186,6 +186,55 @@ chequear("el historico NO lleva numero", ch["numero"] is None, ch["numero"])
 chequear("acepta un talle que no esta en la escala (viene del papel)",
          cli.get(f"/api/uniformes/constancias/{ch['id']}").json()["items"][0]["talle"] == "ZZ raro")
 
+print("\n=== EL HISTORICO NO PISA EL TALLE, SOLO COMPLETA ===")
+# Una entrega de hoy es evidencia de que la persona usa ese talle. Una hoja de
+# 2023 no: pudo cambiar. Asi que el historico solo llena el que falta.
+TT = con_talle["tipo_talle_id"]
+vals = [v["valor"] for v in cli.get(f"/api/uniformes/tipos-talle/{TT}/valores").json()]
+if len(vals) < 2:
+    print("  (la escala tiene un solo valor; se saltea)")
+else:
+    actual, otro = vals[0], vals[-1]
+
+    def talle_guardado():
+        f = con.execute("SELECT valor FROM uniformes_talles_empleado "
+                        "WHERE empleado_id=? AND tipo_talle_id=?", (eid, TT)).fetchone()
+        return f["valor"] if f else None
+
+    cli.put("/api/uniformes/talles", json={"empleado_id": eid, "tipo_talle_id": TT, "valor": actual})
+    r = cli.post("/api/uniformes/constancias", json={
+        "empleado_id": eid, "fecha": "2023-05-10", "origen": "historico",
+        "items": [{"elemento_id": con_talle["id"], "cantidad": 1, "talle": otro}]})
+    if r.status_code == 201:
+        creadas.append(r.json()["id"])
+    chequear("una carga historica NO le cambia el talle que ya tenia",
+             talle_guardado() == actual, talle_guardado())
+
+    con.execute("DELETE FROM uniformes_talles_empleado WHERE empleado_id=? AND tipo_talle_id=?", (eid, TT))
+    con.commit()
+    r = cli.post("/api/uniformes/constancias", json={
+        "empleado_id": eid, "fecha": "2023-05-10", "origen": "historico",
+        "items": [{"elemento_id": con_talle["id"], "cantidad": 1, "talle": otro}]})
+    if r.status_code == 201:
+        creadas.append(r.json()["id"])
+    chequear("pero si no tenia ninguno, se lo completa", talle_guardado() == otro, talle_guardado())
+
+    r = cli.post("/api/uniformes/constancias", json={
+        "empleado_id": eid, "fecha": "2026-09-10",
+        "items": [{"elemento_id": con_talle["id"], "cantidad": 1, "talle": actual}]})
+    if r.status_code == 201:
+        creadas.append(r.json()["id"])
+    chequear("una entrega del sistema si lo pisa: es lo que se probo hoy",
+             talle_guardado() == actual, talle_guardado())
+
+    r = cli.post("/api/uniformes/constancias", json={
+        "empleado_id": eid, "fecha": "2026-09-10", "tipo": "devolucion",
+        "items": [{"elemento_id": con_talle["id"], "cantidad": 1, "talle": otro}]})
+    if r.status_code == 201:
+        creadas.append(r.json()["id"])
+    chequear("una devolucion no toca el talle: devolver no es probarse ropa",
+             talle_guardado() == actual, talle_guardado())
+
 con.execute("DELETE FROM permisos WHERE rol_id=? AND modulo='uniformes' AND accion='carga_inicial'", (token_sistema()[1],))
 con.commit(); invalidar_cache()
 r = cli.post("/api/uniformes/constancias", json={

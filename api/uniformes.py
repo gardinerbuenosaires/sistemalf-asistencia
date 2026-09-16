@@ -823,19 +823,25 @@ def crear_constancia(data: ConstanciaIn, user=Depends(editar)):
             )
 
             # ── El talle entregado actualiza el registro de la persona ──────
-            # La entrega más reciente es la mejor evidencia de qué talle usa.
-            # Solo si el valor pertenece a la escala, para no ensuciar el
-            # recuento de compra con lo que venga de una carga histórica.
+            # Lo que se le entregó es la mejor evidencia de qué talle usa, así que
+            # el talle se carga solo y no hay que mantenerlo a mano en dos lados.
             # Se guarda en la escala a la que pertenece el valor, no en la del
             # elemento: entregar un pantalón «L» actualiza el talle en letra de la
             # persona, y le deja intacto el que tenga en números.
+            #
+            # Una entrega del sistema pisa el talle anterior: se está cargando hoy.
+            # Una carga histórica no: la hoja puede ser de hace dos años y la
+            # persona pudo cambiar de talle desde entonces. Solo completa el que
+            # falte, que es justamente lo que se busca al digitalizar el papel.
+            # Una devolución tampoco toca nada: devolver no es probarse ropa.
             if tipo_del_talle and data.tipo == "entrega":
+                pisa = data.origen == "sistema"
                 conn.execute(
-                    """INSERT INTO uniformes_talles_empleado (empleado_id, tipo_talle_id, valor)
-                       VALUES (?,?,?)
-                       ON CONFLICT (empleado_id, tipo_talle_id)
-                       DO UPDATE SET valor=excluded.valor,
-                                     modificado_en=datetime('now','localtime')""",
+                    f"""INSERT INTO uniformes_talles_empleado (empleado_id, tipo_talle_id, valor)
+                        VALUES (?,?,?)
+                        ON CONFLICT (empleado_id, tipo_talle_id) DO {
+                            "UPDATE SET valor=excluded.valor, modificado_en=datetime('now','localtime')"
+                            if pisa else "NOTHING"}""",
                     (emp["id"], tipo_del_talle, talle),
                 )
 

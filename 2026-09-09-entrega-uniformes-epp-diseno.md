@@ -10,7 +10,7 @@
 ## Estado al 2026-09-15
 
 **El módulo está completo, incluida la ropa pendiente al momento de la baja.** Tandas 0 a 6
-implementadas y probadas —277 chequeos, que corren sobre una copia temporal de la base—, en
+implementadas y probadas —282 chequeos, que corren sobre una copia temporal de la base—, en
 la rama `feat/entregas`, publicada en GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
@@ -148,6 +148,14 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   pantalla, con permiso de carga inicial. La fecha de cada cierre es la del egreso y no la de
   hoy, para que el corte quede donde corresponde: si esa persona vuelve, lo que se le entregue
   después cuenta desde su egreso.
+- **A un egresado no se le registra una entrega**, ni siquiera digitalizando un papel viejo. Su
+  liquidación final ya se pagó, así que ese registro no sirve para nada y encima sumaría a la
+  bandeja una deuda que nadie va a reclamar. **La devolución sí**, porque llega siempre después
+  de la baja: por eso el bloqueo mira el tipo de movimiento y no a la persona. El selector del
+  alta muestra solo personal activo —hoy esa pantalla emite únicamente entregas—, y los
+  egresados volverán a aparecer ahí el día que exista la pantalla de devolución. La lista de
+  `/api/uniformes/empleados` los sigue trayendo, porque el filtro del listado y los reportes los
+  necesitan; lo que cambia es quién puede recibir una entrega.
 - **Dónde vive cada cosa.** La bandeja es una sub-pestaña de Reportes, al lado de los otros dos
   reportes; el panel de ropa pendiente es parte de la ficha de la persona dentro del módulo,
   debajo de los talles; la ventana de meses es una sub-pestaña de Configuración. En la ficha del
@@ -457,7 +465,10 @@ Lo que ya está decidido de su diseño, para cuando toque:
 
 - **El empleado va a estar dado de baja.** No es un problema: en este sistema los empleados
   nunca se borran, se desactivan (`activo = 0` + `fecha_egreso`). El `empleado_id` sigue
-  existiendo. Lo único que hace falta es que el selector **incluya egresados**.
+  existiendo. Lo que hace falta es que el selector **incluya egresados cuando el movimiento es
+  una devolución**, y solo entonces: el alta de entregas los excluye a propósito. O sea que la
+  pantalla de devolución necesita su propia lista, o una marca de tipo que cambie la lista del
+  alta actual — no alcanza con reusar el selector tal como está hoy.
 - **La fecha no se valida contra `fecha_egreso`.** Devolver la ropa tres semanas después de
   irse es lo normal, no un error.
 - **Sin validar contra lo entregado.** Puede devolver ropa de 2023 que el sistema nunca

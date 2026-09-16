@@ -1290,12 +1290,15 @@ function filtrarEmpleados() {
   const q = document.getElementById("cn-buscar").value.trim().toLowerCase();
   const sel = document.getElementById("cn-empleado");
   const previo = sel.value;
-  const lista = _cnEmpleados.filter(e =>
-    !q || `${e.apellido} ${e.nombre} ${e.dni || ""}`.toLowerCase().includes(q));
+  // Solo personal activo. El alta de esta pantalla emite entregas, y a quien ya
+  // se fue no se le entrega ropa. El día que exista la devolución —que sí llega
+  // después de la baja— los egresados vuelven acá, pero solo para ese tipo.
+  const lista = _cnEmpleados.filter(e => e.activo &&
+    (!q || `${e.apellido} ${e.nombre} ${e.dni || ""}`.toLowerCase().includes(q)));
   sel.size = lista.length > 1 && q ? Math.min(8, lista.length) : 1;
   sel.innerHTML = '<option value="">— elegí un empleado —</option>' +
     lista.map(e => `<option value="${e.id}">${esc(e.apellido)}, ${esc(e.nombre)}` +
-      ` (${esc(e.cargo) || "sin cargo"})${e.activo ? "" : "  ·  egresado"}</option>`).join("");
+      ` (${esc(e.cargo) || "sin cargo"})</option>`).join("");
   if (lista.some(e => String(e.id) === previo)) sel.value = previo;
   else if (lista.length === 1 && q) { sel.value = lista[0].id; empleadoElegido(); }
 }
@@ -2062,6 +2065,9 @@ async function dibujarFicha() {
 }
 
 async function nuevaParaPersona(id) {
+  const e = _cnEmpleados.find(x => x.id === id);
+  if (e && !e.activo)
+    return toast("Está dado de baja: no se le puede registrar una entrega", true);
   await abrirFormulario();
   document.getElementById("cn-empleado").value = String(id);
   empleadoElegido();

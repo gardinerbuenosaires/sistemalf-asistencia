@@ -110,6 +110,29 @@ chequear("el egresado con ropa aparece en la bandeja", A in filas)
 chequear("con lo que hay que pedirle", filas[A]["total_pendiente"] == 1 if A in filas else False,
          filas.get(A, {}).get("prendas"))
 
+print("\n=== A UN EGRESADO NO SE LE ENTREGA ===")
+# Su liquidacion ya se pago: registrarle una entrega solo ensuciaria la bandeja
+# con una deuda que nadie va a reclamar. La devolucion es al reves, siempre llega
+# despues de la baja.
+r = cli.post("/api/uniformes/constancias", json={
+    "empleado_id": A, "fecha": HOY.isoformat(),
+    "items": [{"elemento_id": EL1["id"], "cantidad": 1}]})
+chequear("una entrega a alguien dado de baja -> 400", r.status_code == 400, r.status_code)
+chequear("y el mensaje explica por que", "baja" in r.text.lower(), r.text[:160])
+r = cli.post("/api/uniformes/constancias", json={
+    "empleado_id": A, "fecha": HOY.isoformat(), "origen": "historico",
+    "items": [{"elemento_id": EL1["id"], "cantidad": 1}]})
+chequear("tampoco digitalizando un papel viejo", r.status_code == 400, r.status_code)
+r = cli.post("/api/uniformes/constancias", json={
+    "empleado_id": A, "fecha": HOY.isoformat(), "tipo": "devolucion",
+    "items": [{"elemento_id": EL1["id"], "cantidad": 1}]})
+chequear("pero la devolucion si, que es para lo que estan en la lista",
+         r.status_code == 201, r.text[:160])
+
+uni_alta = open(os.path.join(RAIZ, "web", "templates", "uniformes.html"), encoding="utf-8-sig").read()
+chequear("y el selector del alta ya no los ofrece",
+         "_cnEmpleados.filter(e => e.activo &&" in uni_alta)
+
 print("\n=== EL CIERRE LO SACA DE LA BANDEJA ===")
 r = cli.post("/api/uniformes/cierres", json={
     "empleado_id": A, "resultado": "no_devolvio", "observacion": "Se le descontó de la liquidación"})
@@ -140,6 +163,9 @@ chequear("despues de cerrar no arrastra nada de antes",
 # entrega que sigue y el desempate por hora no se podria probar.
 con.execute("UPDATE uniformes_cierres SET cerrado_en=datetime(cerrado_en,'-1 minute') WHERE id=?",
             (cierre["id"],))
+# Y vuelve a entrar: es la unica forma de que le entreguen ropa otra vez, porque
+# a un egresado ya no se le puede registrar una entrega.
+con.execute("UPDATE empleados SET activo=1 WHERE id=?", (A,))
 con.commit()
 emitir(HOY.isoformat(), EL2, 1)
 d = pend()

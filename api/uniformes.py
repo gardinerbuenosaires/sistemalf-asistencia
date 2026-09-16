@@ -747,13 +747,27 @@ def crear_constancia(data: ConstanciaIn, user=Depends(editar)):
                 raise HTTPException(403, "Sin permiso: uniformes.carga_inicial")
 
         emp = conn.execute(
-            f"""SELECT e.id, e.apellido, e.nombre, e.dni, c.nombre AS cargo
+            f"""SELECT e.id, e.apellido, e.nombre, e.dni, e.activo, e.fecha_egreso,
+                       c.nombre AS cargo
                 FROM empleados e LEFT JOIN cargos c ON c.id = e.cargo_id
                 WHERE e.id=? AND {EXCLUIR_NO_PERSONAL}""",
             (data.empleado_id,),
         ).fetchone()
         if not emp:
             raise HTTPException(404, "Empleado no encontrado")
+
+        # A quien ya se fue no se le entrega ropa, ni siquiera digitalizando un
+        # papel viejo: su liquidación final ya se pagó, y ese registro solo
+        # ensuciaría la bandeja de egresados con una deuda que nadie va a
+        # reclamar. La devolución, en cambio, llega SIEMPRE después de la baja,
+        # así que el bloqueo mira el tipo y no a la persona.
+        if data.tipo == "entrega" and not emp["activo"]:
+            f = (emp["fecha_egreso"] or "")[:10]
+            cuando = f" el {f[8:10]}/{f[5:7]}/{f[0:4]}" if len(f) == 10 else ""
+            raise HTTPException(
+                400,
+                f'{emp["apellido"]}, {emp["nombre"]} está dado de baja{cuando}: no se le '
+                f"puede registrar una entrega. Una devolución sí.")
 
         # ── Sellar la copia de los datos del empleado ───────────────────────
         # Van impresos en un papel que se firma: si mañana corrigen un DNI mal

@@ -107,7 +107,10 @@
   .tp-grupo { margin-bottom: 14px; }
   .tp-grupo h3 { margin-bottom: 8px; }
   .tp-linea { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
-  .tp-tipo { font-size: .8rem; color: #777; min-width: 170px; }
+  .tp-tipo { font-size: .8rem; color: #777; min-width: 150px; }
+  .tp-celda { min-width: 200px; }
+  .tp-sub { font-size: .72rem; color: #aaa; margin-right: 6px; }
+  .tp-vacio { color: #ddd; }
   .ficha h3 { margin-bottom: 4px; }
   .pend { margin-top: 14px; border-top: 1px solid #ecebe5; padding-top: 12px; }
   .pend-tit { font-size: .78rem; font-weight: bold; color: #888; text-transform: uppercase;
@@ -1912,12 +1915,21 @@ async function consultarTallesPuesto() {
     (d.totales.ocultos_sin_uniforme
       ? ` · ${d.totales.ocultos_sin_uniforme} ocultas por ser de puestos que no reciben uniforme` : "");
 
-  const recuento = mapa => d.tipos.map(t => {
-    const vals = mapa[String(t.id)] || [];
-    if (!vals.length) return "";
-    return `<div class="tp-linea"><span class="tp-tipo">${esc(t.nombre)}</span>` +
-      vals.map(v => `<span class="rec-val"><b>${esc(v.talle)}</b> ${v.personas}</span>`).join("") +
-      "</div>";
+  // Una línea por prenda y una columna por escala, igual que agrupa sus columnas
+  // la grilla de Talles: el mismo pantalón tiene que leerse igual en las dos
+  // pantallas. Ojo, las escalas no se suman entre sí — la misma persona puede
+  // estar cargada en número y en letra, así que cada columna cuenta lo suyo.
+  const gruposTipos = agruparTipos(d.tipos);
+  const recuento = mapa => gruposTipos.map(g => {
+    const celdas = g.cols.map(c => {
+      const vals = mapa[String(c.id)] || [];
+      if (!vals.length) return '<span class="tp-vacio">—</span>';
+      return (g.partido ? `<span class="tp-sub">${esc(c.sub)}</span>` : "") +
+        vals.map(v => `<span class="rec-val"><b>${esc(v.talle)}</b> ${v.personas}</span>`).join("");
+    });
+    if (celdas.every(c => c.includes("tp-vacio"))) return "";   // nadie cargado en esa prenda
+    return `<div class="tp-linea"><span class="tp-tipo">${esc(g.base)}</span>` +
+      celdas.map(c => `<span class="tp-celda">${c}</span>`).join("") + "</div>";
   }).join("");
 
   document.getElementById("rp-talles-res").innerHTML = d.grupos.length

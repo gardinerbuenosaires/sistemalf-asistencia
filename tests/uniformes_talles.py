@@ -171,6 +171,8 @@ else:
                                  "web", "templates", "uniformes.html"), encoding="utf-8-sig").read()
     chequear("vive en Reportes, que es de leer, y no en la grilla, que es de cargar",
              'id="rp-sub-talles"' in uni_html and 'id="rp-talles"' in uni_html)
+    chequear("y agrupa las escalas de una prenda con el mismo criterio que la grilla",
+             "agruparTipos(d.tipos)" in uni_html)
 
 print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")

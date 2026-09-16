@@ -22,7 +22,7 @@ la rama `feat/entregas`, publicada en GitHub. **No está en `main` ni en producc
 | 4 | Constancia imprimible con datos reales, datos fiscales | hecha |
 | 5a | Reportes, puestos que no reciben uniforme, pestaña Configuración | hecha |
 | 5b | Resumen en la ficha del empleado y ficha por persona | hecha |
-| 6a | Ropa pendiente, bandeja de egresados y cierre del circuito (API) | hecha |
+| 6a | Ropa pendiente, bandeja de bajas y cierre del circuito (API) | hecha |
 | 6b | Las pantallas de la tanda 6 | hecha |
 
 ### Decisiones que surgieron implementando
@@ -121,7 +121,7 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   dependería de cómo se partió el papeleo: el mismo uniforme en tres hojas o en una da
   recortes distintos. Arriba el resumen por prenda —qué pedirle—, abajo los papeles del
   período con su botón de imprimir, que es lo concreto que se le muestra al que se va.
-- **El cierre es lo que le da fin al circuito.** Sin él la bandeja de egresados solo crece y
+- **El cierre es lo que le da fin al circuito.** Sin él la bandeja de bajas solo crece y
   a los pocos meses no la mira nadie. Es un acto administrativo, no un documento: no lleva
   número ni se imprime, y **no exige que haya una constancia de devolución** — si la
   exigiera, el día que alguien se va sin devolver nada habría que emitir un papel vacío para
@@ -136,34 +136,35 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   eliminar —el mismo que anular una constancia—, porque deshacer una decisión asentada no es
   lo mismo que tomarla.
 - **La bandeja nace vacía, y se llena con la carga histórica.** Comprobado sobre una copia de
-  Gardiner: con el módulo recién migrado hay 255 egresados en la base y **cero** filas en la
-  bandeja, porque no muestra egresados sino egresados con ropa registrada, y todavía no hay
+  Gardiner: con el módulo recién migrado hay 255 bajas en la base y **cero** filas en la
+  bandeja, porque no muestra bajas sino bajas con ropa registrada, y todavía no hay
   ninguna entrega cargada. Basta cargar **una** constancia histórica de alguien que ya se fue
   para que aparezca. O sea que el problema no es el día del deploy: aparece a medida que RRHH
   digitaliza el papel.
 - **Por eso el cierre masivo se corre al terminar la carga histórica**, no antes. Marca esas
   bajas como anteriores al sistema y deja la bandeja con los que se van de verdad a partir de
-  ahí. Existe de dos formas: `scripts/cerrar_egresados.py`, que es la que conviene —simula por
+  ahí. Existe de dos formas: `scripts/cerrar_bajas.py`, que es la que conviene —simula por
   defecto, dice sobre qué base escribe y es idempotente—, y el mismo endpoint desde la
   pantalla, con permiso de carga inicial. La fecha de cada cierre es la del egreso y no la de
   hoy, para que el corte quede donde corresponde: si esa persona vuelve, lo que se le entregue
   después cuenta desde su egreso.
-- **A un egresado no se le registra una entrega**, ni siquiera digitalizando un papel viejo. Su
+- **A una persona dada de baja no se le registra una entrega**, ni siquiera digitalizando un papel
+  viejo. Su
   liquidación final ya se pagó, así que ese registro no sirve para nada y encima sumaría a la
   bandeja una deuda que nadie va a reclamar. **La devolución sí**, porque llega siempre después
   de la baja: por eso el bloqueo mira el tipo de movimiento y no a la persona. El selector del
   alta muestra solo personal activo —hoy esa pantalla emite únicamente entregas—, y los
-  egresados volverán a aparecer ahí el día que exista la pantalla de devolución. La lista de
+  bajas volverán a aparecer ahí el día que exista la pantalla de devolución. La lista de
   `/api/uniformes/empleados` los sigue trayendo, porque el filtro del listado y los reportes los
   necesitan; lo que cambia es quién puede recibir una entrega.
 - **Cada botón aparece solo donde puede funcionar.** En la ficha de una persona, *«Nueva
-  constancia para esta persona»* aparece solo si está activa: a un egresado la API le rechaza la
+  constancia para esta persona»* aparece solo si está activa: a una baja la API le rechaza la
   entrega, así que ese botón solo podía terminar en un mensaje de error. Y *«Cerrar circuito»*
   aparece solo si está de baja, porque el cierre existe para completar una baja: ofrecerlo sobre
   alguien que sigue trabajando invita a poner en cero la ropa que todavía tiene puesta. La ficha
   dice además desde cuándo está de baja, que es el dato que falta cuando se llega desde la
   bandeja. Y lo mismo con el **alta general del listado** —el botón de la tarjeta «Constancias
-  emitidas»—: mientras se está mirando la ficha de un egresado no aparece, porque en ese momento
+  emitidas»—: mientras se está mirando la ficha de una baja no aparece, porque en ese momento
   la pantalla es el detalle de esa persona y se lee como «nueva constancia para él»; sacando el
   filtro vuelve. La regla general: un control que no puede funcionar en ese contexto no se
   muestra deshabilitado, no se muestra.
@@ -476,7 +477,7 @@ Lo que ya está decidido de su diseño, para cuando toque:
 
 - **El empleado va a estar dado de baja.** No es un problema: en este sistema los empleados
   nunca se borran, se desactivan (`activo = 0` + `fecha_egreso`). El `empleado_id` sigue
-  existiendo. Lo que hace falta es que el selector **incluya egresados cuando el movimiento es
+  existiendo. Lo que hace falta es que el selector **incluya las bajas cuando el movimiento es
   una devolución**, y solo entonces: el alta de entregas los excluye a propósito. O sea que la
   pantalla de devolución necesita su propia lista, o una marca de tipo que cambie la lista del
   alta actual — no alcanza con reusar el selector tal como está hoy.
@@ -491,7 +492,7 @@ Lo que ya está decidido de su diseño, para cuando toque:
 
 **Límite honesto:** el sistema no va a poder decir *qué le falta devolver* a alguien, salvo
 para el personal cuyo historial esté cargado. Lo que sí puede decir desde el día uno es
-*"estos egresados no tienen ninguna devolución registrada"* — una lista, no un saldo.
+*"estas bajas no tienen ninguna devolución registrada"* — una lista, no un saldo.
 
 ---
 
@@ -628,7 +629,7 @@ que cubre el riesgo es la trazabilidad (`motivo_anulacion` obligatorio + `anulad
 - `web/templates/uniformes.html` — pantalla con pestañas
 - `web/templates/uniformes_remito.html` — el imprimible, molde de `legajo_imprimible.html`
 - `scripts/sembrar_uniformes.py` — catálogo inicial sugerido; idempotente, con simulación
-- `scripts/cerrar_egresados.py` — cierre masivo de las bajas anteriores al módulo, para correr
+- `scripts/cerrar_bajas.py` — cierre masivo de las bajas anteriores al módulo, para correr
   una vez al terminar la carga histórica
 - `tests/` — diez pruebas, cada una sobre una copia temporal de la base
 

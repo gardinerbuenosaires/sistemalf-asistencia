@@ -103,7 +103,7 @@ chequear("vaciarlo borra la fila, no guarda vacio", n == 0, n)
 print("\n=== FILTROS ===")
 todos = len(cli.get("/api/uniformes/talles").json()["empleados"])
 con_inact = len(cli.get("/api/uniformes/talles?incluir_inactivos=true").json()["empleados"])
-chequear("incluir egresados suma gente", con_inact >= todos, f"{todos} vs {con_inact}")
+chequear("incluir las bajas suma gente", con_inact >= todos, f"{todos} vs {con_inact}")
 
 cargo = con.execute(
     "SELECT cargo_id FROM empleados WHERE cargo_id IS NOT NULL AND activo=1 LIMIT 1").fetchone()

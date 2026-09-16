@@ -639,7 +639,7 @@ def _fecha_valida(fecha: str) -> str:
 def empleados_para_constancia(incluir_inactivos: bool = True, _u=Depends(ver)):
     """El buscador de empleados de la constancia.
 
-    Trae los egresados por defecto: una devolución llega siempre después de la
+    Trae las bajas por defecto: una devolución llega siempre después de la
     baja, y reimprimir una constancia vieja también tiene que ser posible.
     """
     with db_session() as conn:
@@ -758,7 +758,7 @@ def crear_constancia(data: ConstanciaIn, user=Depends(editar)):
 
         # A quien ya se fue no se le entrega ropa, ni siquiera digitalizando un
         # papel viejo: su liquidación final ya se pagó, y ese registro solo
-        # ensuciaría la bandeja de egresados con una deuda que nadie va a
+        # ensuciaría la bandeja de bajas con una deuda que nadie va a
         # reclamar. La devolución, en cambio, llega SIEMPRE después de la baja,
         # así que el bloqueo mira el tipo y no a la persona.
         if data.tipo == "entrega" and not emp["activo"]:
@@ -1247,7 +1247,7 @@ def reporte_antiguedad_excel(cargo_id: int | None = None, departamento_id: int |
     filas, alertas = [], set()
     for n, f in enumerate(datos["filas"]):
         u = f["ultima"]
-        fila = [f["empleado"], f["cargo"] or "", "Activo" if f["activo"] else "Egresado",
+        fila = [f["empleado"], f["cargo"] or "", "Activo" if f["activo"] else "Baja",
                 date.fromisoformat(u["fecha"]) if u else "nunca", u["meses"] if u else ""]
         for r in datos["rubros"]:
             a = f["rubros"].get(str(r["id"]))
@@ -1357,7 +1357,7 @@ def resumen_empleado(empleado_id: int, _u=Depends(ver)):
 # persona. El total de toda la vida no sirve: nadie devuelve las doce chaquetas
 # que recibió en seis años, porque cada una reemplazó a la anterior.
 #
-# El cierre es lo que le da fin al circuito. Sin él la bandeja de egresados solo
+# El cierre es lo que le da fin al circuito. Sin él la bandeja de bajas solo
 # crece y en unos meses no la mira nadie.
 
 RESULTADOS_CIERRE = {
@@ -1585,7 +1585,7 @@ def pendientes_empleado(empleado_id: int, _u=Depends(ver)):
     }
 
 
-def _consulta_egresados(desde, hasta, incluir_cerrados, solo_con_pendientes):
+def _consulta_bajas(desde, hasta, incluir_cerrados, solo_con_pendientes):
     """La bandeja: quién se fue y todavía figura con ropa.
 
     Se arma sobre `fecha_egreso`, que es el dato que tiene el que liquida.
@@ -1631,20 +1631,20 @@ def _consulta_egresados(desde, hasta, incluir_cerrados, solo_con_pendientes):
                         "unidades": sum(f["total_pendiente"] for f in filas)}}
 
 
-@router.get("/api/uniformes/egresados")
-def listado_egresados(desde: str | None = None, hasta: str | None = None,
+@router.get("/api/uniformes/bajas")
+def listado_bajas(desde: str | None = None, hasta: str | None = None,
                       incluir_cerrados: bool = False, solo_con_pendientes: bool = True,
                       _u=Depends(ver)):
-    return _consulta_egresados(desde, hasta, incluir_cerrados, solo_con_pendientes)
+    return _consulta_bajas(desde, hasta, incluir_cerrados, solo_con_pendientes)
 
 
-@router.get("/api/uniformes/egresados.xlsx")
-def listado_egresados_excel(desde: str | None = None, hasta: str | None = None,
+@router.get("/api/uniformes/bajas.xlsx")
+def listado_bajas_excel(desde: str | None = None, hasta: str | None = None,
                             incluir_cerrados: bool = False, solo_con_pendientes: bool = True,
                             _u=Depends(ver)):
-    datos = _consulta_egresados(desde, hasta, incluir_cerrados, solo_con_pendientes)
+    datos = _consulta_bajas(desde, hasta, incluir_cerrados, solo_con_pendientes)
     empresa, filtros = _describir_filtros(desde, hasta)
-    sub = (f"{empresa} · Egreso — {filtros} · Ventana de {datos['meses']} meses · "
+    sub = (f"{empresa} · Baja — {filtros} · Ventana de {datos['meses']} meses · "
            f"Generado el {date.today().strftime('%d/%m/%Y')}").lstrip(" ·")
     filas = [[f["empleado"], f["cargo"] or "",
               date.fromisoformat(f["fecha_egreso"][:10]) if f["fecha_egreso"] else "",
@@ -1652,9 +1652,9 @@ def listado_egresados_excel(desde: str | None = None, hasta: str | None = None,
               " · ".join(f'{p["elemento"]} ({p["pendiente"]})' for p in f["prendas"]),
               RESULTADOS_CIERRE.get((f["cierre"] or {}).get("resultado"), "")]
              for f in datos["filas"]]
-    return _excel("Egresados", sub,
-                  ["Empleado", "Cargo", "Egreso", "Pendiente", "Prendas", "Cierre"],
-                  filas, [34, 22, 12, 11, 52, 20], "uniformes-egresados.xlsx")
+    return _excel("Bajas", sub,
+                  ["Empleado", "Cargo", "Baja", "Pendiente", "Prendas", "Cierre"],
+                  filas, [34, 22, 12, 11, 52, 20], "uniformes-bajas.xlsx")
 
 
 @router.post("/api/uniformes/cierres", status_code=201)
@@ -1717,7 +1717,7 @@ def reabrir_cierre(cid: int, data: ReaperturaIn,
 
 @router.post("/api/uniformes/cierres/masivo")
 def cierre_masivo(data: CierreMasivoIn, user=Depends(editar)):
-    """Cierra de una vez a los egresados anteriores a la puesta en marcha.
+    """Cierra de una vez las bajas anteriores a la puesta en marcha.
 
     Sin esto la bandeja nace con cientos de personas que se fueron hace años y
     el reporte es inservible el primer día. Va con el permiso de carga inicial,

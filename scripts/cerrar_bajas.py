@@ -1,8 +1,8 @@
 """
-Cierra de una vez el circuito de ropa de los egresados anteriores a la puesta en
+Cierra de una vez el circuito de ropa de las bajas anteriores a la puesta en
 marcha del módulo.
 
-Para qué sirve. La bandeja de egresados —Reportes → Egresados— muestra a quien se
+Para qué sirve. La bandeja de bajas —Reportes → Bajas— muestra a quien se
 fue y todavía figura con ropa sin devolver. El día del deploy arranca vacía,
 porque no hay ninguna entrega cargada. Pero a medida que RRHH digitaliza el papel,
 cada constancia vieja de alguien que ya se fue lo hace aparecer ahí, y esa ropa no
@@ -20,10 +20,10 @@ lo que se le entregue después cuenta normalmente.
 
 Es idempotente: a quien ya tiene un cierre vigente no se lo toca.
 
-Uso:  python scripts/cerrar_egresados.py [--hasta AAAA-MM-DD] [--aplicar]
+Uso:  python scripts/cerrar_bajas.py [--hasta AAAA-MM-DD] [--aplicar]
 
       --hasta   cierra a los que egresaron en esa fecha o antes.
-                Por defecto, hoy: todos los egresados de la base.
+                Por defecto, hoy: todas las bajas de la base.
       --aplicar sin esto hace una simulación y no escribe nada.
 """
 import sys, os
@@ -53,13 +53,13 @@ try:
 except ValueError:
     sys.exit(f"Fecha inválida: {HASTA!r}. Se espera AAAA-MM-DD.")
 
-OBSERVACION = _argumento("--observacion", "Egresado anterior a la puesta en marcha del módulo")
+OBSERVACION = _argumento("--observacion", "Baja anterior a la puesta en marcha del módulo")
 
 # Sin DB_PATH el default es relativo al directorio actual, así que es fácil
 # terminar escribiendo en una base que no es. Mostrarla antes de tocar nada.
 print(f"Base: {Path(DB_PATH).resolve()}")
 print("MODO: " + ("APLICAR (escribe)" if APLICAR else "simulación (no escribe nada)"))
-print(f"Cierra a los egresados hasta el {HASTA[8:10]}/{HASTA[5:7]}/{HASTA[0:4]} inclusive")
+print(f"Cierra las bajas hasta el {HASTA[8:10]}/{HASTA[5:7]}/{HASTA[0:4]} inclusive")
 print()
 
 with db_session() as conn:
@@ -83,7 +83,7 @@ with db_session() as conn:
         "SELECT COUNT(*) FROM uniformes_cierres WHERE estado='vigente'").fetchone()[0]
     con_ropa = [p for p in pendientes if p["entregas"]]
 
-    print(f"  Egresados sin cerrar .................. {len(pendientes)}")
+    print(f"  Bajas sin cerrar     .................. {len(pendientes)}")
     print(f"    de ellos, con entregas registradas .. {len(con_ropa)}")
     print(f"  Ya tenían cierre (no se tocan) ........ {ya_cerrados}")
     print()

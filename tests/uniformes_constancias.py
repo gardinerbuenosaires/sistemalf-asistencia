@@ -43,7 +43,7 @@ chequear("devuelve empleados", len(emps) > 0, len(emps))
 chequear("no incluye los de tipo acceso",
          all(e["id"] not in {r["id"] for r in con.execute("SELECT id FROM empleados WHERE tipo='acceso'")}
              for e in emps))
-chequear("incluye egresados (para devoluciones y reimpresiones)",
+chequear("incluye las bajas (para devoluciones y reimpresiones)",
          any(e["activo"] == 0 for e in emps))
 chequear("cada uno trae dni, cargo y sus talles",
          all({"dni", "cargo", "talles"} <= set(e) for e in emps))

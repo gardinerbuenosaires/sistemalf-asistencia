@@ -1,4 +1,4 @@
-"""Ropa pendiente, bandeja de egresados y cierre del circuito.
+"""Ropa pendiente, bandeja de bajas y cierre del circuito.
 
 Lo que se fija acá es la regla que decidimos: el sistema no sabe qué ropa tiene
 puesta alguien, así que muestra lo entregado en una ventana de meses, deja lo
@@ -102,15 +102,15 @@ chequear("con 1 mes, lo de hace 45 dias pasa a ser anterior",
          any(x["elemento"] == EL1["nombre"] for x in d["anteriores"]), d["anteriores"])
 cli.put("/api/uniformes/parametros", json={"meses_pendientes": 6})
 
-print("\n=== LA BANDEJA DE EGRESADOS ===")
+print("\n=== LA BANDEJA DE BAJAS ===")
 con.execute("UPDATE empleados SET activo=0, fecha_egreso=? WHERE id=?", (HOY.isoformat(), A))
 con.commit()
-filas = {f["id"]: f for f in cli.get("/api/uniformes/egresados").json()["filas"]}
-chequear("el egresado con ropa aparece en la bandeja", A in filas)
+filas = {f["id"]: f for f in cli.get("/api/uniformes/bajas").json()["filas"]}
+chequear("la baja con ropa aparece en la bandeja", A in filas)
 chequear("con lo que hay que pedirle", filas[A]["total_pendiente"] == 1 if A in filas else False,
          filas.get(A, {}).get("prendas"))
 
-print("\n=== A UN EGRESADO NO SE LE ENTREGA ===")
+print("\n=== A UNA BAJA NO SE LE ENTREGA ===")
 # Su liquidacion ya se pago: registrarle una entrega solo ensuciaria la bandeja
 # con una deuda que nadie va a reclamar. La devolucion es al reves, siempre llega
 # despues de la baja.
@@ -141,9 +141,9 @@ cierre = r.json()
 chequear("el cierre congela lo que quedaba pendiente", bool(cierre["pendiente_json"]))
 chequear("y guarda quien lo cerro", bool(cierre["cerrado_por"]))
 
-ids = [f["id"] for f in cli.get("/api/uniformes/egresados").json()["filas"]]
+ids = [f["id"] for f in cli.get("/api/uniformes/bajas").json()["filas"]]
 chequear("ya no figura en la bandeja", A not in ids)
-con_cerrados = cli.get("/api/uniformes/egresados?incluir_cerrados=true").json()["filas"]
+con_cerrados = cli.get("/api/uniformes/bajas?incluir_cerrados=true").json()["filas"]
 chequear("pero se lo puede ver pidiendo los cerrados",
          any(f["id"] == A and f["cierre"] for f in con_cerrados))
 chequear("y la ficha del empleado se entera de que su baja quedo completa",
@@ -164,7 +164,7 @@ chequear("despues de cerrar no arrastra nada de antes",
 con.execute("UPDATE uniformes_cierres SET cerrado_en=datetime(cerrado_en,'-1 minute') WHERE id=?",
             (cierre["id"],))
 # Y vuelve a entrar: es la unica forma de que le entreguen ropa otra vez, porque
-# a un egresado ya no se le puede registrar una entrega.
+# a una persona dada de baja ya no se le puede registrar una entrega.
 con.execute("UPDATE empleados SET activo=1 WHERE id=?", (A,))
 con.commit()
 emitir(HOY.isoformat(), EL2, 1)
@@ -194,22 +194,22 @@ print("\n=== EL SCRIPT DE CIERRE MASIVO ===")
 # Es el que se corre una sola vez, al terminar la carga historica, para que la
 # bandeja no arrastre a los que se fueron antes de que el modulo existiera.
 #
-# El corte sale de la MEDIANA de las fechas de egreso de esta base, no de una
+# El corte sale de la MEDIANA de las fechas de baja de esta base, no de una
 # fecha fija: en las dos bases reales todas las bajas son del mismo año, asi que
 # un corte inventado no alcanza a nadie y la prueba pasa sin probar nada.
-n_egresados = con.execute(
+n_bajas = con.execute(
     "SELECT COUNT(*) FROM empleados WHERE activo=0 AND fecha_egreso IS NOT NULL AND tipo!='acceso'"
 ).fetchone()[0]
 CORTE = con.execute(
     """SELECT substr(fecha_egreso,1,10) FROM empleados
        WHERE activo=0 AND fecha_egreso IS NOT NULL AND tipo!='acceso'
-       ORDER BY fecha_egreso LIMIT 1 OFFSET ?""", (n_egresados // 2,)).fetchone()[0]
+       ORDER BY fecha_egreso LIMIT 1 OFFSET ?""", (n_bajas // 2,)).fetchone()[0]
 entorno = dict(os.environ, PYTHONIOENCODING="utf-8", DB_PATH=DB)
 
 
 def correr_script(*args):
     return subprocess.run(
-        [sys.executable, os.path.join(RAIZ, "scripts", "cerrar_egresados.py"), "--hasta", CORTE, *args],
+        [sys.executable, os.path.join(RAIZ, "scripts", "cerrar_bajas.py"), "--hasta", CORTE, *args],
         capture_output=True, text=True, env=entorno, encoding="utf-8", errors="replace")
 
 
@@ -223,7 +223,7 @@ por_cerrar = con.execute(
          AND e.id NOT IN (SELECT empleado_id FROM uniformes_cierres WHERE estado='vigente')""",
     (CORTE,)).fetchone()[0]
 chequear(f"el corte ({CORTE}) alcanza a alguien, si no esta prueba no prueba nada",
-         por_cerrar > 0, f"{n_egresados} egresados en la base")
+         por_cerrar > 0, f"{n_bajas} bajas en la base")
 
 antes = vigentes()
 s = correr_script()
@@ -239,7 +239,7 @@ chequear("aplicado, cierra las bajas anteriores al corte",
 chequear("con el resultado que dice que son anteriores al sistema",
          con.execute("SELECT COUNT(*) FROM uniformes_cierres WHERE resultado='previo_al_sistema'"
                      ).fetchone()[0] >= por_cerrar)
-chequear("y con la fecha del egreso, no la de hoy, para que el corte quede donde va",
+chequear("y con la fecha de la baja, no la de hoy, para que el corte quede donde va",
          con.execute("""SELECT COUNT(*) FROM uniformes_cierres c JOIN empleados e ON e.id=c.empleado_id
                         WHERE c.cerrado_por='Cierre masivo (script)'
                           AND c.fecha != substr(e.fecha_egreso,1,10)""").fetchone()[0] == 0)
@@ -257,7 +257,7 @@ sin_cerrar = con.execute(
          AND e.id NOT IN (SELECT empleado_id FROM uniformes_cierres WHERE estado='vigente')""",
     (CORTE,)).fetchone()[0]
 if posteriores:
-    chequear("no toca a los que egresaron despues del corte", sin_cerrar > 0,
+    chequear("no toca a los que se fueron despues del corte", sin_cerrar > 0,
              f"{sin_cerrar} de {posteriores}")
 
 print("\n=== CIERRE MASIVO POR API ===")
@@ -274,7 +274,7 @@ chequear("y alcanza a los que quedaron despues del corte del script",
 r2 = cli.post("/api/uniformes/cierres/masivo",
               json={"hasta": HASTA_API, "simular": False}).json()
 ahora = con.execute("SELECT COUNT(*) FROM uniformes_cierres").fetchone()[0]
-chequear("aplicado, cierra a los egresados de una vez",
+chequear("aplicado, cierra las bajas de una vez",
          r2["cantidad"] == r["cantidad"] and ahora == antes + r2["cantidad"], f"{antes} -> {ahora}")
 r3 = cli.post("/api/uniformes/cierres/masivo", json={"hasta": HASTA_API}).json()
 chequear("correrlo de nuevo no alcanza a nadie: ya estan cerrados", r3["cantidad"] == 0, r3["cantidad"])
@@ -295,13 +295,13 @@ if sin:
     otro = TestClient(main.app)
     otro.cookies.set("session", create_token(999, "prueba@local", sin["id"], "prueba"))
     chequear("un rol sin uniformes:ver no ve la bandeja",
-             otro.get("/api/uniformes/egresados").status_code == 403)
+             otro.get("/api/uniformes/bajas").status_code == 403)
 
 print("\n=== LAS PANTALLAS ===")
 uni = open(os.path.join(RAIZ, "web", "templates", "uniformes.html"), encoding="utf-8-sig").read()
-chequear("la bandeja de egresados es una sub-pestaña de Reportes", 'id="rp-sub-egresados"' in uni)
-chequear("se filtra por fecha de egreso y se pueden ver los ya cerrados",
-         'id="eg-desde"' in uni and 'id="eg-cerrados"' in uni)
+chequear("la bandeja de bajas es una sub-pestaña de Reportes", 'id="rp-sub-bajas"' in uni)
+chequear("se filtra por fecha de baja y se pueden ver los ya cerrados",
+         'id="bj-desde"' in uni and 'id="bj-cerrados"' in uni)
 chequear("el panel de ropa pendiente se dibuja dentro de la ficha", "panelPendientes(pend)" in uni)
 chequear("y se pide junto con el resumen, en una sola vuelta",
          "/api/uniformes/pendientes/${id}" in uni and "Promise.all" in uni)
@@ -316,12 +316,12 @@ chequear("las fechas salen del helper local, nunca de toISOString",
          "ymdLocal(" in uni and "toISOString" not in uni)
 emp = open(os.path.join(RAIZ, "web", "templates", "empleados.html"), encoding="utf-8-sig").read()
 chequear("la ficha del empleado avisa cuando la ropa quedo cerrada", "unif-cerrado" in emp)
-chequear("la ficha no ofrece cargarle una entrega a un egresado",
+chequear("la ficha no ofrece cargarle una entrega a una baja",
          '"editar") && pend.activo' in uni)
 chequear("ni cerrar el circuito de alguien que todavia trabaja",
          '"editar") && !p.activo' in uni)
-chequear("y dice desde cuando esta de baja", "egresado el ${fmtFecha(pend.fecha_egreso)}" in uni)
-chequear("el alta del listado tambien se esconde con la ficha de un egresado",
+chequear("y dice desde cuando esta de baja", "baja el ${fmtFecha(pend.fecha_egreso)}" in uni)
+chequear("el alta del listado tambien se esconde con la ficha de una baja",
          "mostrarBotonNueva(pend.activo)" in uni)
 chequear("y vuelve al sacar el filtro", "mostrarBotonNueva(true)" in uni)
 
@@ -329,7 +329,7 @@ print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")
 con.commit()
 chequear("con la bandera en 0, la bandeja responde 404",
-         cli.get("/api/uniformes/egresados").status_code == 404)
+         cli.get("/api/uniformes/bajas").status_code == 404)
 chequear("y el panel de la persona tambien",
          cli.get(f"/api/uniformes/pendientes/{A}").status_code == 404)
 con.close()

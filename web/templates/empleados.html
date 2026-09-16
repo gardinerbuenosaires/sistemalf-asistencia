@@ -118,6 +118,10 @@
   .foto-placeholder { width: 150px; height: 150px; background: #e9ecef; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 3.5rem; color: #aaa; flex-shrink: 0; }
   .foto-info { flex: 1; min-width: 0; }
   .foto-qr { display: block; width: 110px; height: 110px; border-radius: 4px; margin-bottom: 4px; }
+  .unif-resumen { margin-left: auto; min-width: 190px; padding-left: 20px; border-left: 1px solid #dee2e6; }
+  .unif-titulo { font-size: .72rem; font-weight: bold; color: #888; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+  .unif-lineas { font-size: .85rem; line-height: 1.55; margin-bottom: 10px; color: #333; }
+  .unif-alerta { color: #b03a3a; font-weight: bold; }
   .foto-url { font-size: .68rem; color: #aaa; word-break: break-all; }
   .foto-acciones { display: flex; flex-direction: row; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   .foto-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -846,6 +850,12 @@ function buildFotoSection(e) {
           ${fotoUrl ? `<button type="button" class="btn btn-sm" style="background:#e74c3c;color:white" onclick="eliminarFoto()">Quitar foto</button>` : ''}
         </div>` : ''}
       </div>
+      ${editandoId && canDo('uniformes','ver') ? `<div class="unif-resumen">
+        <div class="unif-titulo">Uniformes y EPP</div>
+        <div id="unif-lineas" class="unif-lineas">…</div>
+        <a href="/uniformes?empleado=${e.id}" target="sistemalf_uniformes" class="btn btn-secondary btn-sm"
+           style="text-decoration:none">Ver ficha &rarr;</a>
+      </div>` : ''}
     </div>`;
 }
 
@@ -1148,6 +1158,29 @@ function buildForm(e = {}, asignaciones = []) {
 }
 
 
+// Resumen de uniformes junto a la foto de la ficha. El detalle vive en el
+// módulo: «Ver ficha» lo abre siempre en la misma pestaña, así no se
+// acumulan. Sin permiso del
+// módulo, o con el módulo apagado, el bloque no se dibuja y esto no hace nada.
+async function cargarResumenUniformes(id) {
+  const cont = document.getElementById("unif-lineas");
+  if (!cont) return;
+  const escH = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  try {
+    const r = await fetch(`/api/uniformes/resumen/${id}`);
+    if (editandoId !== id) return;
+    if (!r.ok) { cont.textContent = "—"; return; }
+    const d = await r.json();
+    const hace = u => u.meses >= 1 ? `hace ${u.meses} ${u.meses === 1 ? "mes" : "meses"}`
+                                   : (u.dias <= 0 ? "hoy" : `hace ${u.dias} ${u.dias === 1 ? "día" : "días"}`);
+    cont.innerHTML = [
+      d.constancias ? `${d.constancias} ${d.constancias === 1 ? "constancia" : "constancias"}` : "Sin constancias",
+      d.ultima ? `última ${hace(d.ultima)}` : "nunca recibió nada",
+      ...d.alertas.map(a => `<span class="unif-alerta">\u26a0 ${escH(a.rubro.split(" ")[0].toLowerCase())} ${a.meses} meses</span>`),
+    ].join("<br>");
+  } catch (err) { cont.textContent = "—"; }
+}
+
 async function editarEmpleado(id) {
   const [eRes, aRes] = await Promise.all([
     fetch(`/api/empleados/${id}`),
@@ -1160,6 +1193,7 @@ async function editarEmpleado(id) {
   document.getElementById("form-titulo").textContent = `${e.apellido}, ${e.nombre}`;
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
   document.getElementById("form-contenido").innerHTML = buildForm(e, asignaciones);
+  cargarResumenUniformes(id);
   if (!canDo('empleados', 'editar')) {
     document.querySelectorAll('#emp-form input, #emp-form select, #emp-form textarea').forEach(el => el.disabled = true);
   }

@@ -104,6 +104,15 @@
   #rp-antiguedad-res td.alerta .hace { color: #b03a3a; font-weight: bold; }
   .subpanel { display: none; }
   .subpanel.activo { display: block; }
+  .ficha h3 { margin-bottom: 4px; }
+  .ficha-rubros { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+  .ficha-rubro { border: 1px solid #e1e0da; border-radius: 6px; padding: 8px 12px; font-size: .85rem;
+                 display: flex; flex-direction: column; gap: 2px; min-width: 170px; }
+  .ficha-rubro span { color: #777; font-size: .76rem; }
+  .ficha-rubro.alerta { background: #fbe9e9; border-color: #f0c4c4; }
+  .ficha-rubro.alerta b { color: #b03a3a; }
+  .ficha-talles { font-size: .85rem; }
+  .ficha-talles .lbl { color: #777; margin-right: 6px; }
   .talle-tiene { font-size: .7rem; color: #888; margin-top: 3px; line-height: 1.25; }
   .talle-tiene b { color: #2c3e50; font-weight: bold; }
   .celda-talle { padding: 3px 4px; font-size: .82rem; min-width: 62px; transition: background .3s; }
@@ -307,6 +316,7 @@
     <!-- ── Filtros y listado: se oculta mientras el alta está abierta ── -->
     <div id="cn-vista-listado">
     <div id="cn-aviso-emitida" class="aviso-emitida" style="display:none"></div>
+    <div id="cn-ficha" style="display:none"></div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
         <div>
@@ -1285,10 +1295,11 @@ function cerrarFormulario() {
   document.getElementById("cn-vista-listado").style.display = "";
 }
 
-// La hoja imprimible, en una pestaña nueva. Siempre desde un clic directo: los
-// navegadores bloquean las ventanas que se abren solas después de guardar.
+// La hoja imprimible, siempre en la misma pestaña: así no se acumulan. Y desde
+// un clic directo: los navegadores bloquean las ventanas que se abren solas
+// después de guardar.
 function imprimirConstancia(id) {
-  window.open(`/uniformes/${id}/constancia`, "_blank");
+  window.open(`/uniformes/${id}/constancia`, "sistemalf_constancia");
 }
 
 // Aviso fijo arriba del listado: el momento natural de imprimir es justo después
@@ -1512,6 +1523,7 @@ async function cargarConstancias() {
     <tr id="det-${c.id}" style="display:none"><td colspan="7" style="background:#fafaf8"></td></tr>`;
   }).join("");
   _cnAbierta = null;
+  dibujarFicha();
 }
 
 async function verDetalle(cid) {
@@ -1759,6 +1771,66 @@ function exportarAntiguedad() {
   window.location.href = "/api/uniformes/reportes/antiguedad.xlsx?" + paramsAntiguedad();
 }
 
+// ── Ficha por persona ────────────────────────────────────────────────────────
+// Aparece arriba del listado cuando se filtra por un empleado: lo que recibió
+// por rubro, sus talles y, abajo, su historial con Ver e Imprimir. Es también
+// adonde lleva el botón de la ficha del empleado.
+async function dibujarFicha() {
+  const cont = document.getElementById("cn-ficha");
+  const valor = document.getElementById("cn-f-empleado").value;
+  const id = parseInt(valor);
+  if (!id) { cont.style.display = "none"; cont.innerHTML = ""; return; }
+  let r;
+  try { r = await api(`/api/uniformes/resumen/${id}`); }
+  catch (e) { cont.style.display = "none"; return; }
+  if (document.getElementById("cn-f-empleado").value !== valor) return;   // cambió mientras cargaba
+
+  const emp = _cnEmpleados.find(x => x.id === id) || {};
+  const talles = Object.entries(emp.talles || {}).map(([tid, v]) => {
+    const t = _cnTipos.find(x => String(x.id) === tid);
+    return t ? `<span class="rec-val"><b>${esc(v)}</b> ${esc(t.nombre)}</span>` : "";
+  }).join("") || '<span style="color:#bbb">sin talles cargados</span>';
+  const rubros = r.rubros.map(x => `
+    <div class="ficha-rubro ${x.alerta ? "alerta" : ""}">
+      <span>${esc(x.nombre)}</span>
+      <b>${x.ultima ? `${fmtFecha(x.ultima.fecha)} · ${haceCuanto(x.ultima)}` : "nunca"}${x.alerta ? " &#9888;" : ""}</b>
+    </div>`).join("");
+
+  cont.innerHTML = `
+    <div class="card ficha">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div>
+          <h3>${esc(r.empleado)}
+            <small style="font-weight:normal;color:#888">· ${esc(r.cargo) || "sin cargo"}${r.sin_uniforme ? " · puesto que no recibe uniforme" : ""}</small></h3>
+          <div class="ayuda" style="margin:0">${r.constancias} ${r.constancias === 1 ? "constancia emitida" : "constancias emitidas"}</div>
+        </div>
+        ${canDo("uniformes", "editar")
+          ? `<button class="btn btn-primary btn-sm" onclick="nuevaParaPersona(${id})">Nueva constancia para esta persona</button>` : ""}
+      </div>
+      <div class="ficha-rubros">${rubros}</div>
+      <div class="ficha-talles"><span class="lbl">Talles:</span>${talles}</div>
+    </div>`;
+  cont.style.display = "";
+}
+
+async function nuevaParaPersona(id) {
+  await abrirFormulario();
+  document.getElementById("cn-empleado").value = String(id);
+  empleadoElegido();
+}
+
+// /uniformes?empleado=ID: se llega desde el botón de la ficha del empleado.
+async function abrirFichaDesdeUrl() {
+  const id = new URLSearchParams(location.search).get("empleado");
+  if (!id) return;
+  const sel = document.getElementById("cn-f-empleado");
+  if (![...sel.options].some(o => o.value === id))
+    return toast("Esa persona no figura en el módulo de uniformes", true);
+  sel.value = id;
+  verTab("constancias");
+  await cargarConstancias();
+}
+
 // ── Arranque ─────────────────────────────────────────────────────────────────
 (async function init() {
   try {
@@ -1789,6 +1861,7 @@ function exportarAntiguedad() {
     await cargarDatosConstancias();
     await cargarConstancias();
     await cargarFiltrosReportes();
+    await abrirFichaDesdeUrl();
   } catch (e) { toast(e.message, true); }
 })();
 </script>

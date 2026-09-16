@@ -1277,3 +1277,42 @@ def set_puesto(cargo_id: int, data: PuestoIn, user=Depends(editar)):
                 (cargo_id, _nombre_usuario(conn, user)),
             )
     return {"ok": True, "cargo_id": cargo_id, "recibe": data.recibe}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FICHA POR PERSONA
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/api/uniformes/resumen/{empleado_id}")
+def resumen_empleado(empleado_id: int, _u=Depends(ver)):
+    """El resumen de una persona: lo usan el botón de la ficha del empleado y la
+    ficha dentro del módulo.
+
+    Sale del mismo cálculo que el reporte de última entrega, así el aviso del
+    botón coincide exactamente con lo que muestra el reporte.
+    """
+    datos = _consulta_antiguedad(None, None, None, incluir_inactivos=True,
+                                 incluir_sin_uniforme=True)
+    fila = next((f for f in datos["filas"] if f["id"] == empleado_id), None)
+    if fila is None:
+        raise HTTPException(404, "Empleado no encontrado")
+    with db_session() as conn:
+        constancias = conn.execute(
+            f"SELECT COUNT(*) FROM uniformes_movimientos m WHERE m.empleado_id = ? AND {_CONTABLE}",
+            (empleado_id,),
+        ).fetchone()[0]
+    rubros = []
+    for r in datos["rubros"]:
+        a = fila["rubros"].get(str(r["id"]))
+        rubros.append({"id": r["id"], "nombre": r["nombre"], "meses_alerta": r["meses_alerta"],
+                       "ultima": a, "alerta": bool(a and a.get("alerta"))})
+    return {
+        "empleado_id": empleado_id,
+        "empleado": fila["empleado"],
+        "cargo": fila["cargo"],
+        "sin_uniforme": fila["sin_uniforme"],
+        "constancias": constancias,
+        "ultima": fila["ultima"],
+        "rubros": rubros,
+        "alertas": [{"rubro": x["nombre"], "meses": x["ultima"]["meses"]} for x in rubros if x["alerta"]],
+    }

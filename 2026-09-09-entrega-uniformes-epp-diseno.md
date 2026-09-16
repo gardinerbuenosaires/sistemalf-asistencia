@@ -9,7 +9,8 @@
 
 ## Estado al 2026-09-15
 
-Tandas 0 a 5a implementadas y probadas (165 chequeos), en la rama `feat/entregas`,
+**El módulo está completo según el plan.** Tandas 0 a 5b implementadas y probadas —217
+chequeos, que corren sobre una copia temporal de la base—, en la rama `feat/entregas`,
 publicada en GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
@@ -20,7 +21,7 @@ publicada en GitHub. **No está en `main` ni en producción.**
 | 3 | Constancias: emitir, anular, carga histórica | hecha |
 | 4 | Constancia imprimible con datos reales, datos fiscales | hecha |
 | 5a | Reportes, puestos que no reciben uniforme, pestaña Configuración | hecha |
-| 5b | Botón con resumen en la ficha del empleado | pendiente |
+| 5b | Resumen en la ficha del empleado y ficha por persona | hecha |
 
 ### Decisiones que surgieron implementando
 
@@ -76,6 +77,23 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   una sola pestaña: arriba quedan solo las del uso diario. Puestos estuvo primero debajo de
   Rubros y después en un diálogo del reporte, y en los dos lugares quedaba escondido; el
   botón del reporte quedó como atajo.
+- **El resumen del empleado va junto a la foto, no en el pie de la ficha.** Lo que dice —cuándo
+  recibió algo por última vez y si algo venció— es información sobre la persona, no una acción
+  del formulario, y se tiene que ver apenas se abre la ficha. Además es la zona más estable del
+  archivo: `main` no la toca desde mayo. El pie quedó como en `main`, con *Legajo* solo.
+- **El resumen sale del mismo cálculo que el reporte de última entrega**, así no pueden
+  contradecirse. Hay una prueba que compara los dos, fecha por fecha y rubro por rubro.
+- **El detalle de una persona vive en el módulo**, no duplicado dentro de Empleados: el botón
+  abre `/uniformes?empleado=ID`. Esa misma ficha aparece al filtrar el listado de constancias
+  por un empleado.
+- **Los botones que abren otra pantalla usan una pestaña con nombre**, que el navegador
+  reutiliza, en vez de acumular una por clic. Se evaluó abrir en la misma pestaña y se descartó:
+  la ficha del empleado no avisa al salir, así que perdería lo que alguien esté editando sin
+  guardar.
+- **Las pruebas viven en `tests/`** y cada una trabaja sobre una copia temporal de la base,
+  abierta en solo lectura: nunca modifican una base real. Si la base no tiene el módulo, la copia
+  se migra y se siembra sola, así sirven para ensayar contra copias de producción antes de salir.
+  Se corren con `python tests/correr_todo.py [--origen ruta.db]`.
 
 ## El problema
 
@@ -528,6 +546,8 @@ que cubre el riesgo es la trazabilidad (`motivo_anulacion` obligatorio + `anulad
 - `api/uniformes.py` — catálogos, talles, movimientos, anular, historial, reportes
 - `web/templates/uniformes.html` — pantalla con pestañas
 - `web/templates/uniformes_remito.html` — el imprimible, molde de `legajo_imprimible.html`
+- `scripts/sembrar_uniformes.py` — catálogo inicial sugerido; idempotente, con simulación
+- `tests/` — nueve pruebas, cada una sobre una copia temporal de la base
 
 **Tocados — todo aditivo, ni un `ALTER TABLE` sobre tablas existentes**
 
@@ -537,7 +557,7 @@ que cubre el riesgo es la trazabilidad (`motivo_anulacion` obligatorio + `anulad
 | [main.py](main.py) | 1 import, 1 `include_router`, las rutas `/uniformes` y `/uniformes/{id}/remito` |
 | [auth/core.py](auth/core.py) | 4 entradas en listas (`MODULOS`, `MODULO_ACCIONES`, `MODULO_GRUPOS`, `PERMISOS_DEFAULT`) |
 | [web/templates/index.html](web/templates/index.html) | 1 link en el nav |
-| [web/templates/empleados.html](web/templates/empleados.html) | el botón y el modal — **el único con riesgo real de conflicto; dejarlo para el final** |
+| [web/templates/empleados.html](web/templates/empleados.html) | el bloque con el resumen, en la fila de la foto: **34 líneas agregadas, ninguna quitada** |
 
 El schema va en archivo aparte y no en un bloque de 80 líneas dentro de `_migrate()` por una
 razón concreta: con el módulo en una rama durante semanas, un bloque grande adentro de

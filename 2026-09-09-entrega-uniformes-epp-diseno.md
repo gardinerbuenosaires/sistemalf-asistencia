@@ -10,7 +10,7 @@
 ## Estado al 2026-09-15
 
 **El módulo está completo, incluida la ropa pendiente al momento de la baja.** Tandas 0 a 6
-implementadas y probadas —287 chequeos, que corren sobre una copia temporal de la base—, en
+implementadas y probadas —298 chequeos, que corren sobre una copia temporal de la base—, en
 la rama `feat/entregas`, publicada en GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
@@ -24,6 +24,7 @@ la rama `feat/entregas`, publicada en GitHub. **No está en `main` ni en producc
 | 5b | Resumen en la ficha del empleado y ficha por persona | hecha |
 | 6a | Ropa pendiente, bandeja de bajas y cierre del circuito (API) | hecha |
 | 6b | Las pantallas de la tanda 6 | hecha |
+| 7 | Reporte de talles por puesto, para la compra global | hecha |
 
 ### Decisiones que surgieron implementando
 
@@ -168,6 +169,15 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   la pantalla es el detalle de esa persona y se lee como «nueva constancia para él»; sacando el
   filtro vuelve. La regla general: un control que no puede funcionar en ese contexto no se
   muestra deshabilitado, no se muestra.
+- **El listado para comprar vive en Reportes, no en la grilla de Talles.** La grilla es para
+  *cargar* —una celda editable por persona— y esto es para *leer, agrupar y exportar*; además la
+  grilla ya es ancha y agruparla la empeoraría para lo que hoy hace bien. El reporte muestra dos
+  cosas de la misma consulta: arriba el **total por talle**, que es lo que se le manda al
+  proveedor, y abajo la **nómina por puesto**, que es lo que hace falta cuando llega el pedido y
+  hay que repartirlo. Solo personal activo, y los puestos marcados como que no reciben uniforme
+  quedan afuera para no inflar la compra. Una prueba verifica que el total sea la suma exacta del
+  detalle: si el resumen y la nómina no coinciden se compra mal, y eso se descubre recién cuando
+  llega el pedido.
 - **Dónde vive cada cosa.** La bandeja es una sub-pestaña de Reportes, al lado de los otros dos
   reportes; el panel de ropa pendiente es parte de la ficha de la persona dentro del módulo,
   debajo de los talles; la ventana de meses es una sub-pestaña de Configuración. En la ficha del

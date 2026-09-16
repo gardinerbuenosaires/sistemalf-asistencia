@@ -104,6 +104,10 @@
   #rp-antiguedad-res td.alerta .hace { color: #b03a3a; font-weight: bold; }
   .subpanel { display: none; }
   .subpanel.activo { display: block; }
+  .tp-grupo { margin-bottom: 14px; }
+  .tp-grupo h3 { margin-bottom: 8px; }
+  .tp-linea { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .tp-tipo { font-size: .8rem; color: #777; min-width: 170px; }
   .ficha h3 { margin-bottom: 4px; }
   .pend { margin-top: 14px; border-top: 1px solid #ecebe5; padding-top: 12px; }
   .pend-tit { font-size: .78rem; font-weight: bold; color: #888; text-transform: uppercase;
@@ -453,6 +457,7 @@
       <button class="subtab activa" id="rp-sub-entregas" onclick="verReporte('entregas')">Entregas</button>
       <button class="subtab" id="rp-sub-antiguedad" onclick="verReporte('antiguedad')">Última entrega por persona</button>
       <button class="subtab" id="rp-sub-bajas" onclick="verReporte('bajas')">Bajas</button>
+      <button class="subtab" id="rp-sub-talles" onclick="verReporte('talles')">Talles por puesto</button>
     </div>
     <div class="ayuda">
       Los reportes muestran lo que <b>sí</b> se entregó, nunca lo que falta. Cuentan solo las
@@ -541,6 +546,32 @@
       </div>
       <div id="rp-bajas-tot" class="ayuda"></div>
       <div id="rp-bajas-res" style="overflow-x:auto"></div>
+    </div>
+
+    <!-- ── Talles por puesto: la lista para comprar ── -->
+    <div id="rp-talles" style="display:none">
+      <div class="card">
+        <div class="ayuda">
+          Arriba, el total de cada talle: eso es lo que se le pasa al proveedor. Abajo, puesto por
+          puesto, quién usa qué: eso es lo que hace falta cuando llega el pedido y hay que
+          repartirlo. Solo personal activo, y los puestos marcados como que no reciben uniforme
+          quedan afuera, para no inflar la compra.
+        </div>
+        <div class="form-linea">
+          <div class="campo" style="min-width:170px"><label>Departamento</label>
+            <select id="tp-depto" onchange="consultarTallesPuesto()"></select></div>
+          <div class="campo" style="min-width:170px"><label>Puesto</label>
+            <select id="tp-cargo" onchange="consultarTallesPuesto()"></select></div>
+          <div class="campo"><label>&nbsp;</label>
+            <label class="chk"><input type="checkbox" id="tp-sin-talle" checked onchange="consultarTallesPuesto()"> Incluir a quien no tiene talle cargado</label></div>
+          <div class="campo"><label>&nbsp;</label>
+            <label class="chk"><input type="checkbox" id="tp-sin-uniforme" onchange="consultarTallesPuesto()"> Mostrar puestos que no reciben uniforme</label></div>
+          <div class="campo" style="margin-left:auto"><label>&nbsp;</label>
+            <button class="btn btn-sm" onclick="exportarTallesPuesto()">Descargar Excel</button></div>
+        </div>
+      </div>
+      <div id="rp-talles-tot" class="ayuda"></div>
+      <div id="rp-talles-res" style="overflow-x:auto"></div>
     </div>
   </section>
 
@@ -1712,7 +1743,7 @@ async function marcarPuesto(id, recibe, chk) {
 
 // ── Reportes ─────────────────────────────────────────────────────────────────
 function verReporte(cual) {
-  for (const x of ["entregas", "antiguedad", "bajas"]) {
+  for (const x of ["entregas", "antiguedad", "bajas", "talles"]) {
     document.getElementById("rp-" + x).style.display = x === cual ? "" : "none";
     document.getElementById("rp-sub-" + x).classList.toggle("activa", x === cual);
   }
@@ -1731,6 +1762,9 @@ async function cargarFiltrosReportes() {
     document.getElementById(id).innerHTML = opc(cargos, "Todos los cargos", c => c.nombre);
   for (const id of ["rp-depto", "ra-depto"])
     document.getElementById(id).innerHTML = opc(deptos, "Todos los departamentos", d => d.nombre);
+  // Este reporte habla de «puestos», que es como se llama el cargo en el papel.
+  document.getElementById("tp-cargo").innerHTML = opc(cargos, "Todos los puestos", c => c.nombre);
+  document.getElementById("tp-depto").innerHTML = opc(deptos, "Todos los departamentos", d => d.nombre);
   const activos = rubros.filter(r => r.activo);
   document.getElementById("rp-rubro").innerHTML = opc(activos, "Todos los rubros", r => r.nombre);
   document.getElementById("ra-rubro").innerHTML = opc(activos, "Cualquier entrega", r => r.nombre);
@@ -1745,6 +1779,7 @@ async function cargarFiltrosReportes() {
   await consultarEntregas();
   await consultarAntiguedad();
   await consultarBajas();
+  await consultarTallesPuesto();
 }
 
 function paramsEntregas() {
@@ -1850,6 +1885,68 @@ async function consultarAntiguedad() {
 
 function exportarAntiguedad() {
   window.location.href = "/api/uniformes/reportes/antiguedad.xlsx?" + paramsAntiguedad();
+}
+
+// ── Talles por puesto ────────────────────────────────────────────────────────
+// La lista para comprar. Sale del mismo dato que la grilla de Talles, pero
+// agrupado y de solo lectura: la grilla es para cargar, esto es para pedir.
+function paramsTallesPuesto() {
+  const p = new URLSearchParams();
+  for (const [clave, id] of [["departamento_id", "tp-depto"], ["cargo_id", "tp-cargo"]]) {
+    const v = document.getElementById(id).value;
+    if (v) p.set(clave, v);
+  }
+  if (!document.getElementById("tp-sin-talle").checked) p.set("incluir_sin_talle", "false");
+  if (document.getElementById("tp-sin-uniforme").checked) p.set("incluir_sin_uniforme", "true");
+  return p;
+}
+
+async function consultarTallesPuesto() {
+  let d;
+  try { d = await api("/api/uniformes/reportes/talles?" + paramsTallesPuesto()); }
+  catch (e) { return toast(e.message, true); }
+
+  document.getElementById("rp-talles-tot").textContent =
+    `${d.totales.personas} personas en ${d.totales.puestos} ` +
+    `${d.totales.puestos === 1 ? "puesto" : "puestos"} · ${d.totales.sin_talle} sin ningún talle cargado` +
+    (d.totales.ocultos_sin_uniforme
+      ? ` · ${d.totales.ocultos_sin_uniforme} ocultas por ser de puestos que no reciben uniforme` : "");
+
+  const recuento = mapa => d.tipos.map(t => {
+    const vals = mapa[String(t.id)] || [];
+    if (!vals.length) return "";
+    return `<div class="tp-linea"><span class="tp-tipo">${esc(t.nombre)}</span>` +
+      vals.map(v => `<span class="rec-val"><b>${esc(v.talle)}</b> ${v.personas}</span>`).join("") +
+      "</div>";
+  }).join("");
+
+  document.getElementById("rp-talles-res").innerHTML = d.grupos.length
+    ? `<div class="card" style="margin-bottom:16px">
+         <h3>Total para comprar</h3>
+         ${recuento(d.total) || '<div class="ayuda" style="margin:0">Nadie tiene talles cargados todavía.</div>'}
+       </div>` +
+      d.grupos.map(g => `
+        <div class="card tp-grupo">
+          <h3>${esc(g.cargo)}
+            <small style="font-weight:normal;color:#888">· ${esc(g.departamento) || "sin departamento"}
+            · ${g.personas_total} ${g.personas_total === 1 ? "persona" : "personas"}${
+              g.sin_talle ? ` · ${g.sin_talle} sin talle` : ""}${
+              g.sin_uniforme ? " · puesto que no recibe uniforme" : ""}</small></h3>
+          ${recuento(g.resumen)}
+          <table class="grid" style="margin-top:8px"><thead><tr><th>Empleado</th>
+            ${d.tipos.map(t => `<th style="text-align:center">${esc(t.nombre)}</th>`).join("")}
+          </tr></thead><tbody>${g.personas.map(p => `<tr>
+            <td>${esc(p.empleado)}</td>
+            ${d.tipos.map(t => {
+              const v = p.talles[String(t.id)];
+              return `<td style="text-align:center">${v ? `<b>${esc(v)}</b>` : '<span style="color:#ccc">—</span>'}</td>`;
+            }).join("")}</tr>`).join("")}</tbody></table>
+        </div>`).join("")
+    : '<div class="vacio">Ningún empleado con esos filtros.</div>';
+}
+
+function exportarTallesPuesto() {
+  window.location.href = "/api/uniformes/reportes/talles.xlsx?" + paramsTallesPuesto();
 }
 
 // ── Ropa pendiente y cierre del circuito ─────────────────────────────────────

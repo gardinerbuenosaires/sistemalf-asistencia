@@ -1749,3 +1749,147 @@ def cierre_masivo(data: CierreMasivoIn, user=Depends(editar)):
                VALUES (?,?,'previo_al_sistema',?,?)""",
             [(p["id"], p["fecha_egreso"], obs, quien) for p in pendientes])
     return {"simulacion": False, "cantidad": len(pendientes), "muestra": muestra}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TALLES POR PUESTO  (la lista para comprar)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _consulta_talles_puesto(departamento_id, cargo_id, incluir_sin_talle,
+                            incluir_sin_uniforme):
+    """El personal activo agrupado por puesto, con sus talles y el recuento.
+
+    Dos cosas en una: la nómina —para saber a quién le toca qué cuando llega el
+    pedido— y el total por talle, que es lo que se le pasa al proveedor.
+
+    Los puestos marcados como que no reciben uniforme quedan afuera por defecto:
+    contar la chaqueta de la gerente infla la compra.
+    """
+    with db_session() as conn:
+        tipos = [dict(r) for r in conn.execute(
+            """SELECT id, nombre FROM uniformes_tipos_talle
+               WHERE activo=1 ORDER BY orden, nombre""").fetchall()]
+
+        sql = f"""
+            SELECT e.id, e.apellido, e.nombre, e.cargo_id,
+                   c.nombre AS cargo, d.nombre AS departamento,
+                   (s.cargo_id IS NOT NULL) AS sin_uniforme
+            FROM empleados e
+            LEFT JOIN cargos        c ON c.id = e.cargo_id
+            LEFT JOIN departamentos d ON d.id = c.departamento_id
+            LEFT JOIN uniformes_cargos_sin_uniforme s ON s.cargo_id = e.cargo_id
+            WHERE e.activo = 1 AND {EXCLUIR_NO_PERSONAL}
+        """
+        params = []
+        if cargo_id:
+            sql += " AND e.cargo_id = ?"; params.append(cargo_id)
+        if departamento_id:
+            sql += " AND c.departamento_id = ?"; params.append(departamento_id)
+        sql += " ORDER BY d.nombre, c.nombre, e.apellido, e.nombre"
+        empleados = conn.execute(sql, params).fetchall()
+
+        cargados = conn.execute(
+            "SELECT empleado_id, tipo_talle_id, valor FROM uniformes_talles_empleado"
+        ).fetchall()
+
+    por_empleado = {}
+    for x in cargados:
+        por_empleado.setdefault(x["empleado_id"], {})[str(x["tipo_talle_id"])] = x["valor"]
+
+    grupos, ocultos, sin_talle_total = {}, 0, 0
+    for e in empleados:
+        if e["sin_uniforme"] and not incluir_sin_uniforme:
+            ocultos += 1
+            continue
+        talles = por_empleado.get(e["id"], {})
+        if not talles:
+            sin_talle_total += 1
+            if not incluir_sin_talle:
+                continue
+        clave = e["cargo_id"] or 0
+        g = grupos.setdefault(clave, {
+            "cargo_id": e["cargo_id"],
+            "cargo": e["cargo"] or "Sin puesto",
+            "departamento": e["departamento"],
+            "sin_uniforme": bool(e["sin_uniforme"]),
+            "personas": [], "resumen": {}, "sin_talle": 0,
+        })
+        g["personas"].append({
+            "id": e["id"],
+            "empleado": f'{e["apellido"]}, {e["nombre"]}',
+            "talles": talles,
+        })
+        if not talles:
+            g["sin_talle"] += 1
+        for tid, valor in talles.items():
+            g["resumen"].setdefault(tid, {}).setdefault(valor, 0)
+            g["resumen"][tid][valor] += 1
+
+    # Total general: lo mismo, sumado. Es lo que se manda a comprar.
+    total = {}
+    for g in grupos.values():
+        for tid, cuenta in g["resumen"].items():
+            for valor, n in cuenta.items():
+                total.setdefault(tid, {}).setdefault(valor, 0)
+                total[tid][valor] += n
+
+    def ordenar(cuenta):
+        return [{"talle": v, "personas": n}
+                for v, n in sorted(cuenta.items(), key=lambda kv: _clave_talle(kv[0]))]
+
+    filas = []
+    for g in sorted(grupos.values(), key=lambda x: ((x["departamento"] or "~"), x["cargo"])):
+        filas.append({**g, "resumen": {tid: ordenar(c) for tid, c in g["resumen"].items()},
+                      "personas_total": len(g["personas"])})
+    return {
+        "tipos": tipos,
+        "grupos": filas,
+        "total": {tid: ordenar(c) for tid, c in total.items()},
+        "totales": {
+            "puestos": len(filas),
+            "personas": sum(f["personas_total"] for f in filas),
+            "sin_talle": sin_talle_total,
+            "ocultos_sin_uniforme": ocultos,
+        },
+    }
+
+
+@router.get("/api/uniformes/reportes/talles")
+def reporte_talles_puesto(departamento_id: int | None = None, cargo_id: int | None = None,
+                          incluir_sin_talle: bool = True, incluir_sin_uniforme: bool = False,
+                          _u=Depends(ver)):
+    return _consulta_talles_puesto(departamento_id, cargo_id, incluir_sin_talle,
+                                   incluir_sin_uniforme)
+
+
+@router.get("/api/uniformes/reportes/talles.xlsx")
+def reporte_talles_puesto_excel(departamento_id: int | None = None, cargo_id: int | None = None,
+                                incluir_sin_talle: bool = True, incluir_sin_uniforme: bool = False,
+                                _u=Depends(ver)):
+    """Una fila por persona y, al pie, el total por talle.
+
+    Las dos cosas en la misma hoja a propósito: el que compra manda esa hoja, y
+    el que reparte necesita la nómina de la misma hoja.
+    """
+    datos = _consulta_talles_puesto(departamento_id, cargo_id, incluir_sin_talle,
+                                    incluir_sin_uniforme)
+    empresa, filtros = _describir_filtros(cargo_id=cargo_id, departamento_id=departamento_id)
+    sub = f"{empresa} · {filtros} · Generado el {date.today().strftime('%d/%m/%Y')}".lstrip(" ·")
+    tipos = datos["tipos"]
+
+    filas = []
+    for g in datos["grupos"]:
+        for p in g["personas"]:
+            filas.append([g["cargo"], g["departamento"] or "", p["empleado"]]
+                         + [p["talles"].get(str(t["id"]), "") for t in tipos])
+    if datos["grupos"]:
+        filas.append([])
+        filas.append(["TOTAL POR TALLE — lo que hay que comprar"])
+        for t in tipos:
+            detalle = " · ".join(f'{x["talle"]}: {x["personas"]}'
+                                 for x in datos["total"].get(str(t["id"]), []))
+            filas.append([t["nombre"], "", detalle or "sin nadie cargado"])
+
+    return _excel("Talles por puesto", sub,
+                  ["Puesto", "Departamento", "Empleado"] + [t["nombre"] for t in tipos],
+                  filas, [26, 20, 30] + [16] * len(tipos), "uniformes-talles-por-puesto.xlsx")

@@ -316,6 +316,11 @@ chequear("las fechas salen del helper local, nunca de toISOString",
          "ymdLocal(" in uni and "toISOString" not in uni)
 emp = open(os.path.join(RAIZ, "web", "templates", "empleados.html"), encoding="utf-8-sig").read()
 chequear("la ficha del empleado avisa cuando la ropa quedo cerrada", "unif-cerrado" in emp)
+chequear("la ficha no ofrece cargarle una entrega a un egresado",
+         '"editar") && pend.activo' in uni)
+chequear("ni cerrar el circuito de alguien que todavia trabaja",
+         '"editar") && !p.activo' in uni)
+chequear("y dice desde cuando esta de baja", "egresado el ${fmtFecha(pend.fecha_egreso)}" in uni)
 
 print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")

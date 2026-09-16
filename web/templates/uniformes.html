@@ -1950,7 +1950,9 @@ function panelPendientes(p) {
         ? `<button class="btn btn-sm" onclick="reabrirCierre(${c.id})">Reabrir</button>` : ""}
     </div></div>`;
   }
-  const boton = canDo("uniformes", "editar")
+  // Solo para egresados: el cierre completa una baja. Sobre alguien que sigue
+  // trabajando pondría en cero la ropa que todavía tiene puesta.
+  const boton = canDo("uniformes", "editar") && !p.activo
     ? `<button class="btn btn-sm" onclick="abrirCierre(${p.empleado_id})">Cerrar circuito</button>` : "";
   const antes = p.anteriores.length
     ? `<div class="pend-antes">Antes de esa fecha: ${p.anteriores.map(a =>
@@ -2051,10 +2053,12 @@ async function dibujarFicha() {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
         <div>
           <h3>${esc(r.empleado)}
-            <small style="font-weight:normal;color:#888">· ${esc(r.cargo) || "sin cargo"}${r.sin_uniforme ? " · puesto que no recibe uniforme" : ""}</small></h3>
+            <small style="font-weight:normal;color:#888">· ${esc(r.cargo) || "sin cargo"}${
+              pend.activo ? "" : (pend.fecha_egreso ? ` · egresado el ${fmtFecha(pend.fecha_egreso)}` : " · egresado")
+            }${r.sin_uniforme ? " · puesto que no recibe uniforme" : ""}</small></h3>
           <div class="ayuda" style="margin:0">${r.constancias} ${r.constancias === 1 ? "constancia emitida" : "constancias emitidas"}</div>
         </div>
-        ${canDo("uniformes", "editar")
+        ${canDo("uniformes", "editar") && pend.activo
           ? `<button class="btn btn-primary btn-sm" onclick="nuevaParaPersona(${id})">Nueva constancia para esta persona</button>` : ""}
       </div>
       <div class="ficha-rubros">${rubros}</div>

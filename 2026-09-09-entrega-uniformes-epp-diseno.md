@@ -10,7 +10,7 @@
 ## Estado al 2026-09-15
 
 **El módulo está completo, incluida la ropa pendiente al momento de la baja.** Tandas 0 a 6
-implementadas y probadas —282 chequeos, que corren sobre una copia temporal de la base—, en
+implementadas y probadas —285 chequeos, que corren sobre una copia temporal de la base—, en
 la rama `feat/entregas`, publicada en GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
@@ -156,6 +156,14 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   egresados volverán a aparecer ahí el día que exista la pantalla de devolución. La lista de
   `/api/uniformes/empleados` los sigue trayendo, porque el filtro del listado y los reportes los
   necesitan; lo que cambia es quién puede recibir una entrega.
+- **Cada botón aparece solo donde puede funcionar.** En la ficha de una persona, *«Nueva
+  constancia para esta persona»* aparece solo si está activa: a un egresado la API le rechaza la
+  entrega, así que ese botón solo podía terminar en un mensaje de error. Y *«Cerrar circuito»*
+  aparece solo si está de baja, porque el cierre existe para completar una baja: ofrecerlo sobre
+  alguien que sigue trabajando invita a poner en cero la ropa que todavía tiene puesta. La ficha
+  dice además desde cuándo está de baja, que es el dato que falta cuando se llega desde la
+  bandeja. La regla general: un control que no puede funcionar en ese contexto no se muestra
+  deshabilitado, no se muestra.
 - **Dónde vive cada cosa.** La bandeja es una sub-pestaña de Reportes, al lado de los otros dos
   reportes; el panel de ropa pendiente es parte de la ficha de la persona dentro del módulo,
   debajo de los talles; la ventana de meses es una sub-pestaña de Configuración. En la ficha del

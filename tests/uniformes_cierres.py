@@ -321,6 +321,9 @@ chequear("la ficha no ofrece cargarle una entrega a un egresado",
 chequear("ni cerrar el circuito de alguien que todavia trabaja",
          '"editar") && !p.activo' in uni)
 chequear("y dice desde cuando esta de baja", "egresado el ${fmtFecha(pend.fecha_egreso)}" in uni)
+chequear("el alta del listado tambien se esconde con la ficha de un egresado",
+         "mostrarBotonNueva(pend.activo)" in uni)
+chequear("y vuelve al sacar el filtro", "mostrarBotonNueva(true)" in uni)
 
 print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")

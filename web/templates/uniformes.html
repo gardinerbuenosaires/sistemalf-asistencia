@@ -2025,16 +2025,24 @@ async function reabrirCierre(cid) {
 // Aparece arriba del listado cuando se filtra por un empleado: lo que recibió
 // por rubro, sus talles y, abajo, su historial con Ver e Imprimir. Es también
 // adonde lleva el botón de la ficha del empleado.
+// El alta general del listado. Mirando la ficha de un egresado no corresponde:
+// la pantalla es el detalle de esa persona, y a esa persona no se le puede
+// cargar una entrega. Sacando el filtro vuelve a aparecer.
+function mostrarBotonNueva(visible) {
+  const b = document.getElementById("cn-nueva");
+  if (b) b.style.display = visible && canDo("uniformes", "editar") ? "" : "none";
+}
+
 async function dibujarFicha() {
   const cont = document.getElementById("cn-ficha");
   const valor = document.getElementById("cn-f-empleado").value;
   const id = parseInt(valor);
-  if (!id) { cont.style.display = "none"; cont.innerHTML = ""; return; }
+  if (!id) { cont.style.display = "none"; cont.innerHTML = ""; mostrarBotonNueva(true); return; }
   let r, pend;
   try {
     [r, pend] = await Promise.all([api(`/api/uniformes/resumen/${id}`),
                                    api(`/api/uniformes/pendientes/${id}`)]);
-  } catch (e) { cont.style.display = "none"; return; }
+  } catch (e) { cont.style.display = "none"; mostrarBotonNueva(true); return; }
   if (document.getElementById("cn-f-empleado").value !== valor) return;   // cambió mientras cargaba
 
   const emp = _cnEmpleados.find(x => x.id === id) || {};
@@ -2066,6 +2074,7 @@ async function dibujarFicha() {
       ${panelPendientes(pend)}
     </div>`;
   cont.style.display = "";
+  mostrarBotonNueva(pend.activo);
 }
 
 async function nuevaParaPersona(id) {

@@ -10,7 +10,7 @@
 ## Estado al 2026-09-15
 
 **El módulo está completo, incluida la ropa pendiente al momento de la baja.** Tandas 0 a 6
-implementadas y probadas —285 chequeos, que corren sobre una copia temporal de la base—, en
+implementadas y probadas —287 chequeos, que corren sobre una copia temporal de la base—, en
 la rama `feat/entregas`, publicada en GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
@@ -162,8 +162,11 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   aparece solo si está de baja, porque el cierre existe para completar una baja: ofrecerlo sobre
   alguien que sigue trabajando invita a poner en cero la ropa que todavía tiene puesta. La ficha
   dice además desde cuándo está de baja, que es el dato que falta cuando se llega desde la
-  bandeja. La regla general: un control que no puede funcionar en ese contexto no se muestra
-  deshabilitado, no se muestra.
+  bandeja. Y lo mismo con el **alta general del listado** —el botón de la tarjeta «Constancias
+  emitidas»—: mientras se está mirando la ficha de un egresado no aparece, porque en ese momento
+  la pantalla es el detalle de esa persona y se lee como «nueva constancia para él»; sacando el
+  filtro vuelve. La regla general: un control que no puede funcionar en ese contexto no se
+  muestra deshabilitado, no se muestra.
 - **Dónde vive cada cosa.** La bandeja es una sub-pestaña de Reportes, al lado de los otros dos
   reportes; el panel de ropa pendiente es parte de la ficha de la persona dentro del módulo,
   debajo de los talles; la ventana de meses es una sub-pestaña de Configuración. En la ficha del

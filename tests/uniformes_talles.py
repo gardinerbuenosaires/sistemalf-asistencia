@@ -173,6 +173,8 @@ else:
              'id="rp-sub-talles"' in uni_html and 'id="rp-talles"' in uni_html)
     chequear("y agrupa las escalas de una prenda con el mismo criterio que la grilla",
              "agruparTipos(d.tipos)" in uni_html)
+    chequear("el recuento sale en columnas, con la escala como encabezado",
+             "tp-tabla" in uni_html and "escalas.map(s => `<th>" in uni_html)
 
 print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")

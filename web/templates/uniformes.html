@@ -106,10 +106,11 @@
   .subpanel.activo { display: block; }
   .tp-grupo { margin-bottom: 14px; }
   .tp-grupo h3 { margin-bottom: 8px; }
-  .tp-linea { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
-  .tp-tipo { font-size: .8rem; color: #777; min-width: 150px; }
-  .tp-celda { min-width: 200px; }
-  .tp-sub { font-size: .72rem; color: #aaa; margin-right: 6px; }
+  .tp-tabla { border-collapse: collapse; margin-top: 2px; }
+  .tp-tabla th { font-size: .72rem; font-weight: 600; color: #999; text-align: left;
+                 text-transform: capitalize; padding: 0 16px 5px 0; border-bottom: 1px solid #eeede8; }
+  .tp-tabla td { padding: 4px 16px 4px 0; vertical-align: baseline; white-space: nowrap; }
+  .tp-prenda { font-size: .82rem; color: #777; min-width: 150px; }
   .tp-vacio { color: #ddd; }
   .ficha h3 { margin-bottom: 4px; }
   .pend { margin-top: 14px; border-top: 1px solid #ecebe5; padding-top: 12px; }
@@ -1915,22 +1916,45 @@ async function consultarTallesPuesto() {
     (d.totales.ocultos_sin_uniforme
       ? ` · ${d.totales.ocultos_sin_uniforme} ocultas por ser de puestos que no reciben uniforme` : "");
 
-  // Una línea por prenda y una columna por escala, igual que agrupa sus columnas
-  // la grilla de Talles: el mismo pantalón tiene que leerse igual en las dos
-  // pantallas. Ojo, las escalas no se suman entre sí — la misma persona puede
-  // estar cargada en número y en letra, así que cada columna cuenta lo suyo.
+  // Una fila por prenda y una columna por escala, con encabezado: mirando la
+  // columna se sabe si ese 44 es un número o una letra, sin deducirlo del nombre
+  // del tipo ni de dónde cayó en la línea. Agrupa igual que la grilla de Talles:
+  // el mismo pantalón tiene que leerse igual en las dos pantallas.
+  //
+  // Ojo, las escalas NO se suman entre sí: la misma persona puede estar cargada
+  // en número y en letra, así que cada columna cuenta lo suyo.
   const gruposTipos = agruparTipos(d.tipos);
-  const recuento = mapa => gruposTipos.map(g => {
-    const celdas = g.cols.map(c => {
-      const vals = mapa[String(c.id)] || [];
-      if (!vals.length) return '<span class="tp-vacio">—</span>';
-      return (g.partido ? `<span class="tp-sub">${esc(c.sub)}</span>` : "") +
-        vals.map(v => `<span class="rec-val"><b>${esc(v.talle)}</b> ${v.personas}</span>`).join("");
-    });
-    if (celdas.every(c => c.includes("tp-vacio"))) return "";   // nadie cargado en esa prenda
-    return `<div class="tp-linea"><span class="tp-tipo">${esc(g.base)}</span>` +
-      celdas.map(c => `<span class="tp-celda">${c}</span>`).join("") + "</div>";
-  }).join("");
+
+  // Las columnas salen de las escalas que existan, no están fijas: si mañana se
+  // agrega otra al catálogo, aparece sola.
+  const escalas = [];
+  for (const g of gruposTipos)
+    for (const c of g.cols)
+      if (c.sub && !escalas.includes(c.sub)) escalas.push(c.sub);
+  if (!escalas.length) escalas.push("Talle");   // catálogo sin escalas partidas
+
+  const recuento = mapa => {
+    const celda = (g, sub) => {
+      const col = g.cols.find(c => (c.sub || null) === sub);
+      const vals = col ? (mapa[String(col.id)] || []) : [];
+      return vals.map(v => `<span class="rec-val"><b>${esc(v.talle)}</b> &times;${v.personas}</span>`).join("");
+    };
+    const filas = gruposTipos.map(g => {
+      // Una prenda de una sola escala no declara cuál es —el calzado siempre
+      // viene numerado—: va en la primera columna, que es donde se la busca.
+      const celdas = g.partido
+        ? escalas.map(s => celda(g, s))
+        : escalas.map((s, i) => (i === 0 ? celda(g, null) : ""));
+      if (celdas.every(c => !c)) return "";        // nadie cargado en esa prenda
+      return `<tr><td class="tp-prenda">${esc(g.base)}</td>` +
+        celdas.map(c => `<td>${c || '<span class="tp-vacio">&mdash;</span>'}</td>`).join("") +
+        "</tr>";
+    }).join("");
+    if (!filas) return "";
+    return `<table class="tp-tabla"><thead><tr><th></th>` +
+      escalas.map(s => `<th>${esc(s)}</th>`).join("") +
+      `</tr></thead><tbody>${filas}</tbody></table>`;
+  };
 
   document.getElementById("rp-talles-res").innerHTML = d.grupos.length
     ? `<div class="card" style="margin-bottom:16px">

@@ -6,7 +6,7 @@ Si la base ya tiene el módulo, prueba que volver a migrar no rompa nada.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _base import preparar, token_sistema
+from _base import preparar, token_sistema, RAIZ
 
 DB = preparar(migrar=False)   # sin migrar: primero se mira cómo estaba
 
@@ -132,6 +132,27 @@ rutas = sorted({rt.path for rt in main.app.routes
                 and not rt.path.startswith(("/static", "/docs", "/redoc", "/openapi"))})
 malos = [(p, s) for p in rutas if (s := cli.get(p, follow_redirects=False).status_code) >= 500]
 chequear(f"ninguna de las {len(rutas)} rutas GET da error del servidor", not malos, malos)
+
+print("\n=== LA PANTALLA DEL MODULO NO SE QUEDA ATRAS ===")
+# Los scripts que cargan TODAS las pantallas con nav. Si al modulo le falta uno,
+# se pierde algo en silencio: fue lo que paso con el logo de la empresa, que no
+# aparecia porque el <span> estaba pero nadie lo llenaba.
+import glob
+import re as _re
+
+plantillas = {}
+for arch in glob.glob(os.path.join(RAIZ, "web", "templates", "*.html")):
+    txt = open(arch, encoding="utf-8-sig").read()
+    if 'id="nav-brand-empresa"' in txt:
+        plantillas[os.path.basename(arch)] = set(_re.findall(r"/static/js/([\w.-]+\.js)", txt))
+
+otras = [s for n, s in plantillas.items() if n != "uniformes.html"]
+comunes = set.intersection(*otras) if otras else set()
+faltan = comunes - plantillas.get("uniformes.html", set())
+chequear(f"uniformes.html carga los {len(comunes)} scripts que cargan las otras {len(otras)} pantallas",
+         not faltan, f"le faltan: {sorted(faltan)}")
+chequear("entre ellos, el que muestra el logo de la empresa",
+         "nav-brand.js" in plantillas.get("uniformes.html", set()))
 
 print(f"\n{'=' * 52}\n  {ok} pasaron, {fallos} fallaron\n{'=' * 52}")
 raise SystemExit(1 if fallos else 0)

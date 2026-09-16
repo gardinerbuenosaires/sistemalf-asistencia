@@ -9,9 +9,10 @@
 
 ## Estado al 2026-09-15
 
-**El módulo está completo según el plan.** Tandas 0 a 5b implementadas y probadas —217
-chequeos, que corren sobre una copia temporal de la base—, en la rama `feat/entregas`,
-publicada en GitHub. **No está en `main` ni en producción.**
+Tandas 0 a 5b implementadas y probadas, y de la tanda 6 —la ropa pendiente al momento de
+la baja— está hecha la API con sus pruebas; faltan las pantallas. Son 257 chequeos, que
+corren sobre una copia temporal de la base, en la rama `feat/entregas`, publicada en
+GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
 |---|---|---|
@@ -22,6 +23,8 @@ publicada en GitHub. **No está en `main` ni en producción.**
 | 4 | Constancia imprimible con datos reales, datos fiscales | hecha |
 | 5a | Reportes, puestos que no reciben uniforme, pestaña Configuración | hecha |
 | 5b | Resumen en la ficha del empleado y ficha por persona | hecha |
+| 6a | Ropa pendiente, bandeja de egresados y cierre del circuito (API) | hecha |
+| 6b | Las pantallas de la tanda 6 | pendiente |
 
 ### Decisiones que surgieron implementando
 
@@ -102,6 +105,41 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   que la hoja puede ser de hace dos años y la persona pudo cambiar; **una devolución no toca
   nada**. Anular una constancia no revierte el talle: el talle es el estado de hoy, no un
   historial, y si quedó mal se corrige en la grilla.
+
+#### La ropa pendiente al momento de la baja (tanda 6)
+
+- **El sistema no dice cuánta ropa debe alguien, porque no puede saberlo.** Sabe qué se le
+  entregó y cuándo; qué conserva, no. Entre las entregas nadie registra devoluciones: la
+  prenda gastada se reemplaza y listo. Por eso no hay una deuda calculada sino una lista
+  corta y fechada, y la decisión la toma la persona que liquida. El valor no está en el
+  número, está en que quede asentado quién decidió qué.
+- **Se mira una ventana de meses, no todo el historial.** El total de la vida no sirve: nadie
+  devuelve las doce chaquetas que recibió en seis años, porque cada una reemplazó a la
+  anterior. Se suman las entregas de los últimos meses —6 por defecto, configurable— y lo
+  anterior no desaparece: queda en un renglón aparte con su fecha, que es lo que salva la
+  pantalla cuando alguien se va ocho meses después de su última entrega.
+- **Agrupado por prenda, y además las constancias del período.** Por constancia solo
+  dependería de cómo se partió el papeleo: el mismo uniforme en tres hojas o en una da
+  recortes distintos. Arriba el resumen por prenda —qué pedirle—, abajo los papeles del
+  período con su botón de imprimir, que es lo concreto que se le muestra al que se va.
+- **El cierre es lo que le da fin al circuito.** Sin él la bandeja de egresados solo crece y
+  a los pocos meses no la mira nadie. Es un acto administrativo, no un documento: no lleva
+  número ni se imprime, y **no exige que haya una constancia de devolución** — si la
+  exigiera, el día que alguien se va sin devolver nada habría que emitir un papel vacío para
+  poder cerrar. Lo devuelto se escribe en la observación, o se registra aparte si hay algo
+  que firmar. Tres resultados: devolvió todo, devolvió parte, no devolvió.
+- **El cierre guarda congelado lo que quedaba pendiente**, por el mismo motivo que la
+  constancia copia sus datos: dentro de dos años el catálogo va a ser otro.
+- **Y funciona como fecha de corte**: lo entregado después vuelve a contar. Con eso la
+  recontratación se resuelve sola, sin mirar `fecha_recontratacion` ni agregar un campo. Si
+  el cierre y la entrega caen el mismo día, desempata la hora en que se cargó cada uno.
+- **Reabrir no borra**: el cierre queda como historia con su motivo, y va con el permiso de
+  eliminar —el mismo que anular una constancia—, porque deshacer una decisión asentada no es
+  lo mismo que tomarla.
+- **Al implementar hay que cerrar en bloque a los egresados viejos.** Son 255 bajas en
+  Gardiner: si la bandeja nace mostrándolas a todas, el reporte es inservible el primer día.
+  El cierre masivo las marca como anteriores al sistema, simula por defecto y va con el
+  permiso de carga inicial.
 
 ## El problema
 

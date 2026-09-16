@@ -7,6 +7,7 @@ Todo el router está detrás de la bandera `uniformes_activo`: con la bandera en
 cada ruta responde 404, igual que si el módulo no existiera.
 """
 
+import json
 import re
 import sqlite3
 from datetime import date, datetime
@@ -15,7 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from db.database import db_session
-from db.uniformes_schema import uniformes_activo, MAX_ITEMS_POR_MOVIMIENTO
+from db.uniformes_schema import (uniformes_activo, MAX_ITEMS_POR_MOVIMIENTO,
+                                MESES_PENDIENTES_DEFECTO)
 from auth.core import require_permiso, tiene_permiso
 
 
@@ -1322,3 +1324,407 @@ def resumen_empleado(empleado_id: int, _u=Depends(ver)):
         "rubros": rubros,
         "alertas": [{"rubro": x["nombre"], "meses": x["ultima"]["meses"]} for x in rubros if x["alerta"]],
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ROPA PENDIENTE Y CIERRE DEL CIRCUITO
+# ══════════════════════════════════════════════════════════════════════════════
+# El sistema no sabe qué ropa tiene alguien puesta: sabe qué se le entregó y
+# cuándo. Por eso acá no hay una deuda calculada sino una foto corta y fechada
+# —lo entregado en los últimos N meses, agrupado por prenda—, y lo anterior a esa
+# ventana queda igual a la vista, aparte y con su fecha, para que lo juzgue una
+# persona. El total de toda la vida no sirve: nadie devuelve las doce chaquetas
+# que recibió en seis años, porque cada una reemplazó a la anterior.
+#
+# El cierre es lo que le da fin al circuito. Sin él la bandeja de egresados solo
+# crece y en unos meses no la mira nadie.
+
+RESULTADOS_CIERRE = {
+    "devolvio_todo":     "Devolvió todo",
+    "devolvio_parcial":  "Devolvió parte",
+    "no_devolvio":       "No devolvió",
+    "previo_al_sistema": "Anterior al sistema",
+}
+
+CLAVE_MESES = "uniformes_meses_pendientes"
+
+
+class CierreIn(BaseModel):
+    empleado_id: int
+    fecha: str | None = None
+    resultado: str
+    observacion: str | None = None
+
+
+class ReaperturaIn(BaseModel):
+    motivo: str
+
+
+class CierreMasivoIn(BaseModel):
+    hasta: str
+    observacion: str | None = None
+    simular: bool = True
+
+
+class ParametrosIn(BaseModel):
+    meses_pendientes: int
+
+
+def _meses_pendientes(conn) -> int:
+    """La ventana, configurable. Si el valor guardado es basura se usa el de
+    fábrica: este número decide qué ve el que liquida, no puede quedar en 0."""
+    row = conn.execute("SELECT valor FROM configuracion WHERE clave=?", (CLAVE_MESES,)).fetchone()
+    try:
+        n = int(str(row["valor"]).strip()) if row else MESES_PENDIENTES_DEFECTO
+    except (TypeError, ValueError):
+        return MESES_PENDIENTES_DEFECTO
+    return n if 1 <= n <= 120 else MESES_PENDIENTES_DEFECTO
+
+
+def _restar_meses(hoy: date, meses: int) -> date:
+    """Fecha de inicio de la ventana. Sin dateutil: es la única cuenta de
+    calendario del módulo y no justifica una dependencia."""
+    total = hoy.year * 12 + (hoy.month - 1) - meses
+    anio, mes = divmod(total, 12)
+    mes += 1
+    bisiesto = anio % 4 == 0 and (anio % 100 != 0 or anio % 400 == 0)
+    largo = [31, 29 if bisiesto else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mes - 1]
+    return date(anio, mes, min(hoy.day, largo))
+
+
+def _cubierto_por_cierre(fila, cierre):
+    """¿Ese movimiento ya quedó resuelto por el cierre?
+
+    Por fecha, salvo el empate. Si el cierre y la entrega son del mismo día
+    —alguien que vuelve a entrar y recibe ropa esa misma tarde— la fecha sola no
+    alcanza y desempata el momento en que se cargó cada cosa: lo anterior al
+    cierre queda resuelto, lo posterior vuelve a contar.
+    """
+    if not cierre:
+        return False
+    if fila["fecha"] != cierre["fecha"]:
+        return fila["fecha"] < cierre["fecha"]
+    return (fila["creado_en"] or "") <= (cierre["cerrado_en"] or "")
+
+
+def _pendientes(conn, empleados, meses, hoy=None):
+    """Qué ropa puede tener cada una de esas personas, por prenda.
+
+    Devuelve un diccionario por empleado_id. Tres reglas:
+
+    - Se cuenta desde el último cierre vigente: lo anterior ya se resolvió, con
+      desempate por hora si caen el mismo día. Eso hace que una recontratación
+      funcione sola — el que vuelve arranca en cero y suma lo nuevo.
+    - Dentro de la ventana, las entregas se suman por prenda; lo de antes va
+      aparte, con su fecha, sin sumarse al total.
+    - Las devoluciones restan, con piso en cero.
+    """
+    hoy = hoy or date.today()
+    desde = _restar_meses(hoy, meses).isoformat()
+    ids = [e["id"] for e in empleados]
+    salida = {}
+    if not ids:
+        return salida
+    marcas = ",".join("?" * len(ids))
+
+    cierres = {r["empleado_id"]: dict(r) for r in conn.execute(
+        f"""SELECT * FROM uniformes_cierres
+            WHERE estado='vigente' AND empleado_id IN ({marcas})""", ids).fetchall()}
+
+    filas = conn.execute(f"""
+        SELECT m.empleado_id, m.id AS constancia_id, m.numero, m.fecha, m.tipo, m.origen,
+               m.creado_en, i.elemento_id, i.cantidad, i.talle,
+               COALESCE(el.nombre, i.elemento_nombre)  AS elemento,
+               COALESCE(r.nombre,  i.categoria_nombre) AS rubro
+        FROM uniformes_items i
+        JOIN uniformes_movimientos m     ON m.id = i.movimiento_id
+        LEFT JOIN uniformes_elementos el ON el.id = i.elemento_id
+        LEFT JOIN uniformes_categorias r ON r.id = el.categoria_id
+        WHERE m.estado = 'emitida' AND m.empleado_id IN ({marcas})
+        ORDER BY m.fecha, m.id, i.orden
+    """, ids).fetchall()
+
+    acum = {i: {"dentro": {}, "antes": {}, "devuelto": {}, "constancias": {}} for i in ids}
+    for f in filas:
+        a = acum[f["empleado_id"]]
+        if _cubierto_por_cierre(f, cierres.get(f["empleado_id"])):
+            continue
+        # Un elemento borrado del catálogo deja el id en NULL: se agrupa por el
+        # nombre copiado en la constancia para que no se junten prendas distintas.
+        clave = f["elemento_id"] if f["elemento_id"] is not None else f'n:{f["elemento"]}'
+
+        if f["fecha"] >= desde:
+            c = a["constancias"].setdefault(f["constancia_id"], {
+                "id": f["constancia_id"], "numero": f["numero"], "fecha": f["fecha"],
+                "tipo": f["tipo"], "origen": f["origen"], "renglones": 0, "unidades": 0})
+            c["renglones"] += 1
+            c["unidades"] += f["cantidad"] or 0
+
+        if f["tipo"] == "devolucion":
+            d = a["devuelto"].setdefault(clave, {
+                "elemento_id": f["elemento_id"], "elemento": f["elemento"],
+                "rubro": f["rubro"], "unidades": 0})
+            d["unidades"] += f["cantidad"] or 0
+            continue
+
+        destino = a["dentro"] if f["fecha"] >= desde else a["antes"]
+        p = destino.setdefault(clave, {
+            "elemento_id": f["elemento_id"], "elemento": f["elemento"], "rubro": f["rubro"],
+            "entregado": 0, "ultima": None, "fechas": []})
+        p["entregado"] += f["cantidad"] or 0
+        p["ultima"] = max(p["ultima"] or "", f["fecha"])
+        p["fechas"].append({"fecha": f["fecha"], "cantidad": f["cantidad"], "talle": f["talle"]})
+
+    for e in empleados:
+        a = acum[e["id"]]
+        prendas = []
+        for clave, p in a["dentro"].items():
+            dev = a["devuelto"].pop(clave, None)
+            devuelto = dev["unidades"] if dev else 0
+            prendas.append({**p, "devuelto": devuelto,
+                            "pendiente": max(p["entregado"] - devuelto, 0),
+                            "antiguedad": _antiguedad(p["ultima"], hoy)})
+        anteriores = []
+        for clave, p in a["antes"].items():
+            dev = a["devuelto"].pop(clave, None)
+            anteriores.append({
+                "elemento_id": p["elemento_id"], "elemento": p["elemento"], "rubro": p["rubro"],
+                "entregado": p["entregado"], "devuelto": dev["unidades"] if dev else 0,
+                "ultima": p["ultima"], "antiguedad": _antiguedad(p["ultima"], hoy)})
+        # Devoluciones de prendas que no figuran entregadas en este tramo. Se
+        # muestran igual: si no, parecería que la persona no devolvió nada.
+        sueltas = [{"elemento_id": d["elemento_id"], "elemento": d["elemento"], "rubro": d["rubro"],
+                    "entregado": 0, "devuelto": d["unidades"], "pendiente": 0,
+                    "ultima": None, "fechas": [], "antiguedad": None}
+                   for d in a["devuelto"].values()]
+
+        prendas.sort(key=lambda x: ((x["rubro"] or ""), (x["elemento"] or "")))
+        anteriores.sort(key=lambda x: x["ultima"], reverse=True)
+        salida[e["id"]] = {
+            "meses": meses,
+            "desde": desde,
+            "prendas": prendas + sueltas,
+            "anteriores": anteriores,
+            "constancias": sorted(a["constancias"].values(),
+                                  key=lambda c: (c["fecha"], c["id"]), reverse=True),
+            "total_pendiente": sum(p["pendiente"] for p in prendas),
+            "cierre": cierres.get(e["id"]),
+        }
+    return salida
+
+
+def _fila_empleado(conn, empleado_id):
+    return conn.execute(
+        f"""SELECT e.id, e.apellido, e.nombre, e.dni, e.activo, e.fecha_egreso,
+                   c.nombre AS cargo
+            FROM empleados e LEFT JOIN cargos c ON c.id = e.cargo_id
+            WHERE e.id = ? AND {EXCLUIR_NO_PERSONAL}""", (empleado_id,)).fetchone()
+
+
+@router.get("/api/uniformes/parametros")
+def get_parametros(_u=Depends(ver)):
+    with db_session() as conn:
+        return {"meses_pendientes": _meses_pendientes(conn)}
+
+
+@router.put("/api/uniformes/parametros")
+def put_parametros(data: ParametrosIn, _u=Depends(editar)):
+    if not 1 <= data.meses_pendientes <= 120:
+        raise HTTPException(400, "La ventana tiene que estar entre 1 y 120 meses")
+    valor = str(data.meses_pendientes)
+    with db_session() as conn:
+        cur = conn.execute("UPDATE configuracion SET valor=? WHERE clave=?", (valor, CLAVE_MESES))
+        if cur.rowcount == 0:
+            conn.execute(
+                "INSERT INTO configuracion (clave, valor, descripcion) VALUES (?,?,?)",
+                (CLAVE_MESES, valor,
+                 "Meses hacia atrás que se consideran «lo que la persona todavía tiene»"))
+    return {"meses_pendientes": data.meses_pendientes}
+
+
+@router.get("/api/uniformes/pendientes/{empleado_id}")
+def pendientes_empleado(empleado_id: int, _u=Depends(ver)):
+    """El panel de una persona: qué puede tener, qué es viejo, qué papeles hay."""
+    with db_session() as conn:
+        emp = _fila_empleado(conn, empleado_id)
+        if not emp:
+            raise HTTPException(404, "Empleado no encontrado")
+        datos = _pendientes(conn, [emp], _meses_pendientes(conn))[emp["id"]]
+        historia = [dict(r) for r in conn.execute(
+            "SELECT * FROM uniformes_cierres WHERE empleado_id=? ORDER BY id DESC",
+            (empleado_id,)).fetchall()]
+    return {
+        "empleado_id": emp["id"],
+        "empleado": f'{emp["apellido"]}, {emp["nombre"]}',
+        "cargo": emp["cargo"],
+        "activo": emp["activo"],
+        "fecha_egreso": emp["fecha_egreso"],
+        **datos,
+        "cierres": historia,
+    }
+
+
+def _consulta_egresados(desde, hasta, incluir_cerrados, solo_con_pendientes):
+    """La bandeja: quién se fue y todavía figura con ropa.
+
+    Se arma sobre `fecha_egreso`, que es el dato que tiene el que liquida.
+    """
+    with db_session() as conn:
+        meses = _meses_pendientes(conn)
+        sql = f"""SELECT e.id, e.apellido, e.nombre, e.dni, e.activo, e.fecha_egreso,
+                         c.nombre AS cargo
+                  FROM empleados e LEFT JOIN cargos c ON c.id = e.cargo_id
+                  WHERE e.activo = 0 AND e.fecha_egreso IS NOT NULL
+                    AND {EXCLUIR_NO_PERSONAL}"""
+        params = []
+        if desde:
+            sql += " AND e.fecha_egreso >= ?"; params.append(_fecha_valida(desde))
+        if hasta:
+            sql += " AND e.fecha_egreso <= ?"; params.append(_fecha_valida(hasta))
+        sql += " ORDER BY e.fecha_egreso DESC, e.apellido"
+        empleados = conn.execute(sql, params).fetchall()
+        datos = _pendientes(conn, empleados, meses)
+
+    filas, cerrados = [], 0
+    for e in empleados:
+        d = datos[e["id"]]
+        if d["cierre"]:
+            cerrados += 1
+            if not incluir_cerrados:
+                continue
+        elif solo_con_pendientes and not d["total_pendiente"] and not d["anteriores"]:
+            continue
+        filas.append({
+            "id": e["id"],
+            "empleado": f'{e["apellido"]}, {e["nombre"]}',
+            "cargo": e["cargo"],
+            "fecha_egreso": e["fecha_egreso"],
+            "total_pendiente": d["total_pendiente"],
+            "anteriores": len(d["anteriores"]),
+            "prendas": [{"elemento": p["elemento"], "pendiente": p["pendiente"]}
+                        for p in d["prendas"] if p["pendiente"]],
+            "cierre": d["cierre"],
+        })
+    return {"meses": meses, "filas": filas,
+            "totales": {"filas": len(filas), "cerrados": cerrados,
+                        "unidades": sum(f["total_pendiente"] for f in filas)}}
+
+
+@router.get("/api/uniformes/egresados")
+def listado_egresados(desde: str | None = None, hasta: str | None = None,
+                      incluir_cerrados: bool = False, solo_con_pendientes: bool = True,
+                      _u=Depends(ver)):
+    return _consulta_egresados(desde, hasta, incluir_cerrados, solo_con_pendientes)
+
+
+@router.get("/api/uniformes/egresados.xlsx")
+def listado_egresados_excel(desde: str | None = None, hasta: str | None = None,
+                            incluir_cerrados: bool = False, solo_con_pendientes: bool = True,
+                            _u=Depends(ver)):
+    datos = _consulta_egresados(desde, hasta, incluir_cerrados, solo_con_pendientes)
+    empresa, filtros = _describir_filtros(desde, hasta)
+    sub = (f"{empresa} · Egreso — {filtros} · Ventana de {datos['meses']} meses · "
+           f"Generado el {date.today().strftime('%d/%m/%Y')}").lstrip(" ·")
+    filas = [[f["empleado"], f["cargo"] or "",
+              date.fromisoformat(f["fecha_egreso"][:10]) if f["fecha_egreso"] else "",
+              f["total_pendiente"],
+              " · ".join(f'{p["elemento"]} ({p["pendiente"]})' for p in f["prendas"]),
+              RESULTADOS_CIERRE.get((f["cierre"] or {}).get("resultado"), "")]
+             for f in datos["filas"]]
+    return _excel("Egresados", sub,
+                  ["Empleado", "Cargo", "Egreso", "Pendiente", "Prendas", "Cierre"],
+                  filas, [34, 22, 12, 11, 52, 20], "uniformes-egresados.xlsx")
+
+
+@router.post("/api/uniformes/cierres", status_code=201)
+def crear_cierre(data: CierreIn, user=Depends(editar)):
+    """Cierra el circuito de una persona: deja de figurar como pendiente.
+
+    No exige que haya una constancia de devolución. Si la exigiera, el día que
+    alguien se va sin devolver nada habría que emitir un papel vacío para poder
+    cerrar, o sea inventar un documento. Lo que devolvió se puede escribir en la
+    observación, o registrarse aparte como devolución si hay algo que firmar.
+    """
+    if data.resultado not in RESULTADOS_CIERRE:
+        raise HTTPException(400, "Resultado inválido")
+    with db_session() as conn:
+        emp = _fila_empleado(conn, data.empleado_id)
+        if not emp:
+            raise HTTPException(404, "Empleado no encontrado")
+        fecha = _fecha_valida(data.fecha) if data.fecha else date.today().isoformat()
+        datos = _pendientes(conn, [emp], _meses_pendientes(conn))[emp["id"]]
+        try:
+            cur = conn.execute(
+                """INSERT INTO uniformes_cierres
+                       (empleado_id, fecha, resultado, observacion, pendiente_json, cerrado_por)
+                   VALUES (?,?,?,?,?,?)""",
+                (emp["id"], fecha, data.resultado,
+                 (data.observacion or "").strip() or None,
+                 json.dumps(datos["prendas"], ensure_ascii=False),
+                 _nombre_usuario(conn, user)))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "Esta persona ya tiene un cierre vigente")
+        row = conn.execute("SELECT * FROM uniformes_cierres WHERE id=?", (cur.lastrowid,)).fetchone()
+    return dict(row)
+
+
+@router.post("/api/uniformes/cierres/{cid}/reabrir")
+def reabrir_cierre(cid: int, data: ReaperturaIn,
+                   user=Depends(require_permiso("uniformes", "eliminar"))):
+    """Reabrir no borra: el cierre queda como historia, con quién y por qué.
+
+    Va con el permiso de eliminar —el mismo que anular una constancia— porque
+    deshacer una decisión ya asentada no es lo mismo que tomarla.
+    """
+    motivo = (data.motivo or "").strip()
+    if not motivo:
+        raise HTTPException(400, "El motivo es obligatorio")
+    with db_session() as conn:
+        row = conn.execute("SELECT * FROM uniformes_cierres WHERE id=?", (cid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Cierre no encontrado")
+        if row["estado"] != "vigente":
+            raise HTTPException(409, "Ese cierre ya estaba reabierto")
+        conn.execute(
+            """UPDATE uniformes_cierres
+               SET estado='reabierto', reabierto_en=datetime('now','localtime'),
+                   reabierto_por=?, motivo_reapertura=?
+               WHERE id=?""", (_nombre_usuario(conn, user), motivo, cid))
+        row = conn.execute("SELECT * FROM uniformes_cierres WHERE id=?", (cid,)).fetchone()
+    return dict(row)
+
+
+@router.post("/api/uniformes/cierres/masivo")
+def cierre_masivo(data: CierreMasivoIn, user=Depends(editar)):
+    """Cierra de una vez a los egresados anteriores a la puesta en marcha.
+
+    Sin esto la bandeja nace con cientos de personas que se fueron hace años y
+    el reporte es inservible el primer día. Va con el permiso de carga inicial,
+    el mismo de la digitalización del papel: es una acción de puesta en marcha.
+
+    Simula por defecto: dice a cuántos alcanzaría sin tocar nada.
+    """
+    rol_id = user.get("rol_id")
+    if not rol_id or not tiene_permiso(rol_id, "uniformes", "carga_inicial"):
+        raise HTTPException(403, "Sin permiso: uniformes.carga_inicial")
+    hasta = _fecha_valida(data.hasta)
+    with db_session() as conn:
+        pendientes = conn.execute(
+            f"""SELECT e.id, e.apellido, e.nombre, e.fecha_egreso
+                FROM empleados e
+                WHERE e.activo = 0 AND e.fecha_egreso IS NOT NULL AND e.fecha_egreso <= ?
+                  AND {EXCLUIR_NO_PERSONAL}
+                  AND e.id NOT IN (SELECT empleado_id FROM uniformes_cierres WHERE estado='vigente')
+                ORDER BY e.fecha_egreso DESC""", (hasta,)).fetchall()
+        muestra = [{"id": p["id"], "empleado": f'{p["apellido"]}, {p["nombre"]}',
+                    "fecha_egreso": p["fecha_egreso"]} for p in pendientes[:20]]
+        if data.simular:
+            return {"simulacion": True, "cantidad": len(pendientes), "muestra": muestra}
+        quien = _nombre_usuario(conn, user)
+        obs = (data.observacion or "").strip() or "Cierre masivo de puesta en marcha"
+        conn.executemany(
+            """INSERT INTO uniformes_cierres
+                   (empleado_id, fecha, resultado, observacion, cerrado_por)
+               VALUES (?,?,'previo_al_sistema',?,?)""",
+            [(p["id"], p["fecha_egreso"], obs, quien) for p in pendientes])
+    return {"simulacion": False, "cantidad": len(pendientes), "muestra": muestra}

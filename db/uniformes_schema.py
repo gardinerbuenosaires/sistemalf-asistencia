@@ -34,7 +34,15 @@ CLAVES_CONFIGURACION = [
      'Código postal de la empresa (encabezado de los documentos impresos)'),
     ('empresa_provincia', '',
      'Provincia de la empresa (encabezado de los documentos impresos)'),
+    ('uniformes_meses_pendientes', '6',
+     'Meses hacia atrás que se consideran «lo que la persona todavía tiene»'),
 ]
+
+# Cuántos meses hacia atrás se miran para estimar qué ropa tiene puesta alguien
+# hoy. No es un dato exacto y no puede serlo: el sistema sabe qué se entregó,
+# no qué se conserva. Lo entregado antes de la ventana no se pierde, se muestra
+# aparte con su fecha para que lo juzgue una persona.
+MESES_PENDIENTES_DEFECTO = 6
 
 # Rubros iniciales: (nombre, meses_alerta). El umbral vive por rubro y no global
 # porque seis meses tiene sentido para la ropa y ninguno para los guantes, que se
@@ -202,6 +210,49 @@ CREATE TABLE IF NOT EXISTS uniformes_cargos_sin_uniforme (
     marcado_por TEXT,
     marcado_en  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- CIERRE DEL CIRCUITO
+-- ══════════════════════════════════════════════════════════════════════════
+
+-- Cuando alguien se va, en la liquidación final se decide qué pasa con la ropa
+-- que tenía. Esa decisión se asienta acá y saca a la persona de la bandeja de
+-- pendientes: sin esto la bandeja solo crece y en seis meses no la mira nadie.
+--
+-- No es un documento firmado —para eso está la constancia de devolución, que es
+-- opcional—: es un acto administrativo, y por eso no lleva número ni se imprime.
+--
+-- `pendiente_json` es una copia congelada de lo que quedaba pendiente ese día,
+-- por el mismo motivo que la constancia copia sus datos: dentro de dos años el
+-- catálogo va a ser otro y el cierre tiene que seguir diciendo lo que decía.
+--
+-- La fecha del cierre funciona además como corte: lo entregado después vuelve a
+-- contar. Así una recontratación se resuelve sola, sin mirar `fecha_recontratacion`.
+CREATE TABLE IF NOT EXISTS uniformes_cierres (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    empleado_id       INTEGER NOT NULL REFERENCES empleados(id) ON DELETE CASCADE,
+    fecha             TEXT NOT NULL,
+    resultado         TEXT NOT NULL CHECK (resultado IN
+                          ('devolvio_todo','devolvio_parcial','no_devolvio','previo_al_sistema')),
+    observacion       TEXT,
+    pendiente_json    TEXT,
+    estado            TEXT NOT NULL DEFAULT 'vigente'
+                          CHECK (estado IN ('vigente','reabierto')),
+    cerrado_por       TEXT,
+    cerrado_en        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    reabierto_por     TEXT,
+    reabierto_en      TEXT,
+    motivo_reapertura TEXT
+);
+
+-- Un solo cierre vigente por persona. Reabrir no borra: deja el cierre como
+-- historia y permite cerrar de nuevo, igual que anular una constancia.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_uniformes_cierre_vigente
+    ON uniformes_cierres (empleado_id) WHERE estado = 'vigente';
+
+CREATE INDEX IF NOT EXISTS ix_uniformes_cierres_empleado
+    ON uniformes_cierres (empleado_id, fecha);
 """
 
 

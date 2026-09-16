@@ -54,12 +54,15 @@ c = sqlite3.connect(DB)
 c.row_factory = sqlite3.Row
 tablas = sorted(r[0] for r in c.execute(
     "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'uniformes_%'"))
-chequear("están las 8 tablas del módulo", len(tablas) == 8, tablas)
+chequear("están las 9 tablas del módulo", len(tablas) == 9, tablas)
 claves = {r[0]: r[1] for r in c.execute(
-    "SELECT clave, valor FROM configuracion WHERE clave LIKE 'empresa_%' OR clave='uniformes_activo'")}
-chequear("están las 7 claves de configuración", len(claves) == 7, sorted(claves))
+    "SELECT clave, valor FROM configuracion WHERE clave LIKE 'empresa_%' OR clave LIKE 'uniformes_%'")}
+chequear("están las 8 claves de configuración", len(claves) == 8, sorted(claves))
 if not tenia:
     chequear("en una base nueva, la bandera arranca APAGADA", claves.get("uniformes_activo") == "0")
+    chequear("y la ventana de ropa pendiente, en 6 meses",
+             claves.get("uniformes_meses_pendientes") == "6",
+             claves.get("uniformes_meses_pendientes"))
 chequear("los rubros iniciales no se duplicaron",
          all(c.execute("SELECT COUNT(*) FROM uniformes_categorias WHERE nombre=?", (n,)).fetchone()[0] == 1
              for n in ("Ropa de trabajo", "EPP")))

@@ -175,6 +175,8 @@ else:
              "agruparTipos(d.tipos)" in uni_html)
     chequear("el recuento sale en columnas, con la escala como encabezado",
              "tp-tabla" in uni_html and "escalas.map(s => `<th>" in uni_html)
+    chequear("y no se estira a todo el ancho: se lee pegado a la izquierda",
+             ".tp-tabla { width: auto;" in uni_html and ".tp-tabla td { text-align: left;" in uni_html)
 
 print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")

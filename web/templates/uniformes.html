@@ -106,11 +106,15 @@
   .subpanel.activo { display: block; }
   .tp-grupo { margin-bottom: 14px; }
   .tp-grupo h3 { margin-bottom: 8px; }
-  .tp-tabla { border-collapse: collapse; margin-top: 2px; }
-  .tp-tabla th { font-size: .72rem; font-weight: 600; color: #999; text-align: left;
-                 text-transform: capitalize; padding: 0 16px 5px 0; border-bottom: 1px solid #eeede8; }
-  .tp-tabla td { padding: 4px 16px 4px 0; vertical-align: baseline; white-space: nowrap; }
-  .tp-prenda { font-size: .82rem; color: #777; min-width: 150px; }
+  /* Ancho al contenido y todo a la izquierda: la hoja global estira las tablas
+     al 100% y centra sus celdas, que acá dispersa el dato lejos de su columna. */
+  .tp-tabla { width: auto; border-collapse: collapse; margin-top: 2px; }
+  .tp-tabla th { position: static; background: none; border-bottom: 1px solid #eeede8;
+                 font-size: .72rem; font-weight: 600; color: #999; text-align: left;
+                 text-transform: capitalize; padding: 0 26px 5px 0; white-space: nowrap; }
+  .tp-tabla td { text-align: left; border-bottom: none; vertical-align: baseline;
+                 padding: 4px 26px 4px 0; white-space: nowrap; }
+  .tp-tabla .tp-prenda { font-size: .82rem; color: #777; padding-right: 30px; }
   .tp-vacio { color: #ddd; }
   .ficha h3 { margin-bottom: 4px; }
   .pend { margin-top: 14px; border-top: 1px solid #ecebe5; padding-top: 12px; }

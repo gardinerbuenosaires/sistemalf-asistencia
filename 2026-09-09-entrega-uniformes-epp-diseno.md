@@ -10,7 +10,7 @@
 ## Estado al 2026-09-15
 
 **El módulo está completo, incluida la ropa pendiente al momento de la baja.** Tandas 0 a 6
-implementadas y probadas —268 chequeos, que corren sobre una copia temporal de la base—, en
+implementadas y probadas —277 chequeos, que corren sobre una copia temporal de la base—, en
 la rama `feat/entregas`, publicada en GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
@@ -135,10 +135,19 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
 - **Reabrir no borra**: el cierre queda como historia con su motivo, y va con el permiso de
   eliminar —el mismo que anular una constancia—, porque deshacer una decisión asentada no es
   lo mismo que tomarla.
-- **Al implementar hay que cerrar en bloque a los egresados viejos.** Son 255 bajas en
-  Gardiner: si la bandeja nace mostrándolas a todas, el reporte es inservible el primer día.
-  El cierre masivo las marca como anteriores al sistema, simula por defecto y va con el
-  permiso de carga inicial.
+- **La bandeja nace vacía, y se llena con la carga histórica.** Comprobado sobre una copia de
+  Gardiner: con el módulo recién migrado hay 255 egresados en la base y **cero** filas en la
+  bandeja, porque no muestra egresados sino egresados con ropa registrada, y todavía no hay
+  ninguna entrega cargada. Basta cargar **una** constancia histórica de alguien que ya se fue
+  para que aparezca. O sea que el problema no es el día del deploy: aparece a medida que RRHH
+  digitaliza el papel.
+- **Por eso el cierre masivo se corre al terminar la carga histórica**, no antes. Marca esas
+  bajas como anteriores al sistema y deja la bandeja con los que se van de verdad a partir de
+  ahí. Existe de dos formas: `scripts/cerrar_egresados.py`, que es la que conviene —simula por
+  defecto, dice sobre qué base escribe y es idempotente—, y el mismo endpoint desde la
+  pantalla, con permiso de carga inicial. La fecha de cada cierre es la del egreso y no la de
+  hoy, para que el corte quede donde corresponde: si esa persona vuelve, lo que se le entregue
+  después cuenta desde su egreso.
 - **Dónde vive cada cosa.** La bandeja es una sub-pestaña de Reportes, al lado de los otros dos
   reportes; el panel de ropa pendiente es parte de la ficha de la persona dentro del módulo,
   debajo de los talles; la ventana de meses es una sub-pestaña de Configuración. En la ficha del
@@ -597,7 +606,9 @@ que cubre el riesgo es la trazabilidad (`motivo_anulacion` obligatorio + `anulad
 - `web/templates/uniformes.html` — pantalla con pestañas
 - `web/templates/uniformes_remito.html` — el imprimible, molde de `legajo_imprimible.html`
 - `scripts/sembrar_uniformes.py` — catálogo inicial sugerido; idempotente, con simulación
-- `tests/` — nueve pruebas, cada una sobre una copia temporal de la base
+- `scripts/cerrar_egresados.py` — cierre masivo de las bajas anteriores al módulo, para correr
+  una vez al terminar la carga histórica
+- `tests/` — diez pruebas, cada una sobre una copia temporal de la base
 
 **Tocados — todo aditivo, ni un `ALTER TABLE` sobre tablas existentes**
 

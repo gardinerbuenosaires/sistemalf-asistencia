@@ -12,6 +12,7 @@ from _base import preparar, token_sistema, RAIZ
 DB = preparar()   # una COPIA de la base: la real nunca se toca
 
 import sqlite3
+import subprocess
 from datetime import date, timedelta
 from fastapi.testclient import TestClient
 import main
@@ -163,21 +164,93 @@ chequear("y se puede cerrar de nuevo",
                   json={"empleado_id": A, "resultado": "devolvio_todo"}).status_code == 201)
 chequear("la ficha muestra los dos cierres", len(pend()["cierres"]) == 2, pend()["cierres"])
 
-print("\n=== CIERRE MASIVO DE PUESTA EN MARCHA ===")
+print("\n=== EL SCRIPT DE CIERRE MASIVO ===")
+# Es el que se corre una sola vez, al terminar la carga historica, para que la
+# bandeja no arrastre a los que se fueron antes de que el modulo existiera.
+#
+# El corte sale de la MEDIANA de las fechas de egreso de esta base, no de una
+# fecha fija: en las dos bases reales todas las bajas son del mismo año, asi que
+# un corte inventado no alcanza a nadie y la prueba pasa sin probar nada.
+n_egresados = con.execute(
+    "SELECT COUNT(*) FROM empleados WHERE activo=0 AND fecha_egreso IS NOT NULL AND tipo!='acceso'"
+).fetchone()[0]
+CORTE = con.execute(
+    """SELECT substr(fecha_egreso,1,10) FROM empleados
+       WHERE activo=0 AND fecha_egreso IS NOT NULL AND tipo!='acceso'
+       ORDER BY fecha_egreso LIMIT 1 OFFSET ?""", (n_egresados // 2,)).fetchone()[0]
+entorno = dict(os.environ, PYTHONIOENCODING="utf-8", DB_PATH=DB)
+
+
+def correr_script(*args):
+    return subprocess.run(
+        [sys.executable, os.path.join(RAIZ, "scripts", "cerrar_egresados.py"), "--hasta", CORTE, *args],
+        capture_output=True, text=True, env=entorno, encoding="utf-8", errors="replace")
+
+
+def vigentes():
+    return con.execute("SELECT COUNT(*) FROM uniformes_cierres WHERE estado='vigente'").fetchone()[0]
+
+
+por_cerrar = con.execute(
+    """SELECT COUNT(*) FROM empleados e
+       WHERE e.activo=0 AND e.fecha_egreso <= ? AND e.tipo!='acceso'
+         AND e.id NOT IN (SELECT empleado_id FROM uniformes_cierres WHERE estado='vigente')""",
+    (CORTE,)).fetchone()[0]
+chequear(f"el corte ({CORTE}) alcanza a alguien, si no esta prueba no prueba nada",
+         por_cerrar > 0, f"{n_egresados} egresados en la base")
+
+antes = vigentes()
+s = correr_script()
+chequear("el script corre", s.returncode == 0, (s.stderr or s.stdout)[-300:])
+chequear("simula por defecto: no escribe nada", vigentes() == antes, f"{antes} -> {vigentes()}")
+chequear("y dice sobre que base va a escribir",
+         os.path.basename(os.path.dirname(DB)) in s.stdout, s.stdout.splitlines()[:1])
+
+s2 = correr_script("--aplicar")
+despues = vigentes()
+chequear("aplicado, cierra las bajas anteriores al corte",
+         s2.returncode == 0 and despues == antes + por_cerrar, f"{antes} + {por_cerrar} -> {despues}")
+chequear("con el resultado que dice que son anteriores al sistema",
+         con.execute("SELECT COUNT(*) FROM uniformes_cierres WHERE resultado='previo_al_sistema'"
+                     ).fetchone()[0] >= por_cerrar)
+chequear("y con la fecha del egreso, no la de hoy, para que el corte quede donde va",
+         con.execute("""SELECT COUNT(*) FROM uniformes_cierres c JOIN empleados e ON e.id=c.empleado_id
+                        WHERE c.cerrado_por='Cierre masivo (script)'
+                          AND c.fecha != substr(e.fecha_egreso,1,10)""").fetchone()[0] == 0)
+
+s3 = correr_script("--aplicar")
+chequear("correrlo de nuevo no cierra nada: es idempotente",
+         vigentes() == despues and "No hay nada para cerrar" in s3.stdout, s3.stdout[-200:])
+
+posteriores = con.execute(
+    "SELECT COUNT(*) FROM empleados WHERE activo=0 AND fecha_egreso > ? AND tipo!='acceso'",
+    (CORTE,)).fetchone()[0]
+sin_cerrar = con.execute(
+    """SELECT COUNT(*) FROM empleados e
+       WHERE e.activo=0 AND e.fecha_egreso > ? AND e.tipo!='acceso'
+         AND e.id NOT IN (SELECT empleado_id FROM uniformes_cierres WHERE estado='vigente')""",
+    (CORTE,)).fetchone()[0]
+if posteriores:
+    chequear("no toca a los que egresaron despues del corte", sin_cerrar > 0,
+             f"{sin_cerrar} de {posteriores}")
+
+print("\n=== CIERRE MASIVO POR API ===")
+# Lo mismo desde la pantalla. El corte es hoy, porque el script ya cerro hasta la
+# mediana: asi este tramo tambien alcanza gente de verdad.
+HASTA_API = HOY.isoformat()
 antes = con.execute("SELECT COUNT(*) FROM uniformes_cierres").fetchone()[0]
-r = cli.post("/api/uniformes/cierres/masivo", json={"hasta": "2024-12-31"}).json()
+r = cli.post("/api/uniformes/cierres/masivo", json={"hasta": HASTA_API}).json()
 ahora = con.execute("SELECT COUNT(*) FROM uniformes_cierres").fetchone()[0]
 chequear("simula por defecto: dice a cuantos alcanza y no escribe nada",
          r["simulacion"] is True and ahora == antes, f"{antes} -> {ahora}")
+chequear("y alcanza a los que quedaron despues del corte del script",
+         r["cantidad"] > 0, r["cantidad"])
 r2 = cli.post("/api/uniformes/cierres/masivo",
-              json={"hasta": "2024-12-31", "simular": False}).json()
+              json={"hasta": HASTA_API, "simular": False}).json()
 ahora = con.execute("SELECT COUNT(*) FROM uniformes_cierres").fetchone()[0]
-chequear("aplicado, cierra a los egresados viejos de una vez",
+chequear("aplicado, cierra a los egresados de una vez",
          r2["cantidad"] == r["cantidad"] and ahora == antes + r2["cantidad"], f"{antes} -> {ahora}")
-chequear("con el resultado que dice que son anteriores al sistema",
-         con.execute("SELECT COUNT(*) FROM uniformes_cierres WHERE resultado='previo_al_sistema'"
-                     ).fetchone()[0] == r2["cantidad"])
-r3 = cli.post("/api/uniformes/cierres/masivo", json={"hasta": "2024-12-31"}).json()
+r3 = cli.post("/api/uniformes/cierres/masivo", json={"hasta": HASTA_API}).json()
 chequear("correrlo de nuevo no alcanza a nadie: ya estan cerrados", r3["cantidad"] == 0, r3["cantidad"])
 
 print("\n=== PERMISOS ===")

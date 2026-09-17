@@ -21,7 +21,14 @@ Uso:  python scripts/sembrar_uniformes.py [--aplicar]
       (sin --aplicar hace una simulación y no escribe nada)
 """
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# La raiz del proyecto, y pararse ahi: DB_PATH sale de config.py como ruta
+# relativa, asi que se resuelve contra el directorio actual. Sin esto, correr el
+# script parado en scripts\ busca la base en scripts\data\ y, si ahi existiera
+# alguna, escribiria en la que no es. Va ANTES de importar config.
+RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, RAIZ)
+os.chdir(RAIZ)
 
 from pathlib import Path
 
@@ -32,6 +39,10 @@ APLICAR = "--aplicar" in sys.argv
 
 # Sin DB_PATH el default es relativo al directorio actual, así que es fácil
 # terminar escribiendo en una base que no es. Mostrarla antes de tocar nada.
+if not Path(DB_PATH).exists():
+    sys.exit(f"No encuentro la base en {Path(DB_PATH).resolve()}\n"
+             f"Revisa que el sistema este instalado ahi, o defini DB_PATH.")
+
 print(f"Base: {Path(DB_PATH).resolve()}")
 print("MODO: " + ("APLICAR (escribe)" if APLICAR else "simulación (no escribe nada)"))
 print()

@@ -184,6 +184,10 @@ else:
     regla = uni_html.split("table.grid td {")[1].split("}")[0]
     chequear("los nombres de las tablas se leen a la izquierda, no centrados",
              "text-align: left" in regla, regla.strip())
+    chequear("entrar a una pestaña vuelve a pedir sus datos, no muestra lo de hace una hora",
+             "refrescarTab(tab)" in uni_html and 'if (tab === "talles") cargarTalles();' in uni_html)
+    chequear("y el arranque no dispara las consultas dos veces",
+             "if (!_arranqueListo) return;" in uni_html)
 
 print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")

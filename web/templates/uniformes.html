@@ -853,11 +853,29 @@ function fmtFechaHora(dt) {
   return fmtFecha(dt) + (hora ? " " + hora : "");
 }
 
+// Hasta que termina el arranque no se refresca nada: si no, abrir la página
+// dispararía dos veces cada consulta.
+let _arranqueListo = false;
+
 function verTab(tab) {
   document.querySelectorAll(".panel").forEach(p => p.classList.remove("activo"));
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("activa"));
   document.getElementById("panel-" + tab).classList.add("activo");
   document.getElementById("tab-" + tab).classList.add("activa");
+  refrescarTab(tab);
+}
+
+// Entrar a una pestaña vuelve a pedir sus datos. Sin esto, la pantalla muestra
+// lo que se cargó al abrirla: el talle que acaba de guardar una constancia no
+// aparecía en la grilla, y tampoco lo que cargue otro usuario mientras tanto.
+// Cada carga lee sus propios filtros, así que se respeta lo que esté elegido.
+function refrescarTab(tab) {
+  if (!_arranqueListo) return;
+  if (tab === "talles") cargarTalles();
+  else if (tab === "constancias") { cargarDatosConstancias().then(cargarConstancias); }
+  else if (tab === "reportes") {
+    consultarEntregas(); consultarAntiguedad(); consultarBajas(); consultarTallesPuesto();
+  }
 }
 
 // ── Estado ───────────────────────────────────────────────────────────────────
@@ -2283,7 +2301,8 @@ async function abrirFichaDesdeUrl() {
     await cargarParametros();
     await cargarFiltrosReportes();
     await abrirFichaDesdeUrl();
-  } catch (e) { toast(e.message, true); }
+    _arranqueListo = true;
+  } catch (e) { toast(e.message, true); _arranqueListo = true; }
 })();
 </script>
 

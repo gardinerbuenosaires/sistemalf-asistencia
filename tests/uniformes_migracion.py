@@ -160,7 +160,10 @@ chequear("el modulo se prende con una casilla, sin tocar la base a mano",
 chequear("que escribe la bandera por el mismo endpoint que el resto",
          '"/api/configuracion/uniformes_activo"' in cfg)
 chequear("y se ve aunque el modulo este apagado, si no no habria como prenderlo",
-         'id="chk-uniformes-activo"' in cfg.split('id="datos-fiscales"')[0])
+         'id="chk-uniformes-activo"' not in cfg.split('id="datos-fiscales"')[1].split("</div>")[0])
+chequear("vive con las otras funcionalidades opcionales, al lado de VP",
+         cfg.index("chk-uniformes-activo") > cfg.index("Funcionalidades adicionales")
+         and cfg.index("chk-uniformes-activo") - cfg.index("chk-vp-activo") < 900)
 
 print(f"\n{'=' * 52}\n  {ok} pasaron, {fallos} fallaron\n{'=' * 52}")
 raise SystemExit(1 if fallos else 0)

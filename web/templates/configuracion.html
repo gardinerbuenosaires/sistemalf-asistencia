@@ -274,21 +274,6 @@
           <span style="font-size:.75rem;color:#aaa">PNG, JPG, SVG o WebP</span>
         </div>
       </div>
-      <!-- El interruptor del módulo. Se ve siempre, prendido o apagado: si solo
-           apareciera con el módulo activo, no habría forma de prenderlo desde acá. -->
-      <div style="margin-top:22px;padding-top:16px;border-top:1px solid #eee">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;font-weight:bold">
-          <input type="checkbox" id="chk-uniformes-activo" onchange="toggleUniformes(this.checked)">
-          Activar módulo de uniformes y EPP
-        </label>
-        <p style="margin:6px 0 0 24px;font-size:.82rem;color:#666">
-          Agrega la pantalla de entrega de uniformes y EPP: constancias firmadas, talles del
-          personal, reportes y el cierre del circuito al dar de baja. Apagado, el módulo no existe
-          para nadie —sin link en el menú y sin figurar en Roles— y lo que ya esté cargado queda
-          intacto, así se puede volver a prender sin perder nada.
-        </p>
-      </div>
-
       <!-- Datos fiscales: encabezado de las constancias de uniformes. Solo con el módulo prendido. -->
       <div id="datos-fiscales" style="display:none;margin-top:22px;padding-top:16px;border-top:1px solid #eee">
         <div class="section-title" style="font-size:.92rem">Datos fiscales</div>
@@ -362,6 +347,14 @@
           <span>
             <b>Vacaciones pagadas (VP)</b>
             <span style="font-size:.82rem;color:#666;display:block">Habilita la columna VP en la planilla mensual para registrar días de vacaciones pagadas sin ausencia. Solo aplica a este restaurante.</span>
+          </span>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+          <input type="checkbox" id="chk-uniformes-activo" onchange="toggleUniformes(this.checked)"
+                 style="width:16px;height:16px;cursor:pointer">
+          <span>
+            <b>Uniformes y EPP</b>
+            <span style="font-size:.82rem;color:#666;display:block">Agrega la pantalla de entrega de uniformes y EPP: constancias firmadas, talles del personal, reportes y el cierre del circuito al dar de baja. Apagado, el módulo no existe para nadie —sin link en el menú y sin figurar en Roles— y lo ya cargado queda intacto. Los datos fiscales de las constancias se completan en Empresa.</span>
           </span>
         </label>
       </div>
@@ -2266,8 +2259,9 @@ async function cargarDatosFiscales() {
     const params = await fetch("/api/configuracion").then(r => r.json());
     const valor = k => params.find(p => p.clave === k)?.valor ?? "";
 
-    // La casilla refleja el estado real y se dibuja siempre. Si la clave todavía
-    // no existe —base que aún no arrancó con este código— queda apagada.
+    // Además de lo fiscal, esta función refleja la casilla del módulo, que vive
+    // en «Funcionalidades adicionales». Se dibuja siempre, prendida o apagada; si
+    // la clave no existe —base que aún no arrancó con este código— queda apagada.
     const activo = valor("uniformes_activo") === "1";
     const chk = document.getElementById("chk-uniformes-activo");
     if (chk) chk.checked = activo;

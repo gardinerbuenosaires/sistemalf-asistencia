@@ -274,6 +274,21 @@
           <span style="font-size:.75rem;color:#aaa">PNG, JPG, SVG o WebP</span>
         </div>
       </div>
+      <!-- El interruptor del módulo. Se ve siempre, prendido o apagado: si solo
+           apareciera con el módulo activo, no habría forma de prenderlo desde acá. -->
+      <div style="margin-top:22px;padding-top:16px;border-top:1px solid #eee">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;font-weight:bold">
+          <input type="checkbox" id="chk-uniformes-activo" onchange="toggleUniformes(this.checked)">
+          Activar módulo de uniformes y EPP
+        </label>
+        <p style="margin:6px 0 0 24px;font-size:.82rem;color:#666">
+          Agrega la pantalla de entrega de uniformes y EPP: constancias firmadas, talles del
+          personal, reportes y el cierre del circuito al dar de baja. Apagado, el módulo no existe
+          para nadie —sin link en el menú y sin figurar en Roles— y lo que ya esté cargado queda
+          intacto, así se puede volver a prender sin perder nada.
+        </p>
+      </div>
+
       <!-- Datos fiscales: encabezado de las constancias de uniformes. Solo con el módulo prendido. -->
       <div id="datos-fiscales" style="display:none;margin-top:22px;padding-top:16px;border-top:1px solid #eee">
         <div class="section-title" style="font-size:.92rem">Datos fiscales</div>
@@ -2230,12 +2245,35 @@ function switchCfgTab(tab) {
 const CLAVES_FISCALES = ["empresa_razon_social", "empresa_cuit", "empresa_direccion",
                          "empresa_localidad", "empresa_cp", "empresa_provincia"];
 
+async function toggleUniformes(activo) {
+  const res = await fetch("/api/configuracion/uniformes_activo", {
+    method: "PUT", headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ valor: activo ? "1" : "0" }),
+  });
+  if (!res.ok) {
+    document.getElementById("chk-uniformes-activo").checked = !activo;
+    return toast("Error al guardar");
+  }
+  await cargarDatosFiscales();
+  // El link del menú se dibuja con los permisos que se leyeron al abrir la
+  // página, así que hasta recargar no aparece.
+  toast(activo ? "Módulo activado — recargá la página para ver el menú"
+               : "Módulo desactivado");
+}
+
 async function cargarDatosFiscales() {
   try {
     const params = await fetch("/api/configuracion").then(r => r.json());
     const valor = k => params.find(p => p.clave === k)?.valor ?? "";
-    // Con la bandera del módulo apagada, el bloque no se muestra.
-    if (valor("uniformes_activo") !== "1") return;
+
+    // La casilla refleja el estado real y se dibuja siempre. Si la clave todavía
+    // no existe —base que aún no arrancó con este código— queda apagada.
+    const activo = valor("uniformes_activo") === "1";
+    const chk = document.getElementById("chk-uniformes-activo");
+    if (chk) chk.checked = activo;
+
+    // Los datos fiscales, en cambio, solo tienen sentido con el módulo prendido.
+    if (!activo) { document.getElementById("datos-fiscales").style.display = "none"; return; }
     document.getElementById("datos-fiscales").style.display = "";
     for (const k of CLAVES_FISCALES) {
       const el = document.getElementById("fis-" + k);

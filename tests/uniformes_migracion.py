@@ -154,5 +154,13 @@ chequear(f"uniformes.html carga los {len(comunes)} scripts que cargan las otras 
 chequear("entre ellos, el que muestra el logo de la empresa",
          "nav-brand.js" in plantillas.get("uniformes.html", set()))
 
+cfg = open(os.path.join(RAIZ, "web", "templates", "configuracion.html"), encoding="utf-8-sig").read()
+chequear("el modulo se prende con una casilla, sin tocar la base a mano",
+         'id="chk-uniformes-activo"' in cfg and "toggleUniformes" in cfg)
+chequear("que escribe la bandera por el mismo endpoint que el resto",
+         '"/api/configuracion/uniformes_activo"' in cfg)
+chequear("y se ve aunque el modulo este apagado, si no no habria como prenderlo",
+         'id="chk-uniformes-activo"' in cfg.split('id="datos-fiscales"')[0])
+
 print(f"\n{'=' * 52}\n  {ok} pasaron, {fallos} fallaron\n{'=' * 52}")
 raise SystemExit(1 if fallos else 0)

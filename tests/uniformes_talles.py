@@ -177,6 +177,10 @@ else:
              "tp-tabla" in uni_html and "escalas.map(s => `<th>" in uni_html)
     chequear("y no se estira a todo el ancho: se lee pegado a la izquierda",
              ".tp-tabla { width: auto;" in uni_html and ".tp-tabla td { text-align: left;" in uni_html)
+    chequear("la lista nombre por nombre agrupa sus columnas por prenda",
+             "tp-nom" in uni_html and 'rowspan="2">Empleado' in uni_html)
+    chequear("y sus celdas salen del mismo orden que su encabezado",
+             "colsOrden.map(c =>" in uni_html)
 
 print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")

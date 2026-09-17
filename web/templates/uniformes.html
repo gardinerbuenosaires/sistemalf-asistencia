@@ -115,6 +115,9 @@
   .tp-tabla td { text-align: left; border-bottom: none; vertical-align: baseline;
                  padding: 4px 26px 4px 0; white-space: nowrap; }
   .tp-tabla .tp-prenda { font-size: .82rem; color: #777; padding-right: 30px; }
+  .tp-nom th.grupo { text-align: center; border-bottom: 1px solid #D3D1C7; }
+  .tp-nom th.sub { text-align: center; font-weight: normal; font-size: .72rem;
+                   color: #777; text-transform: capitalize; }
   .tp-vacio { color: #ddd; }
   .ficha h3 { margin-bottom: 4px; }
   .pend { margin-top: 14px; border-top: 1px solid #ecebe5; padding-top: 12px; }
@@ -1937,6 +1940,10 @@ async function consultarTallesPuesto() {
       if (c.sub && !escalas.includes(c.sub)) escalas.push(c.sub);
   if (!escalas.length) escalas.push("Talle");   // catálogo sin escalas partidas
 
+  // El orden de las columnas de la tabla de abajo sale del mismo agrupamiento
+  // que su encabezado: celda y título no pueden quedar corridos.
+  const colsOrden = gruposTipos.flatMap(g => g.cols);
+
   const recuento = mapa => {
     const celda = (g, sub) => {
       const col = g.cols.find(c => (c.sub || null) === sub);
@@ -1973,12 +1980,16 @@ async function consultarTallesPuesto() {
               g.sin_talle ? ` · ${g.sin_talle} sin talle` : ""}${
               g.sin_uniforme ? " · puesto que no recibe uniforme" : ""}</small></h3>
           ${recuento(g.resumen)}
-          <table class="grid" style="margin-top:8px"><thead><tr><th>Empleado</th>
-            ${d.tipos.map(t => `<th style="text-align:center">${esc(t.nombre)}</th>`).join("")}
-          </tr></thead><tbody>${g.personas.map(p => `<tr>
+          <table class="grid tp-nom" style="margin-top:8px"><thead>
+            <tr><th rowspan="2">Empleado</th>${gruposTipos.map(gt => gt.partido
+                ? `<th class="grupo" colspan="${gt.cols.length}">${esc(gt.base)}</th>`
+                : `<th class="grupo" rowspan="2" style="text-align:center">${esc(gt.base)}</th>`).join("")}</tr>
+            <tr>${gruposTipos.filter(gt => gt.partido).flatMap(gt =>
+                gt.cols.map(c => `<th class="sub">${esc(c.sub)}</th>`)).join("")}</tr>
+          </thead><tbody>${g.personas.map(p => `<tr>
             <td>${esc(p.empleado)}</td>
-            ${d.tipos.map(t => {
-              const v = p.talles[String(t.id)];
+            ${colsOrden.map(c => {
+              const v = p.talles[String(c.id)];
               return `<td style="text-align:center">${v ? `<b>${esc(v)}</b>` : '<span style="color:#ccc">—</span>'}</td>`;
             }).join("")}</tr>`).join("")}</tbody></table>
         </div>`).join("")

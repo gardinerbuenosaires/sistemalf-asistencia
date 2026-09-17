@@ -181,6 +181,9 @@ else:
              "tp-nom" in uni_html and 'rowspan="2">Empleado' in uni_html)
     chequear("y sus celdas salen del mismo orden que su encabezado",
              "colsOrden.map(c =>" in uni_html)
+    regla = uni_html.split("table.grid td {")[1].split("}")[0]
+    chequear("los nombres de las tablas se leen a la izquierda, no centrados",
+             "text-align: left" in regla, regla.strip())
 
 print("\n=== BANDERA ===")
 con.execute("UPDATE configuracion SET valor='0' WHERE clave='uniformes_activo'")

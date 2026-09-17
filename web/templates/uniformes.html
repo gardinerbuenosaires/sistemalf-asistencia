@@ -220,7 +220,10 @@
   table.grid { width: 100%; border-collapse: collapse; font-size: .85rem; background: white; }
   table.grid th { background: #F1EFE8; text-align: left; padding: 8px 10px; font-size: .78rem;
                   color: #555; border-bottom: 1px solid #D3D1C7; white-space: nowrap; }
-  table.grid td { padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  /* A la izquierda: la hoja global centra todas las celdas —viene de las grillas
+     de asistencia, que son numeros— y con nombres de largo distinto el ojo pierde
+     donde arranca cada uno. Las cantidades y talles piden su centrado aparte. */
+  table.grid td { padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: middle; text-align: left; }
   table.grid tr.inactivo td { color: #aaa; }
   table.grid tr:hover td { background: #fafaf8; }
   .vacio { padding: 22px; text-align: center; color: #999; font-size: .85rem; }
@@ -1461,7 +1464,7 @@ function agregarRenglon() {
       <div class="talle-tiene"></div>
     </td>
     <td><input type="text" class="cn-obs-item" placeholder="opcional" style="width:100%"></td>
-    <td><button class="btn btn-link peligro btn-sm" onclick="quitarRenglon(this)" title="Quitar">×</button></td>`;
+    <td style="text-align:center"><button class="btn btn-link peligro btn-sm" onclick="quitarRenglon(this)" title="Quitar">×</button></td>`;
   tb.appendChild(tr);
   renumerarRenglones();
 }

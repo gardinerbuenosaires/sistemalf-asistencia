@@ -10,7 +10,8 @@
 ## Estado al 2026-09-15
 
 **El módulo está completo, incluida la ropa pendiente al momento de la baja.** Tandas 0 a 6
-implementadas y probadas —298 chequeos, que corren sobre una copia temporal de la base—, en
+implementadas y probadas —301 chequeos sobre la base de desarrollo y 303 sobre una copia de
+Happening, que corren sobre una copia temporal de la base—, en
 la rama `feat/entregas`, publicada en GitHub. **No está en `main` ni en producción.**
 
 | Tanda | Qué | Estado |
@@ -177,7 +178,12 @@ No estaban en el diseño original; se tomaron al ver el sistema funcionando.
   hay que repartirlo. Solo personal activo, y los puestos marcados como que no reciben uniforme
   quedan afuera para no inflar la compra. Una prueba verifica que el total sea la suma exacta del
   detalle: si el resumen y la nómina no coinciden se compra mal, y eso se descubre recién cuando
-  llega el pedido.
+  llega el pedido. El recuento se lee **por prenda, con una columna por escala** y la escala como
+  encabezado —el mismo agrupamiento que usa la grilla de Talles, para que un pantalón no se lea
+  distinto en dos pantallas—, y ajustado al contenido contra el margen izquierdo: estirado a todo
+  el ancho, el dato queda lejos de su columna y hay que adivinar cuál es cuál. Las escalas **no se
+  suman entre sí**: la misma persona puede estar cargada en número y en letra, así que sumarlas
+  contaría dos veces a la misma gente y se compraría de más.
 - **Dónde vive cada cosa.** La bandeja es una sub-pestaña de Reportes, al lado de los otros dos
   reportes; el panel de ropa pendiente es parte de la ficha de la persona dentro del módulo,
   debajo de los talles; la ventana de meses es una sub-pestaña de Configuración. En la ficha del

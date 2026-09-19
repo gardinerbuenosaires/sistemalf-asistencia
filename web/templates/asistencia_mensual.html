@@ -358,6 +358,20 @@ tr[draggable="true"]:active { cursor: grabbing; }
 #cell-tooltip .tip-fich  { color: #e0e0e0; }
 #cell-tooltip .tip-manual{ color: #f0a500; font-size: .7rem; }
 #cell-tooltip .tip-vacio  { color: #778899; font-style: italic; }
+/* Notas de la celda: las mismas en el tooltip (fondo oscuro) y en la ventana de novedad (fondo blanco) */
+.tip-chico { font-size: .68rem; }
+.tip-co    { margin-top: 5px; background: #e8f4fd; color: #1a6c9c; border-radius: 3px;
+             padding: 2px 6px; font-size: .72rem; white-space: normal; }
+.tip-aviso { font-size: .71rem; margin-top: 5px; white-space: normal; line-height: 1.4; }
+#cell-tooltip .tip-texto { white-space: normal; max-width: 220px; }
+#cell-tooltip .tip-aviso { color: #f0c040; }
+#cell-tooltip .tip-aviso.sincal { color: #ff8a80; }
+.modal-fichadas { font-size: .78rem; color: #2c3e50; line-height: 1.5; margin-top: 6px; }
+.modal-fichadas:empty { display: none; }
+.modal-fichadas .tip-manual { color: #9a6200; font-size: .72rem; }
+.modal-fichadas .tip-vacio  { color: #8a96a3; font-style: italic; }
+.modal-fichadas .tip-aviso  { color: #9a6200; margin-top: 3px; }
+.modal-fichadas .tip-aviso.sincal { color: #c0392b; }
 
 /* Panel corrección de planificación (franco) */
 .mpanel-franco-info {
@@ -472,6 +486,7 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
   <button class="btn-orden" data-perm="asistencia:carga_inicial" onclick="abrirSaldoFrancos()"
           style="background:#856404;color:white;border-color:#856404">Saldo inicial francos</button>
   <button class="btn-orden" onclick="reporteNF()" title="Imprime empleados con No Fichadas en el período">Reporte NF</button>
+  <button class="btn-orden" onclick="reporteFM()" title="Imprime las fichadas cargadas a mano en el período: quién las cargó y a quién">Reporte FM</button>
   <button class="btn-orden btn-cerrar" id="btn-cerrar-periodo" style="display:none" onclick="toggleCerrarPeriodo()">
     Cerrar período
   </button>
@@ -614,6 +629,7 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
 <div id="modal" style="display:none">
   <h3 id="modal-nombre"></h3>
   <div class="subtitulo" id="modal-subtitulo"></div>
+  <div class="modal-fichadas" id="modal-fichadas"></div>
 
   <div id="bloque-sel-wrap" class="bloque-sel" style="display:none">
     <button class="bloque-btn selected" data-b="1" onclick="selBloque(1)">Bloque 1</button>
@@ -2064,6 +2080,7 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   const bsel = document.getElementById('bloque-sel-wrap');
   bsel.style.display = esCortado ? 'flex' : 'none';
   if (esCortado) selBloque(bloqueInicial, true);
+  _mostrarInfoModal();
 
   let desc = '';
   if (celda) {
@@ -2120,6 +2137,7 @@ function selBloque(b, skipSubtitulo) {
   if (!skipSubtitulo)
     document.getElementById('modal-subtitulo').textContent =
       `${modalCtx.fecha.split('-').reverse().join('-')}  —  ${['Día completo','Bloque 1','Bloque 2'][b]}`;
+  if (!skipSubtitulo) _mostrarInfoModal();   // las notas cambian con el bloque
 }
 
 function _empleadosParaReemplazo(excludeId) {
@@ -2577,6 +2595,76 @@ let _tipTimer = null;
 let _tipCache = {};
 let _tipCelActual = null;
 
+// Fichadas del día de un empleado (con caché: se limpia al recargar la planilla)
+async function _fichadasDia(eid, fecha) {
+  const key = `${eid}_${fecha}`;
+  if (_tipCache[key] !== undefined) return _tipCache[key];
+  try {
+    const r = await fetch(`/api/fichajes/dia?empleado_id=${eid}&fecha=${fecha}`);
+    _tipCache[key] = r.ok ? await r.json() : null;
+    return _tipCache[key];
+  } catch { return null; }
+}
+
+// Notas de la celda (CP, novedad, observación, avisos). Las usan el tooltip y
+// la ventana de novedad, así las dos muestran lo mismo.
+// `target`: el elemento del bloque; `cel`: el que lleva data-eid/data-fecha.
+function _notasCeldaHtml(target, cel, eid, fecha) {
+  let html = '';
+  const tipSrc = target.closest('[data-desc]') || cel;
+  const isCp  = target.closest('[data-cp]')?.dataset.cp === '1' || cel.dataset.cp === '1';
+  const desc  = tipSrc.dataset.desc;
+  const autor = tipSrc.dataset.autor;
+  const coComment = cel.dataset.coComment;
+  const coAutor   = cel.dataset.coAutor;
+  if (isCp)      html += `<div class="tip-manual" style="margin-top:4px;font-weight:bold;text-transform:uppercase">COMPENSACIÓN DE PRESENCIA</div>`;
+  if (desc)      html += `<div class="tip-manual tip-texto" style="margin-top:2px;white-space:normal">${escHtml(desc)}</div>`;
+  if (autor)     html += `<div class="tip-vacio tip-chico" style="margin-top:2px">${escHtml(autor)}</div>`;
+  if (coComment) html += `<div class="tip-co tip-texto">💬 ${escHtml(coComment)}</div>`;
+  if (coComment && coAutor) html += `<div class="tip-vacio tip-chico" style="margin-top:1px">${escHtml(coAutor)}</div>`;
+  const sinCal = target.closest('[data-sincal]')?.dataset.sincal
+              || cel.querySelector('[data-sincal]')?.dataset.sincal;
+  if (sinCal) html += `<div class="tip-aviso tip-texto sincal">⚠ ${sinCal === 'fichado'
+    ? 'Fichó, pero este día no tiene planificación con horario: no se evalúa ni genera novedades. Revisar el calendario asignado.'
+    : 'Planificado sin horario (sin calendario): no se puede evaluar.'}</div>`;
+  if (cel.closest('tr')?.querySelector('.tipo-mt')) html += `<div class="tip-aviso tip-texto">⚠ Bloque MT — al cargar cualquier novedad que no sea presente, aplicala en ambos bloques, sino el día no se cuenta correctamente.</div>`;
+  const asigPor = _asignaciones[`${eid}_${fecha}`];
+  if (asigPor) html += `<div class="tip-manual" style="margin-top:4px">✎ Asignado por: ${escHtml(asigPor)}</div>`;
+  return html;
+}
+
+// Ventana de novedad: fichadas en un renglón + las mismas notas del tooltip.
+// Es lo que se ve desde una tablet, donde el tooltip no aparece.
+async function _mostrarInfoModal() {
+  const box = document.getElementById('modal-fichadas');
+  box.innerHTML = '';
+  const ctx = modalCtx;
+  if (!ctx || ctx.multiSel) return;
+  const {eid, fecha} = ctx;
+  const sel = `[data-eid="${eid}"][data-fecha="${fecha}"]`;
+  const cel = document.querySelector(`.tab-panel.active ${sel}`) || document.querySelector(sel);
+  const fichs = await _fichadasDia(eid, fecha);
+  if (modalCtx !== ctx) return;   // se cerró o se abrió otra celda mientras cargaba
+  let html;
+  if (!fichs || fichs.length === 0) {
+    html = `<div class="tip-vacio">Sin fichajes</div>`;
+  } else {
+    html = `<div>Fichadas: ${fichs.map(f =>
+      f.timestamp.substring(11,16) + (f.es_manual ? '<span class="tip-manual">✎</span>' : '')).join(' · ')}</div>`;
+    fichs.filter(f => f.es_manual && (f.cargado_por_nombre || f.motivo_manual)).forEach(f => {
+      html += `<div class="tip-manual">✎ ${f.timestamp.substring(11,16)}`
+        + (f.cargado_por_nombre ? ` cargada por ${escHtml(f.cargado_por_nombre)}` : '')
+        + (f.motivo_manual ? `: "${escHtml(f.motivo_manual)}"` : '') + `</div>`;
+    });
+  }
+  if (cel) {
+    const b = ctx.bloqueActivo;
+    const target = (b > 0 && cel.classList.contains('celda-cortado')) ? (cel.children[b - 1] || cel) : cel;
+    html += _notasCeldaHtml(target, cel, eid, fecha);
+  }
+  box.innerHTML = html;
+}
+
 function _tipShow(e) {
   const cel = e.target.closest('[data-eid][data-fecha]');
   if (cel === _tipCelActual) return;
@@ -2587,17 +2675,7 @@ function _tipShow(e) {
   const eid   = cel.dataset.eid;
   const fecha = cel.dataset.fecha;
   _tipTimer = setTimeout(async () => {
-    const key = `${eid}_${fecha}`;
-    let fichs;
-    if (_tipCache[key] !== undefined) {
-      fichs = _tipCache[key];
-    } else {
-      try {
-        const r = await fetch(`/api/fichajes/dia?empleado_id=${eid}&fecha=${fecha}`);
-        fichs = r.ok ? await r.json() : null;
-        _tipCache[key] = fichs;
-      } catch { fichs = null; }
-    }
+    const fichs = await _fichadasDia(eid, fecha);
     let html = `<div class="tip-fecha">${_fmtFecha(fecha)}</div>`;
     if (!fichs || fichs.length === 0) {
       html += `<div class="tip-vacio">Sin fichajes</div>`;
@@ -2612,26 +2690,7 @@ function _tipShow(e) {
         return fila + `</div>`;
       }).join('');
     }
-    const tipSrc = e.target.closest('[data-desc]') || cel;
-    const isCp  = e.target.closest('[data-cp]')?.dataset.cp === '1' || cel.dataset.cp === '1';
-    const desc  = tipSrc.dataset.desc;
-    const autor = tipSrc.dataset.autor;
-    const coComment = cel.dataset.coComment;
-    const coAutor   = cel.dataset.coAutor;
-    if (isCp)      html += `<div class="tip-manual" style="margin-top:4px;font-weight:bold;text-transform:uppercase">COMPENSACIÓN DE PRESENCIA</div>`;
-    if (desc)      html += `<div class="tip-manual" style="margin-top:2px;white-space:normal;max-width:160px">${escHtml(desc)}</div>`;
-    if (autor)     html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:2px">${escHtml(autor)}</div>`;
-    if (coComment) html += `<div style="margin-top:5px;background:#e8f4fd;color:#1a6c9c;border-radius:3px;padding:2px 6px;font-size:.72rem;white-space:normal;max-width:180px">💬 ${escHtml(coComment)}</div>`;
-    if (coComment && coAutor) html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:1px">${escHtml(coAutor)}</div>`;
-    const sinCal = e.target.closest('[data-sincal]')?.dataset.sincal
-                || cel.querySelector('[data-sincal]')?.dataset.sincal;
-    if (sinCal) html += `<div style="color:#ff8a80;font-size:.71rem;margin-top:5px;white-space:normal;max-width:220px;line-height:1.4">⚠ ${sinCal === 'fichado'
-      ? 'Fichó, pero este día no tiene planificación con horario: no se evalúa ni genera novedades. Revisar el calendario asignado.'
-      : 'Planificado sin horario (sin calendario): no se puede evaluar.'}</div>`;
-    if (cel.closest('tr')?.querySelector('.tipo-mt')) html += `<div style="color:#f0c040;font-size:.71rem;margin-top:5px;white-space:normal;max-width:220px;line-height:1.4">⚠ Bloque MT — al cargar cualquier novedad que no sea presente, aplicala en ambos bloques, sino el día no se cuenta correctamente.</div>`;
-    const asigKey = `${eid}_${fecha}`;
-    const asigPor = _asignaciones[asigKey];
-    if (asigPor) html += `<div class="tip-manual" style="margin-top:4px">✎ Asignado por: ${escHtml(asigPor)}</div>`;
+    html += _notasCeldaHtml(e.target, cel, eid, fecha);
     _tipEl.innerHTML = html;
     _tipEl.style.display = 'block';
     _tipPos(e);
@@ -2736,6 +2795,7 @@ function abrirModalMulti() {
   document.getElementById('modal-nombre').textContent =
     `${n} celda${n > 1 ? 's' : ''} seleccionada${n > 1 ? 's' : ''}`;
   document.getElementById('modal-subtitulo').textContent = 'Novedad múltiple';
+  document.getElementById('modal-fichadas').innerHTML = '';
   document.getElementById('modal-estado-actual').textContent = '';
   document.getElementById('bloque-sel-wrap').style.display  = 'none';
   document.getElementById('modal-tab-bar').style.display    = 'none';
@@ -2897,6 +2957,87 @@ function reporteNF() {
     <h2>Reporte No Fichadas — ${periodo}</h2>
     <div class="sub">Solo empleados con NF &gt; 0</div>
     ${bloques}
+</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+// Fichadas cargadas a mano: resumen por quién las cargó y detalle por empleado.
+// Sale de los mismos datos de la planilla (emp.fichajes_manuales).
+function reporteFM() {
+  if (!datosActuales) { alert('Cargá un período primero'); return; }
+  const d = datosActuales;
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const [y, m] = mesActual.split('-');
+  const periodo = `${meses[parseInt(m,10)-1]} ${y}`;
+  const sinMotivo = f => !(f.motivo || '').trim();
+
+  const emps = ['TM','TN','CO','ST'].flatMap(g => d[g] || [])
+    .filter(e => (e.fichajes_manuales || []).length)
+    .map(e => ({ e, fm: [...e.fichajes_manuales].sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora)) }))
+    .sort((a, b) => b.fm.length - a.fm.length || `${a.e.apellido} ${a.e.nombre}`.localeCompare(`${b.e.apellido} ${b.e.nombre}`, 'es'));
+  if (!emps.length) { alert('No hay fichajes manuales en este período.'); return; }
+
+  // Resumen por quién cargó
+  const porQuien = {};
+  emps.forEach(({ e, fm }) => fm.forEach(f => {
+    const q = f.quien || '(sin dato)';
+    const r = porQuien[q] ||= { n: 0, emps: new Set(), sinMotivo: 0 };
+    r.n++; r.emps.add(e.id); if (sinMotivo(f)) r.sinMotivo++;
+  }));
+  const total = emps.reduce((s, x) => s + x.fm.length, 0);
+  const totalSinMotivo = emps.reduce((s, x) => s + x.fm.filter(sinMotivo).length, 0);
+
+  const th = (t, al = 'left') => `<th style="text-align:${al};border-bottom:2px solid #333">${t}</th>`;
+  const filasQuien = Object.entries(porQuien).sort((a, b) => b[1].n - a[1].n).map(([q, r]) => `
+      <tr>
+        <td>${escHtml(q)}</td>
+        <td style="text-align:center;font-weight:bold">${r.n}</td>
+        <td style="text-align:center">${r.emps.size}</td>
+        <td style="text-align:center">${r.sinMotivo}</td>
+      </tr>`).join('');
+  // Una fila por fichada; empleado, cargo y cantidad ocupan todas sus filas.
+  const filasEmp = emps.map(({ e, fm }, i) => fm.map((f, j) => `
+      <tr class="${i % 2 ? 'par' : ''}${j === 0 ? ' primera' : ''}">
+        ${j === 0 ? `<td rowspan="${fm.length}" style="white-space:nowrap">${escHtml(e.apellido)}, ${escHtml(e.nombre)}</td>
+        <td rowspan="${fm.length}">${escHtml(e.cargo || '')}</td>
+        <td rowspan="${fm.length}" style="text-align:center;font-weight:bold">${fm.length}</td>` : ''}
+        <td style="white-space:nowrap">${f.fecha.slice(8,10)}/${f.fecha.slice(5,7)}</td>
+        <td>${f.hora}</td>
+        <td style="white-space:nowrap">${escHtml(f.quien || 'sin dato')}</td>
+        <td class="motivo">${sinMotivo(f) ? '' : escHtml(f.motivo.trim())}</td>
+      </tr>`).join('')).join('');
+
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Reporte fichajes manuales — ${periodo}</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 8mm 8mm 8mm 6mm; color: #333; }
+      h2 { font-size: 1.1rem; margin-bottom: 4px; }
+      h3 { margin: 18px 0 6px; font-size: .95rem; border-bottom: 1px solid #333; padding-bottom: 3px; }
+      .sub { font-size: .8rem; color: #666; margin-bottom: 16px; }
+      table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+      .resumen tbody tr:nth-child(even), tr.par { background: #f5f5f5; }
+      tr.primera td { border-top: 1px solid #ccc; }
+      tr { page-break-inside: avoid; }
+      td, th { padding: 4px 8px; vertical-align: top; }
+      .motivo { color: #9a6200; font-style: italic; }
+      @media print { body { margin: 0; } @page { size: A4 portrait; margin: 10mm 8mm 10mm 6mm; } }
+    </style>
+  </head><body>
+    <h2>Reporte fichajes manuales — ${periodo}</h2>
+    <div class="sub">${total} fichada${total === 1 ? '' : 's'} cargada${total === 1 ? '' : 's'} a mano en ${emps.length} empleado${emps.length === 1 ? '' : 's'} · ${totalSinMotivo} sin motivo</div>
+    <h3>Por quién las cargó</h3>
+    <table class="resumen">
+      <thead><tr>${th('Cargó')}${th('Fichadas','center')}${th('Empleados','center')}${th('Sin motivo','center')}</tr></thead>
+      <tbody>${filasQuien}</tbody>
+    </table>
+    <h3>Por empleado</h3>
+    <table>
+      <thead><tr>${th('Empleado')}${th('Cargo')}${th('Cant.','center')}${th('Fecha')}${th('Hora')}${th('Cargó')}${th('Motivo')}</tr></thead>
+      <tbody>${filasEmp}</tbody>
+    </table>
 </body></html>`);
   win.document.close();
   win.focus();

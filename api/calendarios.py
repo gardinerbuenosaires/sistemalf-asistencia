@@ -348,7 +348,7 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
         asignaciones = conn.execute(
             """
             SELECT a.empleado_id, a.calendario_id, a.franco_rotativo, a.franco_dia_semana,
-                   e.fecha_egreso
+                   a.fecha_desde, a.fecha_hasta, e.fecha_egreso
             FROM asignaciones a
             JOIN empleados e ON e.id = a.empleado_id
             WHERE a.fecha_desde <= ?
@@ -360,22 +360,26 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
             (dias[6], dias[0], dias[0])
         ).fetchall()
 
-        # Quedarnos con la asignación más reciente por empleado
-        asig_map: dict[int, dict] = {}
-        for a in asignaciones:
-            if a["empleado_id"] not in asig_map:
-                asig_map[a["empleado_id"]] = {
-                    "calendario_id":    a["calendario_id"],
-                    "franco_rotativo":  bool(a["franco_rotativo"]),
-                    "franco_dia_semana": a["franco_dia_semana"],
-                    "fecha_egreso":     (a["fecha_egreso"] or "")[:10],
-                }
-
+        # La asignación se resuelve día por día: una que empieza o termina a mitad
+        # de semana cubre solo sus días (fecha_desde <= día < fecha_hasta). Aplicar
+        # la más reciente a la semana entera hacía que un cambio de calendario
+        # reescribiera los días anteriores, y que quitar un calendario (que ahora
+        # cierra la asignación en vez de borrarla) no rigiera hasta el lunes.
+        a_generar: dict[tuple, dict] = {}   # (empleado_id, fecha) → asignación
+        for a in asignaciones:   # más reciente primero: gana la primera que cubre
+            f_egr = (a["fecha_egreso"] or "")[:10]
+            for fecha_dia in dias:
+                if (a["empleado_id"], fecha_dia) in a_generar:
+                    continue
+                if f_egr and fecha_dia >= f_egr:
+                    continue
+                if a["fecha_desde"] <= fecha_dia and (a["fecha_hasta"] is None or fecha_dia < a["fecha_hasta"]):
+                    a_generar[(a["empleado_id"], fecha_dia)] = dict(a)
 
         # Cargar días de cada calendario (incluye es_franco) y flag feriado
         cal_cache: dict[int, dict] = {}
         cal_feriado: dict[int, int] = {}
-        for eid, asig in asig_map.items():
+        for asig in a_generar.values():
             cid = asig["calendario_id"]
             if cid not in cal_cache:
                 dias_cal = conn.execute(
@@ -392,11 +396,23 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
             "SELECT fecha FROM feriados WHERE fecha >= ? AND fecha <= ?", (dias[0], dias[6])
         ).fetchall()}
 
-        # Borrar entradas auto-generadas de la semana (respeta las manuales auto_generado=0)
-        conn.execute(
-            "DELETE FROM planificacion WHERE fecha >= ? AND fecha <= ? AND auto_generado = 1",
-            (dias[0], dias[6])
-        )
+        # Borrar entradas auto-generadas de la semana (respeta las manuales
+        # auto_generado=0). Un día pasado sin asignación que lo regenere se deja
+        # como está: es historia, y borrarlo lo dejaba sin evaluar. Salvo que sea
+        # posterior al egreso, que nunca debió tener planificación.
+        hoy = str(dt.today())
+        borrar = [
+            r["id"] for r in conn.execute(
+                "SELECT p.id, p.empleado_id, p.fecha, e.fecha_egreso FROM planificacion p "
+                "JOIN empleados e ON e.id = p.empleado_id "
+                "WHERE p.fecha >= ? AND p.fecha <= ? AND p.auto_generado = 1",
+                (dias[0], dias[6])
+            ).fetchall()
+            if r["fecha"] >= hoy
+            or (r["empleado_id"], r["fecha"]) in a_generar
+            or (r["fecha_egreso"] and r["fecha"] >= r["fecha_egreso"][:10])
+        ]
+        conn.executemany("DELETE FROM planificacion WHERE id=?", [(i,) for i in borrar])
 
         # Planificación manual que queda (no tocar)
         manuales = set()
@@ -407,26 +423,21 @@ def generar_semana(fecha: str, _user=Depends(require_permiso("calendarios", "edi
             manuales.add((r["empleado_id"], r["fecha"]))
 
         # Insertar desde calendarios, respetando entradas manuales y feriados
-        for eid, asig in asig_map.items():
-            cid = asig["calendario_id"]
-            cal_dias = cal_cache.get(cid, {})
-            f_egr = asig["fecha_egreso"]
-            for i, fecha_dia in enumerate(dias):
-                if f_egr and fecha_dia >= f_egr:
-                    continue
-                if (eid, fecha_dia) in manuales:
-                    omitidos += 1
-                    continue
-                es_franco, horario_id = _resolver_dia(
-                    i, cal_dias.get(i, {}),
-                    asig["franco_rotativo"], asig["franco_dia_semana"],
-                    fecha_dia in feriados_semana, bool(cal_feriado.get(cid, 0))
-                )
-                conn.execute(
-                    "INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, auto_generado) VALUES (?,?,?,?,1)",
-                    (eid, fecha_dia, horario_id, es_franco)
-                )
-                generados += 1
+        for (eid, fecha_dia), asig in a_generar.items():
+            if (eid, fecha_dia) in manuales:
+                omitidos += 1
+                continue
+            cid, i = asig["calendario_id"], dias.index(fecha_dia)
+            es_franco, horario_id = _resolver_dia(
+                i, cal_cache.get(cid, {}).get(i, {}),
+                bool(asig["franco_rotativo"]), asig["franco_dia_semana"],
+                fecha_dia in feriados_semana, bool(cal_feriado.get(cid, 0))
+            )
+            conn.execute(
+                "INSERT INTO planificacion (empleado_id, fecha, horario_id, es_franco, auto_generado) VALUES (?,?,?,?,1)",
+                (eid, fecha_dia, horario_id, es_franco)
+            )
+            generados += 1
 
     return {"generados": generados, "omitidos": omitidos}
 

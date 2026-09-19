@@ -112,6 +112,23 @@ lista = cli.get(f"/api/calendarios/asignaciones/empleado/{A}").json()
 chequear("el historial del empleado trae el nombre de quien la quitó",
          any(a.get("quitado_por_nombre") for a in lista))
 
+# ── 1b. La generación nocturna respeta la baja ──────────────────────────────
+# La asignación cerrada hoy toca la semana: antes se usaba para rellenar la
+# semana entera y la baja no regía hasta el lunes.
+from api.calendarios import generar_semana
+LUNES = HOY - timedelta(days=HOY.weekday())
+plan_sem = lambda eid: {r["fecha"]: (r["horario_id"], r["es_franco"]) for r in con.execute(
+    "SELECT fecha, horario_id, es_franco FROM planificacion WHERE empleado_id=? AND fecha>=? AND fecha<=?",
+    (eid, str(LUNES), str(LUNES + timedelta(days=6))))}
+antes = plan_sem(A)
+generar_semana(d(0), _user={"sub": "1"})
+despues = plan_sem(A)
+chequear("después de quitarlo no se le vuelve a planificar desde hoy",
+         not any(f >= d(0) for f in despues), despues)
+chequear("y los días pasados de la semana quedan como estaban",
+         {f: v for f, v in antes.items() if f < d(0)} == {f: v for f, v in despues.items() if f < d(0)},
+         (antes, despues))
+
 # ── 2. Armar los días de prueba (sobre la copia) ────────────────────────────
 D_FICHO, D_VACIO, D_NOCHE, D_ANT_NOCHE = d(5), d(2), d(3), d(4)
 for f in (D_FICHO, D_VACIO, D_NOCHE):
@@ -195,6 +212,40 @@ chequear("el registro de quién lo quitó se conserva",
 chequear("y quedó una sola asignación vigente",
          con.execute("SELECT COUNT(*) FROM asignaciones WHERE empleado_id=? AND fecha_desde<=? "
                      "AND (fecha_hasta IS NULL OR fecha_hasta>?)", (A, d(0), d(0))).fetchone()[0] == 1)
+
+# ── 5. Cambio de calendario a mitad de semana ──────────────────────────────
+# Con fecha_desde un miércoles, lunes y martes siguen con el calendario anterior.
+C_row = con.execute("""
+    SELECT a.empleado_id, a.calendario_id FROM asignaciones a JOIN empleados e ON e.id=a.empleado_id
+    WHERE e.activo=1 AND e.tipo NOT IN ('acceso','parking') AND e.id NOT IN (?,?)
+      AND a.fecha_desde <= ? AND a.fecha_hasta IS NULL
+    ORDER BY a.empleado_id LIMIT 1""", (A, B, d(0))).fetchone()
+C = C_row["empleado_id"]
+OTRO = con.execute("""
+    SELECT c.id FROM calendarios c WHERE c.activo=1 AND c.id != ?
+      AND EXISTS (SELECT 1 FROM calendarios_dias cd WHERE cd.calendario_id=c.id AND cd.horario_id IS NOT NULL)
+      AND EXISTS (SELECT 1 FROM calendarios_dias cd1 JOIN calendarios_dias cd2
+                    ON cd2.calendario_id=? AND cd2.dia_semana=cd1.dia_semana
+                  WHERE cd1.calendario_id=c.id AND cd1.dia_semana IN (0, 1)
+                    AND (COALESCE(cd1.horario_id,0) != COALESCE(cd2.horario_id,0) OR cd1.es_franco != cd2.es_franco))
+    LIMIT 1""", (C_row["calendario_id"], C_row["calendario_id"])).fetchone()["id"]
+SIG_LUNES = LUNES + timedelta(weeks=1)
+MIERC = str(SIG_LUNES + timedelta(days=2))
+generar_semana(str(SIG_LUNES), _user={"sub": "1"})
+LUNES = SIG_LUNES   # plan_sem mira ahora la semana siguiente
+antes = plan_sem(C)
+r = cli.post("/api/calendarios/asignar", json={
+    "empleado_ids": [C], "calendario_id": OTRO, "fecha_desde": MIERC})
+chequear("asignar otro calendario desde un miércoles responde 200", r.status_code == 200, r.text[:200])
+tras_asignar = plan_sem(C)
+generar_semana(str(SIG_LUNES), _user={"sub": "1"})
+despues = plan_sem(C)
+chequear("lunes y martes siguen con el calendario anterior",
+         {f: v for f, v in antes.items() if f < MIERC} == {f: v for f, v in despues.items() if f < MIERC},
+         (antes, despues))
+chequear("desde el miércoles, el calendario nuevo",
+         {f: v for f, v in tras_asignar.items() if f >= MIERC} == {f: v for f, v in despues.items() if f >= MIERC}
+         and any(f >= MIERC for f in despues), (tras_asignar, despues))
 
 con.close()
 print(f"\n{'=' * 52}\n  {ok} pasaron, {fallos} fallaron\n{'=' * 52}")

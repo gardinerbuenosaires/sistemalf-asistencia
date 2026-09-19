@@ -199,9 +199,11 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
         ).fetchall()}
 
         for eid in data.empleado_ids:
-            # Limpiar historial cerrado siempre (independientemente de si hay cambio)
+            # Limpiar historial cerrado siempre (independientemente de si hay cambio).
+            # Las que se quitaron a mano se conservan: la planilla muestra quién y cuándo.
             conn.execute(
-                "DELETE FROM asignaciones WHERE empleado_id=? AND fecha_hasta IS NOT NULL",
+                "DELETE FROM asignaciones WHERE empleado_id=? AND fecha_hasta IS NOT NULL "
+                "AND quitado_en IS NULL",
                 (eid,)
             )
 
@@ -219,7 +221,7 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
                 continue
 
             conn.execute(
-                "UPDATE asignaciones SET fecha_hasta=? WHERE empleado_id=?",
+                "UPDATE asignaciones SET fecha_hasta=? WHERE empleado_id=? AND quitado_en IS NULL",
                 (data.fecha_desde, eid)
             )
             conn.execute(
@@ -274,9 +276,11 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
 def asignaciones_empleado(empleado_id: int, _user=Depends(require_permiso("empleados", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
-            "SELECT a.*, c.nombre as calendario_nombre FROM asignaciones a "
+            "SELECT a.*, c.nombre as calendario_nombre, u.nombre as quitado_por_nombre "
+            "FROM asignaciones a "
             "LEFT JOIN calendarios c ON c.id=a.calendario_id "
-            "WHERE a.empleado_id=? ORDER BY a.fecha_desde DESC",
+            "LEFT JOIN usuarios u ON u.id=a.quitado_por "
+            "WHERE a.empleado_id=? ORDER BY a.fecha_desde DESC, a.id DESC",
             (empleado_id,)
         ).fetchall()
     return [dict(r) for r in rows]
@@ -285,17 +289,28 @@ def asignaciones_empleado(empleado_id: int, _user=Depends(require_permiso("emple
 @router.delete("/asignaciones/{asignacion_id}")
 def eliminar_asignacion(asignacion_id: int, _user=Depends(require_permiso("calendarios", "editar"))):
     """
-    Elimina una asignación de calendario y borra la planificación futura
+    Quita una asignación de calendario y borra la planificación futura
     auto-generada del empleado (desde hoy en adelante).
     Las entradas manuales (auto_generado=0) se respetan.
+    La asignación no se borra: se cierra hoy y se registra quién la quitó,
+    para que la planilla mensual pueda explicar por qué faltan días.
     """
+    hoy = str(date.today())
     with db_session() as conn:
-        row = conn.execute("SELECT empleado_id FROM asignaciones WHERE id=?", (asignacion_id,)).fetchone()
+        row = conn.execute(
+            "SELECT empleado_id, fecha_desde FROM asignaciones WHERE id=?", (asignacion_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(404, "Asignación no encontrada")
-        check_periodo_abierto(conn, str(date.today()))
+        check_periodo_abierto(conn, hoy)
         eid = row["empleado_id"]
-        conn.execute("DELETE FROM asignaciones WHERE id=?", (asignacion_id,))
+        # Si todavía no había empezado, se cierra el mismo día que empieza:
+        # queda en el historial pero nunca estuvo vigente.
+        conn.execute(
+            "UPDATE asignaciones SET fecha_hasta=?, quitado_por=?, "
+            "quitado_en=datetime('now','localtime') WHERE id=?",
+            (max(hoy, row["fecha_desde"]), int(_user.get("sub") or 0) or None, asignacion_id)
+        )
         conn.execute(
             "DELETE FROM planificacion WHERE empleado_id=? AND fecha >= date('now','localtime') AND auto_generado=1",
             (eid,)

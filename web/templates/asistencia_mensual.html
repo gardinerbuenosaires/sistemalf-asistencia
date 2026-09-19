@@ -252,6 +252,11 @@ tr[draggable="true"]:active { cursor: grabbing; }
 .tipo-pendiente     { background: #f8f9fa !important; }
 .tipo-sin_plan      { background: #ffffff !important; }
 .tipo-antes-ingreso { background: #000000 !important; cursor: default !important; }
+/* Día que no se puede evaluar por falta de calendario ("?" = fichó) */
+.tipo-sin-cal       { outline: 1.5px dashed #c0392b; outline-offset: -3px; }
+.badge-sincal { display:inline-block; background:#fff; color:#c0392b; border:1.5px dashed #c0392b;
+  font-size:.6rem; font-weight:bold; padding:0 4px; border-radius:3px;
+  margin-left:4px; vertical-align:middle; letter-spacing:.03em; cursor:help; }
 
 /* Modal novedad */
 #modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; }
@@ -1362,7 +1367,7 @@ function renderGrupoTodos() {
     const clsNuevo = badgeNuevo ? ' emp-nuevo' : '';
     html += `<tr class="${clsFuera}${clsNuevo}">
       <td class="col-cod">${emp.cod || ''}</td>
-      <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}${_badgeForzado(emp)}</td>`;
+      <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}${_badgeForzado(emp)}${_badgeSinCal(emp)}</td>`;
     d.dias.forEach(dia => {
       const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
       if (esCortado) {
@@ -1640,6 +1645,25 @@ function _badgeForzado(emp) {
     : '';
 }
 
+// Sin calendario: los días que fichó no se evalúan. El detalle va en el tooltip
+// para no ensanchar la columna del nombre.
+function _badgeSinCal(emp) {
+  const sc = emp.sin_cal;
+  if (!sc) return '';
+  const ddmm = f => `${f.slice(8, 10)}/${f.slice(5, 7)}`;
+  const lineas = [sc.vigente ? 'Tiene calendario, pero hay días sin evaluar.' : 'Sin calendario asignado.'];
+  if (sc.quitado) {
+    lineas.push(`Calendario ${sc.quitado.calendario ? '"' + sc.quitado.calendario + '" ' : ''}quitado el ${ddmm(sc.quitado.fecha)}${sc.quitado.quien ? ' por ' + sc.quitado.quien : ''}.`);
+  } else if (sc.ultimo_plan) {
+    lineas.push(`Último día planificado: ${ddmm(sc.ultimo_plan)}.`);
+  } else {
+    lineas.push('Nunca tuvo planificación.');
+  }
+  if (sc.dias.length) lineas.push(`Días sin evaluar: ${sc.dias.join(', ')}. No generan novedades.`);
+  if (!sc.vigente) lineas.push('Asignalo en la pantalla Calendarios.');
+  return ` <span class="badge-sincal" title="${escHtml(lineas.join('\n'))}">SIN CAL.</span>`;
+}
+
 function filaHtmlSimple(emp, dias, resCols, grupo) {
   const nombreCompleto = `${emp.apellido}, ${emp.nombre}`;
   const clsFuera = emp.en_dispositivo === 0 ? ' fuera-dispositivo' : '';
@@ -1647,7 +1671,7 @@ function filaHtmlSimple(emp, dias, resCols, grupo) {
   const clsNuevo = badgeNuevo ? ' emp-nuevo' : '';
   let h = `<tr class="${clsFuera}${clsNuevo}">
     <td class="col-cod">${emp.cod || ''}</td>
-    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}" data-grupo="${grupo || ''}" data-forzado="${emp.grupo_forzado || ''}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}${_badgeForzado(emp)}</td>`;
+    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}" data-grupo="${grupo || ''}" data-forzado="${emp.grupo_forzado || ''}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}${_badgeForzado(emp)}${_badgeSinCal(emp)}</td>`;
   dias.forEach(dia => {
     const c = emp.celdas[dia.fecha] || {letra:null, tipo:'sin_plan'};
     const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
@@ -1679,7 +1703,7 @@ function filaHtmlCortado(emp, dias, resCols, grupo) {
   const clsNuevo = badgeNuevo ? ' emp-nuevo' : '';
   let h = `<tr class="${clsFuera}${clsNuevo}">
     <td class="col-cod">${emp.cod || ''}</td>
-    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}" data-grupo="${grupo || ''}" data-forzado="${emp.grupo_forzado || ''}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}${_badgeForzado(emp)}</td>`;
+    <td class="col-nombre" title="${nombreCompleto} — ${emp.cargo}" data-eid="${emp.id}" data-nombre="${nombreCompleto}" data-grupo="${grupo || ''}" data-forzado="${emp.grupo_forzado || ''}">${nombreCompleto}${_badgeFuera(emp)}${badgeNuevo}${_badgeForzado(emp)}${_badgeSinCal(emp)}</td>`;
   dias.forEach(dia => {
     const c = emp.celdas[dia.fecha] || {b1:{letra:null,tipo:'sin_plan'}, b2:{letra:null,tipo:'sin_plan'}};
     const mark = dia.feriado ? 'celda-feriado' : dia.domingo ? 'celda-domingo' : '';
@@ -1813,9 +1837,18 @@ function onDrop(e) {
 }
 
 // ── Celdas ────────────────────────────────────────────────────────────────────
+// Día sin calendario: sin letra, con "?" si fichó. data-sincal alimenta el tooltip.
+function _letraCelda(b) {
+  if (b.tipo === 'sin_calendario') return b.fichado ? '?' : '';
+  return b.letra || '';
+}
+function _sinCalAttr(b) {
+  return b.tipo === 'sin_calendario' ? `data-sincal="${b.fichado ? 'fichado' : 'sin_horario'}"` : '';
+}
+
 function celdaSimpleHtml(celda, eid, fecha, mark='') {
   const {bg, txt, cls} = estiloBloque(celda);
-  const letra = celda.letra || '';
+  const letra = _letraCelda(celda);
   const novId  = celda.nov_id     ? `data-nov-id="${celda.nov_id}"` : '';
   const desc   = celda.descripcion ? `data-desc="${escHtml(celda.descripcion)}"` : '';
   const autor  = celda.creado_por  ? `data-autor="${escHtml(celda.creado_por)}"` : '';
@@ -1826,7 +1859,7 @@ function celdaSimpleHtml(celda, eid, fecha, mark='') {
   const inactiva = celda.tipo === 'antes_ingreso' || celda.tipo === 'fuera';
   const interaccion = inactiva ? '' : `onclick="abrirModal(${eid},'${fecha}',0,false)" data-eid="${eid}" data-fecha="${fecha}"`;
   return `<div class="celda-simple ${cls} ${ftCls} ${mark}" style="background:${bg};color:${txt}"
-    ${novId} ${desc} ${autor} ${coAttr} ${cpAttr} ${interaccion}>${letra}${ftDot}</div>`;
+    ${novId} ${desc} ${autor} ${coAttr} ${cpAttr} ${_sinCalAttr(celda)} ${interaccion}>${letra}${ftDot}</div>`;
 }
 
 function celdaCortadoHtml(celda, eid, fecha, mark='') {
@@ -1851,8 +1884,8 @@ function celdaCortadoHtml(celda, eid, fecha, mark='') {
   const dot2 = b2.ft_pendiente ? '<span class="ft-dot"></span>' : '';
   const coAttr = celda.co_comment ? `data-co-comment="${escHtml(celda.co_comment)}" data-co-autor="${escHtml(celda.co_autor||'')}"` : '';
   return `<div class="celda-cortado ${mark}" data-eid="${eid}" data-fecha="${fecha}" ${coAttr}>
-    <div class="celda-bloque ${s1.cls}${ft1}" style="background:${s1.bg};color:${s1.txt}" ${nid1} ${d1} ${a1} ${cp1} ${click1}>${b1.letra||''}${dot1}</div>
-    <div class="celda-bloque ${s2.cls}${ft2}" style="background:${s2.bg};color:${s2.txt}" ${nid2} ${d2} ${a2} ${cp2} ${click2}>${b2.letra||''}${dot2}</div>
+    <div class="celda-bloque ${s1.cls}${ft1}" style="background:${s1.bg};color:${s1.txt}" ${nid1} ${d1} ${a1} ${cp1} ${_sinCalAttr(b1)} ${click1}>${_letraCelda(b1)}${dot1}</div>
+    <div class="celda-bloque ${s2.cls}${ft2}" style="background:${s2.bg};color:${s2.txt}" ${nid2} ${d2} ${a2} ${cp2} ${_sinCalAttr(b2)} ${click2}>${_letraCelda(b2)}${dot2}</div>
   </div>`;
 }
 
@@ -1864,6 +1897,7 @@ function estiloBloque(celda) {
   if (celda.tipo === 'mt')             return {bg:'#C4D79B', txt:'#4F6228', cls:'tipo-mt'};
   if (celda.tipo === 'mt_trabajado')   return {bg: C.MT.bg, txt: C.MT.txt, cls:'tipo-mt-trabajado'};
   if (celda.tipo === 'no_iniciado')    return {bg:'#f0f3f5', txt:'#c0c8d0', cls:'tipo-pendiente'};
+  if (celda.tipo === 'sin_calendario') return {bg:'#ffffff', txt:'#c0392b', cls:'tipo-sin-cal'};
   if (celda.cp) {
     // CP no cubierto (el reemplazante no fichó) → el empleado queda ausente: rojo, no verde
     if (celda.cp_no_cubierto || celda.letra === 'A')
@@ -2589,6 +2623,11 @@ function _tipShow(e) {
     if (autor)     html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:2px">${escHtml(autor)}</div>`;
     if (coComment) html += `<div style="margin-top:5px;background:#e8f4fd;color:#1a6c9c;border-radius:3px;padding:2px 6px;font-size:.72rem;white-space:normal;max-width:180px">💬 ${escHtml(coComment)}</div>`;
     if (coComment && coAutor) html += `<div class="tip-vacio" style="font-size:.68rem;margin-top:1px">${escHtml(coAutor)}</div>`;
+    const sinCal = e.target.closest('[data-sincal]')?.dataset.sincal
+                || cel.querySelector('[data-sincal]')?.dataset.sincal;
+    if (sinCal) html += `<div style="color:#ff8a80;font-size:.71rem;margin-top:5px;white-space:normal;max-width:220px;line-height:1.4">⚠ ${sinCal === 'fichado'
+      ? 'Fichó, pero este día no tiene planificación con horario: no se evalúa ni genera novedades. Revisar el calendario asignado.'
+      : 'Planificado sin horario (sin calendario): no se puede evaluar.'}</div>`;
     if (cel.closest('tr')?.querySelector('.tipo-mt')) html += `<div style="color:#f0c040;font-size:.71rem;margin-top:5px;white-space:normal;max-width:220px;line-height:1.4">⚠ Bloque MT — al cargar cualquier novedad que no sea presente, aplicala en ambos bloques, sino el día no se cuenta correctamente.</div>`;
     const asigKey = `${eid}_${fecha}`;
     const asigPor = _asignaciones[asigKey];

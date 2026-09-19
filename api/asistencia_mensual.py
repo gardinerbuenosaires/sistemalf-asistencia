@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/asistencia", tags=["asistencia_mensual"])
 
 # ── Mapeo estado evaluador → letra planilla ────────────────────────────────────
 _EST_SIMPLE = {
-    "ok": "I", "salida_anticipada": "I", "sin_salida": "I", "sin_horario": "I",
+    "ok": "I", "salida_anticipada": "I", "sin_salida": "I",
     "tarde": "T", "tarde_y_salida_anticipada": "T", "tarde_y_sin_salida": "T",
     "ausente": "A!!!", "franco": "F", "ft": "FT",
     "b1_ausente": "A!!!", "b2_ausente": "A!!!",
@@ -18,7 +18,7 @@ _EST_SIMPLE = {
 }
 _EST_B1 = {**_EST_SIMPLE, "b1_ausente": "A!!!", "b2_ausente": "I"}
 _EST_B2 = {
-    "ok": "I", "salida_anticipada": "I", "sin_salida": "I", "sin_horario": "I",
+    "ok": "I", "salida_anticipada": "I", "sin_salida": "I",
     "tarde": "I",                        # tarde afecta la entrada del b1
     "tarde_y_salida_anticipada": "I",
     "tarde_y_sin_salida": "I",
@@ -35,8 +35,41 @@ LETRAS_VALIDAS = {"ILT", "LSG", "L", "E", "V", "S", "FT", "FD", "F", "@", "NF", 
 DIAS_SEMANA   = ["lu", "ma", "mi", "ju", "vi", "sá", "do"]
 
 
+# ── Días con fichadas (para detectar fichadas que nadie evalúa) ───────────────
+def _dias_con_fichadas(conn, eids, f0, f1) -> dict:
+    """{empleado_id: {fechas}} con fichadas propias de ese día.
+
+    Una fichada de madrugada (antes de las 06:00) cuando el día anterior tenía
+    horario es la salida del turno noche anterior: no cuenta para el día.
+    """
+    if not eids:
+        return {}
+    ph = ",".join("?" * len(eids))
+    f_ant = (date.fromisoformat(f0) - timedelta(days=1)).isoformat()
+    con_horario = {
+        (r["empleado_id"], r["fecha"]) for r in conn.execute(
+            f"SELECT empleado_id, fecha FROM planificacion "
+            f"WHERE empleado_id IN ({ph}) AND fecha>=? AND fecha<=? AND horario_id IS NOT NULL",
+            (*eids, f_ant, f1)
+        ).fetchall()
+    }
+    dias: dict[int, set] = defaultdict(set)
+    for r in conn.execute(
+        f"SELECT empleado_id, date(timestamp) AS fecha, substr(timestamp, 12, 5) AS hora "
+        f"FROM fichajes WHERE empleado_id IN ({ph}) AND date(timestamp)>=? AND date(timestamp)<=?",
+        (*eids, f0, f1)
+    ).fetchall():
+        if r["hora"] < "06:00":
+            ayer = (date.fromisoformat(r["fecha"]) - timedelta(days=1)).isoformat()
+            if (r["empleado_id"], ayer) in con_horario:
+                continue
+        dias[r["empleado_id"]].add(r["fecha"])
+    return dias
+
+
 # ── Resolución de una celda/bloque ────────────────────────────────────────────
-def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_map):
+def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_map,
+              fich_dias=None):
     if f_ing and fecha < f_ing:
         return {"letra": "O", "tipo": "antes_ingreso"}
     if f_egr and fecha >= f_egr:
@@ -92,6 +125,12 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
 
         estado = res["estado"]
 
+        # Planificado sin horario (típicamente sin calendario): no se puede
+        # evaluar. Antes se mostraba "I" aunque no hubiera fichado.
+        if estado == "sin_horario":
+            fichado = bool(fich_dias) and fecha in fich_dias.get(eid, ())
+            return {"letra": None, "tipo": "sin_calendario", "fichado": fichado}
+
         if estado == "no_iniciado":
             return {"letra": None, "tipo": "no_iniciado"}
 
@@ -133,6 +172,11 @@ def _resolver(eid, fecha, bloque, f_ing, f_egr, nov_map, ali_set, res_map, plan_
                 return {"letra": "MT", "tipo": "mt"}
             return {"letra": None, "tipo": "pendiente"}
 
+    # 5. Fichó pero no hay nada que lo evalúe (sin planificación: calendario
+    #    faltante o quitado). Sin este aviso la celda queda en blanco.
+    if fich_dias and fecha in fich_dias.get(eid, ()):
+        return {"letra": None, "tipo": "sin_calendario", "fichado": True}
+
     return {"letra": None, "tipo": "sin_plan"}
 
 
@@ -169,7 +213,7 @@ def _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str):
             dias_ausentes_sc.append(dia_num)
             continue  # ausente sin confirmar ≠ faltante
 
-        if any(b["tipo"] in ("pendiente", "sin_plan", "no_iniciado") for b in bloques):
+        if any(b["tipo"] in ("pendiente", "sin_plan", "no_iniciado", "sin_calendario") for b in bloques):
             dias_faltantes.append(dia_num)
 
     f1_mas1 = (date.fromisoformat(f1) + timedelta(days=1)).isoformat()
@@ -282,6 +326,7 @@ def get_control_estados_batch(conn, eids: list, f0: str, f1: str) -> dict:
             "descripcion": n["descripcion"], "creado_por": n["creado_por"],
         }
     ali_set = {(a["empleado_id"], a["fecha"], a["bloque"]) for a in aliviadas}
+    fich_dias = _dias_con_fichadas(conn, eids, f0, f1)
 
     hoy_str = date.today().isoformat()
     resultado = {}
@@ -297,11 +342,11 @@ def get_control_estados_batch(conn, eids: list, f0: str, f1: str) -> dict:
             plan = plan_map.get((eid, fecha))
             dia_cortado = plan and plan.get("horario_tipo") == "cortado"
             if cortado or dia_cortado:
-                b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
-                b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map, fich_dias)
+                b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map, fich_dias)
                 celdas[fecha] = {"b1": b1, "b2": b2, "es_cortado_dia": bool(dia_cortado)}
             else:
-                c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map, fich_dias)
                 celdas[fecha] = c
 
         ctrl = _calcular_control(fechas, f_egr, celdas, cortado, f0, f1, hoy_str)
@@ -321,6 +366,69 @@ def _build_dias(fechas, feriados):
         }
         for f in fechas
     ]
+
+
+# ── Aviso "sin calendario" por empleado ───────────────────────────────────────
+def _info_sin_calendario(conn, grupos, f1) -> dict:
+    """{empleado_id: info} para el distintivo SIN CAL. de la planilla.
+
+    Aparece si el mes tiene días marcados como sin calendario, o si el mes está
+    en curso y el empleado activo no tiene calendario vigente. Consume y borra
+    la clave auxiliar `_dias_sc` de cada empleado.
+    """
+    hoy = date.today().isoformat()
+    emps = [e for g in grupos.values() for e in g]
+    if not emps:
+        return {}
+    eids = [e["id"] for e in emps]
+    ph = ",".join("?" * len(eids))
+
+    vigentes = {r["empleado_id"] for r in conn.execute(
+        f"SELECT DISTINCT empleado_id FROM asignaciones WHERE empleado_id IN ({ph}) "
+        f"AND fecha_desde<=? AND (fecha_hasta IS NULL OR fecha_hasta>?)",
+        (*eids, hoy, hoy)
+    ).fetchall()}
+
+    quitadas: dict[int, dict] = {}
+    for r in conn.execute(
+        f"SELECT a.empleado_id, a.fecha_hasta, c.nombre AS calendario, u.nombre AS quien "
+        f"FROM asignaciones a "
+        f"LEFT JOIN calendarios c ON c.id = a.calendario_id "
+        f"LEFT JOIN usuarios u ON u.id = a.quitado_por "
+        f"WHERE a.empleado_id IN ({ph}) AND a.quitado_en IS NOT NULL "
+        f"ORDER BY a.quitado_en DESC",
+        tuple(eids)
+    ).fetchall():
+        quitadas.setdefault(r["empleado_id"], {
+            "fecha": r["fecha_hasta"], "calendario": r["calendario"], "quien": r["quien"],
+        })
+
+    info = {}
+    mes_en_curso = f1 >= hoy
+    for e in emps:
+        eid, dias_sc = e["id"], e.pop("_dias_sc")
+        activo = not e["fecha_egreso"] or e["fecha_egreso"] > hoy
+        vigente = eid in vigentes
+        if not dias_sc and (vigente or not mes_en_curso or not activo):
+            continue
+        # Último día con planificación evaluable (horario o franco) antes del
+        # primer día marcado: es donde se cortó el calendario.
+        tope = dias_sc[0] if dias_sc else hoy
+        ultimo = conn.execute(
+            "SELECT MAX(fecha) FROM planificacion WHERE empleado_id=? AND fecha<? "
+            "AND (horario_id IS NOT NULL OR es_franco=1)",
+            (eid, tope)
+        ).fetchone()[0]
+        quitada = quitadas.get(eid)
+        if quitada and quitada["fecha"] > (dias_sc[-1] if dias_sc else hoy):
+            quitada = None  # la quitaron después: no explica estos días
+        info[eid] = {
+            "vigente":     vigente,
+            "dias":        [int(f[8:]) for f in dias_sc],
+            "ultimo_plan": ultimo,
+            "quitado":     quitada,
+        }
+    return info
 
 
 # ── Lógica de datos del mes (compartida entre /mensual y /mensual/excel) ───────
@@ -452,6 +560,8 @@ def _asistencia_datos(mes: str) -> dict:
             (*eids, mes)
         ).fetchall()
 
+        fich_dias = _dias_con_fichadas(conn, eids, f0, f1)
+
     # Lookup dicts
     plan_map = {(r["empleado_id"], r["fecha"]): dict(r) for r in planes}
     res_map  = {
@@ -534,8 +644,8 @@ def _asistencia_datos(mes: str) -> dict:
 
         for fecha in fechas:
             if cortado:
-                b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
-                b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map, fich_dias)
+                b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map, fich_dias)
                 celdas[fecha] = {"b1": b1, "b2": b2}
                 co = co_map.get((eid, fecha))
                 if co:
@@ -563,8 +673,8 @@ def _asistencia_datos(mes: str) -> dict:
                 plan = plan_map.get((eid, fecha))
                 dia_cortado = plan and plan.get("horario_tipo") == "cortado"
                 if dia_cortado:
-                    b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
-                    b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                    b1 = _resolver(eid, fecha, 1, f_ing, f_egr, nov_map, ali_set, res_map, plan_map, fich_dias)
+                    b2 = _resolver(eid, fecha, 2, f_ing, f_egr, nov_map, ali_set, res_map, plan_map, fich_dias)
                     celdas[fecha] = {"b1": b1, "b2": b2, "es_cortado_dia": True}
                     co = co_map.get((eid, fecha))
                     if co:
@@ -590,7 +700,7 @@ def _asistencia_datos(mes: str) -> dict:
                         if any(l != "@" for l in letras_feri):
                             feriados_trab += len(letras_feri) * 0.5
                 else:
-                    c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map)
+                    c = _resolver(eid, fecha, 0, f_ing, f_egr, nov_map, ali_set, res_map, plan_map, fich_dias)
                     co = co_map.get((eid, fecha))
                     if co:
                         c["co_comment"] = co["descripcion"]
@@ -612,7 +722,13 @@ def _asistencia_datos(mes: str) -> dict:
         control    = _calcular_control(fechas, f_egr, celdas, cortado, f0, f1,
                                        date.today().isoformat())
 
+        dias_sc = sorted(
+            f for f, c in celdas.items()
+            if any(b.get("tipo") == "sin_calendario" for b in (c, c.get("b1"), c.get("b2")) if b)
+        )
+
         grupos[grupo].append({
+            "_dias_sc":   dias_sc,
             "id":         eid,
             "cod":        emp["user_id"],
             "nombre":     emp["nombre"],
@@ -660,6 +776,8 @@ def _asistencia_datos(mes: str) -> dict:
             (*eids2, f0, f1)
         ).fetchall() if eids2 else []
 
+        sin_cal = _info_sin_calendario(conn, grupos, f1)
+
     asignaciones = {f"{r['empleado_id']}_{r['fecha']}": r['asignado_por'] for r in asig_rows}
 
     cambios_map: dict = {}
@@ -675,6 +793,7 @@ def _asistencia_datos(mes: str) -> dict:
     for turno_emps in grupos.values():
         for emp in turno_emps:
             emp["cambios_plan"] = cambios_map.get(emp["id"], [])
+            emp["sin_cal"] = sin_cal.get(emp["id"])
 
     return {
         "mes":          mes,

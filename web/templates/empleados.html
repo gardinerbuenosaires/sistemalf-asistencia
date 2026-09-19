@@ -761,7 +761,7 @@ function buildCalendarioSection(asignaciones = []) {
   if (historial.length) {
     html += `<div class="cal-historial-label">Historial:</div>`;
     html += historial.map(a =>
-      `<div class="cal-historial-item">${a.calendario_nombre} <span>${_fmtF(a.fecha_desde)} → ${a.fecha_hasta ? _fmtF(a.fecha_hasta) : "activo"}</span></div>`
+      `<div class="cal-historial-item">${a.calendario_nombre} <span>${_fmtF(a.fecha_desde)} → ${a.fecha_hasta ? _fmtF(a.fecha_hasta) : "activo"}${a.quitado_en ? ` · quitado${a.quitado_por_nombre ? " por " + a.quitado_por_nombre : ""}` : ""}</span></div>`
     ).join("");
   }
 

@@ -853,6 +853,12 @@ def _migrate(conn):
     if "franco_dia_semana" not in cols_asig:
         conn.execute("ALTER TABLE asignaciones ADD COLUMN franco_dia_semana INTEGER")
         logger.info("Migración: columna franco_dia_semana agregada a asignaciones")
+    # Quitar un calendario cierra la asignación en vez de borrarla, para que la
+    # planilla pueda decir quién lo quitó y cuándo.
+    if "quitado_por" not in cols_asig:
+        conn.execute("ALTER TABLE asignaciones ADD COLUMN quitado_por INTEGER REFERENCES usuarios(id)")
+        conn.execute("ALTER TABLE asignaciones ADD COLUMN quitado_en TEXT")
+        logger.info("Migración: columnas quitado_por/quitado_en agregadas a asignaciones")
 
     # Catálogos de cargos, departamentos y categorías
     conn.execute("CREATE TABLE IF NOT EXISTS cargos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL UNIQUE, aplica_premio INTEGER NOT NULL DEFAULT 0)")

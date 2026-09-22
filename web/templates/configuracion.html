@@ -163,6 +163,17 @@
   .rol-desc-small { font-size: .72rem; color: #888; margin-top: 1px; }
   .rol-nivel-tag { font-size: .7rem; color: #aaa; flex-shrink: 0; }
 
+  /* Roles: la lista y el editor scrollean cada uno por su lado, dentro de un
+     alto fijo que ocupa lo que queda de pantalla. */
+  .roles-layout { height: calc(100vh - 250px); min-height: 420px; align-items: stretch; }
+  .roles-layout > .usr-panel,
+  .roles-layout > .usr-panel.scrollable { display: flex; flex-direction: column; overflow: hidden; }
+  .roles-layout #roles-lista,
+  .roles-layout #rol-editor-contenido { flex: 1; min-height: 0; overflow-y: auto; }
+  /* Guardar/Cancelar siempre a la vista, aunque la lista de permisos sea larga. */
+  .roles-layout .form-footer { position: sticky; bottom: -16px; background: #fff;
+                               margin-bottom: -16px; padding-bottom: 16px; }
+
   /* Tabs de configuración */
   .cfg-tabs { display: flex; gap: 2px; margin-bottom: 20px; border-bottom: 2px solid #dee2e6;
     position: sticky; top: 0; z-index: 10;
@@ -229,6 +240,7 @@
     <button class="cfg-tab" id="tab-sistema"   onclick="switchCfgTab('sistema')">Sistema</button>
     <button class="cfg-tab" data-perm="empleados:ver" id="tab-catalogos" onclick="switchCfgTab('catalogos')">Cargos</button>
     <button class="cfg-tab" id="tab-usuarios"  onclick="switchCfgTab('usuarios')">Usuarios</button>
+    <button class="cfg-tab" data-perm="roles:ver" id="tab-roles" onclick="switchCfgTab('roles')">Roles y permisos</button>
     <button class="cfg-tab" data-perm="premios:ver" id="tab-premios" onclick="switchCfgTab('premios')">Premios</button>
     <button class="cfg-tab" id="tab-parking"   onclick="switchCfgTab('parking')">Parking</button>
     <button class="cfg-tab" id="tab-automatico" onclick="switchCfgTab('automatico')">Procesos automáticos</button>
@@ -358,6 +370,32 @@
           </span>
         </label>
       </div>
+    </div>
+
+    <div class="section" data-perm="distribucion:editar">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Aviso de borradores pendientes — por turno</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Día y hora a partir de los cuales se muestra el aviso a los usuarios con acceso a horarios de cocina.
+            Se aplica a la semana anterior al borrador pendiente.
+          </div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:.85rem">
+        <thead>
+          <tr style="background:#f8f9fa;text-align:left">
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Turno</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Día de aviso</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Hora</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Estado</th>
+            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6"></th>
+          </tr>
+        </thead>
+        <tbody id="dist-aviso-lista">
+          <tr><td colspan="4" style="padding:12px;color:#aaa">Cargando...</td></tr>
+        </tbody>
+      </table>
     </div>
 
   </div>
@@ -513,32 +551,6 @@
       </div>
     </div>
 
-    <div class="section wide" data-perm="roles:ver">
-      <div class="section-header">
-        <div>
-          <div class="section-title">Roles y permisos</div>
-          <div class="section-desc" style="margin-bottom:0">Define los roles del sistema y qué módulos puede acceder cada uno.</div>
-        </div>
-      </div>
-      <div class="usr-layout" style="margin-top:16px">
-        <div class="usr-panel">
-          <div class="usr-panel-header">
-            <h3>Roles</h3>
-            <button class="btn btn-primary btn-sm" data-perm="roles:editar" onclick="nuevoRol()">+ Nuevo</button>
-          </div>
-          <div id="roles-lista"><div class="empty-form">Cargando...</div></div>
-        </div>
-        <div class="usr-panel scrollable">
-          <div class="usr-panel-header">
-            <h3 id="rol-editor-titulo">Seleccioná un rol</h3>
-          </div>
-          <div id="rol-editor-contenido" class="usr-form">
-            <div class="empty-form">Seleccioná un rol o creá uno nuevo.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="section wide" data-perm="distribucion:editar">
       <div class="section-header">
         <div>
@@ -589,30 +601,35 @@
       </table>
     </div>
 
-    <div class="section wide" data-perm="distribucion:editar">
+  </div>
+
+  <!-- ── Panel: Roles y permisos ── -->
+  <div class="cfg-panel" data-perm="roles:ver" id="panel-roles">
+
+    <div class="section wide">
       <div class="section-header">
         <div>
-          <div class="section-title">Aviso de borradores pendientes — por turno</div>
-          <div class="section-desc" style="margin-bottom:0">
-            Día y hora a partir de los cuales se muestra el aviso a los usuarios con acceso a horarios de cocina.
-            Se aplica a la semana anterior al borrador pendiente.
+          <div class="section-title">Roles y permisos</div>
+          <div class="section-desc" style="margin-bottom:0">Define los roles del sistema y qué módulos puede acceder cada uno.</div>
+        </div>
+      </div>
+      <div class="usr-layout roles-layout" style="margin-top:16px">
+        <div class="usr-panel">
+          <div class="usr-panel-header">
+            <h3>Roles</h3>
+            <button class="btn btn-primary btn-sm" data-perm="roles:editar" onclick="nuevoRol()">+ Nuevo</button>
+          </div>
+          <div id="roles-lista"><div class="empty-form">Cargando...</div></div>
+        </div>
+        <div class="usr-panel scrollable">
+          <div class="usr-panel-header">
+            <h3 id="rol-editor-titulo">Seleccioná un rol</h3>
+          </div>
+          <div id="rol-editor-contenido" class="usr-form">
+            <div class="empty-form">Seleccioná un rol o creá uno nuevo.</div>
           </div>
         </div>
       </div>
-      <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:.85rem">
-        <thead>
-          <tr style="background:#f8f9fa;text-align:left">
-            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Turno</th>
-            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Día de aviso</th>
-            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Hora</th>
-            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6">Estado</th>
-            <th style="padding:8px 12px;border-bottom:2px solid #dee2e6"></th>
-          </tr>
-        </thead>
-        <tbody id="dist-aviso-lista">
-          <tr><td colspan="4" style="padding:12px;color:#aaa">Cargando...</td></tr>
-        </tbody>
-      </table>
     </div>
 
   </div>

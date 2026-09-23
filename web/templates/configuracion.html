@@ -242,6 +242,7 @@
     <button class="cfg-tab" id="tab-usuarios"  onclick="switchCfgTab('usuarios')">Usuarios</button>
     <button class="cfg-tab" data-perm="roles:ver" id="tab-roles" onclick="switchCfgTab('roles')">Roles y permisos</button>
     <button class="cfg-tab" data-perm="premios:ver" id="tab-premios" onclick="switchCfgTab('premios')">Premios</button>
+    <button class="cfg-tab" data-perm="dispositivos:ver" id="tab-dispositivos" onclick="switchCfgTab('dispositivos')">Dispositivos</button>
     <button class="cfg-tab" id="tab-parking"   onclick="switchCfgTab('parking')">Parking</button>
     <button class="cfg-tab" id="tab-automatico" onclick="switchCfgTab('automatico')">Procesos automáticos</button>
   </div>
@@ -401,6 +402,37 @@
   </div>
 
   <!-- ── Panel: Parking ── -->
+  <!-- ── Panel: Dispositivos ── -->
+  <div class="cfg-panel" data-perm="dispositivos:ver" id="panel-dispositivos">
+
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Lectores biométricos</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Los equipos del local. <b>Asistencia</b> marca cuál alimenta la planilla: sus fichajes
+            entran al sistema. Los de <b>acceso</b> solo abren puertas y sus pasadas no cuentan
+            como fichadas. <b>Probar</b> se conecta al equipo y completa solo su modelo, firmware,
+            número de serie y algoritmo de huella — no le escribe nada.
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
+                style="flex-shrink:0;margin-left:16px" onclick="nuevoDispositivo()">+ Nuevo equipo</button>
+      </div>
+      <table style="margin-top:16px;font-size:.85rem">
+        <thead><tr>
+          <th>Nombre</th><th>Dirección</th><th style="width:70px">Usa</th>
+          <th style="width:90px">Asistencia</th><th style="width:70px">Acceso</th>
+          <th>Equipo</th><th style="width:210px">Acciones</th>
+        </tr></thead>
+        <tbody id="tabla-dispositivos">
+          <tr><td colspan="7" style="color:#aaa">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
   <div class="cfg-panel" id="panel-parking">
 
     <div class="section">
@@ -926,26 +958,6 @@ async function logout() {
 
 // ── Parámetros ────────────────────────────────────────────────────────────────
 const PARAMS_META = {
-  device_ip: {
-    label: "IP del lector de huellas",
-    tipo: "text", width: "150px",
-    descripcion: "Dirección IP del dispositivo ZKTeco en la red local. Requiere reiniciar el servicio para aplicar."
-  },
-  device_port: {
-    label: "Puerto del lector",
-    tipo: "number", min: 1, max: 65535,
-    descripcion: "Puerto TCP del dispositivo ZKTeco (por defecto 4370). Requiere reiniciar el servicio para aplicar."
-  },
-  device_password: {
-    label: "Contraseña del dispositivo",
-    tipo: "number", min: 0,
-    descripcion: "Contraseña numérica del dispositivo ZKTeco. Usar 0 si no tiene contraseña configurada."
-  },
-  device_timeout: {
-    label: "Timeout de conexión (segundos)",
-    tipo: "number", min: 1, max: 60,
-    descripcion: "Segundos de espera antes de dar por fallida la conexión al dispositivo."
-  },
   sync_interval_minutos: {
     label: "Intervalo de sync (minutos)",
     tipo: "number", min: 1, max: 60,
@@ -2249,6 +2261,199 @@ function switchCfgTab(tab) {
   if (tab === 'premios') cargarTraposCocina();
   if (tab === 'sistema') cargarVpActivo();
   if (tab === 'parking') cargarParkingCorte();
+  if (tab === 'dispositivos') cargarDispositivos();
+}
+
+// ── Dispositivos ──────────────────────────────────────────────────────────────
+// Los lectores del local. Hasta acá el equipo era un par de claves sueltas en
+// los parámetros del sistema, que alcanzaban porque había uno solo.
+
+let _dispositivos = [];
+
+function _esc(t) {
+  return String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
+
+async function cargarDispositivos() {
+  const cuerpo = document.getElementById('tabla-dispositivos');
+  try {
+    const res = await fetch('/api/dispositivos');
+    if (!res.ok) throw new Error();
+    _dispositivos = await res.json();
+  } catch {
+    cuerpo.innerHTML = '<tr><td colspan="7" style="color:#c0392b">No se pudo cargar la lista</td></tr>';
+    return;
+  }
+  if (!_dispositivos.length) {
+    cuerpo.innerHTML = '<tr><td colspan="7" style="color:#aaa">No hay equipos cargados</td></tr>';
+    return;
+  }
+  const si = '<span style="color:#27ae60;font-weight:600">Sí</span>';
+  const no = '<span style="color:#bbb">—</span>';
+  cuerpo.innerHTML = _dispositivos.map(d => {
+    const direccion = d.protocolo === 'push'
+      ? `<span style="color:#888">serie</span> ${_esc(d.numero_serie) || '—'}`
+      : `${_esc(d.ip)}:${d.puerto}`;
+    // El algoritmo de huella se muestra siempre que se conozca: es el que decide
+    // si una huella del maestro sirve en este equipo, y no son intercambiables.
+    const equipo = d.modelo || d.plataforma
+      ? `${_esc(d.modelo || d.plataforma)}${d.algoritmo_huella ? ` · huella v${_esc(d.algoritmo_huella)}` : ''}`
+      : '<span style="color:#bbb">sin probar</span>';
+    return `<tr${d.activo ? '' : ' style="opacity:.5"'}>
+      <td><b>${_esc(d.nombre)}</b>${d.ubicacion ? `<div style="font-size:.78rem;color:#888">${_esc(d.ubicacion)}</div>` : ''}</td>
+      <td style="font-family:monospace;font-size:.8rem">${direccion}</td>
+      <td>${d.protocolo === 'push' ? 'push' : (d.transporte || 'pull')}</td>
+      <td>${d.cuenta_asistencia ? si : no}</td>
+      <td>${d.es_acceso ? si : no}</td>
+      <td style="font-size:.8rem">${equipo}</td>
+      <td>
+        ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" onclick="probarDispositivo(${d.id})">Probar</button>` : ''}
+        ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-primary" style="margin-left:5px" onclick="editarDispositivo(${d.id})">Editar</button>` : ''}
+        ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarDispositivo(${d.id})">Borrar</button>` : ''}
+      </td></tr>`;
+  }).join('');
+}
+
+function nuevoDispositivo() { _formDispositivo(null); }
+
+function editarDispositivo(id) {
+  _formDispositivo(_dispositivos.find(d => d.id === id) || null);
+}
+
+function _formDispositivo(d) {
+  const esNuevo = !d;
+  d = d || { nombre:'', ubicacion:'', protocolo:'pull', ip:'', puerto:4370, password:0,
+             timeout:10, numero_serie:'', cuenta_asistencia:0, es_acceso:1, activo:1, orden:0 };
+  const campo = 'padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:.9rem';
+  const fila  = 'display:flex;align-items:center;gap:10px;margin-bottom:10px';
+  const etiq  = 'font-size:.85rem;font-weight:500;color:#333;min-width:150px';
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:540px;max-width:95vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem;margin-bottom:14px">${esNuevo ? 'Nuevo equipo' : 'Editar equipo'}</div>
+
+      <div style="${fila}"><label style="${etiq}">Nombre</label>
+        <input id="d-nombre" style="${campo};flex:1" value="${_esc(d.nombre)}" placeholder="Lector principal"></div>
+      <div style="${fila}"><label style="${etiq}">Ubicación</label>
+        <input id="d-ubicacion" style="${campo};flex:1" value="${_esc(d.ubicacion)}" placeholder="Entrada de personal"></div>
+
+      <div style="${fila}"><label style="${etiq}">Se comunica</label>
+        <select id="d-protocolo" style="${campo}" onchange="_dProtocolo()">
+          <option value="pull"${d.protocolo === 'pull' ? ' selected':''}>El sistema lo llama (pull)</option>
+          <option value="push"${d.protocolo === 'push' ? ' selected':''}>El equipo llama al sistema (push)</option>
+        </select></div>
+
+      <div id="d-bloque-pull">
+        <div style="${fila}"><label style="${etiq}">IP</label>
+          <input id="d-ip" style="${campo};width:160px" value="${_esc(d.ip)}" placeholder="192.168.1.201">
+          <label style="font-size:.85rem;color:#666">Puerto</label>
+          <input id="d-puerto" type="number" style="${campo};width:90px" value="${d.puerto}"></div>
+        <div style="${fila}"><label style="${etiq}">Contraseña</label>
+          <input id="d-password" type="number" style="${campo};width:90px" value="${d.password}">
+          <label style="font-size:.85rem;color:#666">Espera (seg)</label>
+          <input id="d-timeout" type="number" style="${campo};width:90px" value="${d.timeout}">
+          <span style="font-size:.78rem;color:#888">0 = sin contraseña</span></div>
+      </div>
+
+      <div id="d-bloque-push">
+        <div style="${fila}"><label style="${etiq}">Número de serie</label>
+          <input id="d-serie" style="${campo};flex:1" value="${_esc(d.numero_serie)}" placeholder="Lo informa el equipo"></div>
+        <div style="font-size:.78rem;color:#888;margin:-4px 0 10px 160px">
+          Un equipo push no se ubica por IP: se identifica por su número de serie cuando llama.</div>
+      </div>
+
+      <div style="border-top:1px solid #eee;margin:14px 0 12px"></div>
+
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer">
+        <input type="checkbox" id="d-asistencia" ${d.cuenta_asistencia ? 'checked':''} style="width:16px;height:16px;cursor:pointer">
+        <span><b>Cuenta para asistencia</b><div style="font-size:.78rem;color:#888">
+          Sus fichajes entran a la planilla. Dejalo apagado en los lectores de puerta: si no, cada
+          paso por una puerta se contaría como una fichada y daría vuelta el día.</div></span></label>
+
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer">
+        <input type="checkbox" id="d-acceso" ${d.es_acceso ? 'checked':''} style="width:16px;height:16px;cursor:pointer">
+        <span><b>Abre una puerta</b></span></label>
+
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="d-activo" ${d.activo ? 'checked':''} style="width:16px;height:16px;cursor:pointer">
+        <span><b>Activo</b></span></label>
+
+      <div id="d-error" style="color:#c0392b;font-size:.83rem;margin-top:12px"></div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <button class="btn btn-secondary btn-sm" onclick="this.closest('div[style*=fixed]').remove()">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="d-guardar">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  _dProtocolo();
+  document.getElementById('d-guardar').onclick = () => _guardarDispositivo(d.id, modal);
+}
+
+function _dProtocolo() {
+  const push = document.getElementById('d-protocolo').value === 'push';
+  document.getElementById('d-bloque-pull').style.display = push ? 'none' : '';
+  document.getElementById('d-bloque-push').style.display = push ? '' : 'none';
+}
+
+async function _guardarDispositivo(id, modal) {
+  const cuerpo = {
+    nombre:            document.getElementById('d-nombre').value,
+    ubicacion:         document.getElementById('d-ubicacion').value,
+    protocolo:         document.getElementById('d-protocolo').value,
+    ip:                document.getElementById('d-ip').value,
+    puerto:            Number(document.getElementById('d-puerto').value) || 4370,
+    password:          Number(document.getElementById('d-password').value) || 0,
+    timeout:           Number(document.getElementById('d-timeout').value) || 10,
+    numero_serie:      document.getElementById('d-serie').value,
+    cuenta_asistencia: document.getElementById('d-asistencia').checked,
+    es_acceso:         document.getElementById('d-acceso').checked,
+    activo:            document.getElementById('d-activo').checked,
+  };
+  const res = await fetch(id ? `/api/dispositivos/${id}` : '/api/dispositivos', {
+    method: id ? 'PUT' : 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(cuerpo),
+  });
+  if (res.ok) {
+    modal.remove();
+    toast(id ? 'Equipo actualizado' : 'Equipo agregado');
+    cargarDispositivos();
+    return;
+  }
+  let detalle = 'No se pudo guardar';
+  try {
+    const e = await res.json();
+    detalle = typeof e.detail === 'string' ? e.detail
+            : (e.detail?.[0]?.msg || detalle);
+  } catch {}
+  document.getElementById('d-error').textContent = detalle;
+}
+
+async function probarDispositivo(id) {
+  toast('Probando...');
+  const res = await fetch(`/api/dispositivos/${id}/probar`, { method: 'POST' });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok) return toast('Error: ' + (data.detail || 'no se pudo probar'));
+  if (!data.ok) {
+    return toast(`No contesta — ${data.error || 'sin respuesta'}`);
+  }
+  toast(`Contesta por ${data.transporte.toUpperCase()} · ${data.modelo || data.plataforma || 'equipo'}`
+        + (data.algoritmo_huella ? ` · huella v${data.algoritmo_huella}` : ''));
+  cargarDispositivos();
+}
+
+async function eliminarDispositivo(id) {
+  const d = _dispositivos.find(x => x.id === id);
+  if (!confirm(`¿Borrar el equipo "${d ? d.nombre : id}"?`)) return;
+  const res = await fetch(`/api/dispositivos/${id}`, { method: 'DELETE' });
+  if (res.ok) { toast('Equipo borrado'); cargarDispositivos(); return; }
+  let e = {};
+  try { e = await res.json(); } catch {}
+  toast('Error: ' + (e.detail || 'no se pudo borrar'));
 }
 
 // ── Datos fiscales (módulo de uniformes) ──────────────────────────────────────

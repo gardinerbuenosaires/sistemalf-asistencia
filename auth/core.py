@@ -27,6 +27,7 @@ MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
     "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
+    "dispositivos",
 ]
 ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual"]
 # corregir       → asistencia:corregir (novedades en planilla)
@@ -60,6 +61,10 @@ MODULO_ACCIONES = {
     #   digitalización y sacárselo después.
     # uniformes:eliminar      → anular una constancia emitida, con motivo obligatorio.
     "uniformes":      ["ver", "editar", "carga_inicial", "eliminar"],
+    # dispositivos → los lectores biométricos: el maestro de asistencia y los de
+    #   puerta. Es configuración técnica, por eso arranca solo en Sistema: tocar
+    #   una IP mal deja al restaurante sin fichaje.
+    "dispositivos":   ["ver", "editar", "eliminar"],
 }
 
 # Cómo se agrupan los módulos en la pantalla de Roles. Un módulo que no figure
@@ -69,7 +74,7 @@ MODULO_GRUPOS = [
     ("Programación", ["horarios", "planificacion", "calendarios"]),
     ("Distribución", ["distribucion", "mozos", "barmans", "peones"]),
     ("Personal",     ["empleados", "vacaciones", "premios", "uniformes"]),
-    ("Sistema",      ["dashboard", "usuarios", "roles"]),
+    ("Sistema",      ["dashboard", "usuarios", "roles", "dispositivos"]),
 ]
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}

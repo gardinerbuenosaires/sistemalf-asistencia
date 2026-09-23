@@ -1595,3 +1595,8 @@ def _migrate(conn):
     # archivo para que este punto de contacto sea una sola línea.
     from db.uniformes_schema import migrar_uniformes
     migrar_uniformes(conn)
+
+    # Control de accesos: los equipos pasan de cuatro claves sueltas en
+    # configuracion a una tabla con una fila por lector. Mismo criterio.
+    from db.accesos_schema import migrar_accesos
+    migrar_accesos(conn)

@@ -262,6 +262,43 @@ def probar(did: int, _user=Depends(require_permiso("dispositivos", "editar"))):
         return {"ok": True, "transporte": transporte, **_traer(conn, did)}
 
 
+@router.get("/{did}/padron")
+def padron(did: int, _user=Depends(require_permiso("dispositivos", "ver"))):
+    """
+    Qué tiene cargado este lector, cruzado contra los empleados del sistema.
+
+    Es la pantalla que reemplaza la verificación a ojo: en vez de comparar dos
+    listas en pantallas distintas, el sistema marca solo a los que hay que
+    mirar. Solo lectura: no toca el equipo.
+    """
+    from sync.lectores import leer_padron, comparar_con_empleados
+
+    with db_session() as conn:
+        d = _traer(conn, did)
+
+    lectura = leer_padron(d)
+    if not lectura["ok"]:
+        return {"ok": False, "error": lectura["error"], "dispositivo": d}
+
+    with db_session() as conn:
+        empleados = {
+            str(r["user_id"]).strip(): dict(r)
+            for r in conn.execute(
+                """SELECT id, user_id, nombre, apellido, activo, tipo, fecha_egreso
+                     FROM empleados WHERE user_id IS NOT NULL"""
+            )
+        }
+        # Dejar constancia de que el equipo contestó, aunque no se haya probado.
+        conn.execute(
+            """UPDATE dispositivos SET transporte=?, visto_en=datetime('now','localtime')
+                WHERE id=?""",
+            (lectura["transporte"], did),
+        )
+
+    return {"ok": True, "transporte": lectura["transporte"], "dispositivo": d,
+            **comparar_con_empleados(lectura["usuarios"], empleados)}
+
+
 def _leer(funcion):
     """Un dato que el equipo no sepa contestar no tiene que tirar abajo la prueba."""
     try:

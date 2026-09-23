@@ -164,5 +164,80 @@ r = sin_sesion.get("/api/dispositivos")
 chequear("sin sesion no se listan los equipos", r.status_code in (401, 403), r.status_code)
 con.close()
 
+
+print("\n=== PADRON: comparacion contra los empleados ===")
+from sync.lectores import comparar_con_empleados
+
+EMPLEADOS = {
+    "10": {"id": 1, "user_id": "10", "nombre": "Juan",  "apellido": "Perez",
+           "activo": 1, "tipo": "normal", "fecha_egreso": None},
+    "11": {"id": 2, "user_id": "11", "nombre": "Ana",   "apellido": "Gomez Ruiz",
+           "activo": 1, "tipo": "normal", "fecha_egreso": None},
+    "12": {"id": 3, "user_id": "12", "nombre": "Luis",  "apellido": "Torres",
+           "activo": 0, "tipo": "normal", "fecha_egreso": "2026-07-29"},
+    "13": {"id": 4, "user_id": "13", "nombre": "Mario", "apellido": "Nuevo",
+           "activo": 1, "tipo": "normal", "fecha_egreso": None},
+}
+# El lector corta los nombres a 8: "Gomez Ru" es Gomez Ruiz, no otra persona.
+# En el 13 hay cargado alguien distinto: numero reutilizado.
+PADRON = [
+    {"uid": 1, "user_id": "10", "nombre": "Perez",    "privilegio": 0, "tarjeta": 0, "grupo": "1"},
+    {"uid": 2, "user_id": "11", "nombre": "Gomez Ru", "privilegio": 0, "tarjeta": 0, "grupo": "1"},
+    {"uid": 3, "user_id": "12", "nombre": "Torres",   "privilegio": 0, "tarjeta": 0, "grupo": "1"},
+    {"uid": 4, "user_id": "99", "nombre": "Fantasma", "privilegio": 0, "tarjeta": 0, "grupo": "0"},
+    {"uid": 5, "user_id": "13", "nombre": "VIEJO",    "privilegio": 0, "tarjeta": 0, "grupo": "1"},
+]
+res = comparar_con_empleados(PADRON, EMPLEADOS)
+por_id = {f["user_id"]: f for f in res["filas"]}
+
+chequear("cuenta el total del lector", res["resumen"]["total"] == 5, res["resumen"])
+chequear("detecta al dado de baja", por_id["12"]["estado"] == "de_baja", por_id["12"])
+chequear("trae la fecha de egreso del dado de baja",
+         por_id["12"]["empleado"]["fecha_egreso"] == "2026-07-29", por_id["12"])
+chequear("detecta el numero que no existe en el sistema",
+         por_id["99"]["estado"] == "desconocido", por_id["99"])
+chequear("el que esta bien queda en ok", por_id["10"]["estado"] == "ok", por_id["10"])
+chequear("un nombre cortado a 8 NO se marca como distinto",
+         por_id["11"]["nombre_distinto"] is False, por_id["11"])
+chequear("un nombre realmente distinto SI se marca",
+         por_id["13"]["nombre_distinto"] is True, por_id["13"])
+chequear("resumen: una baja y un desconocido",
+         (res["resumen"]["de_baja"], res["resumen"]["desconocidos"]) == (1, 1), res["resumen"])
+chequear("las bajas se muestran primero", res["filas"][0]["estado"] == "de_baja",
+         [f["estado"] for f in res["filas"]])
+chequear("un padron vacio no rompe",
+         comparar_con_empleados([], EMPLEADOS)["resumen"]["total"] == 0)
+
+print("\n=== PADRON: endpoint ===")
+import sync.lectores as lectores
+
+_real = lectores.leer_padron
+lectores.leer_padron = lambda d: {"ok": True, "transporte": "udp",
+                                  "usuarios": PADRON, "error": None}
+r = cli.get(f"/api/dispositivos/{puerta['id']}/padron")
+chequear("GET padron responde 200", r.status_code == 200, r.text[:160])
+cuerpo = r.json() if r.status_code == 200 else {}
+chequear("informa por que transporte contesto", cuerpo.get("transporte") == "udp", cuerpo)
+chequear("devuelve resumen y filas", "resumen" in cuerpo and "filas" in cuerpo, list(cuerpo))
+chequear("deja constancia de que el equipo contesto",
+         any(x["visto_en"] for x in cli.get("/api/dispositivos").json()
+             if x["id"] == puerta["id"]))
+
+lectores.leer_padron = lambda d: {"ok": False, "transporte": None, "usuarios": [],
+                                  "error": "ZKNetworkError: timed out"}
+r = cli.get(f"/api/dispositivos/{puerta['id']}/padron")
+chequear("un equipo que no contesta devuelve ok=false, no un error 500",
+         r.status_code == 200 and r.json()["ok"] is False, r.text[:160])
+lectores.leer_padron = _real
+
+if push_id:
+    r = cli.get(f"/api/dispositivos/{push_id}/padron")
+    chequear("a un push le avisa que no se puede consultar asi",
+             r.status_code == 200 and r.json()["ok"] is False, r.text[:200])
+
+r = cli.get("/api/dispositivos/999999/padron")
+chequear("padron de un id inexistente da 404", r.status_code == 404, r.text[:120])
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

@@ -423,7 +423,7 @@
         <thead><tr>
           <th>Nombre</th><th>Dirección</th><th style="width:70px">Usa</th>
           <th style="width:90px">Asistencia</th><th style="width:70px">Acceso</th>
-          <th>Equipo</th><th style="width:210px">Acciones</th>
+          <th>Equipo</th><th style="width:290px">Acciones</th>
         </tr></thead>
         <tbody id="tabla-dispositivos">
           <tr><td colspan="7" style="color:#aaa">Cargando...</td></tr>
@@ -2307,7 +2307,8 @@ async function cargarDispositivos() {
       <td>${d.es_acceso ? si : no}</td>
       <td style="font-size:.8rem">${equipo}</td>
       <td>
-        ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" onclick="probarDispositivo(${d.id})">Probar</button>` : ''}
+        <button class="btn btn-sm btn-secondary" onclick="verPadron(${d.id})">Padrón</button>
+        ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="probarDispositivo(${d.id})">Probar</button>` : ''}
         ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-primary" style="margin-left:5px" onclick="editarDispositivo(${d.id})">Editar</button>` : ''}
         ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarDispositivo(${d.id})">Borrar</button>` : ''}
       </td></tr>`;
@@ -2454,6 +2455,97 @@ async function eliminarDispositivo(id) {
   let e = {};
   try { e = await res.json(); } catch {}
   toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Padrón de un lector ───────────────────────────────────────────────────────
+// Qué tiene cargado el equipo, cruzado contra los empleados. Reemplaza la
+// comparación a ojo entre dos listas en pantallas distintas.
+
+const _ESTADOS = {
+  de_baja:     { texto: 'Dado de baja', fondo: '#f6dedc', color: '#b3261e' },
+  desconocido: { texto: 'No está en el sistema', fondo: '#f6e9ce', color: '#8a5d06' },
+  ok:          { texto: '', fondo: '', color: '' },
+};
+
+async function verPadron(id) {
+  const d = _dispositivos.find(x => x.id === id);
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Padrón de ${_esc(d ? d.nombre : id)}</div>
+      <div id="padron-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+        Leyendo el equipo… puede tardar unos segundos.</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let data = {};
+  try {
+    const res = await fetch(`/api/dispositivos/${id}/padron`);
+    data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'error');
+  } catch (e) {
+    document.getElementById('padron-cuerpo').innerHTML =
+      `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+
+  const cuerpo = document.getElementById('padron-cuerpo');
+  if (!data.ok) {
+    cuerpo.innerHTML = `<div style="color:#c0392b">El equipo no contestó.</div>
+      <div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(data.error)}</div>`;
+    return;
+  }
+
+  const r = data.resumen;
+  const chip = (n, t, fondo, color) => n
+    ? `<span style="background:${fondo};color:${color};padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${n} ${t}</span>`
+    : '';
+  const alertas = [
+    chip(r.de_baja, 'dados de baja', '#f6dedc', '#b3261e'),
+    chip(r.desconocidos, 'no están en el sistema', '#f6e9ce', '#8a5d06'),
+    chip(r.nombre_distinto, 'con otro nombre', '#e8e0f0', '#5b3a8a'),
+  ].filter(Boolean).join(' ');
+
+  const filas = data.filas.map(f => {
+    const e = _ESTADOS[f.estado];
+    const quien = f.empleado
+      ? _esc(f.empleado.nombre) + (f.empleado.fecha_egreso
+          ? `<div style="font-size:.75rem;color:#b3261e">egreso ${_esc(f.empleado.fecha_egreso)}</div>` : '')
+      : '<span style="color:#bbb">—</span>';
+    return `<tr style="${e.fondo ? `background:${e.fondo}` : ''}">
+      <td style="font-family:monospace">${_esc(f.user_id)}</td>
+      <td>${_esc(f.nombre) || '<span style="color:#bbb">sin nombre</span>'}</td>
+      <td>${quien}</td>
+      <td style="color:${e.color};font-weight:${e.texto ? 600 : 400};font-size:.8rem">
+        ${e.texto}${f.nombre_distinto ? '<div style="color:#5b3a8a;font-size:.75rem">nombre distinto al legajo</div>' : ''}</td>
+      <td style="text-align:center;color:#888">${f.grupo ?? '—'}</td></tr>`;
+  }).join('');
+
+  cuerpo.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+      <span style="font-size:.85rem;color:#333"><b>${r.total}</b> cargados · contestó por ${data.transporte.toUpperCase()}</span>
+      ${alertas || '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo en orden</span>'}
+    </div>
+    ${r.nombre_distinto ? `<div style="font-size:.78rem;color:#666;margin:6px 0">
+      Los nombres se comparan contra el legajo. Este equipo los guarda cortados a
+      ${data.nombre_limite} caracteres, y esos cortes no se marcan: solo aparece lo que
+      realmente no coincide, que suele ser un número reutilizado con el empleado anterior adentro.</div>` : ''}
+    <div style="overflow-y:auto;max-height:52vh;margin-top:10px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px">N°</th>
+              <th style="text-align:left;padding:6px 10px">En el lector</th>
+              <th style="text-align:left;padding:6px 10px">En el sistema</th>
+              <th style="text-align:left;padding:6px 10px">Estado</th>
+              <th style="padding:6px 10px">Grupo</th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`;
+  cargarDispositivos();
 }
 
 // ── Datos fiscales (módulo de uniformes) ──────────────────────────────────────

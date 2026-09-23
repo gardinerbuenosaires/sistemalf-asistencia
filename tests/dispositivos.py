@@ -239,5 +239,86 @@ r = cli.get("/api/dispositivos/999999/padron")
 chequear("padron de un id inexistente da 404", r.status_code == 404, r.text[:120])
 
 
+
+print("\n=== REVISION DE TODOS LOS LECTORES ===")
+import sync.lectores as lectores
+
+# Un equipo contesta con problemas, el otro esta caido: el caido no tiene que
+# impedir que se vea lo del primero.
+_real2 = lectores.leer_padron
+
+
+# El endpoint cruza contra los empleados REALES de la copia, no contra la lista
+# de arriba. Para que haya al menos una fila sin novedad hace falta alguien que
+# exista de verdad, con su apellido tal cual esta en el legajo.
+_con = sqlite3.connect(DB)
+_real_emp = _con.execute(
+    """SELECT user_id, apellido FROM empleados
+        WHERE activo = 1 AND user_id IS NOT NULL AND apellido <> '' LIMIT 1"""
+).fetchone()
+_con.close()
+PADRON_REV = list(PADRON)
+if _real_emp:
+    PADRON_REV.append({"uid": 9, "user_id": str(_real_emp[0]).strip(),
+                       "nombre": str(_real_emp[1]).strip()[:8],
+                       "privilegio": 0, "tarjeta": 0, "grupo": "1"})
+
+
+def _falso(d):
+    if d["ip"] == "127.0.0.2":   # la Puerta deposito que se creo mas arriba
+        return {"ok": True, "transporte": "udp", "usuarios": PADRON_REV, "error": None}
+    return {"ok": False, "transporte": None, "usuarios": [],
+            "error": "ZKNetworkError: timed out"}
+
+
+lectores.leer_padron = _falso
+r = cli.get("/api/dispositivos/revision/todos")
+chequear("GET revision responde 200", r.status_code == 200, r.text[:160])
+rev = r.json() if r.status_code == 200 else {}
+
+chequear("revisa mas de un equipo", rev["total"]["equipos"] >= 2, rev.get("total"))
+chequear("cuenta el que no contesto", rev["total"]["sin_responder"] >= 1, rev["total"])
+chequear("suma los dados de baja de todos", rev["total"]["de_baja"] == 1, rev["total"])
+chequear("suma los desconocidos de todos", rev["total"]["desconocidos"] == 1, rev["total"])
+
+con_datos = [e for e in rev["equipos"] if e["ok"]]
+chequear("el equipo caido no impide ver el que si contesto", len(con_datos) >= 1,
+         [(e["nombre"], e["ok"]) for e in rev["equipos"]])
+
+eq = con_datos[0]
+chequear("solo devuelve lo que hay que mirar, no el padron entero",
+         not _real_emp or len(eq["problemas"]) < eq["resumen"]["total"],
+         (len(eq["problemas"]), eq["resumen"]["total"]))
+chequear("ninguna fila sin novedad se cuela en problemas",
+         all(f["estado"] != "ok" or f["nombre_distinto"] for f in eq["problemas"]),
+         [f["estado"] for f in eq["problemas"]])
+
+caidos = [e for e in rev["equipos"] if not e["ok"]]
+chequear("el equipo caido informa el motivo", caidos and caidos[0]["error"], caidos[:1])
+
+# Un equipo push no atiende llamadas: no tiene sentido incluirlo en la revision.
+ids_revisados = {e["id"] for e in rev["equipos"]}
+chequear("no intenta revisar equipos push", push_id not in ids_revisados, ids_revisados)
+
+lectores.leer_padron = _real2
+
+print("\n=== LECTURA EN PARALELO ===")
+import time
+from sync.lectores import leer_padrones
+
+_lento = lambda d: (time.sleep(0.4), {"ok": True, "transporte": "tcp",
+                                      "usuarios": [], "error": None})[1]
+lectores.leer_padron = _lento
+equipos = [{"id": i, "ip": f"127.0.0.{i}", "protocolo": "pull"} for i in range(1, 6)]
+arranque = time.time()
+res_par = leer_padrones(equipos)
+tardanza = time.time() - arranque
+chequear("devuelve un resultado por equipo", len(res_par) == 5, len(res_par))
+chequear("los lee en paralelo y no de a uno",
+         tardanza < 1.2, f"tardo {tardanza:.2f}s; de a uno serian 2s")
+chequear("una lista vacia no rompe", leer_padrones([]) == {})
+lectores.leer_padron = _real2
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

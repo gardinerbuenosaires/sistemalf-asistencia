@@ -186,6 +186,72 @@ def _verificar_queda_uno_de_asistencia(conn, did, sigue: bool):
         )
 
 
+@router.get("/revision/todos")
+def revision(_user=Depends(require_permiso("dispositivos", "ver"))):
+    """
+    Revisa todos los lectores de una y resume qué hay para corregir.
+
+    Es la rutina de verificación completa en una pantalla, en vez de abrir
+    equipo por equipo. Solo lectura. Un equipo que no contesta se informa como
+    tal y no frena a los demás.
+
+    Solo entran los equipos activos a los que se les puede preguntar: un equipo
+    push no atiende llamadas, así que no tiene sentido incluirlo acá.
+    """
+    from sync.lectores import leer_padrones, comparar_con_empleados
+
+    with db_session() as conn:
+        equipos = [
+            dict(f) for f in conn.execute(
+                f"""SELECT {CAMPOS} FROM dispositivos
+                     WHERE activo = 1 AND protocolo = 'pull' AND ip IS NOT NULL
+                  ORDER BY orden, id"""
+            )
+        ]
+        empleados = {
+            str(r["user_id"]).strip(): dict(r)
+            for r in conn.execute(
+                """SELECT id, user_id, nombre, apellido, activo, tipo, fecha_egreso
+                     FROM empleados WHERE user_id IS NOT NULL"""
+            )
+        }
+
+    lecturas = leer_padrones(equipos)
+    salida, total = [], {"equipos": len(equipos), "sin_responder": 0,
+                         "de_baja": 0, "desconocidos": 0, "nombre_distinto": 0}
+
+    for d in equipos:
+        lectura = lecturas.get(d["id"], {"ok": False, "error": "sin resultado", "usuarios": []})
+        fila = {"id": d["id"], "nombre": d["nombre"], "ubicacion": d["ubicacion"],
+                "ip": d["ip"], "cuenta_asistencia": d["cuenta_asistencia"],
+                "es_acceso": d["es_acceso"], "ok": lectura["ok"],
+                "error": lectura.get("error"), "transporte": lectura.get("transporte")}
+        if lectura["ok"]:
+            comparacion = comparar_con_empleados(lectura["usuarios"], empleados)
+            fila["resumen"] = comparacion["resumen"]
+            # Solo lo que hay que mirar: el resto es ruido en esta pantalla.
+            fila["problemas"] = [f for f in comparacion["filas"]
+                                 if f["estado"] != "ok" or f["nombre_distinto"]]
+            for clave in ("de_baja", "desconocidos", "nombre_distinto"):
+                total[clave] += comparacion["resumen"][clave]
+        else:
+            total["sin_responder"] += 1
+        salida.append(fila)
+
+    if any(f["ok"] for f in salida):
+        with db_session() as conn:
+            for f in salida:
+                if f["ok"]:
+                    conn.execute(
+                        """UPDATE dispositivos
+                              SET transporte=?, visto_en=datetime('now','localtime')
+                            WHERE id=?""",
+                        (f["transporte"], f["id"]),
+                    )
+
+    return {"total": total, "equipos": salida}
+
+
 @router.post("/{did}/probar")
 def probar(did: int, _user=Depends(require_permiso("dispositivos", "editar"))):
     """

@@ -416,8 +416,10 @@
             número de serie y algoritmo de huella — no le escribe nada.
           </div>
         </div>
+        <button class="btn btn-secondary btn-sm" style="flex-shrink:0;margin-left:16px"
+                onclick="revisarTodos()">Revisar todos</button>
         <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
-                style="flex-shrink:0;margin-left:16px" onclick="nuevoDispositivo()">+ Nuevo equipo</button>
+                style="flex-shrink:0;margin-left:8px" onclick="nuevoDispositivo()">+ Nuevo equipo</button>
       </div>
       <table style="margin-top:16px;font-size:.85rem">
         <thead><tr>
@@ -2455,6 +2457,83 @@ async function eliminarDispositivo(id) {
   let e = {};
   try { e = await res.json(); } catch {}
   toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Revisión de todos los lectores ────────────────────────────────────────────
+// La rutina de verificación completa en una pantalla. Muestra solo lo que hay
+// que corregir; los equipos sin novedades se listan en una línea y nada más.
+
+async function revisarTodos() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:860px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Revisión de todos los lectores</div>
+      <div id="rev-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+        Consultando los equipos… se leen todos a la vez, pero si alguno está apagado puede tardar.</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let data;
+  try {
+    const res = await fetch('/api/dispositivos/revision/todos');
+    data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'error');
+  } catch (e) {
+    document.getElementById('rev-cuerpo').innerHTML =
+      `<span style="color:#c0392b">No se pudo revisar: ${_esc(e.message)}</span>`;
+    return;
+  }
+
+  const t = data.total;
+  const hayProblemas = t.de_baja || t.desconocidos || t.nombre_distinto || t.sin_responder;
+  const chip = (n, txt, fondo, color) => n
+    ? `<span style="background:${fondo};color:${color};padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${n} ${txt}</span>`
+    : '';
+
+  const bloques = data.equipos.map(eq => {
+    const cab = `<b>${_esc(eq.nombre)}</b>`
+      + (eq.ubicacion ? ` <span style="color:#888;font-size:.8rem">${_esc(eq.ubicacion)}</span>` : '')
+      + ` <span style="color:#bbb;font-family:monospace;font-size:.78rem">${_esc(eq.ip)}</span>`;
+
+    if (!eq.ok) {
+      return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0;background:#fdf3f2">
+        ${cab}<div style="color:#b3261e;font-size:.82rem;margin-top:3px">No contestó</div>
+        <div style="font-family:monospace;font-size:.75rem;color:#999">${_esc(eq.error)}</div></div>`;
+    }
+    if (!eq.problemas.length) {
+      return `<div style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#555;font-size:.85rem">
+        ${cab} <span style="color:#2e7d4f">· ${eq.resumen.total} cargados, sin novedades</span></div>`;
+    }
+    const lista = eq.problemas.map(f => {
+      const etiqueta = f.estado === 'de_baja'
+        ? `<span style="color:#b3261e;font-weight:600">dado de baja</span>${f.empleado?.fecha_egreso ? ` <span style="color:#999">· egreso ${_esc(f.empleado.fecha_egreso)}</span>` : ''}`
+        : f.estado === 'desconocido'
+          ? '<span style="color:#8a5d06;font-weight:600">no está en el sistema</span>'
+          : '<span style="color:#5b3a8a;font-weight:600">nombre distinto al legajo</span>';
+      const quien = f.empleado ? _esc(f.empleado.nombre) : _esc(f.nombre) || '—';
+      return `<div style="padding:4px 0 4px 14px;font-size:.83rem;border-bottom:1px solid #fafafa">
+        <span style="font-family:monospace;color:#888">${_esc(f.user_id)}</span>
+        &nbsp;${quien}&nbsp; ${etiqueta}</div>`;
+    }).join('');
+    return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0">
+      ${cab} <span style="color:#888;font-size:.8rem">· ${eq.resumen.total} cargados</span>
+      <div style="margin-top:6px">${lista}</div></div>`;
+  }).join('');
+
+  document.getElementById('rev-cuerpo').innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:.85rem;color:#333"><b>${t.equipos}</b> equipos revisados</span>
+      ${chip(t.sin_responder, 'no contestaron', '#f6dedc', '#b3261e')}
+      ${chip(t.de_baja, 'dados de baja cargados', '#f6dedc', '#b3261e')}
+      ${chip(t.desconocidos, 'no están en el sistema', '#f6e9ce', '#8a5d06')}
+      ${chip(t.nombre_distinto, 'con otro nombre', '#e8e0f0', '#5b3a8a')}
+      ${hayProblemas ? '' : '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo en orden</span>'}
+    </div>
+    <div style="overflow-y:auto;max-height:58vh;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>`;
+  cargarDispositivos();
 }
 
 // ── Padrón de un lector ───────────────────────────────────────────────────────

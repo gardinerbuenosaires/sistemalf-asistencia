@@ -87,6 +87,26 @@ def leer_padron(dispositivo: dict) -> dict:
                 pass
 
 
+def leer_padrones(dispositivos: list) -> dict:
+    """
+    Lee varios lectores a la vez. Devuelve {id_dispositivo: resultado}.
+
+    En paralelo y no de a uno: con seis equipos, cada uno reintentando por TCP y
+    después por UDP, uno apagado hace esperar a todos los demás. Leer es una
+    operación de red, así que los hilos sirven aunque sea Python.
+
+    El límite de hilos existe porque un local puede tener muchos lectores y no
+    tiene sentido abrirle una conexión a cada uno al mismo tiempo.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    if not dispositivos:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(8, len(dispositivos))) as pool:
+        resultados = pool.map(leer_padron, dispositivos)
+    return {d["id"]: r for d, r in zip(dispositivos, resultados)}
+
+
 # Los equipos viejos guardan el nombre en un campo más corto que el maestro y lo
 # cortan al grabarlo. Un nombre cortado no es un problema; confundirlo con otra
 # persona manda a investigar decenas de casos que no lo son.

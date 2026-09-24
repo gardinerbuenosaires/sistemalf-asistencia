@@ -1239,7 +1239,9 @@ async function cargarAccesos(id) {
   // Sin puertas ni perfiles cargados todavía, la sección solo confundiría.
   if (!_accPuertas.length && !_accPerfiles.length) { caja.innerHTML = ""; return; }
 
+  // Dos permisos distintos: aplicar la politica y desviarse de ella.
   const puede = canDo('accesos', 'asignar');
+  const puedeExcepcion = canDo('accesos', 'excepcion');
   const nombrePuerta = pid => (_accPuertas.find(p => p.id === pid) || {}).nombre || `#${pid}`;
   const perfilActual = datos.perfil ? datos.perfil.id : "";
 
@@ -1256,7 +1258,7 @@ async function cargarAccesos(id) {
       ${x.sin_efecto ? '<span style="background:#eee;color:#777;padding:2px 7px;border-radius:3px;font-size:.72rem">sin efecto</span>' : ''}
       <span style="color:#888;flex:1">${x.motivo ? x.motivo : '<i>sin motivo</i>'}</span>
       <span style="color:#bbb;font-size:.75rem">${(x.creado_en || '').slice(0,10)}</span>
-      ${puede ? `<button type="button" class="btn btn-sm btn-secondary" onclick="quitarExcepcion(${id}, ${x.dispositivo_id})">Sacar</button>` : ''}
+      ${puedeExcepcion ? `<button type="button" class="btn btn-sm btn-secondary" onclick="quitarExcepcion(${id}, ${x.dispositivo_id})">Sacar</button>` : ''}
     </div>`).join('');
 
   caja.innerHTML = `
@@ -1295,13 +1297,15 @@ async function cargarAccesos(id) {
           ${datos.perfil
             ? `su perfil actual ya ${obsoletas === 1 ? 'dice lo mismo' : 'dice lo mismo'}. Suelen quedar de un perfil anterior.`
             : `esta persona no tiene perfil, así que no hay puertas de las que sacarla.`}
-          Conviene ${obsoletas === 1 ? 'sacarla' : 'sacarlas'} para que la ficha diga la verdad.</div>` : ''}
+          ${puedeExcepcion
+            ? `Conviene ${obsoletas === 1 ? 'sacarla' : 'sacarlas'} para que la ficha diga la verdad.`
+            : 'Sacarlas lo tiene que hacer alguien con permiso para manejar excepciones.'}</div>` : ''}
         ${excepciones}
-        ${puede && _accPuertas.length && !datos.perfil ? `
+        ${puedeExcepcion && _accPuertas.length && !datos.perfil ? `
         <div style="font-size:.8rem;color:#888;margin-top:8px">
           Para ponerle una excepción primero necesita un perfil: una excepción lo modifica.
           Si necesita una combinación de puertas que no existe, creá un perfil nuevo.</div>` : ''}
-        ${puede && _accPuertas.length && datos.perfil ? `
+        ${puedeExcepcion && _accPuertas.length && datos.perfil ? `
         <div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">
           <select id="f-exc-puerta" style="max-width:160px">
             ${_accPuertas.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}

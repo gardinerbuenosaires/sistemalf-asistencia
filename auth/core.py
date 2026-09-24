@@ -29,7 +29,7 @@ MODULOS = [
     "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
     "dispositivos", "accesos",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "asignar"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "asignar", "excepcion"]
 # corregir       → asistencia:corregir (novedades en planilla)
 # fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
 #                  individuales o por fuerza mayor). Separado de "editar" porque
@@ -68,10 +68,15 @@ MODULO_ACCIONES = {
     # accesos → la politica de quien abre que puerta, separada de los equipos.
     #   editar  → redefinir que puertas incluye un perfil. Es una decision de
     #             politica y cambia el acceso de todos los que lo tienen.
-    #   asignar → ponerle un perfil o una excepcion a una persona. Se hace al
-    #             dar de alta a alguien, asi que puede vivir en RRHH sin que eso
-    #             les permita redefinir los perfiles.
-    "accesos":        ["ver", "editar", "eliminar", "asignar"],
+    #   editar    → redefinir que puertas incluye un perfil. Cambia el acceso de
+    #               todos los que lo tengan.
+    #   asignar   → ponerle un perfil a una persona. Es aplicar la politica, se
+    #               hace al dar de alta a alguien, y puede vivir en RRHH.
+    #   excepcion → sacarle o darle una puerta suelta a alguien. Es desviarse de
+    #               la politica, y es lo mas dificil de auditar: un perfil se ve
+    #               en la matriz, una excepcion solo abriendo esa ficha. Por eso
+    #               va aparte de asignar.
+    "accesos":        ["ver", "editar", "eliminar", "asignar", "excepcion"],
 }
 
 # Cómo se agrupan los módulos en la pantalla de Roles. Un módulo que no figure

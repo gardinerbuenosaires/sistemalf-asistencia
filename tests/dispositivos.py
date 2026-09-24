@@ -538,9 +538,9 @@ if emp_id:
 
 print("\n=== PERMISOS DEL MODULO ACCESOS ===")
 me2 = cli.get("/api/auth/me").json()
-chequear("sistema tiene las cuatro acciones de accesos",
+chequear("sistema tiene las cinco acciones de accesos",
          sorted(p["accion"] for p in me2["permisos"] if p["modulo"] == "accesos")
-         == ["asignar", "editar", "eliminar", "ver"],
+         == ["asignar", "editar", "eliminar", "excepcion", "ver"],
          sorted(p["accion"] for p in me2["permisos"] if p["modulo"] == "accesos"))
 
 _sin2 = TestClient(main.app)
@@ -907,6 +907,48 @@ if emp_id:
     r = _acc.post("/api/perfiles-acceso", json={"nombre": "Tampoco", "dispositivos": []})
     chequear("pero asignar no alcanza para redefinir perfiles",
              r.status_code == 403, r.status_code)
+
+
+
+print("\n=== LAS EXCEPCIONES TIENEN SU PROPIO PERMISO ===")
+# Puede aplicar la politica pero no desviarse de ella: le pone el perfil que
+# corresponde a alguien, y no puede decidir que esa persona sea distinta.
+_aplica = TestClient(main.app)
+_aplica.cookies.set("session", _usuario_con(
+    [("empleados", "ver"), ("accesos", "ver"), ("accesos", "asignar")], "prueba_aplica"))
+
+if emp_id:
+    r = _aplica.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                    json={"perfil_acceso_id": menos_oficina["id"]})
+    chequear("con asignar puede ponerle el perfil", r.status_code == 200, r.status_code)
+    r = _aplica.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                     json={"dispositivo_id": p_oficina, "modo": "agregar"})
+    chequear("pero NO puede ponerle una excepcion", r.status_code == 403, r.status_code)
+    r = _aplica.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
+    chequear("ni sacarle una", r.status_code == 403, r.status_code)
+
+# Y al reves: puede manejar excepciones sin poder asignar perfiles. Es una
+# combinacion rara pero coherente: solo modifica a quien ya tiene uno.
+_exc = TestClient(main.app)
+_exc.cookies.set("session", _usuario_con(
+    [("empleados", "ver"), ("accesos", "ver"), ("accesos", "excepcion")], "prueba_excepcion"))
+
+if emp_id:
+    r = _exc.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                  json={"dispositivo_id": p_oficina, "modo": "agregar", "motivo": "permiso"})
+    chequear("con excepcion puede poner una", r.status_code == 201, r.text[:160])
+    r = _exc.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                 json={"perfil_acceso_id": solo_oficina["id"]})
+    chequear("pero NO puede cambiarle el perfil", r.status_code == 403, r.status_code)
+    r = _exc.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
+    chequear("y si puede sacar la que puso", r.status_code == 200, r.status_code)
+
+# Sistema sigue teniendo las cinco acciones.
+me3 = cli.get("/api/auth/me").json()
+chequear("sistema tiene las cinco acciones de accesos",
+         sorted(p["accion"] for p in me3["permisos"] if p["modulo"] == "accesos")
+         == ["asignar", "editar", "eliminar", "excepcion", "ver"],
+         sorted(p["accion"] for p in me3["permisos"] if p["modulo"] == "accesos"))
 
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")

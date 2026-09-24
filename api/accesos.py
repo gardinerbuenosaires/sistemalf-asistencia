@@ -13,9 +13,15 @@ marca como error — si no, cualquier restricción deliberada aparecería para
 siempre como un problema, y una pantalla que muestra errores que no son errores
 deja de mirarse.
 
-El permiso para asignar está separado del de editar perfiles: poner un perfil
-es parte de dar de alta a alguien, redefinir qué significa ese perfil cambia el
-acceso de todos los que lo tienen.
+Cada cosa tiene su permiso, y la escala va de mayor a menor alcance:
+
+    editar    redefinir un perfil — cambia el acceso de todos los que lo tengan
+    excepcion desviarse de la política para una persona
+    asignar   aplicar la política: a esta persona le corresponde este perfil
+
+Asignar es parte de dar de alta a alguien y puede vivir en RRHH. Las excepciones
+van aparte porque son lo más difícil de auditar: un perfil se ve de un vistazo
+en la matriz, una excepción solo abriendo la ficha de esa persona.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
@@ -171,7 +177,7 @@ def asignar_perfil(eid: int, data: AsignacionIn,
 
 @router.post("/empleado/{eid}/excepcion", status_code=201)
 def crear_excepcion(eid: int, data: ExcepcionIn,
-                    usuario=Depends(require_permiso("accesos", "asignar"))):
+                    usuario=Depends(require_permiso("accesos", "excepcion"))):
     """
     Le saca o le da una puerta suelta a una persona, sin tocar el perfil.
 
@@ -224,7 +230,7 @@ def crear_excepcion(eid: int, data: ExcepcionIn,
 
 @router.delete("/empleado/{eid}/excepcion/{did}")
 def borrar_excepcion(eid: int, did: int,
-                     _user=Depends(require_permiso("accesos", "asignar"))):
+                     _user=Depends(require_permiso("accesos", "excepcion"))):
     """Saca la excepción: la persona vuelve a lo que diga su perfil."""
     with db_session() as conn:
         _empleado(conn, eid)

@@ -422,6 +422,8 @@
                 style="flex-shrink:0;margin-left:8px" onclick="verPlan()">Ver plan de cambios</button>
         <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
                 style="flex-shrink:0;margin-left:8px" onclick="verPendientes()">Sin acceso asignado</button>
+        <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
+                style="flex-shrink:0;margin-left:8px" onclick="descubrirPerfiles()">Deducir perfiles</button>
         <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
                 style="flex-shrink:0;margin-left:8px" onclick="nuevoDispositivo()">+ Nuevo equipo</button>
       </div>
@@ -2507,6 +2509,133 @@ async function eliminarDispositivo(id) {
   let e = {};
   try { e = await res.json(); } catch {}
   toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Deducir perfiles desde los lectores ───────────────────────────────────────
+// La carga inicial. Nadie tiene perfil y son cientos de personas, pero los
+// perfiles ya existen dentro de los equipos: quien esta cargado en las mismas
+// puertas que otro comparte perfil con el, aunque nadie lo haya escrito nunca.
+
+let _grupos = [];
+
+async function descubrirPerfiles() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:880px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Deducir perfiles desde los lectores</div>
+      <div style="font-size:.8rem;color:#888;margin-top:2px">
+        Agrupa a la gente por el conjunto exacto de puertas donde está cargada hoy.
+        Cada grupo es un perfil que ya existe, aunque nadie lo haya escrito.</div>
+      <div id="desc-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+        Leyendo los equipos…</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+  await _cargarDescubrimiento();
+}
+
+async function _cargarDescubrimiento() {
+  const caja = document.getElementById('desc-cuerpo');
+  if (!caja) return;
+  let d;
+  try {
+    const res = await fetch('/api/accesos/descubrir');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    caja.innerHTML = `<span style="color:#c0392b">No se pudo: ${_esc(e.message)}</span>`;
+    return;
+  }
+
+  if (d.aviso) {
+    caja.innerHTML = `<div style="color:#8a5d06;background:#f6e9ce;padding:10px 12px;border-radius:5px">${_esc(d.aviso)}</div>`;
+    return;
+  }
+  if (!d.completo) {
+    caja.innerHTML = `<div style="background:#f6dedc;border-left:3px solid #b3261e;padding:10px 12px;border-radius:4px;font-size:.85rem;color:#7a211c">
+      <b>No se pudieron leer todas las puertas, así que no se propone nada.</b>
+      <div style="margin-top:4px">Con una puerta sin leer, el conjunto de cada persona quedaría
+      incompleto y los grupos saldrían mal. Mejor no proponer nada que proponer algo falso.</div>
+      ${d.sin_leer.map(p => `<div style="margin-top:4px">· ${_esc(p.nombre)} — ${_esc(p.error)}</div>`).join('')}
+    </div>`;
+    return;
+  }
+  if (!d.grupos.length) {
+    caja.innerHTML = '<div style="color:#888">No hay nadie cargado en las puertas.</div>';
+    return;
+  }
+
+  _grupos = d.grupos;
+  const opciones = _perfiles.filter(p => p.activo)
+    .map(p => `<option value="${p.id}">${_esc(p.nombre)}</option>`).join('');
+
+  const bloques = _grupos.map((g, i) => {
+    const puertas = g.nombres_puertas.map(n =>
+      `<span style="background:#dcede2;color:#2e7d4f;padding:2px 8px;border-radius:4px;font-size:.78rem;margin-right:4px">${_esc(n)}</span>`).join('');
+    const gente = g.personas.map(p =>
+      `<span style="color:${p.tiene_perfil ? '#bbb' : '#555'}">${_esc(p.nombre)}</span>`).join(' · ');
+
+    const accion = g.sin_perfil === 0
+      ? '<span style="color:#2e7d4f;font-size:.82rem;font-weight:600">todos ya tienen perfil</span>'
+      : g.perfil_existente
+        ? `<button class="btn btn-sm btn-primary" onclick="_aplicarGrupo(${i}, ${g.perfil_existente.id})">Asignar «${_esc(g.perfil_existente.nombre)}» a ${g.sin_perfil}</button>`
+        : `<select id="desc-perfil-${i}" style="padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:.82rem">
+             <option value="">— elegir perfil —</option>${opciones}</select>
+           <button class="btn btn-sm btn-primary" style="margin-left:5px"
+                   onclick="_aplicarGrupo(${i}, document.getElementById('desc-perfil-${i}').value)">Asignar a ${g.sin_perfil}</button>`;
+
+    return `<div style="padding:12px;border-bottom:1px solid #f0f0f0">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <b style="font-size:.9rem">${g.total} persona(s)</b>
+        <span style="color:#888;font-size:.8rem">abren</span> ${puertas}
+        ${g.perfil_existente
+          ? `<span style="color:#24506e;font-size:.8rem">· coincide con <b>${_esc(g.perfil_existente.nombre)}</b></span>`
+          : '<span style="color:#8a5d06;font-size:.8rem">· no hay perfil con esas puertas exactas</span>'}
+        <span style="flex:1"></span>${accion}
+      </div>
+      <div style="font-size:.8rem;color:#666;margin-top:6px;line-height:1.5">${gente}</div>
+      ${g.con_perfil ? `<div style="font-size:.76rem;color:#999;margin-top:4px">${g.con_perfil} en gris ya tienen perfil propio y no se tocan.</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const ignorados = d.ignorados.length ? `
+    <div style="background:#f6e9ce;color:#6b5a26;padding:9px 12px;border-radius:5px;font-size:.82rem;margin-bottom:10px">
+      <b>${d.ignorados.length} cargados en puertas que no entran en ningún grupo:</b>
+      ${d.ignorados.slice(0, 12).map(x =>
+        `<div style="margin-top:2px">· ${_esc(x.user_id)}${x.nombre ? ' ' + _esc(x.nombre) : ''} — ${_esc(x.motivo)}</div>`).join('')}
+      ${d.ignorados.length > 12 ? `<div style="margin-top:2px">… y ${d.ignorados.length - 12} más</div>` : ''}
+      <div style="margin-top:5px">Estos aparecen en «Revisar todos» como gente a sacar de esas puertas.</div>
+    </div>` : '';
+
+  caja.innerHTML = `
+    <div style="font-size:.84rem;color:#333;margin-bottom:10px">
+      <b>${_grupos.length} grupo(s)</b> — los más grandes primero, que son los perfiles de verdad.
+      Los de una o dos personas suelen ser un error de carga o una excepción que nadie anotó.</div>
+    ${ignorados}
+    <div style="overflow-y:auto;max-height:56vh;border:1px solid #eee;border-radius:4px">${bloques}</div>
+    <div style="font-size:.78rem;color:#999;margin-top:10px">
+      Asignar acá solo guarda el perfil en el sistema. No se escribe nada en los lectores.</div>`;
+}
+
+async function _aplicarGrupo(indice, perfilId) {
+  if (!perfilId) return toast('Elegí un perfil primero');
+  const g = _grupos[indice];
+  const ids = g.personas.filter(p => !p.tiene_perfil).map(p => p.empleado_id);
+  if (!ids.length) return;
+  const res = await fetch('/api/accesos/descubrir/aplicar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ empleados: ids, perfil_acceso_id: Number(perfilId) }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo asignar'));
+  }
+  const d = await res.json();
+  toast(`${d.asignados} persona(s) quedaron con ese perfil`);
+  await cargarPerfiles();
+  await _cargarDescubrimiento();
 }
 
 // ── Sin acceso asignado ───────────────────────────────────────────────────────

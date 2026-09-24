@@ -1051,5 +1051,129 @@ chequear("y sale del aviso", all(f["id"] != p_oficina for f in plan2.get("fuera_
          plan2.get("fuera_de_plan"))
 
 
+
+print("\n=== DESCUBRIR PERFILES DESDE LOS LECTORES ===")
+from sync.descubrir_perfiles import agrupar_por_puertas, emparejar_con_perfiles
+
+_PUERTAS = [{"id": p_personal, "nombre": "Personal"},
+            {"id": p_oficina,  "nombre": "Oficina"},
+            {"id": p_camaras,  "nombre": "Camaras"}]
+_EMPS = {
+    "10": {"id": 101, "nombre": "Ana",   "apellido": "Perez",  "activo": 1, "perfil_acceso_id": None},
+    "11": {"id": 102, "nombre": "Beto",  "apellido": "Gomez",  "activo": 1, "perfil_acceso_id": None},
+    "12": {"id": 103, "nombre": "Carla", "apellido": "Lopez",  "activo": 1, "perfil_acceso_id": None},
+    "13": {"id": 104, "nombre": "Dario", "apellido": "Ruiz",   "activo": 1, "perfil_acceso_id": 7},
+    "14": {"id": 105, "nombre": "Elsa",  "apellido": "Torres", "activo": 0, "perfil_acceso_id": None},
+}
+
+
+def _lect(por_puerta):
+    return {d: {"ok": True, "transporte": "udp", "error": None,
+                "usuarios": [{"user_id": u} for u in us]}
+            for d, us in por_puerta.items()}
+
+
+# 10, 11 y 13 estan en Personal+Camaras. 12 solo en Oficina. 14 esta de baja.
+# 99 no existe en el sistema.
+_L = _lect({
+    p_personal: ["10", "11", "13", "14"],
+    p_oficina:  ["12", "99"],
+    p_camaras:  ["10", "11", "13"],
+})
+res = agrupar_por_puertas(_L, _PUERTAS, _EMPS)
+
+chequear("la lectura quedo completa", res["completo"] is True, res["completo"])
+chequear("arma dos grupos", len(res["grupos"]) == 2,
+         [(g["nombres_puertas"], g["total"]) for g in res["grupos"]])
+
+_g1 = res["grupos"][0]
+chequear("el grupo mas grande va primero", _g1["total"] == 3, _g1["total"])
+chequear("y son los de Personal + Camaras",
+         sorted(_g1["puertas"]) == sorted([p_personal, p_camaras]), _g1["nombres_puertas"])
+chequear("cuenta cuantos ya tienen perfil propio", _g1["con_perfil"] == 1, _g1)
+chequear("y cuantos quedan por asignar", _g1["sin_perfil"] == 2, _g1)
+chequear("marca a cada uno si ya tiene perfil",
+         sum(1 for p in _g1["personas"] if p["tiene_perfil"]) == 1, _g1["personas"])
+
+_g2 = res["grupos"][1]
+chequear("el otro grupo es el de una sola puerta",
+         _g2["puertas"] == [p_oficina] and _g2["total"] == 1, _g2)
+
+_ign = {i["user_id"]: i for i in res["ignorados"]}
+chequear("ignora a quien no existe en el sistema",
+         "99" in _ign and "no existe" in _ign["99"]["motivo"], res["ignorados"])
+chequear("e ignora a los dados de baja",
+         "14" in _ign and "baja" in _ign["14"]["motivo"], res["ignorados"])
+chequear("los ignorados no ensucian ningun grupo",
+         all(all(p["user_id"] not in ("14", "99") for p in g["personas"])
+             for g in res["grupos"]))
+
+print("\n=== CON UNA PUERTA SIN LEER NO PROPONE NADA ===")
+_L2 = dict(_L)
+_L2[p_camaras] = {"ok": False, "transporte": None, "usuarios": [], "error": "timed out"}
+res2 = agrupar_por_puertas(_L2, _PUERTAS, _EMPS)
+chequear("no arma grupos si falta leer una puerta", res2["grupos"] == [], res2["grupos"])
+chequear("avisa cual falto", len(res2["sin_leer"]) == 1, res2["sin_leer"])
+chequear("y lo marca como incompleto", res2["completo"] is False, res2["completo"])
+
+print("\n=== EMPAREJAR CON PERFILES QUE YA EXISTEN ===")
+_PERF = [
+    {"id": 1, "nombre": "Todas menos oficina", "dispositivos": [p_personal, p_camaras]},
+    {"id": 2, "nombre": "Todo", "dispositivos": [p_personal, p_oficina, p_camaras]},
+]
+emparejar_con_perfiles(res["grupos"], _PERF)
+chequear("reconoce el perfil que coincide exacto",
+         res["grupos"][0]["perfil_existente"]["id"] == 1, res["grupos"][0].get("perfil_existente"))
+chequear("y deja en None al que no tiene ninguno igual",
+         res["grupos"][1]["perfil_existente"] is None, res["grupos"][1].get("perfil_existente"))
+
+# Un perfil que incluye esas puertas Y ALGUNA MAS no sirve: le daria a esa
+# gente acceso que hoy no tiene.
+_solo_mas = [{"id": 3, "nombre": "De mas", "dispositivos": [p_personal, p_camaras, p_oficina]}]
+_copia = [dict(g) for g in res["grupos"]]
+emparejar_con_perfiles(_copia, _solo_mas)
+chequear("un perfil que incluye de mas NO se propone",
+         _copia[0]["perfil_existente"] is None, _copia[0].get("perfil_existente"))
+
+print("\n=== APLICAR UN GRUPO ===")
+import sync.lectores as _lec3
+_g3 = _lec3.leer_padrones
+_lec3.leer_padrones = lambda ds: {d["id"]: {"ok": True, "transporte": "udp",
+                                            "usuarios": [], "error": None} for d in ds}
+r = cli.get("/api/accesos/descubrir")
+chequear("GET descubrir responde 200", r.status_code == 200, r.text[:160])
+chequear("trae grupos, ignorados y si quedo completo",
+         all(k in r.json() for k in ("grupos", "ignorados", "completo")), list(r.json()))
+_lec3.leer_padrones = _g3
+
+_c6 = sqlite3.connect(DB)
+_libres = [x[0] for x in _c6.execute(
+    """SELECT id FROM empleados WHERE activo=1 AND perfil_acceso_id IS NULL LIMIT 3""")]
+_c6.close()
+if len(_libres) >= 2:
+    r = cli.post("/api/accesos/descubrir/aplicar",
+                 json={"empleados": _libres, "perfil_acceso_id": menos_oficina["id"]})
+    chequear("aplicar un grupo responde 200", r.status_code == 200, r.text[:160])
+    chequear("y asigna a todos los que no tenian", r.json()["asignados"] == len(_libres), r.json())
+
+    r = cli.post("/api/accesos/descubrir/aplicar",
+                 json={"empleados": _libres, "perfil_acceso_id": solo_oficina["id"]})
+    chequear("aplicar de nuevo NO pisa a quien ya tiene perfil",
+             r.json()["asignados"] == 0 and r.json()["sin_tocar"] == len(_libres), r.json())
+    for _e in _libres:
+        cli.put(f"/api/accesos/empleado/{_e}/perfil", json={"perfil_acceso_id": None})
+
+r = cli.post("/api/accesos/descubrir/aplicar", json={"empleados": [], "perfil_acceso_id": 1})
+chequear("sin empleados se rechaza", r.status_code == 400, r.status_code)
+r = cli.post("/api/accesos/descubrir/aplicar", json={"empleados": [1], "perfil_acceso_id": 999999})
+chequear("con un perfil inexistente se rechaza", r.status_code == 400, r.status_code)
+
+r = _aplica.get("/api/accesos/descubrir")
+chequear("descubrir necesita accesos:ver", r.status_code in (200, 403), r.status_code)
+r = _mirar.post("/api/accesos/descubrir/aplicar",
+                json={"empleados": [1], "perfil_acceso_id": 1})
+chequear("aplicar necesita accesos:asignar", r.status_code == 403, r.status_code)
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

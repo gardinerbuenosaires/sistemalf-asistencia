@@ -327,6 +327,90 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
         return {**armar_plan(conn, puertas, lecturas, maestro), "fuera_de_plan": fuera}
 
 
+@router.get("/descubrir")
+def descubrir(_user=Depends(require_permiso("accesos", "ver"))):
+    """
+    Propone perfiles a partir de lo que los lectores ya tienen cargado.
+
+    Es la carga inicial: nadie tiene perfil, son cientos de personas, y
+    asignarlas de a una no es una opción. Pero los perfiles ya existen dentro
+    de los equipos — solo hay que leerlos y ponerles nombre.
+
+    Solo lectura. Lo que se elija se aplica con el endpoint de al lado.
+    """
+    from sync.lectores import leer_padrones
+    from sync.descubrir_perfiles import agrupar_por_puertas, emparejar_con_perfiles
+
+    with db_session() as conn:
+        puertas = [
+            dict(r) for r in conn.execute(
+                """SELECT id, nombre, ubicacion, ip, puerto, password, timeout, protocolo
+                     FROM dispositivos
+                    WHERE activo = 1 AND es_acceso = 1 AND protocolo = 'pull'
+                      AND ip IS NOT NULL
+                 ORDER BY orden, id"""
+            )
+        ]
+    if not puertas:
+        return {"grupos": [], "sin_leer": [], "ignorados": [], "completo": False,
+                "aviso": "No hay ningún equipo marcado como «Abre una puerta»."}
+
+    lecturas = leer_padrones(puertas)
+
+    with db_session() as conn:
+        empleados = {
+            str(r["user_id"]).strip(): dict(r)
+            for r in conn.execute(
+                """SELECT id, user_id, nombre, apellido, activo, perfil_acceso_id
+                     FROM empleados WHERE user_id IS NOT NULL"""
+            )
+        }
+        perfiles = [
+            {"id": r["id"], "nombre": r["nombre"],
+             "dispositivos": [
+                 x["dispositivo_id"] for x in conn.execute(
+                     "SELECT dispositivo_id FROM perfiles_dispositivos WHERE perfil_id=?",
+                     (r["id"],))
+             ]}
+            for r in conn.execute("SELECT id, nombre FROM perfiles_acceso ORDER BY nombre")
+        ]
+
+    resultado = agrupar_por_puertas(lecturas, puertas, empleados)
+    emparejar_con_perfiles(resultado["grupos"], perfiles)
+    return resultado
+
+
+class AplicarGrupoIn(BaseModel):
+    empleados: list[int]
+    perfil_acceso_id: int
+
+
+@router.post("/descubrir/aplicar")
+def aplicar_grupo(data: AplicarGrupoIn,
+                  _user=Depends(require_permiso("accesos", "asignar"))):
+    """
+    Le pone un perfil a los empleados de un grupo descubierto.
+
+    No toca a quien ya tiene perfil propio: esa persona es una decisión tomada,
+    a veces con excepciones encima, y pisarla en masa borraría justo lo que
+    alguien se tomó el trabajo de definir.
+    """
+    if not data.empleados:
+        raise HTTPException(400, "No viene ningún empleado")
+    with db_session() as conn:
+        if not conn.execute("SELECT 1 FROM perfiles_acceso WHERE id=?",
+                            (data.perfil_acceso_id,)).fetchone():
+            raise HTTPException(400, "Ese perfil no existe")
+        marcas = ",".join("?" * len(data.empleados))
+        cur = conn.execute(
+            f"""UPDATE empleados SET perfil_acceso_id = ?
+                 WHERE id IN ({marcas}) AND activo = 1 AND perfil_acceso_id IS NULL""",
+            [data.perfil_acceso_id, *data.empleados],
+        )
+        return {"ok": True, "asignados": cur.rowcount,
+                "sin_tocar": len(data.empleados) - cur.rowcount}
+
+
 @router.get("/sin-perfil")
 def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     """

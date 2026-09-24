@@ -1278,13 +1278,40 @@ const MODULO_LABELS = {
   resultados:"Resultados", usuarios:"Usuarios", roles:"Roles", sync:"Sincronización",
   premios:"Premios", vacaciones:"Vacaciones", periodos:"Períodos", distribucion:"Horarios Cocina",
   mozos:"Mozos", barmans:"Barmans", peones:"Peones",
-  uniformes:"Uniformes y EPP"
+  uniformes:"Uniformes y EPP",
+  dispositivos:"Lectores", accesos:"Accesos a puertas"
 };
 const ACCION_LABELS = {
   ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
   corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir", carga_inicial:"Carga inicial",
   ver_todos:"Ver todos", confirmar:"Confirmar", jubilacion:"Jubilación",
-  fichaje_manual:"Fichaje manual"
+  fichaje_manual:"Fichaje manual", asignar:"Asignar", excepcion:"Excepciones"
+};
+
+// Algunas acciones necesitan decir sobre QUE actuan: "Editar" no aclara si se
+// edita un perfil o el acceso de una persona, y esa diferencia es justamente
+// la que separa los dos permisos. La etiqueta del modulo le gana a la general.
+const ACCION_LABELS_POR_MODULO = {
+  accesos: { editar:"Definir perfiles", asignar:"Asignar a personas",
+             eliminar:"Borrar perfiles", excepcion:"Excepciones" },
+  dispositivos: { editar:"Editar equipos", eliminar:"Borrar equipos" },
+};
+
+// El alcance de cada permiso, que es lo que de verdad hay que entender antes de
+// darlo: a cuanta gente le cambia el acceso.
+const ACCION_AYUDA = {
+  accesos: {
+    ver:       "Ver quien abre que puerta, la lista de pendientes y el plan de cambios.",
+    editar:    "Cambiar que puertas incluye un perfil. Le cambia el acceso a TODOS los que lo tengan.",
+    asignar:   "Ponerle un perfil a una persona. Afecta solo a esa persona.",
+    excepcion: "Sacarle o darle una puerta suelta a una persona, apartandola de su perfil.",
+    eliminar:  "Borrar un perfil. Solo se puede si no lo usa nadie.",
+  },
+  dispositivos: {
+    ver:      "Ver los lectores, su padron y probar la conexion.",
+    editar:   "Cambiar IP, puerto y para que se usa cada lector.",
+    eliminar: "Borrar un lector. Solo si ningun perfil ni excepcion lo usa.",
+  },
 };
 // Qué acciones aplica cada módulo: lo define el backend (auth/core.py) y llega
 // por /api/roles/modulos, así la matriz no se desincroniza del código.
@@ -1478,7 +1505,7 @@ function renderPermGrupos(permsActuales, editable, rolId) {
                 <input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
                   ${tiene ? 'checked' : ''}
                   ${editable ? `onchange="onPermChange(this)"` : 'disabled'}>
-                <span>${ACCION_LABELS[a]||a}</span></label>`;
+                <span title="${escHtml((ACCION_AYUDA[m]||{})[a]||'')}">${(ACCION_LABELS_POR_MODULO[m]||{})[a] || ACCION_LABELS[a] || a}</span></label>`;
             }).join('')}
             ${validas.length > 1 ? `<label class="perm-chip perm-chip-todo">
               <input type="checkbox" class="chk-all" data-m="${m}" ${todos ? 'checked' : ''}

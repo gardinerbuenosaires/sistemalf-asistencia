@@ -951,5 +951,54 @@ chequear("sistema tiene las cinco acciones de accesos",
          sorted(p["accion"] for p in me3["permisos"] if p["modulo"] == "accesos"))
 
 
+
+print("\n=== SACAR EL PERFIL NO ES UN ATAJO PARA BORRAR EXCEPCIONES ===")
+# Sin este freno alcanzaba con sacar el perfil y volver a ponerlo para
+# devolverle a alguien una puerta que le habian quitado a proposito.
+if emp_id:
+    cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+            json={"perfil_acceso_id": todas["id"]})
+    for _d in (p_oficina, p_personal, p_camaras):
+        cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{_d}")
+    cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+             json={"dispositivo_id": p_oficina, "modo": "quitar", "motivo": "por seguridad"})
+    _antes = cli.get(f"/api/accesos/empleado/{emp_id}").json()
+    chequear("arranca con la puerta quitada por excepcion",
+             p_oficina not in _antes["puertas"], _antes["puertas"])
+
+    # El que solo asigna no puede sacarle el perfil mientras tenga excepciones.
+    r = _aplica.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
+    chequear("con asignar pero sin excepcion, sacar el perfil se rechaza",
+             r.status_code == 403, r.status_code)
+    chequear("y el mensaje dice cuantas excepciones lo impiden",
+             "excepc" in r.text.lower(), r.text[:200])
+
+    _despues = cli.get(f"/api/accesos/empleado/{emp_id}").json()
+    chequear("la excepcion sigue ahi", len(_despues["excepciones"]) == 1, _despues["excepciones"])
+    chequear("y la puerta sigue quitada", p_oficina not in _despues["puertas"], _despues["puertas"])
+
+    # Cambiar de un perfil a otro si puede: no borra nada.
+    r = _aplica.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                    json={"perfil_acceso_id": menos_oficina["id"]})
+    chequear("pero cambiar de un perfil a otro si lo puede hacer",
+             r.status_code == 200, r.status_code)
+    chequear("y la excepcion sobrevive", len(r.json()["excepciones"]) == 1, r.json()["excepciones"])
+
+    # Sin excepciones, sacar el perfil no necesita el permiso extra.
+    cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
+    r = _aplica.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
+    chequear("sin excepciones, sacar el perfil no necesita el permiso extra",
+             r.status_code == 200, r.status_code)
+
+    # Y quien si tiene el permiso puede sacarlo aunque haya excepciones.
+    cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+            json={"perfil_acceso_id": todas["id"]})
+    cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+             json={"dispositivo_id": p_oficina, "modo": "quitar"})
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
+    chequear("quien tiene el permiso de excepciones si puede sacarlo",
+             r.status_code == 200 and r.json()["excepciones_borradas"] == 1, r.text[:160])
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

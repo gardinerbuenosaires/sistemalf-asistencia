@@ -26,7 +26,7 @@ en la matriz, una excepción solo abriendo la ficha de esa persona.
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from auth.core import get_current_user, require_permiso
+from auth.core import get_current_user, require_permiso, tiene_permiso
 from db.database import db_session
 
 router = APIRouter(prefix="/api/accesos", tags=["accesos"])
@@ -136,7 +136,7 @@ def ver_empleado(eid: int, _user=Depends(require_permiso("accesos", "ver"))):
 
 @router.put("/empleado/{eid}/perfil")
 def asignar_perfil(eid: int, data: AsignacionIn,
-                   _user=Depends(require_permiso("accesos", "asignar"))):
+                   usuario=Depends(require_permiso("accesos", "asignar"))):
     """
     Le pone un perfil a una persona, o se lo saca y entonces no abre nada.
 
@@ -164,6 +164,21 @@ def asignar_perfil(eid: int, data: AsignacionIn,
 
         borradas = 0
         if data.perfil_acceso_id is None:
+            # Una operación exige los permisos de todos sus efectos. Sacar el
+            # perfil borra las excepciones, así que sin permiso de excepciones
+            # esto sería un camino indirecto para deshacerlas: alcanzaba con
+            # sacar el perfil y volver a ponerlo para devolverle a alguien una
+            # puerta que le habían quitado a propósito.
+            cuantas = conn.execute(
+                "SELECT COUNT(*) FROM accesos_excepciones WHERE empleado_id=?", (eid,)
+            ).fetchone()[0]
+            if cuantas and not tiene_permiso(usuario.get("rol_id"), "accesos", "excepcion"):
+                raise HTTPException(
+                    403,
+                    f"Esta persona tiene {cuantas} excepción(es) y sacarle el perfil "
+                    f"las borraría. Para eso hace falta permiso de excepciones: "
+                    f"pedí que las saquen primero, o que hagan este cambio.",
+                )
             borradas = conn.execute(
                 "DELETE FROM accesos_excepciones WHERE empleado_id=?", (eid,)
             ).rowcount

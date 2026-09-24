@@ -534,5 +534,70 @@ chequear("sin sesion no se ve el acceso de nadie",
          _sin2.get("/api/accesos/empleado/1").status_code in (401, 403))
 
 
+
+print("\n=== EXCEPCIONES QUE QUEDAN OBSOLETAS ===")
+if emp_id:
+    # Perfil que NO da oficina, mas una excepcion que se la agrega.
+    cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+            json={"perfil_acceso_id": menos_oficina["id"]})
+    r = cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                 json={"dispositivo_id": p_oficina, "modo": "agregar", "motivo": "temporal"})
+    a = r.json()
+    chequear("la excepcion arranca con efecto",
+             a["excepciones"][0]["sin_efecto"] is False, a["excepciones"])
+    chequear("y le suma la puerta", p_oficina in a["puertas"], a["puertas"])
+
+    # Le cambio el perfil a uno que YA incluye oficina: la excepcion queda muerta.
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                json={"perfil_acceso_id": todas["id"]})
+    a = r.json()
+    vieja = next(x for x in a["excepciones"] if x["dispositivo_id"] == p_oficina)
+    chequear("al cambiar el perfil la excepcion queda marcada sin efecto",
+             vieja["sin_efecto"] is True, vieja)
+    chequear("pero no se borro sola", len(a["excepciones"]) == 1, a["excepciones"])
+    chequear("y las puertas siguen siendo correctas",
+             p_oficina in a["puertas"], a["puertas"])
+
+    # Al revés: un "quitar" sobre algo que el perfil ya no da.
+    cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
+    cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+             json={"dispositivo_id": p_oficina, "modo": "quitar"})
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                json={"perfil_acceso_id": menos_oficina["id"]})
+    a = r.json()
+    vieja2 = next(x for x in a["excepciones"] if x["dispositivo_id"] == p_oficina)
+    chequear("un 'quitar' sobre algo que el perfil ya no da tambien queda sin efecto",
+             vieja2["sin_efecto"] is True, vieja2)
+    cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
+
+print("\n=== BORRAR UNA PUERTA QUE LA POLITICA USA ===")
+# Una puerta suelta, sin perfiles ni excepciones: se borra sin drama.
+r = cli.post("/api/dispositivos", json={
+    "nombre": "Puerta suelta", "protocolo": "pull", "ip": "127.0.2.1",
+    "cuenta_asistencia": False, "es_acceso": True})
+suelta = r.json()["id"]
+chequear("una puerta sin uso se borra", cli.delete(f"/api/dispositivos/{suelta}").status_code == 200)
+
+# Una que esta en un perfil: se niega y dice en cual.
+r = cli.delete(f"/api/dispositivos/{p_oficina}")
+chequear("no deja borrar una puerta que esta en un perfil", r.status_code == 409, r.text[:240])
+chequear("y nombra el perfil que la usa", "Solo oficina" in r.text or "Todas" in r.text, r.text[:240])
+
+# Una con excepciones de empleados: antes tiraba error 500.
+if emp_id:
+    r = cli.post("/api/dispositivos", json={
+        "nombre": "Solo excepcion", "protocolo": "pull", "ip": "127.0.2.2",
+        "cuenta_asistencia": False, "es_acceso": True})
+    solo_exc = r.json()["id"]
+    cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+             json={"dispositivo_id": solo_exc, "modo": "agregar", "motivo": "prueba"})
+    r = cli.delete(f"/api/dispositivos/{solo_exc}")
+    chequear("una puerta con excepciones no tira error 500", r.status_code == 409, r.status_code)
+    chequear("y avisa que hay excepciones", "excepci" in r.text.lower(), r.text[:240])
+    cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{solo_exc}")
+    chequear("sacada la excepcion, ya se puede borrar",
+             cli.delete(f"/api/dispositivos/{solo_exc}").status_code == 200)
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

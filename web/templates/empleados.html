@@ -1246,11 +1246,13 @@ async function cargarAccesos(id) {
     ? datos.puertas.map(pid => `<span style="background:#dcede2;color:#2e7d4f;padding:3px 9px;border-radius:4px;font-size:.8rem;margin-right:5px;display:inline-block;margin-bottom:4px">${nombrePuerta(pid)}</span>`).join('')
     : '<span style="color:#888;font-size:.85rem">No abre ninguna puerta</span>';
 
+  const obsoletas = datos.excepciones.filter(x => x.sin_efecto).length;
   const excepciones = datos.excepciones.map(x => `
-    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f4f4f4;font-size:.85rem">
-      <span style="color:${x.modo === 'quitar' ? '#b3261e' : '#2e7d4f'};font-weight:600;min-width:64px">
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f4f4f4;font-size:.85rem;${x.sin_efecto ? 'opacity:.6' : ''}">
+      <span style="color:${x.sin_efecto ? '#999' : (x.modo === 'quitar' ? '#b3261e' : '#2e7d4f')};font-weight:600;min-width:64px">
         ${x.modo === 'quitar' ? '− quitar' : '+ agregar'}</span>
       <span style="min-width:120px">${nombrePuerta(x.dispositivo_id)}</span>
+      ${x.sin_efecto ? '<span style="background:#eee;color:#777;padding:2px 7px;border-radius:3px;font-size:.72rem">sin efecto</span>' : ''}
       <span style="color:#888;flex:1">${x.motivo ? x.motivo : '<i>sin motivo</i>'}</span>
       <span style="color:#bbb;font-size:.75rem">${(x.creado_en || '').slice(0,10)}</span>
       ${puede ? `<button type="button" class="btn btn-sm btn-secondary" onclick="quitarExcepcion(${id}, ${x.dispositivo_id})">Sacar</button>` : ''}
@@ -1286,6 +1288,11 @@ async function cargarAccesos(id) {
       <div style="margin-top:14px">
         <div style="font-size:.78rem;color:#888;margin-bottom:5px">
           Excepciones ${datos.excepciones.length ? '' : '<i>— ninguna</i>'}</div>
+        ${obsoletas ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:7px 10px;font-size:.8rem;color:#6b5a26;margin-bottom:8px">
+          ${obsoletas === 1 ? 'Hay una excepción que' : `Hay ${obsoletas} excepciones que`}
+          ya no ${obsoletas === 1 ? 'cambia' : 'cambian'} nada: el perfil actual de esta persona
+          ya ${obsoletas === 1 ? 'dice lo mismo' : 'dicen lo mismo'}. Suelen quedar de un perfil
+          anterior. Conviene sacarlas para que la ficha diga la verdad.</div>` : ''}
         ${excepciones}
         ${puede && _accPuertas.length ? `
         <div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">

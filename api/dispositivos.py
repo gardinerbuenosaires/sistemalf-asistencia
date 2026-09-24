@@ -153,10 +153,45 @@ def actualizar(did: int, data: DispositivoIn,
 @router.delete("/{did}")
 def eliminar(did: int, _user=Depends(require_permiso("dispositivos", "eliminar"))):
     with db_session() as conn:
-        _traer(conn, did)
+        d = _traer(conn, did)
         _verificar_queda_uno_de_asistencia(conn, did, sigue=False)
+        _verificar_sin_referencias(conn, did, d["nombre"])
         conn.execute("DELETE FROM dispositivos WHERE id=?", (did,))
     return {"ok": True}
+
+
+def _verificar_sin_referencias(conn, did, nombre):
+    """
+    No deja borrar una puerta que la política de accesos todavía usa.
+
+    Borrarla sin avisar cambiaría en silencio qué abre un perfil, y las
+    excepciones que apuntan a ella romperían la clave foránea, que sale como
+    un error 500 sin explicación. Mejor decir qué la está usando.
+    """
+    en_perfiles = conn.execute(
+        """SELECT p.nombre FROM perfiles_dispositivos pd
+             JOIN perfiles_acceso p ON p.id = pd.perfil_id
+            WHERE pd.dispositivo_id = ? ORDER BY p.nombre""",
+        (did,),
+    ).fetchall()
+    excepciones = conn.execute(
+        "SELECT COUNT(*) FROM accesos_excepciones WHERE dispositivo_id=?", (did,)
+    ).fetchone()[0]
+
+    if not en_perfiles and not excepciones:
+        return
+
+    partes = []
+    if en_perfiles:
+        nombres = ", ".join(f"«{r['nombre']}»" for r in en_perfiles)
+        partes.append(f"está en {len(en_perfiles)} perfil(es): {nombres}")
+    if excepciones:
+        partes.append(f"hay {excepciones} excepción(es) de empleados sobre ella")
+    raise HTTPException(
+        409,
+        f"No se puede borrar «{nombre}»: " + " y ".join(partes) +
+        ". Sacala de ahí primero, así queda claro a quién le cambia el acceso.",
+    )
 
 
 def _verificar_queda_uno_de_asistencia(conn, did, sigue: bool):

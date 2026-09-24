@@ -97,6 +97,14 @@ def puertas_de(conn, eid) -> dict:
 
     final = set(del_perfil)
     for x in excepciones:
+        # Una excepción puede quedar obsoleta sin que nadie la toque: si a la
+        # persona le cambian el perfil, "agregar oficina" deja de hacer nada
+        # cuando el perfil nuevo ya incluye oficina. No se borra sola —eso sería
+        # decidir por el usuario— pero se marca, porque una excepción que no
+        # hace nada y parece que hace algo es peor que no tenerla.
+        en_perfil = x["dispositivo_id"] in del_perfil
+        x["sin_efecto"] = ((x["modo"] == "agregar" and en_perfil)
+                           or (x["modo"] == "quitar" and not en_perfil))
         if x["modo"] == "quitar":
             final.discard(x["dispositivo_id"])
         else:

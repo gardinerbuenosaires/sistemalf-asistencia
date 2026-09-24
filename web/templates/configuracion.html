@@ -444,7 +444,7 @@
             a propósito, para que decidas quién la abre.
           </div>
         </div>
-        <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
+        <button class="btn btn-primary btn-sm" data-perm="accesos:editar"
                 style="flex-shrink:0;margin-left:16px" onclick="nuevoPerfil()">+ Nuevo perfil</button>
       </div>
       <div id="matriz-perfiles" style="margin-top:16px;overflow-x:auto">
@@ -2507,7 +2507,7 @@ async function cargarPerfiles() {
     return;
   }
 
-  const puede = canDo('dispositivos', 'editar');
+  const puede = canDo('accesos', 'editar');
   const cols = _puertas.map(p =>
     `<th style="padding:6px 10px;font-size:.78rem;font-weight:600;text-align:center;min-width:80px">
        ${_esc(p.nombre)}${p.ubicacion ? `<div style="font-weight:400;color:#888">${_esc(p.ubicacion)}</div>` : ''}
@@ -2532,7 +2532,7 @@ async function cargarPerfiles() {
       ${tildes}
       <td style="padding:6px 10px;white-space:nowrap">
         ${puede ? `<button class="btn btn-sm btn-primary" onclick="editarPerfil(${pf.id})">Renombrar</button>` : ''}
-        ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarPerfil(${pf.id})">Borrar</button>` : ''}
+        ${canDo('accesos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarPerfil(${pf.id})">Borrar</button>` : ''}
       </td></tr>`;
   }).join('');
 

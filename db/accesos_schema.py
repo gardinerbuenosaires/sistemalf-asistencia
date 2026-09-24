@@ -135,6 +135,26 @@ def _migrar_perfiles(conn):
         )
         logger.info("Migración: columna perfil_acceso_id agregada a cargos")
 
+    # Excepciones por persona: sacarle o darle una puerta suelta sin tocar el
+    # perfil. La alternativa sería crear un perfil nuevo por cada caso, que es
+    # como se llega a tener diez perfiles y usar tres.
+    #
+    # `motivo` y `creado_por` no son adorno: una excepción sin explicación, dos
+    # años después, nadie se anima a sacarla ni sabe por qué está.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS accesos_excepciones (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            empleado_id    INTEGER NOT NULL REFERENCES empleados(id),
+            dispositivo_id INTEGER NOT NULL REFERENCES dispositivos(id),
+            modo           TEXT    NOT NULL,
+            motivo         TEXT,
+            creado_por     INTEGER REFERENCES usuarios(id),
+            creado_en      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            UNIQUE (empleado_id, dispositivo_id),
+            CHECK (modo IN ('agregar','quitar'))
+        )
+    """)
+
 
 def _sembrar_equipo_actual(conn):
     """

@@ -428,5 +428,111 @@ r = _sin.get("/api/perfiles-acceso")
 chequear("sin sesion no se ven los perfiles", r.status_code in (401, 403), r.status_code)
 
 
+
+print("\n=== ASIGNACION: perfil, cargo y excepciones ===")
+_c3 = sqlite3.connect(DB)
+_c3.row_factory = sqlite3.Row
+_e = _c3.execute("""SELECT id, cargo_id FROM empleados
+                     WHERE activo=1 AND cargo_id IS NOT NULL LIMIT 1""").fetchone()
+_c3.close()
+emp_id = _e["id"] if _e else None
+cargo_id = _e["cargo_id"] if _e else None
+
+if emp_id:
+    r = cli.get(f"/api/accesos/empleado/{emp_id}")
+    chequear("GET del acceso de una persona responde 200", r.status_code == 200, r.text[:160])
+
+    # 1) Sin nada: no abre ninguna puerta, y eso es valido.
+    cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
+    cli.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": None})
+    a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
+    chequear("sin perfil ni cargo no abre nada", a["puertas"] == [], a["puertas"])
+    chequear("y aparece en la lista de los que no tienen acceso",
+             any(x["id"] == emp_id for x in cli.get("/api/accesos/sin-perfil").json()))
+
+    # 2) El cargo propone: la persona hereda sin que nadie la toque.
+    r = cli.put(f"/api/accesos/cargo/{cargo_id}/perfil",
+                json={"perfil_acceso_id": menos_oficina["id"]})
+    chequear("se le puede poner perfil a un cargo", r.status_code == 200, r.text[:160])
+    a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
+    chequear("la persona hereda el perfil del cargo",
+             a["perfil"]["id"] == menos_oficina["id"], a.get("perfil"))
+    chequear("queda marcado como heredado", a["perfil_heredado_del_cargo"] is True, a)
+    chequear("hereda las puertas del perfil",
+             sorted(a["puertas"]) == sorted([p_personal, p_camaras]), a["puertas"])
+    chequear("ya no figura entre los que no tienen acceso",
+             all(x["id"] != emp_id for x in cli.get("/api/accesos/sin-perfil").json()))
+
+    # 3) Perfil propio: pisa al del cargo.
+    cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+            json={"perfil_acceso_id": solo_oficina["id"]})
+    a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
+    chequear("el perfil propio le gana al del cargo",
+             a["perfil"]["id"] == solo_oficina["id"], a.get("perfil"))
+    chequear("ya no figura como heredado", a["perfil_heredado_del_cargo"] is False, a)
+    chequear("sus puertas son las del perfil propio", a["puertas"] == [p_oficina], a["puertas"])
+
+    # 4) Excepcion: agregarle una puerta suelta.
+    r = cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                 json={"dispositivo_id": p_camaras, "modo": "agregar",
+                       "motivo": "pedido del encargado"})
+    chequear("se le puede agregar una puerta suelta", r.status_code == 201, r.text[:200])
+    a = r.json() if r.status_code == 201 else {}
+    chequear("la puerta agregada entra en la lista final",
+             sorted(a.get("puertas", [])) == sorted([p_oficina, p_camaras]), a.get("puertas"))
+    chequear("el perfil NO se modifico",
+             a["puertas_del_perfil"] == [p_oficina], a.get("puertas_del_perfil"))
+    chequear("la excepcion guarda el motivo",
+             a["excepciones"][0]["motivo"] == "pedido del encargado", a.get("excepciones"))
+
+    # 5) Excepcion: quitarle una que el perfil si le da.
+    r = cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                 json={"dispositivo_id": p_oficina, "modo": "quitar", "motivo": "por seguridad"})
+    chequear("se le puede quitar una puerta del perfil", r.status_code == 201, r.text[:200])
+    a = r.json() if r.status_code == 201 else {}
+    chequear("la puerta quitada sale de la lista final",
+             a.get("puertas") == [p_camaras], a.get("puertas"))
+
+    # 6) Excepciones que no cambian nada: se rechazan.
+    r = cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                 json={"dispositivo_id": p_personal, "modo": "quitar"})
+    chequear("quitar algo que el perfil no da se rechaza", r.status_code == 409, r.text[:200])
+
+    cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_camaras}")
+    r = cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                 json={"dispositivo_id": p_oficina, "modo": "agregar"})
+    chequear("agregar algo que el perfil ya da se rechaza", r.status_code == 409, r.text[:200])
+
+    # 7) Sacar la excepcion devuelve a la persona a su perfil.
+    r = cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
+    chequear("sacar la excepcion vuelve al perfil",
+             r.status_code == 200 and r.json()["puertas"] == [p_oficina], r.text[:200])
+    r = cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
+    chequear("sacar una excepcion que no existe da 404", r.status_code == 404, r.text[:120])
+
+    # 8) Validaciones.
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": 999999})
+    chequear("no deja asignar un perfil inexistente", r.status_code == 400, r.text[:160])
+    r = cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                 json={"dispositivo_id": 999999, "modo": "agregar"})
+    chequear("no deja una excepcion sobre un equipo inexistente", r.status_code == 400, r.text[:160])
+    r = cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                 json={"dispositivo_id": p_personal, "modo": "cualquiera"})
+    chequear("un modo invalido se rechaza", r.status_code == 422, r.text[:120])
+    r = cli.get("/api/accesos/empleado/999999")
+    chequear("un empleado inexistente da 404", r.status_code == 404, r.text[:120])
+
+print("\n=== PERMISOS DEL MODULO ACCESOS ===")
+me2 = cli.get("/api/auth/me").json()
+chequear("sistema tiene las cuatro acciones de accesos",
+         sorted(p["accion"] for p in me2["permisos"] if p["modulo"] == "accesos")
+         == ["asignar", "editar", "eliminar", "ver"],
+         sorted(p["accion"] for p in me2["permisos"] if p["modulo"] == "accesos"))
+
+_sin2 = TestClient(main.app)
+chequear("sin sesion no se ve el acceso de nadie",
+         _sin2.get("/api/accesos/empleado/1").status_code in (401, 403))
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

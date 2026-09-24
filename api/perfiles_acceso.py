@@ -75,7 +75,7 @@ def _guardar_puertas(conn, pid, dispositivos):
 
 
 @router.get("")
-def listar(_user=Depends(require_permiso("dispositivos", "ver"))):
+def listar(_user=Depends(require_permiso("accesos", "ver"))):
     """Los perfiles con sus puertas, y las puertas disponibles para la matriz."""
     with db_session() as conn:
         perfiles = [
@@ -93,7 +93,7 @@ def listar(_user=Depends(require_permiso("dispositivos", "ver"))):
 
 
 @router.post("", status_code=201)
-def crear(data: PerfilIn, _user=Depends(require_permiso("dispositivos", "editar"))):
+def crear(data: PerfilIn, _user=Depends(require_permiso("accesos", "editar"))):
     with db_session() as conn:
         try:
             cur = conn.execute(
@@ -110,7 +110,7 @@ def crear(data: PerfilIn, _user=Depends(require_permiso("dispositivos", "editar"
 
 @router.put("/{pid}")
 def actualizar(pid: int, data: PerfilIn,
-               _user=Depends(require_permiso("dispositivos", "editar"))):
+               _user=Depends(require_permiso("accesos", "editar"))):
     with db_session() as conn:
         _traer(conn, pid)
         try:
@@ -127,7 +127,7 @@ def actualizar(pid: int, data: PerfilIn,
 
 
 @router.delete("/{pid}")
-def eliminar(pid: int, _user=Depends(require_permiso("dispositivos", "eliminar"))):
+def eliminar(pid: int, _user=Depends(require_permiso("accesos", "eliminar"))):
     """
     Borra un perfil, salvo que haya gente usándolo.
 

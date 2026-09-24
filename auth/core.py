@@ -27,9 +27,9 @@ MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
     "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
-    "dispositivos",
+    "dispositivos", "accesos",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "asignar"]
 # corregir       → asistencia:corregir (novedades en planilla)
 # fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
 #                  individuales o por fuerza mayor). Separado de "editar" porque
@@ -65,6 +65,13 @@ MODULO_ACCIONES = {
     #   puerta. Es configuración técnica, por eso arranca solo en Sistema: tocar
     #   una IP mal deja al restaurante sin fichaje.
     "dispositivos":   ["ver", "editar", "eliminar"],
+    # accesos → la politica de quien abre que puerta, separada de los equipos.
+    #   editar  → redefinir que puertas incluye un perfil. Es una decision de
+    #             politica y cambia el acceso de todos los que lo tienen.
+    #   asignar → ponerle un perfil o una excepcion a una persona. Se hace al
+    #             dar de alta a alguien, asi que puede vivir en RRHH sin que eso
+    #             les permita redefinir los perfiles.
+    "accesos":        ["ver", "editar", "eliminar", "asignar"],
 }
 
 # Cómo se agrupan los módulos en la pantalla de Roles. Un módulo que no figure
@@ -74,7 +81,7 @@ MODULO_GRUPOS = [
     ("Programación", ["horarios", "planificacion", "calendarios"]),
     ("Distribución", ["distribucion", "mozos", "barmans", "peones"]),
     ("Personal",     ["empleados", "vacaciones", "premios", "uniformes"]),
-    ("Sistema",      ["dashboard", "usuarios", "roles", "dispositivos"]),
+    ("Sistema",      ["dashboard", "usuarios", "roles", "dispositivos", "accesos"]),
 ]
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}

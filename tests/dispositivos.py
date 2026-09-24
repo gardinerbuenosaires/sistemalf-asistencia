@@ -875,5 +875,79 @@ if emp_id:
              a["excepciones_borradas"] == 0, a.get("excepciones_borradas"))
 
 
+
+print("\n=== UN USUARIO SIN PERMISO DE ACCESOS ===")
+from auth.core import create_token as _mk_token, invalidar_cache as _inval
+
+
+def _usuario_con(permisos, etiqueta):
+    """Crea un rol con exactamente esos permisos y devuelve su token."""
+    c = sqlite3.connect(DB)
+    c.execute("INSERT OR IGNORE INTO roles (nombre) VALUES (?)", (etiqueta,))
+    rol = c.execute("SELECT id FROM roles WHERE nombre=?", (etiqueta,)).fetchone()[0]
+    c.execute("DELETE FROM permisos WHERE rol_id=?", (rol,))
+    for m, a in permisos:
+        c.execute("INSERT INTO permisos (rol_id, modulo, accion) VALUES (?,?,?)", (rol, m, a))
+    c.execute("""INSERT OR IGNORE INTO usuarios (nombre, email, password_hash, rol_id, activo)
+                 VALUES (?,?,?,?,1)""", (etiqueta, etiqueta + "@x.test", "x", rol))
+    c.execute("UPDATE usuarios SET rol_id=?, activo=1 WHERE email=?", (rol, etiqueta + "@x.test"))
+    uid = c.execute("SELECT id FROM usuarios WHERE email=?", (etiqueta + "@x.test",)).fetchone()[0]
+    c.commit()
+    c.close()
+    _inval(rol)
+    return _mk_token(uid, etiqueta + "@x.test", rol, etiqueta)
+
+
+# Solo mira: ve el acceso de la gente pero no puede tocarlo.
+_mirar = TestClient(main.app)
+_mirar.cookies.set("session", _usuario_con(
+    [("empleados", "ver"), ("empleados", "editar"), ("accesos", "ver")], "prueba_solo_ver"))
+
+if emp_id:
+    r = _mirar.get(f"/api/accesos/empleado/{emp_id}")
+    chequear("con accesos:ver puede consultar el acceso de alguien",
+             r.status_code == 200, r.status_code)
+    r = _mirar.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                   json={"perfil_acceso_id": menos_oficina["id"]})
+    chequear("pero NO puede asignarle un perfil", r.status_code == 403, r.status_code)
+    r = _mirar.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                    json={"dispositivo_id": p_oficina, "modo": "agregar"})
+    chequear("ni ponerle una excepcion", r.status_code == 403, r.status_code)
+    r = _mirar.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
+    chequear("ni sacarle una", r.status_code == 403, r.status_code)
+    r = _mirar.post("/api/perfiles-acceso", json={"nombre": "No deberia", "dispositivos": []})
+    chequear("ni crear perfiles", r.status_code == 403, r.status_code)
+    r = _mirar.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": None})
+    chequear("ni cambiar lo que propone un cargo", r.status_code == 403, r.status_code)
+
+# Edita empleados pero no ve accesos: la seccion no le existe.
+_rrhh = TestClient(main.app)
+_rrhh.cookies.set("session", _usuario_con(
+    [("empleados", "ver"), ("empleados", "editar")], "prueba_sin_accesos"))
+if emp_id:
+    r = _rrhh.get(f"/api/accesos/empleado/{emp_id}")
+    chequear("sin accesos:ver ni siquiera puede mirar", r.status_code == 403, r.status_code)
+    r = _rrhh.get("/api/perfiles-acceso")
+    chequear("ni ver los perfiles", r.status_code == 403, r.status_code)
+    r = _rrhh.get("/api/accesos/sin-perfil")
+    chequear("ni la lista de pendientes", r.status_code == 403, r.status_code)
+    # Pero si puede editar el legajo: el cargo es un dato de empleados.
+    r = _rrhh.get(f"/api/empleados/{emp_id}")
+    chequear("y sigue pudiendo abrir el legajo", r.status_code == 200, r.status_code)
+
+# Asigna accesos pero no edita empleados: el caso inverso.
+_acc = TestClient(main.app)
+_acc.cookies.set("session", _usuario_con(
+    [("empleados", "ver"), ("accesos", "ver"), ("accesos", "asignar")], "prueba_solo_accesos"))
+if emp_id:
+    r = _acc.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                 json={"perfil_acceso_id": menos_oficina["id"]})
+    chequear("con accesos:asignar puede asignar sin editar empleados",
+             r.status_code == 200, r.status_code)
+    r = _acc.post("/api/perfiles-acceso", json={"nombre": "Tampoco", "dispositivos": []})
+    chequear("pero asignar no alcanza para redefinir perfiles",
+             r.status_code == 403, r.status_code)
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

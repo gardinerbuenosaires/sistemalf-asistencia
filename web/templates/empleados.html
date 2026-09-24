@@ -702,8 +702,30 @@ async function liberarId(eid, userId) {
 
 async function onCargoChange() {
   if (!editandoId) return;
+  // La sugerencia de acceso sale del cargo, asi que tiene que reaccionar al
+  // cambiarlo y no recien despues de guardar el legajo: quien lo cambia esta
+  // decidiendo en ese momento, y ahi es cuando el dato sirve.
+  actualizarSugerenciaAcceso();
   if (!document.getElementById("calendario-section")) return;
   refrescarCalendarioSection();
+}
+
+function actualizarSugerenciaAcceso() {
+  if (!_accDatos || !editandoId) return;
+  const sel = document.getElementById("f-cargo");
+  if (!sel) return;
+  const cargoId = parseInt(sel.value) || null;
+  const cargo = _accCargos.find(c => c.id === cargoId);
+
+  _accDatos.empleado.cargo = cargo ? cargo.nombre : null;
+  _accDatos.empleado.perfil_del_cargo = cargo ? cargo.perfil_acceso_id : null;
+  // Solo se le sugiere a quien no tiene perfil propio: el propio ya es una
+  // decision tomada y no hay que proponerle nada.
+  _accDatos.sugerencia_del_cargo =
+    (!_accDatos.perfil && cargo && cargo.perfil_acceso_id)
+      ? (_accPerfiles.find(p => p.id === cargo.perfil_acceso_id) || null)
+      : null;
+  _renderAccesos(editandoId);
 }
 
 function buildCalendarioSection(asignaciones = []) {
@@ -1215,7 +1237,7 @@ async function editarEmpleado(id) {
 // a alguien tiene su propio permiso, así RRHH puede hacerlo sin poder redefinir
 // qué significa cada perfil.
 
-let _accPerfiles = [], _accPuertas = [], _accDatos = null;
+let _accPerfiles = [], _accPuertas = [], _accDatos = null, _accCargos = [];
 
 async function cargarAccesos(id) {
   const caja = document.getElementById("accesos-section");
@@ -1235,7 +1257,18 @@ async function cargarAccesos(id) {
 
   _accPerfiles = cat.perfiles;
   _accPuertas = cat.puertas;
+  _accCargos = cat.cargos || [];
   _accDatos = datos;
+  _renderAccesos(id);
+}
+
+// Se dibuja aparte de traer los datos para poder actualizar la sugerencia
+// cuando se cambia el cargo en el formulario, sin volver a consultar y sin
+// esperar a que el legajo se guarde.
+function _renderAccesos(id) {
+  const caja = document.getElementById("accesos-section");
+  const datos = _accDatos;
+  if (!caja || !datos) return;
   // Sin puertas ni perfiles cargados todavía, la sección solo confundiría.
   if (!_accPuertas.length && !_accPerfiles.length) { caja.innerHTML = ""; return; }
 

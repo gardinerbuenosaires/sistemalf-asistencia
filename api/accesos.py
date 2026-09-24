@@ -46,7 +46,7 @@ class ExcepcionIn(BaseModel):
 def _empleado(conn, eid):
     fila = conn.execute(
         """SELECT e.id, e.nombre, e.apellido, e.user_id, e.activo, e.perfil_acceso_id,
-                  e.cargo_id, c.nombre AS cargo, c.perfil_acceso_id AS perfil_del_cargo
+                  e.cargo_id, c.nombre AS cargo
              FROM empleados e
              LEFT JOIN cargos c ON c.id = e.cargo_id
             WHERE e.id = ?""",
@@ -112,21 +112,9 @@ def puertas_de(conn, eid) -> dict:
         else:
             final.add(x["dispositivo_id"])
 
-    # Lo que el cargo propone, solo si la persona no tiene perfil propio. Es una
-    # sugerencia para que alguien con permiso la aplique de un click, no algo
-    # que ya esté pasando.
-    sugerencia = None
-    if perfil_id is None and emp["perfil_del_cargo"]:
-        fila = conn.execute(
-            "SELECT id, nombre FROM perfiles_acceso WHERE id=?", (emp["perfil_del_cargo"],)
-        ).fetchone()
-        if fila:
-            sugerencia = dict(fila)
-
     return {
         "empleado": emp,
         "perfil": perfil,
-        "sugerencia_del_cargo": sugerencia,
         "puertas_del_perfil": sorted(del_perfil),
         "excepciones": excepciones,
         "puertas": sorted(final),
@@ -249,30 +237,6 @@ def borrar_excepcion(eid: int, did: int,
         return puertas_de(conn, eid)
 
 
-@router.put("/cargo/{cid}/perfil")
-def perfil_del_cargo(cid: int, data: AsignacionIn,
-                     _user=Depends(require_permiso("accesos", "asignar"))):
-    """
-    El perfil que propone un cargo. Es solo un valor por defecto: no cambia a
-    quien ya tenga uno propio, ni le saca el suyo a nadie.
-    """
-    with db_session() as conn:
-        if not conn.execute("SELECT 1 FROM cargos WHERE id=?", (cid,)).fetchone():
-            raise HTTPException(404, "Cargo no encontrado")
-        if data.perfil_acceso_id is not None:
-            if not conn.execute("SELECT 1 FROM perfiles_acceso WHERE id=?",
-                                (data.perfil_acceso_id,)).fetchone():
-                raise HTTPException(400, "Ese perfil no existe")
-        conn.execute("UPDATE cargos SET perfil_acceso_id=? WHERE id=?",
-                     (data.perfil_acceso_id, cid))
-        heredan = conn.execute(
-            """SELECT COUNT(*) FROM empleados
-                WHERE cargo_id=? AND activo=1 AND perfil_acceso_id IS NULL""",
-            (cid,),
-        ).fetchone()[0]
-    return {"ok": True, "heredan": heredan}
-
-
 @router.get("/plan")
 def plan(_user=Depends(require_permiso("accesos", "ver"))):
     """
@@ -333,21 +297,14 @@ def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     sistema no puede distinguirlos, pero sí ponerlos en una lista en vez de que
     aparezcan el día que la persona se queda afuera.
 
-    Los que tienen un cargo que propone algo vienen con esa sugerencia, y van
-    al final: resolverlos es aceptar lo que ya está escrito. Arriba quedan los
-    que no tienen ninguna, que son los que piden una decisión y por eso los que
-    más fácil se pasan por alto.
     """
     with db_session() as conn:
         filas = conn.execute(
             """SELECT e.id, e.user_id, e.nombre, e.apellido, e.fecha_ingreso,
-                      c.nombre AS cargo, c.id AS cargo_id,
-                      c.perfil_acceso_id AS sugerencia_id,
-                      p.nombre AS sugerencia_nombre
+                      c.nombre AS cargo, c.id AS cargo_id
                  FROM empleados e
                  LEFT JOIN cargos c ON c.id = e.cargo_id
-                 LEFT JOIN perfiles_acceso p ON p.id = c.perfil_acceso_id
                 WHERE e.activo = 1 AND e.perfil_acceso_id IS NULL
-             ORDER BY (c.perfil_acceso_id IS NOT NULL), e.apellido, e.nombre"""
+             ORDER BY e.apellido, e.nombre"""
         ).fetchall()
     return [dict(f) for f in filas]

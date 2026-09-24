@@ -702,30 +702,8 @@ async function liberarId(eid, userId) {
 
 async function onCargoChange() {
   if (!editandoId) return;
-  // La sugerencia de acceso sale del cargo, asi que tiene que reaccionar al
-  // cambiarlo y no recien despues de guardar el legajo: quien lo cambia esta
-  // decidiendo en ese momento, y ahi es cuando el dato sirve.
-  actualizarSugerenciaAcceso();
   if (!document.getElementById("calendario-section")) return;
   refrescarCalendarioSection();
-}
-
-function actualizarSugerenciaAcceso() {
-  if (!_accDatos || !editandoId) return;
-  const sel = document.getElementById("f-cargo");
-  if (!sel) return;
-  const cargoId = parseInt(sel.value) || null;
-  const cargo = _accCargos.find(c => c.id === cargoId);
-
-  _accDatos.empleado.cargo = cargo ? cargo.nombre : null;
-  _accDatos.empleado.perfil_del_cargo = cargo ? cargo.perfil_acceso_id : null;
-  // Solo se le sugiere a quien no tiene perfil propio: el propio ya es una
-  // decision tomada y no hay que proponerle nada.
-  _accDatos.sugerencia_del_cargo =
-    (!_accDatos.perfil && cargo && cargo.perfil_acceso_id)
-      ? (_accPerfiles.find(p => p.id === cargo.perfil_acceso_id) || null)
-      : null;
-  _renderAccesos(editandoId);
 }
 
 function buildCalendarioSection(asignaciones = []) {
@@ -1237,7 +1215,7 @@ async function editarEmpleado(id) {
 // a alguien tiene su propio permiso, así RRHH puede hacerlo sin poder redefinir
 // qué significa cada perfil.
 
-let _accPerfiles = [], _accPuertas = [], _accDatos = null, _accCargos = [];
+let _accPerfiles = [], _accPuertas = [], _accDatos = null;
 
 async function cargarAccesos(id) {
   const caja = document.getElementById("accesos-section");
@@ -1257,28 +1235,13 @@ async function cargarAccesos(id) {
 
   _accPerfiles = cat.perfiles;
   _accPuertas = cat.puertas;
-  _accCargos = cat.cargos || [];
   _accDatos = datos;
-  _renderAccesos(id);
-}
-
-// Se dibuja aparte de traer los datos para poder actualizar la sugerencia
-// cuando se cambia el cargo en el formulario, sin volver a consultar y sin
-// esperar a que el legajo se guarde.
-function _renderAccesos(id) {
-  const caja = document.getElementById("accesos-section");
-  const datos = _accDatos;
-  if (!caja || !datos) return;
   // Sin puertas ni perfiles cargados todavía, la sección solo confundiría.
   if (!_accPuertas.length && !_accPerfiles.length) { caja.innerHTML = ""; return; }
 
   const puede = canDo('accesos', 'asignar');
   const nombrePuerta = pid => (_accPuertas.find(p => p.id === pid) || {}).nombre || `#${pid}`;
   const perfilActual = datos.perfil ? datos.perfil.id : "";
-  // El cargo propone, no da acceso. Si propone algo y esta persona no tiene
-  // perfil, se ofrece aplicarlo de un click — pero lo aplica alguien con
-  // permiso de accesos, no pasa solo al cambiarle el cargo.
-  const sug = datos.sugerencia_del_cargo;
 
   const abre = datos.puertas.length
     ? datos.puertas.map(pid => `<span style="background:#dcede2;color:#2e7d4f;padding:3px 9px;border-radius:4px;font-size:.8rem;margin-right:5px;display:inline-block;margin-bottom:4px">${nombrePuerta(pid)}</span>`).join('')
@@ -1318,15 +1281,6 @@ function _renderAccesos(id) {
           </div>
         </div>
       </div>
-
-      ${sug ? `<div style="background:#eef4f9;border-left:3px solid #1b5e8c;padding:8px 11px;font-size:.83rem;color:#24506e;margin-top:4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span style="flex:1">Su cargo${datos.empleado.cargo ? ` (${datos.empleado.cargo})` : ''}
-          propone <b>${sug.nombre}</b>, pero todavía no se lo asignó nadie: hoy no abre nada.
-          ${puede ? '' : `<br><span style="color:#5a7288">Vos no tenés permiso para asignar accesos.
-            Esta persona ya figura en «Sin acceso asignado», así que quien sí lo tenga la va a ver ahí.</span>`}</span>
-        ${puede ? `<button type="button" class="btn btn-sm btn-primary"
-                onclick="guardarPerfilAcceso(${id}, ${sug.id})">Asignar</button>` : ''}
-      </div>` : ''}
 
       <div style="margin-top:10px">
         <div style="font-size:.78rem;color:#888;margin-bottom:5px">Puertas que abre hoy</div>

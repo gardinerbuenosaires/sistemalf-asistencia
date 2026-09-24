@@ -37,11 +37,8 @@ def list_cargos(_user=Depends(get_current_user)):
     with db_session() as conn:
         rows = conn.execute(
             """SELECT c.id, c.nombre, c.aplica_premio, c.aplica_trapos, c.departamento_id,
-                      d.nombre AS departamento_nombre,
-                      c.perfil_acceso_id, p.nombre AS perfil_acceso_nombre
-               FROM cargos c
-               LEFT JOIN departamentos d   ON d.id = c.departamento_id
-               LEFT JOIN perfiles_acceso p ON p.id = c.perfil_acceso_id
+                      d.nombre AS departamento_nombre
+               FROM cargos c LEFT JOIN departamentos d ON d.id = c.departamento_id
                ORDER BY c.nombre"""
         ).fetchall()
     return [dict(r) for r in rows]

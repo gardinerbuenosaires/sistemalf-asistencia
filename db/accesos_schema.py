@@ -125,15 +125,16 @@ def _migrar_perfiles(conn):
         )
         logger.info("Migración: columna perfil_acceso_id agregada a empleados")
 
-    # El cargo propone un perfil, y la persona puede tener una excepción. Sin
-    # esto habría que elegir perfil de a uno para cada alta.
+    # El cargo llego a proponer un perfil, como comodidad para no elegirlo de a
+    # uno en cada alta. Se saco: se usaba un par de veces por mes y su valor
+    # dependia de que el acceso se dedujera limpio del puesto, que no es el
+    # caso. Una sugerencia equivocada es peor que ninguna, porque invita a
+    # aceptarla sin pensar. Si la columna quedo de una version anterior, se
+    # elimina para que nadie la lea creyendo que significa algo.
     cols_cargo = {r[1] for r in conn.execute("PRAGMA table_info(cargos)").fetchall()}
-    if "perfil_acceso_id" not in cols_cargo:
-        conn.execute(
-            "ALTER TABLE cargos ADD COLUMN perfil_acceso_id INTEGER "
-            "REFERENCES perfiles_acceso(id)"
-        )
-        logger.info("Migración: columna perfil_acceso_id agregada a cargos")
+    if "perfil_acceso_id" in cols_cargo:
+        conn.execute("ALTER TABLE cargos DROP COLUMN perfil_acceso_id")
+        logger.info("Migración: columna perfil_acceso_id eliminada de cargos")
 
     # Excepciones por persona: sacarle o darle una puerta suelta sin tocar el
     # perfil. La alternativa sería crear un perfil nuevo por cada caso, que es

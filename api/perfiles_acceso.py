@@ -77,13 +77,7 @@ def _guardar_puertas(conn, pid, dispositivos):
 @router.get("")
 def listar(_user=Depends(require_permiso("accesos", "ver"))):
     """
-    Todo lo que hace falta para ver la política de acceso en una sola pantalla:
-    los perfiles con sus puertas, las puertas, y qué perfil propone cada cargo.
-
-    Los cargos vienen acá y no del catálogo de Cargos a propósito: el perfil que
-    propone un cargo es política de acceso, no un dato del cargo, y se cambia
-    con el permiso de accesos. Tenerlo en dos pantallas distintas era parte del
-    problema que este módulo viene a resolver.
+    Los perfiles con sus puertas, y las puertas disponibles para la matriz.
     """
     with db_session() as conn:
         perfiles = [
@@ -97,19 +91,7 @@ def listar(_user=Depends(require_permiso("accesos", "ver"))):
                     WHERE es_acceso = 1 ORDER BY orden, id"""
             )
         ]
-        # Solo qué propone cada cargo. Cuántos no tienen perfil se mira en la
-        # lista de pendientes, que además dice quiénes y lleva a su legajo:
-        # un número suelto acá no se puede accionar y solo invita a confundirlo
-        # con algo que hay que resolver desde esta pantalla.
-        cargos = [
-            dict(r) for r in conn.execute(
-                """SELECT c.id, c.nombre, c.perfil_acceso_id,
-                          (SELECT COUNT(*) FROM empleados e
-                            WHERE e.cargo_id = c.id AND e.activo = 1) AS empleados
-                     FROM cargos c ORDER BY c.nombre"""
-            )
-        ]
-    return {"perfiles": perfiles, "puertas": puertas, "cargos": cargos}
+    return {"perfiles": perfiles, "puertas": puertas}
 
 
 @router.post("", status_code=201)
@@ -164,13 +146,6 @@ def eliminar(pid: int, _user=Depends(require_permiso("accesos", "eliminar"))):
                 409,
                 f"Hay {en_uso} empleado(s) con el perfil «{p['nombre']}». "
                 f"Cambiales el perfil antes de borrarlo.",
-            )
-        cargos = conn.execute(
-            "SELECT COUNT(*) FROM cargos WHERE perfil_acceso_id=?", (pid,)
-        ).fetchone()[0]
-        if cargos:
-            raise HTTPException(
-                409, f"Hay {cargos} cargo(s) que proponen el perfil «{p['nombre']}»."
             )
         conn.execute("DELETE FROM perfiles_dispositivos WHERE perfil_id=?", (pid,))
         conn.execute("DELETE FROM perfiles_acceso WHERE id=?", (pid,))

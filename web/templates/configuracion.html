@@ -456,28 +456,6 @@
       </div>
     </div>
 
-    <div class="section" id="section-perfil-cargo" style="display:none">
-      <div class="section-header">
-        <div>
-          <div class="section-title">Perfil que propone cada cargo</div>
-          <div class="section-desc" style="margin-bottom:0">
-            Qué acceso le corresponde a cada puesto. Es una anotación: <b>no le cambia el
-            acceso a nadie</b>, ni ahora ni cuando alguien cambie de cargo. Lo único que hace es
-            aparecer como sugerencia en el legajo de quien todavía no tenga perfil, para no tener
-            que acordarse de memoria qué abre un cocinero.
-            El acceso de una persona se cambia siempre desde su legajo.
-          </div>
-        </div>
-      </div>
-      <table style="margin-top:16px;font-size:.85rem">
-        <thead><tr>
-          <th style="text-align:left">Cargo</th>
-          <th style="width:260px">Perfil que propone</th>
-        </tr></thead>
-        <tbody id="tabla-perfil-cargo"></tbody>
-      </table>
-    </div>
-
   </div>
 
   <div class="cfg-panel" id="panel-parking">
@@ -2543,30 +2521,23 @@ async function verPendientes() {
     return;
   }
 
-  const conSugerencia = gente.filter(p => p.sugerencia_id).length;
   const filas = gente.map(p => `
     <tr>
       <td style="padding:6px 10px">
         <a href="/empleados?id=${p.id}" style="color:#1b5e8c;text-decoration:none;font-weight:600">${_esc(p.apellido)}, ${_esc(p.nombre)}</a>
         ${p.user_id ? `<span style="font-family:monospace;color:#bbb;font-size:.78rem"> ${_esc(p.user_id)}</span>` : ''}</td>
       <td style="padding:6px 10px;color:${p.cargo ? '#555' : '#bbb'}">${_esc(p.cargo) || 'sin cargo'}</td>
-      <td style="padding:6px 10px">
-        ${p.sugerencia_nombre
-          ? `<span style="color:#24506e">su cargo propone <b>${_esc(p.sugerencia_nombre)}</b></span>`
-          : '<span style="color:#999">su cargo no propone ninguno</span>'}</td>
     </tr>`).join('');
 
   caja.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="background:#f6e9ce;color:#8a5d06;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${gente.length} sin acceso</span>
-      ${conSugerencia ? `<span style="font-size:.82rem;color:#555">${conSugerencia} con sugerencia de su cargo</span>` : ''}
     </div>
     <div style="overflow-y:auto;max-height:56vh;margin-top:12px;border:1px solid #eee;border-radius:4px">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem">
         <thead style="position:sticky;top:0;background:#fafafa"><tr>
           <th style="text-align:left;padding:6px 10px">Empleado</th>
           <th style="text-align:left;padding:6px 10px">Cargo</th>
-          <th style="text-align:left;padding:6px 10px">Sugerencia</th>
         </tr></thead>
         <tbody>${filas}</tbody>
       </table>
@@ -2673,65 +2644,22 @@ async function verPlan() {
 // Una matriz perfil × puerta. El mismo modelo con el que el usuario ya piensa
 // el problema: "todas", "todas menos oficina", "solo oficina", "solo cámaras".
 
-let _perfiles = [], _puertas = [], _cargosAcceso = [];
+let _perfiles = [], _puertas = [];
 
 // El perfil que propone cada cargo vive acá y no en la pestaña de Cargos: es
 // política de acceso, se cambia con el permiso de accesos, y tenerlo en otra
 // pantalla era parte del problema de "todo está en lugares distintos".
-function _renderPerfilPorCargo() {
-  const seccion = document.getElementById('section-perfil-cargo');
-  const cuerpo = document.getElementById('tabla-perfil-cargo');
-  if (!seccion || !cuerpo) return;
-  // Sin perfiles definidos la sección solo mostraría selectores vacíos.
-  if (!_perfiles.length || !_cargosAcceso.length) { seccion.style.display = 'none'; return; }
-  seccion.style.display = '';
-
-  const puede = canDo('accesos', 'asignar');
-  const activos = _perfiles.filter(p => p.activo);
-  cuerpo.innerHTML = _cargosAcceso.map(c => `
-    <tr>
-      <td><b>${_esc(c.nombre)}</b>
-        <span style="color:#999;font-size:.78rem">· ${c.empleados} activo(s)</span></td>
-      <td>
-        <select style="padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:.82rem;width:100%"
-                ${puede ? `onchange="perfilDeCargo(${c.id}, this.value)"` : 'disabled'}>
-          <option value="">— Sin acceso —</option>
-          ${activos.map(p => `<option value="${p.id}"${c.perfil_acceso_id === p.id ? ' selected' : ''}>${_esc(p.nombre)}</option>`).join('')}
-        </select></td>
-    </tr>`).join('');
-}
-
-async function perfilDeCargo(cargoId, valor) {
-  const res = await fetch(`/api/accesos/cargo/${cargoId}/perfil`, {
-    method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ perfil_acceso_id: valor ? Number(valor) : null }),
-  });
-  if (!res.ok) {
-    let e = {}; try { e = await res.json(); } catch {}
-    toast('Error: ' + (e.detail || 'no se pudo guardar'));
-  } else {
-    const d = await res.json();
-    // Nadie lo hereda: el numero dice a cuantos les va a aparecer como
-    // sugerencia en su legajo, que es lo unico que hace esta anotacion.
-    toast(d.heredan
-      ? `Guardado · ${d.heredan} empleado(s) de este cargo lo van a ver sugerido`
-      : 'Guardado');
-  }
-  cargarPerfiles();
-}
-
 async function cargarPerfiles() {
   const caja = document.getElementById('matriz-perfiles');
   try {
     const res = await fetch('/api/perfiles-acceso');
     if (!res.ok) throw new Error();
     const d = await res.json();
-    _perfiles = d.perfiles; _puertas = d.puertas; _cargosAcceso = d.cargos || [];
+    _perfiles = d.perfiles; _puertas = d.puertas;
   } catch {
     caja.innerHTML = '<p style="color:#c0392b;font-size:.9rem">No se pudo cargar</p>';
     return;
   }
-  _renderPerfilPorCargo();
 
   if (!_puertas.length) {
     caja.innerHTML = `<p style="color:#888;font-size:.88rem">

@@ -444,63 +444,39 @@ if emp_id:
 
     # 1) Sin nada: no abre ninguna puerta, y eso es valido.
     cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
-    cli.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": None})
     a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
     chequear("sin perfil ni cargo no abre nada", a["puertas"] == [], a["puertas"])
     chequear("y aparece en la lista de los que no tienen acceso",
              any(x["id"] == emp_id for x in cli.get("/api/accesos/sin-perfil").json()))
 
-    # 2) El cargo PROPONE, no aplica: la persona sigue sin abrir nada.
-    r = cli.put(f"/api/accesos/cargo/{cargo_id}/perfil",
-                json={"perfil_acceso_id": menos_oficina["id"]})
-    chequear("se le puede poner perfil a un cargo", r.status_code == 200, r.text[:160])
-    a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
-    chequear("el cargo NO le da acceso solo", a["perfil"] is None, a.get("perfil"))
-    chequear("sigue sin abrir ninguna puerta", a["puertas"] == [], a["puertas"])
-    chequear("pero aparece la sugerencia del cargo",
-             a["sugerencia_del_cargo"]["id"] == menos_oficina["id"],
-             a.get("sugerencia_del_cargo"))
-    chequear("y sigue en la lista de pendientes de asignar",
-             any(x["id"] == emp_id for x in cli.get("/api/accesos/sin-perfil").json()))
-    _pend = next(x for x in cli.get("/api/accesos/sin-perfil").json() if x["id"] == emp_id)
-    chequear("la lista de pendientes trae la sugerencia",
-             _pend["sugerencia_id"] == menos_oficina["id"], _pend)
-
-    # El perfil se asigna desde el legajo, que es el unico lugar donde se
-    # cambia el acceso de alguien. No hay asignacion masiva por cargo: existia
-    # para un solo momento —la carga inicial— y para eso sirve mejor deducir los
-    # perfiles de lo que los lectores ya tienen.
+    # 2) El acceso sale solo del perfil propio. El cargo no interviene: la
+    # sugerencia por cargo existio y se saco porque se usaba un par de veces al
+    # mes y su valor dependia de que el acceso se dedujera limpio del puesto.
     r = cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
                 json={"perfil_acceso_id": menos_oficina["id"]})
     chequear("se le asigna el perfil desde el legajo", r.status_code == 200, r.text[:160])
     a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
-    chequear("recien ahi la persona tiene el perfil",
-             a["perfil"]["id"] == menos_oficina["id"], a.get("perfil"))
+    chequear("la persona tiene el perfil", a["perfil"]["id"] == menos_oficina["id"],
+             a.get("perfil"))
     chequear("y abre las puertas del perfil",
              sorted(a["puertas"]) == sorted([p_personal, p_camaras]), a["puertas"])
     chequear("ya no figura entre los pendientes",
              all(x["id"] != emp_id for x in cli.get("/api/accesos/sin-perfil").json()))
-    chequear("y ya no le aparece sugerencia",
-             a["sugerencia_del_cargo"] is None, a.get("sugerencia_del_cargo"))
+    chequear("el resultado no habla de cargos", "sugerencia_del_cargo" not in a, list(a))
 
-    # 3) CAMBIAR EL CARGO NO CAMBIA EL ACCESO. Es lo que motivo este modelo:
-    # el cargo lo edita quien tiene permiso de empleados, no de accesos.
+    # 3) CAMBIAR EL CARGO NO CAMBIA EL ACCESO.
     _c5 = sqlite3.connect(DB)
     _otro = _c5.execute("SELECT id FROM cargos WHERE id <> ? LIMIT 1", (cargo_id,)).fetchone()
+    if _otro:
+        _c5.execute("UPDATE empleados SET cargo_id=? WHERE id=?", (_otro[0], emp_id))
+        _c5.commit()
     _c5.close()
     if _otro:
-        cli.put(f"/api/accesos/cargo/{_otro[0]}/perfil",
-                json={"perfil_acceso_id": solo_oficina["id"]})
-        _c5 = sqlite3.connect(DB)
-        _c5.execute("UPDATE empleados SET cargo_id=? WHERE id=?", (_otro[0], emp_id))
-        _c5.commit(); _c5.close()
         a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
         chequear("cambiarle el cargo NO le cambia el perfil",
                  a["perfil"]["id"] == menos_oficina["id"], a.get("perfil"))
         chequear("ni las puertas que abre",
                  sorted(a["puertas"]) == sorted([p_personal, p_camaras]), a["puertas"])
-        chequear("y no aparece sugerencia porque ya tiene perfil propio",
-                 a["sugerencia_del_cargo"] is None, a.get("sugerencia_del_cargo"))
 
     # 4) Perfil propio: se elige a mano y manda.
     cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
@@ -508,7 +484,6 @@ if emp_id:
     a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
     chequear("el perfil propio le gana al del cargo",
              a["perfil"]["id"] == solo_oficina["id"], a.get("perfil"))
-    chequear("y no queda sugerencia pendiente", a["sugerencia_del_cargo"] is None, a)
     chequear("sus puertas son las del perfil propio", a["puertas"] == [p_oficina], a["puertas"])
 
     # 4) Excepcion: agregarle una puerta suelta.
@@ -669,7 +644,6 @@ if emp_id:
              json={"dispositivo_id": p_oficina, "modo": "quitar"}) if False else None
     cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
     cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
-    cli.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": None})
     with db_session() as _cn:
         des = estado_deseado(_cn)
     chequear("sin perfil ni cargo no figura en ninguna puerta",
@@ -760,48 +734,36 @@ chequear("sin sesion no se ve el plan",
 
 
 
-print("\n=== LOS CARGOS VIENEN CON LOS PERFILES ===")
+print("\n=== EL CARGO YA NO PROPONE NINGUN PERFIL ===")
 d = cli.get("/api/perfiles-acceso").json()
-chequear("el listado de perfiles trae tambien los cargos", "cargos" in d, list(d))
-chequear("cada cargo trae su perfil propuesto y cuanta gente tiene",
-         all("perfil_acceso_id" in c and "empleados" in c for c in d["cargos"]),
-         d["cargos"][:2])
+chequear("el listado de perfiles ya no trae cargos", "cargos" not in d, list(d))
+chequear("y sigue trayendo perfiles y puertas",
+         "perfiles" in d and "puertas" in d, list(d))
 
-if cargo_id:
-    cli.put(f"/api/accesos/cargo/{cargo_id}/perfil",
-            json={"perfil_acceso_id": menos_oficina["id"]})
-    d = cli.get("/api/perfiles-acceso").json()
-    _c = next(c for c in d["cargos"] if c["id"] == cargo_id)
-    chequear("y refleja el perfil asignado",
-             _c["perfil_acceso_id"] == menos_oficina["id"], _c)
+r = cli.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": 1})
+chequear("el endpoint del perfil por cargo fue eliminado", r.status_code == 404, r.status_code)
 
-    cli.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": None})
+_cn3 = sqlite3.connect(DB)
+_cols = {r[1] for r in _cn3.execute("PRAGMA table_info(cargos)")}
+_cn3.close()
+chequear("la columna se fue de la tabla cargos",
+         "perfil_acceso_id" not in _cols, sorted(_cols))
 
+_cargos = cli.get("/api/cargos").json()
+chequear("el catalogo de cargos tampoco la expone",
+         all("perfil_acceso_id" not in c for c in _cargos),
+         list(_cargos[0]) if _cargos else [])
 
 
 print("\n=== LISTA DE PENDIENTES DE ASIGNAR ===")
 if emp_id:
     cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
-    _cn2 = sqlite3.connect(DB)
-    _cargo_hoy = _cn2.execute(
-        "SELECT cargo_id FROM empleados WHERE id=?", (emp_id,)).fetchone()[0]
-    _cn2.close()
-    cli.put(f"/api/accesos/cargo/{_cargo_hoy}/perfil",
-            json={"perfil_acceso_id": menos_oficina["id"]})
-
     lista = cli.get("/api/accesos/sin-perfil").json()
     _yo = next((x for x in lista if x["id"] == emp_id), None)
     chequear("quien no tiene perfil aparece en la lista", _yo is not None, len(lista))
     chequear("la lista trae el nombre del cargo", _yo and "cargo" in _yo, _yo)
-    chequear("y la sugerencia de ese cargo, para no tenerla que recordar",
-             _yo and _yo["sugerencia_nombre"] == menos_oficina["nombre"], _yo)
-
-    # Los que no tienen sugerencia van primero: son los que hay que pensar.
-    _sin_sug = [i for i, x in enumerate(lista) if not x["sugerencia_id"]]
-    _con_sug = [i for i, x in enumerate(lista) if x["sugerencia_id"]]
-    if _sin_sug and _con_sug:
-        chequear("los que no tienen sugerencia se muestran primero",
-                 max(_sin_sug) < min(_con_sug), (max(_sin_sug), min(_con_sug)))
+    chequear("la lista no habla de sugerencias por cargo",
+             _yo and "sugerencia_id" not in _yo, list(_yo) if _yo else [])
 
     cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
             json={"perfil_acceso_id": menos_oficina["id"]})
@@ -917,8 +879,6 @@ if emp_id:
     chequear("ni sacarle una", r.status_code == 403, r.status_code)
     r = _mirar.post("/api/perfiles-acceso", json={"nombre": "No deberia", "dispositivos": []})
     chequear("ni crear perfiles", r.status_code == 403, r.status_code)
-    r = _mirar.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": None})
-    chequear("ni cambiar lo que propone un cargo", r.status_code == 403, r.status_code)
 
 # Edita empleados pero no ve accesos: la seccion no le existe.
 _rrhh = TestClient(main.app)

@@ -76,7 +76,15 @@ def _guardar_puertas(conn, pid, dispositivos):
 
 @router.get("")
 def listar(_user=Depends(require_permiso("accesos", "ver"))):
-    """Los perfiles con sus puertas, y las puertas disponibles para la matriz."""
+    """
+    Todo lo que hace falta para ver la política de acceso en una sola pantalla:
+    los perfiles con sus puertas, las puertas, y qué perfil propone cada cargo.
+
+    Los cargos vienen acá y no del catálogo de Cargos a propósito: el perfil que
+    propone un cargo es política de acceso, no un dato del cargo, y se cambia
+    con el permiso de accesos. Tenerlo en dos pantallas distintas era parte del
+    problema que este módulo viene a resolver.
+    """
     with db_session() as conn:
         perfiles = [
             _traer(conn, r["id"]) for r in conn.execute(
@@ -89,7 +97,20 @@ def listar(_user=Depends(require_permiso("accesos", "ver"))):
                     WHERE es_acceso = 1 ORDER BY orden, id"""
             )
         ]
-    return {"perfiles": perfiles, "puertas": puertas}
+        # `heredan` = los activos de ese cargo sin perfil propio, o sea a
+        # quiénes les cambia el acceso si se toca el perfil del cargo.
+        cargos = [
+            dict(r) for r in conn.execute(
+                """SELECT c.id, c.nombre, c.perfil_acceso_id,
+                          (SELECT COUNT(*) FROM empleados e
+                            WHERE e.cargo_id = c.id AND e.activo = 1
+                              AND e.perfil_acceso_id IS NULL) AS heredan,
+                          (SELECT COUNT(*) FROM empleados e
+                            WHERE e.cargo_id = c.id AND e.activo = 1) AS empleados
+                     FROM cargos c ORDER BY c.nombre"""
+            )
+        ]
+    return {"perfiles": perfiles, "puertas": puertas, "cargos": cargos}
 
 
 @router.post("", status_code=201)

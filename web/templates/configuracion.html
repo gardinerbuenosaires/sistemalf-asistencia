@@ -454,6 +454,28 @@
       </div>
     </div>
 
+    <div class="section" id="section-perfil-cargo" style="display:none">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Perfil que propone cada cargo</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Para no tener que elegir el perfil de a uno en cada alta. Es solo un valor por
+            defecto: a quien ya tenga perfil propio en su legajo, esto no lo toca.
+            <b>Hereda</b> son los activos de ese cargo que hoy no tienen uno propio — o sea,
+            a cuántos les cambia el acceso si tocás esa fila.
+          </div>
+        </div>
+      </div>
+      <table style="margin-top:16px;font-size:.85rem">
+        <thead><tr>
+          <th style="text-align:left">Cargo</th>
+          <th style="width:230px">Perfil de acceso</th>
+          <th style="width:90px;text-align:center">Hereda</th>
+        </tr></thead>
+        <tbody id="tabla-perfil-cargo"></tbody>
+      </table>
+    </div>
+
   </div>
 
   <div class="cfg-panel" id="panel-parking">
@@ -500,7 +522,7 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCargo()">+ Nuevo cargo</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th id="th-aplica-trapos" style="width:120px;text-align:center;display:none">Aplica trapos</th><th>Departamento</th><th id="th-perfil-acceso" style="width:180px;display:none">Perfil de acceso</th><th style="width:160px">Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th id="th-aplica-trapos" style="width:120px;text-align:center;display:none">Aplica trapos</th><th>Departamento</th><th style="width:160px">Acciones</th></tr></thead>
         <tbody id="tabla-cargos"><tr><td colspan="4" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -1647,7 +1669,7 @@ async function _guardarItemCatalogo(tbodyId, id) {
 
 function _renderCargos() {
   const tbody = document.getElementById("tabla-cargos");
-  const cols = 4 + (_traposActivo ? 1 : 0) + (_perfilesCargo.length ? 1 : 0);
+  const cols = 4 + (_traposActivo ? 1 : 0);
   if (!cargos.length) {
     tbody.innerHTML = `<tr><td colspan="${cols}" style="color:#aaa">Sin registros</td></tr>`;
     return;
@@ -1666,12 +1688,6 @@ function _renderCargos() {
           style="width:16px;height:16px;cursor:pointer;accent-color:#e67e22">
       </td>` : ''}
       <td style="color:${item.departamento_nombre ? '#333' : '#bbb'};font-size:.85rem">${item.departamento_nombre || '—'}</td>
-      ${_perfilesCargo.length ? `<td>
-        <select style="padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:.82rem;width:100%"
-                ${canDo('accesos','asignar') ? `onchange="perfilDeCargo(${item.id}, this.value)"` : 'disabled'}>
-          <option value="">— Sin acceso —</option>
-          ${_perfilesCargo.map(pf => `<option value="${pf.id}"${item.perfil_acceso_id === pf.id ? ' selected' : ''}>${_esc(pf.nombre)}</option>`).join('')}
-        </select></td>` : ''}
       <td>
         ${canDo('empleados','editar') ? `
           <button class="btn btn-sm btn-secondary" onclick="editarCargo(${item.id})">Editar</button>
@@ -1908,7 +1924,6 @@ async function cargarCatalogos() {
   const cfgParams = await cfgRes.json();
   _traposActivo = cfgParams.find(p => p.clave === "trapos_cocina_activo")?.valor === "1";
   document.getElementById("th-aplica-trapos").style.display = _traposActivo ? "" : "none";
-  await cargarPerfilesParaCargos();
   _renderCargos();
   _renderDeptos(deptos);
   _renderCatalogo(categorias, "tabla-categorias", "eliminarCategoria");
@@ -2581,21 +2596,37 @@ async function verPlan() {
       esté probada contra los lectores reales.</div>`;
 }
 
-// ── Perfil de acceso por cargo ────────────────────────────────────────────────
-// El cargo propone un perfil: es comodidad para no elegir de a uno en cada alta,
-// no una regla. A quien ya tenga perfil propio, esto no lo toca.
+// ── Perfiles de acceso ────────────────────────────────────────────────────────
+// Una matriz perfil × puerta. El mismo modelo con el que el usuario ya piensa
+// el problema: "todas", "todas menos oficina", "solo oficina", "solo cámaras".
 
-let _perfilesCargo = [];
+let _perfiles = [], _puertas = [], _cargosAcceso = [];
 
-async function cargarPerfilesParaCargos() {
-  try {
-    const res = await fetch('/api/perfiles-acceso');
-    _perfilesCargo = res.ok ? (await res.json()).perfiles.filter(p => p.activo) : [];
-  } catch { _perfilesCargo = []; }
-  // Sin perfiles definidos la columna no aparece: sería un selector vacío
-  // ocupando lugar en una pantalla que ya tiene varias tablas.
-  const th = document.getElementById('th-perfil-acceso');
-  if (th) th.style.display = _perfilesCargo.length ? '' : 'none';
+// El perfil que propone cada cargo vive acá y no en la pestaña de Cargos: es
+// política de acceso, se cambia con el permiso de accesos, y tenerlo en otra
+// pantalla era parte del problema de "todo está en lugares distintos".
+function _renderPerfilPorCargo() {
+  const seccion = document.getElementById('section-perfil-cargo');
+  const cuerpo = document.getElementById('tabla-perfil-cargo');
+  if (!seccion || !cuerpo) return;
+  // Sin perfiles definidos la sección solo mostraría selectores vacíos.
+  if (!_perfiles.length || !_cargosAcceso.length) { seccion.style.display = 'none'; return; }
+  seccion.style.display = '';
+
+  const puede = canDo('accesos', 'asignar');
+  const activos = _perfiles.filter(p => p.activo);
+  cuerpo.innerHTML = _cargosAcceso.map(c => `
+    <tr>
+      <td><b>${_esc(c.nombre)}</b>
+        <span style="color:#999;font-size:.78rem">· ${c.empleados} activo(s)</span></td>
+      <td>
+        <select style="padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:.82rem;width:100%"
+                ${puede ? `onchange="perfilDeCargo(${c.id}, this.value)"` : 'disabled'}>
+          <option value="">— Sin acceso —</option>
+          ${activos.map(p => `<option value="${p.id}"${c.perfil_acceso_id === p.id ? ' selected' : ''}>${_esc(p.nombre)}</option>`).join('')}
+        </select></td>
+      <td style="text-align:center;color:${c.heredan ? '#333' : '#bbb'}">${c.heredan}</td>
+    </tr>`).join('');
 }
 
 async function perfilDeCargo(cargoId, valor) {
@@ -2606,20 +2637,14 @@ async function perfilDeCargo(cargoId, valor) {
   if (!res.ok) {
     let e = {}; try { e = await res.json(); } catch {}
     toast('Error: ' + (e.detail || 'no se pudo guardar'));
-    return cargarCatalogos();
+  } else {
+    const d = await res.json();
+    toast(d.heredan
+      ? `Guardado · ${d.heredan} empleado(s) de este cargo lo heredan`
+      : 'Guardado · nadie lo hereda todavía');
   }
-  const d = await res.json();
-  toast(d.heredan
-    ? `Guardado · ${d.heredan} empleado(s) de este cargo lo heredan`
-    : 'Guardado · nadie lo hereda todavía');
-  cargarCatalogos();
+  cargarPerfiles();
 }
-
-// ── Perfiles de acceso ────────────────────────────────────────────────────────
-// Una matriz perfil × puerta. El mismo modelo con el que el usuario ya piensa
-// el problema: "todas", "todas menos oficina", "solo oficina", "solo cámaras".
-
-let _perfiles = [], _puertas = [];
 
 async function cargarPerfiles() {
   const caja = document.getElementById('matriz-perfiles');
@@ -2627,11 +2652,12 @@ async function cargarPerfiles() {
     const res = await fetch('/api/perfiles-acceso');
     if (!res.ok) throw new Error();
     const d = await res.json();
-    _perfiles = d.perfiles; _puertas = d.puertas;
+    _perfiles = d.perfiles; _puertas = d.puertas; _cargosAcceso = d.cargos || [];
   } catch {
     caja.innerHTML = '<p style="color:#c0392b;font-size:.9rem">No se pudo cargar</p>';
     return;
   }
+  _renderPerfilPorCargo();
 
   if (!_puertas.length) {
     caja.innerHTML = `<p style="color:#888;font-size:.88rem">

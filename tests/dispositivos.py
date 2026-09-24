@@ -720,5 +720,46 @@ chequear("sin sesion no se ve el plan",
          _sin3.get("/api/accesos/plan").status_code in (401, 403))
 
 
+
+print("\n=== LOS CARGOS VIENEN CON LOS PERFILES ===")
+d = cli.get("/api/perfiles-acceso").json()
+chequear("el listado de perfiles trae tambien los cargos", "cargos" in d, list(d))
+chequear("cada cargo dice a cuantos les cambia el acceso",
+         all("heredan" in c and "empleados" in c for c in d["cargos"]),
+         d["cargos"][:2])
+
+if cargo_id:
+    cli.put(f"/api/accesos/cargo/{cargo_id}/perfil",
+            json={"perfil_acceso_id": menos_oficina["id"]})
+    d = cli.get("/api/perfiles-acceso").json()
+    _c = next(c for c in d["cargos"] if c["id"] == cargo_id)
+    chequear("y refleja el perfil asignado",
+             _c["perfil_acceso_id"] == menos_oficina["id"], _c)
+    chequear("heredan nunca supera a los empleados del cargo",
+             _c["heredan"] <= _c["empleados"], _c)
+
+    # Quien tiene perfil propio no hereda: es el numero que dice a cuantos les
+    # cambia el acceso si se toca la fila del cargo.
+    # Se arranca sin perfil propio a proposito: otras pruebas de este archivo
+    # ya le pusieron uno, y sin limpiarlo la cuenta no cambiaria y la prueba
+    # pasaria por el motivo equivocado.
+    if emp_id:
+        cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
+        _antes = next(c for c in cli.get("/api/perfiles-acceso").json()["cargos"]
+                      if c["id"] == cargo_id)["heredan"]
+        cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                json={"perfil_acceso_id": solo_oficina["id"]})
+        _despues = next(c for c in cli.get("/api/perfiles-acceso").json()["cargos"]
+                        if c["id"] == cargo_id)["heredan"]
+        chequear("al darle perfil propio a alguien, deja de heredar",
+                 _despues == _antes - 1, (_antes, _despues))
+        cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
+        _vuelta = next(c for c in cli.get("/api/perfiles-acceso").json()["cargos"]
+                       if c["id"] == cargo_id)["heredan"]
+        chequear("y al sacarselo vuelve a heredar", _vuelta == _antes, (_antes, _vuelta))
+
+    cli.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": None})
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

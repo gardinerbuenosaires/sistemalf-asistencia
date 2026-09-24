@@ -1241,6 +1241,11 @@ async function cargarAccesos(id) {
   const puede = canDo('accesos', 'asignar');
   const nombrePuerta = pid => (_accPuertas.find(p => p.id === pid) || {}).nombre || `#${pid}`;
   const perfilActual = datos.perfil ? datos.perfil.id : "";
+  // La opción vacía no significa lo mismo en los dos casos: si el cargo propone
+  // un perfil, dejarla vacía es heredarlo; si no propone ninguno, es quedarse
+  // sin abrir nada. Decir "sin perfil propio" en ambos casos oculta eso.
+  const perfilDelCargo = (_accPerfiles.find(p => p.id === datos.empleado.perfil_del_cargo) || {}).nombre
+                         || 'el del cargo';
 
   const abre = datos.puertas.length
     ? datos.puertas.map(pid => `<span style="background:#dcede2;color:#2e7d4f;padding:3px 9px;border-radius:4px;font-size:.8rem;margin-right:5px;display:inline-block;margin-bottom:4px">${nombrePuerta(pid)}</span>`).join('')
@@ -1267,15 +1272,18 @@ async function cargarAccesos(id) {
           <label>Perfil de acceso</label>
           <select id="f-perfil-acceso" ${puede ? '' : 'disabled'}
                   onchange="guardarPerfilAcceso(${id}, this.value)">
-            <option value="">— Sin perfil propio —</option>
+            <option value="">${datos.empleado.perfil_del_cargo
+              ? `— Heredar del cargo: ${perfilDelCargo} —`
+              : '— Sin acceso a ninguna puerta —'}</option>
             ${_accPerfiles.filter(p => p.activo).map(p =>
               `<option value="${p.id}"${p.id === perfilActual ? ' selected' : ''}>${p.nombre}</option>`).join('')}
           </select>
           <div style="font-size:.78rem;color:#888;margin-top:4px">
             ${datos.perfil_heredado_del_cargo
-              ? `Hereda <b>${datos.perfil.nombre}</b> del cargo${datos.empleado.cargo ? ` (${datos.empleado.cargo})` : ''}. Elegí uno acá solo si es una excepción.`
-              : datos.perfil ? 'Perfil propio: no depende del cargo.'
-                             : 'Sin perfil propio ni del cargo.'}
+              ? `Hereda <b>${datos.perfil.nombre}</b> de su cargo${datos.empleado.cargo ? ` (${datos.empleado.cargo})` : ''}. Elegí uno acá solo si esta persona es una excepción.`
+              : datos.perfil
+                ? `Perfil propio: no depende del cargo${datos.empleado.perfil_del_cargo ? ', aunque su cargo proponga otro' : ''}.`
+                : 'No abre ninguna puerta: no tiene perfil propio y su cargo tampoco propone uno.'}
           </div>
         </div>
       </div>

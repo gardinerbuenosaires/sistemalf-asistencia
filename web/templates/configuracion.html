@@ -418,6 +418,8 @@
         </div>
         <button class="btn btn-secondary btn-sm" style="flex-shrink:0;margin-left:16px"
                 onclick="revisarTodos()">Revisar todos</button>
+        <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                style="flex-shrink:0;margin-left:8px" onclick="verPlan()">Ver plan de cambios</button>
         <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
                 style="flex-shrink:0;margin-left:8px" onclick="nuevoDispositivo()">+ Nuevo equipo</button>
       </div>
@@ -2483,6 +2485,100 @@ async function eliminarDispositivo(id) {
   let e = {};
   try { e = await res.json(); } catch {}
   toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Plan de cambios ───────────────────────────────────────────────────────────
+// Lo que habria que cambiar en cada lector para que refleje la politica. No
+// escribe nada: el boton de aplicar no existe hasta que escribir en los equipos
+// este probado de verdad.
+
+async function verPlan() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:880px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Plan de cambios</div>
+      <div style="font-size:.8rem;color:#888;margin-top:2px">
+        Lo que habría que cambiar en cada lector para que coincida con los perfiles. No se aplica nada.</div>
+      <div id="plan-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+        Leyendo los equipos… se leen todos a la vez, pero puede tardar.</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let d;
+  try {
+    const res = await fetch('/api/accesos/plan');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    document.getElementById('plan-cuerpo').innerHTML =
+      `<span style="color:#c0392b">No se pudo armar el plan: ${_esc(e.message)}</span>`;
+    return;
+  }
+
+  const caja = document.getElementById('plan-cuerpo');
+  if (d.aviso) {
+    caja.innerHTML = `<div style="color:#8a5d06;background:#f6e9ce;padding:10px 12px;border-radius:5px">${_esc(d.aviso)}</div>`;
+    return;
+  }
+
+  const t = d.total;
+  const chip = (n, txt, fondo, color) => n
+    ? `<span style="background:${fondo};color:${color};padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${n} ${txt}</span>`
+    : '';
+
+  const bloques = d.puertas.map(p => {
+    const cab = `<b>${_esc(p.nombre)}</b>`
+      + (p.ubicacion ? ` <span style="color:#888;font-size:.8rem">${_esc(p.ubicacion)}</span>` : '');
+    if (!p.ok) {
+      return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0;background:#fdf3f2">
+        ${cab}<div style="color:#b3261e;font-size:.82rem;margin-top:3px">No contestó — no hay plan para esta puerta</div>
+        <div style="font-family:monospace;font-size:.75rem;color:#999">${_esc(p.error)}</div></div>`;
+    }
+    if (!p.agregar.length && !p.sacar.length) {
+      return `<div style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:.85rem;color:#555">
+        ${cab} <span style="color:#2e7d4f">· ya coincide, sin cambios</span></div>`;
+    }
+    const filas = [
+      ...p.agregar.map(a => `<div style="padding:4px 0 4px 14px;font-size:.83rem">
+        <span style="color:#2e7d4f;font-weight:600;min-width:62px;display:inline-block">+ cargar</span>
+        <span style="font-family:monospace;color:#888">${_esc(a.user_id)}</span> ${_esc(a.nombre)}
+        ${a.sin_huella ? '<span style="background:#f6e9ce;color:#8a5d06;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px">sin huella enrolada</span>' : ''}
+      </div>`),
+      ...p.sacar.map(s => `<div style="padding:4px 0 4px 14px;font-size:.83rem">
+        <span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">− sacar</span>
+        <span style="font-family:monospace;color:#888">${_esc(s.user_id)}</span> ${_esc(s.nombre) || '<i style="color:#999">sin legajo</i>'}
+        <span style="color:#999;margin-left:6px">· ${_esc(s.motivo_texto)}</span>
+        ${s.fecha_egreso ? `<span style="color:#b3261e;font-size:.75rem"> (egreso ${_esc(s.fecha_egreso)})</span>` : ''}
+      </div>`),
+    ].join('');
+    return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0">
+      ${cab} <span style="color:#888;font-size:.8rem">· ${p.agregar.length} a cargar, ${p.sacar.length} a sacar</span>
+      <div style="margin-top:6px">${filas}</div></div>`;
+  }).join('');
+
+  const hayCambios = t.agregar || t.sacar;
+  caja.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:.85rem;color:#333"><b>${t.puertas}</b> puertas</span>
+      ${chip(t.agregar, 'a cargar', '#dcede2', '#2e7d4f')}
+      ${chip(t.sacar, 'a sacar', '#f6dedc', '#b3261e')}
+      ${chip(t.sin_huella, 'sin huella enrolada', '#f6e9ce', '#8a5d06')}
+      ${chip(t.sin_leer, 'no contestaron', '#f6dedc', '#b3261e')}
+      ${hayCambios ? '' : '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo al día</span>'}
+    </div>
+    ${!d.huellas_verificadas ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:10px">
+      No se pudo leer el equipo de asistencia, así que no se verificó quién tiene la huella
+      enrolada. Los que figuran para cargar podrían no tener nada que copiar.</div>` : ''}
+    ${t.sin_huella ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:10px">
+      ${t.sin_huella} persona(s) no están en el lector de asistencia, así que no hay huella
+      para copiarles. Tienen que enrolarse antes, o se las cargaría sin poder abrir igual.</div>` : ''}
+    <div style="overflow-y:auto;max-height:52vh;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>
+    <div style="font-size:.78rem;color:#999;margin-top:10px">
+      Esto es solo el plan. Aplicarlo va a estar disponible cuando la escritura en los equipos
+      esté probada contra los lectores reales.</div>`;
 }
 
 // ── Perfil de acceso por cargo ────────────────────────────────────────────────

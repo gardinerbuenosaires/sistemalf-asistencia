@@ -599,5 +599,126 @@ if emp_id:
              cli.delete(f"/api/dispositivos/{solo_exc}").status_code == 200)
 
 
+
+print("\n=== PLAN: estado deseado ===")
+from db.database import db_session
+from sync.plan_accesos import estado_deseado, armar_plan
+
+if emp_id:
+    # Dejo a la persona con "Todas menos oficina": Personal y Camaras, no Oficina.
+    cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+            json={"perfil_acceso_id": menos_oficina["id"]})
+    with db_session() as _cn:
+        des = estado_deseado(_cn)
+        _uid = _cn.execute("SELECT user_id FROM empleados WHERE id=?", (emp_id,)).fetchone()[0]
+    _uid = str(_uid).strip()
+    chequear("la persona figura en las puertas de su perfil",
+             _uid in des.get(p_personal, {}) and _uid in des.get(p_camaras, {}),
+             {k: list(v)[:3] for k, v in des.items()})
+    chequear("y NO en la que el perfil no le da", _uid not in des.get(p_oficina, {}),
+             list(des.get(p_oficina, {}))[:5])
+
+    # Una excepcion la suma a oficina.
+    cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+             json={"dispositivo_id": p_oficina, "modo": "agregar", "motivo": "plan"})
+    with db_session() as _cn:
+        des = estado_deseado(_cn)
+    chequear("la excepcion la suma a esa puerta", _uid in des.get(p_oficina, {}))
+
+    # Sin perfil y sin cargo: no figura en ninguna.
+    cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+             json={"dispositivo_id": p_oficina, "modo": "quitar"}) if False else None
+    cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}")
+    cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
+    cli.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": None})
+    with db_session() as _cn:
+        des = estado_deseado(_cn)
+    chequear("sin perfil ni cargo no figura en ninguna puerta",
+             all(_uid not in v for v in des.values()))
+
+    # Un egresado nunca entra al deseado, aunque tenga perfil.
+    _c4 = sqlite3.connect(DB)
+    _baja = _c4.execute("""SELECT id, user_id FROM empleados
+                            WHERE activo=0 AND user_id IS NOT NULL LIMIT 1""").fetchone()
+    if _baja:
+        _c4.execute("UPDATE empleados SET perfil_acceso_id=? WHERE id=?",
+                    (menos_oficina["id"], _baja[0]))
+        _c4.commit()
+    _c4.close()
+    if _baja:
+        with db_session() as _cn:
+            des = estado_deseado(_cn)
+        chequear("un egresado con perfil NO entra en el deseado",
+                 all(str(_baja[1]).strip() not in v for v in des.values()))
+
+print("\n=== PLAN: comparacion contra lo que hay ===")
+if emp_id:
+    cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+            json={"perfil_acceso_id": menos_oficina["id"]})
+
+    with db_session() as _cn:
+        _puertas = [dict(r) for r in _cn.execute(
+            "SELECT id, nombre, ubicacion FROM dispositivos WHERE id IN (?,?,?)",
+            (p_personal, p_oficina, p_camaras))]
+
+        # Personal: esta cargado alguien que ya no corresponde, y falta la persona.
+        _sobra = "99999"
+        lecturas = {
+            p_personal: {"ok": True, "transporte": "udp", "error": None,
+                         "usuarios": [{"user_id": _sobra, "nombre": "X", "uid": 1,
+                                       "privilegio": 0, "tarjeta": 0, "grupo": "1"}]},
+            p_oficina:  {"ok": True, "transporte": "udp", "error": None, "usuarios": []},
+            p_camaras:  {"ok": False, "transporte": None, "error": "timed out", "usuarios": []},
+        }
+        maestro = {"ok": True, "usuarios": [{"user_id": _uid}]}
+        plan = armar_plan(_cn, _puertas, lecturas, maestro)
+
+    por_puerta = {p["id"]: p for p in plan["puertas"]}
+    chequear("marca para cargar a quien falta",
+             any(a["user_id"] == _uid for a in por_puerta[p_personal]["agregar"]),
+             por_puerta[p_personal]["agregar"])
+    chequear("marca para sacar a quien sobra",
+             any(s["user_id"] == _sobra for s in por_puerta[p_personal]["sacar"]),
+             por_puerta[p_personal]["sacar"])
+    _s = next(s for s in por_puerta[p_personal]["sacar"] if s["user_id"] == _sobra)
+    chequear("y explica por que sobra", _s["motivo"] == "desconocido", _s)
+    chequear("la puerta que el perfil no da no pide cargar a nadie",
+             all(a["user_id"] != _uid for a in por_puerta[p_oficina]["agregar"]),
+             por_puerta[p_oficina]["agregar"])
+    chequear("una puerta que no contesta no genera plan",
+             por_puerta[p_camaras]["ok"] is False
+             and not por_puerta[p_camaras]["agregar"], por_puerta[p_camaras])
+    chequear("cuenta la que no contesto", plan["total"]["sin_leer"] == 1, plan["total"])
+
+    # Sin huella en el maestro: se marca en vez de prometer que se puede cargar.
+    with db_session() as _cn:
+        plan2 = armar_plan(_cn, _puertas, lecturas, {"ok": True, "usuarios": []})
+    _a = next(a for a in plan2["puertas"][0]["agregar"] if a["user_id"] == _uid) \
+        if plan2["puertas"][0]["agregar"] else None
+    chequear("sin huella en el maestro lo marca", _a and _a["sin_huella"] is True, _a)
+    chequear("y lo cuenta en el total", plan2["total"]["sin_huella"] >= 1, plan2["total"])
+
+    # Maestro caido: se avisa que no se pudo verificar.
+    with db_session() as _cn:
+        plan3 = armar_plan(_cn, _puertas, lecturas, {"ok": False, "usuarios": []})
+    chequear("si el maestro no contesta avisa que no verifico huellas",
+             plan3["huellas_verificadas"] is False, plan3["huellas_verificadas"])
+
+print("\n=== PLAN: endpoint ===")
+import sync.lectores as _lec
+_guardado = _lec.leer_padrones
+_lec.leer_padrones = lambda ds: {d["id"]: {"ok": True, "transporte": "udp",
+                                           "usuarios": [], "error": None} for d in ds}
+r = cli.get("/api/accesos/plan")
+chequear("GET plan responde 200", r.status_code == 200, r.text[:200])
+cuerpo = r.json() if r.status_code == 200 else {}
+chequear("trae total y puertas", "total" in cuerpo and "puertas" in cuerpo, list(cuerpo))
+_lec.leer_padrones = _guardado
+
+_sin3 = TestClient(main.app)
+chequear("sin sesion no se ve el plan",
+         _sin3.get("/api/accesos/plan").status_code in (401, 403))
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

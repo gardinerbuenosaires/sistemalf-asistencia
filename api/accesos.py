@@ -230,6 +230,55 @@ def perfil_del_cargo(cid: int, data: AsignacionIn,
     return {"ok": True, "heredan": heredan}
 
 
+@router.get("/plan")
+def plan(_user=Depends(require_permiso("accesos", "ver"))):
+    """
+    Qué habría que cambiar en cada lector para que refleje la política.
+
+    Lee los equipos y compara contra lo que deberían tener. No escribe nada:
+    esto arma el plan, aplicarlo es otra cosa y todavía no está habilitado.
+
+    Lee además el equipo de asistencia, porque de ahí sale la huella que habría
+    que copiar: sin eso no se puede saber a quién falta enrolar, y cargar a
+    alguien sin su huella lo deja sin poder abrir igual.
+    """
+    from sync.lectores import leer_padrones
+    from sync.plan_accesos import armar_plan
+
+    with db_session() as conn:
+        puertas = [
+            dict(r) for r in conn.execute(
+                """SELECT id, nombre, ubicacion, ip, puerto, password, timeout, protocolo
+                     FROM dispositivos
+                    WHERE activo = 1 AND es_acceso = 1 AND protocolo = 'pull'
+                      AND ip IS NOT NULL
+                 ORDER BY orden, id"""
+            )
+        ]
+        maestros = [
+            dict(r) for r in conn.execute(
+                """SELECT id, nombre, ip, puerto, password, timeout, protocolo
+                     FROM dispositivos
+                    WHERE activo = 1 AND cuenta_asistencia = 1 AND protocolo = 'pull'
+                      AND ip IS NOT NULL
+                 ORDER BY orden, id LIMIT 1"""
+            )
+        ]
+
+    if not puertas:
+        return {"total": {"agregar": 0, "sacar": 0, "sin_huella": 0,
+                          "sin_leer": 0, "puertas": 0},
+                "puertas": [], "huellas_verificadas": False,
+                "aviso": "No hay ningún equipo marcado como «Abre una puerta»."}
+
+    # Todo junto en una sola tanda: el maestro también, que es solo uno más.
+    lecturas = leer_padrones(puertas + maestros)
+    maestro = lecturas.get(maestros[0]["id"]) if maestros else None
+
+    with db_session() as conn:
+        return armar_plan(conn, puertas, lecturas, maestro)
+
+
 @router.get("/sin-perfil")
 def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     """

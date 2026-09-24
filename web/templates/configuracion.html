@@ -459,11 +459,12 @@
         <div>
           <div class="section-title">Perfil que propone cada cargo</div>
           <div class="section-desc" style="margin-bottom:0">
-            El cargo <b>propone</b> un perfil, no lo aplica. Elegirlo acá no le cambia el
-            acceso a nadie: hay que apretar <b>Aplicar</b>, y eso se lo pone a los activos de
-            ese cargo que todavía no tienen perfil propio.
-            Así cambiarle el cargo a alguien nunca le cambia las puertas por su cuenta.
-            <b>Sin perfil</b> es a cuántos les llegaría si aplicás.
+            El cargo <b>propone</b> un perfil, no se lo pone a nadie. Elegirlo acá no cambia
+            nada: hay que apretar <b>Asignar</b>, y eso les carga ese perfil a los activos de ese
+            cargo que todavía no tienen uno propio. Así cambiarle el cargo a alguien nunca le
+            cambia las puertas por su cuenta. <b>Sin perfil</b> es a cuántos les llegaría.
+            <br><b>Nada de esto toca los lectores.</b> Asignar es en el sistema; lo que llega a
+            los equipos se revisa aparte, en «Ver plan de cambios».
           </div>
         </div>
       </div>
@@ -2629,7 +2630,7 @@ function _renderPerfilPorCargo() {
         </select></td>
       <td style="text-align:center;color:${c.heredan ? '#333' : '#bbb'}">${c.heredan}</td>
       <td>${puede && c.perfil_acceso_id && c.heredan
-        ? `<button class="btn btn-sm btn-primary" onclick="aplicarPerfilCargo(${c.id}, '${_esc(c.nombre).replace(/'/g, "\\'")}', ${c.heredan})">Aplicar a ${c.heredan}</button>`
+        ? `<button class="btn btn-sm btn-primary" onclick="aplicarPerfilCargo(${c.id}, '${_esc(c.nombre).replace(/'/g, "\\'")}', ${c.heredan})">Asignar a ${c.heredan}</button>`
         : ''}</td>
     </tr>`).join('');
 }
@@ -2637,14 +2638,15 @@ function _renderPerfilPorCargo() {
 async function aplicarPerfilCargo(cargoId, nombre, cuantos) {
   // Se confirma con el numero adelante: es una operacion en masa sobre el
   // acceso de gente real, y el alcance tiene que verse antes, no despues.
-  if (!confirm(`Aplicar el perfil de «${nombre}» a ${cuantos} empleado(s) que hoy no abren ninguna puerta?\n\nA quien ya tenga perfil propio no se lo toca.`)) return;
+  if (!confirm(`Asignar el perfil de «${nombre}» a ${cuantos} empleado(s) que hoy no tienen ninguno?\n\nA quien ya tenga perfil propio no se lo toca.
+Esto se guarda en el sistema: no se escribe nada en los lectores.`)) return;
   const res = await fetch(`/api/accesos/cargo/${cargoId}/aplicar`, { method: 'POST' });
   if (!res.ok) {
     let e = {}; try { e = await res.json(); } catch {}
     return toast('Error: ' + (e.detail || 'no se pudo aplicar'));
   }
   const d = await res.json();
-  toast(`${d.asignados} empleado(s) quedaron con ese perfil`);
+  toast(`${d.asignados} empleado(s) quedaron con ese perfil en el sistema`);
   cargarPerfiles();
 }
 

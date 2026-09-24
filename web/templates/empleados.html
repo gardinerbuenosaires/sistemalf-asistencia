@@ -1285,9 +1285,9 @@ async function cargarAccesos(id) {
 
       ${sug ? `<div style="background:#eef4f9;border-left:3px solid #1b5e8c;padding:8px 11px;font-size:.83rem;color:#24506e;margin-top:4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span style="flex:1">Su cargo${datos.empleado.cargo ? ` (${datos.empleado.cargo})` : ''}
-          propone <b>${sug.nombre}</b>, pero todavía no se le aplicó: hoy no abre nada.</span>
+          propone <b>${sug.nombre}</b>, pero todavía no se lo asignó nadie: hoy no abre nada.</span>
         ${puede ? `<button type="button" class="btn btn-sm btn-primary"
-                onclick="guardarPerfilAcceso(${id}, ${sug.id})">Aplicar</button>` : ''}
+                onclick="guardarPerfilAcceso(${id}, ${sug.id})">Asignar</button>` : ''}
       </div>` : ''}
 
       <div style="margin-top:10px">

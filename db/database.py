@@ -28,6 +28,15 @@ def db_session():
 
 
 def init_db():
+    # Si DB_PATH apunta a un archivo que no existe, sqlite lo crea vacio sin
+    # decir nada, y el sistema arranca como si fuera una instalacion nueva: sin
+    # empleados, sin fichajes, sin nada. Pasa por una ruta mal escrita o una
+    # variable que quedo sin definir, y se descubre tarde. Decirlo fuerte es
+    # gratis, y es la diferencia entre entenderlo en el arranque o dentro de
+    # media hora.
+    import os as _os
+    _nace = not _os.path.exists(DB_PATH)
+
     with db_session() as conn:
         conn.executescript("""
 
@@ -474,7 +483,14 @@ def init_db():
 
         """)
         _migrate(conn)
-    logger.info("Base de datos inicializada: %s", DB_PATH)
+    if _nace:
+        logger.warning("=" * 70)
+        logger.warning("BASE DE DATOS NUEVA Y VACIA: %s", _os.path.abspath(DB_PATH))
+        logger.warning("Ese archivo no existia, asi que se creo de cero. Si esperabas")
+        logger.warning("encontrar los datos de siempre, la ruta esta mal: revisa DB_PATH.")
+        logger.warning("=" * 70)
+    else:
+        logger.info("Base de datos inicializada: %s", _os.path.abspath(DB_PATH))
 
 
 def get_config(conn, clave: str, default=None):

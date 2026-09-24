@@ -1301,10 +1301,11 @@ async function cargarAccesos(id) {
         <div style="font-size:.78rem;color:#888;margin-bottom:5px">
           Excepciones ${datos.excepciones.length ? '' : '<i>— ninguna</i>'}</div>
         ${obsoletas ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:7px 10px;font-size:.8rem;color:#6b5a26;margin-bottom:8px">
-          ${obsoletas === 1 ? 'Hay una excepción que' : `Hay ${obsoletas} excepciones que`}
-          ya no ${obsoletas === 1 ? 'cambia' : 'cambian'} nada: el perfil actual de esta persona
-          ya ${obsoletas === 1 ? 'dice lo mismo' : 'dicen lo mismo'}. Suelen quedar de un perfil
-          anterior. Conviene sacarlas para que la ficha diga la verdad.</div>` : ''}
+          ${obsoletas === 1 ? 'Hay una excepción que no cambia nada' : `Hay ${obsoletas} excepciones que no cambian nada`}:
+          ${datos.perfil
+            ? `su perfil actual ya ${obsoletas === 1 ? 'dice lo mismo' : 'dice lo mismo'}. Suelen quedar de un perfil anterior.`
+            : `esta persona no tiene perfil, así que no hay puertas de las que sacarla.`}
+          Conviene ${obsoletas === 1 ? 'sacarla' : 'sacarlas'} para que la ficha diga la verdad.</div>` : ''}
         ${excepciones}
         ${puede && _accPuertas.length ? `
         <div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">

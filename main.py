@@ -35,6 +35,7 @@ from api.barmans import router as barmans_router
 from api.parking import router as parking_router
 from api.uniformes import router as uniformes_router
 from api.dispositivos import router as dispositivos_router
+from api.perfiles_acceso import router as perfiles_acceso_router
 from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
 
 logging.basicConfig(
@@ -172,6 +173,7 @@ app.include_router(barmans_router)
 app.include_router(parking_router)
 app.include_router(uniformes_router)
 app.include_router(dispositivos_router)
+app.include_router(perfiles_acceso_router)
 
 
 def _page(request: Request, template: str, modulo: str, accion: str = "ver"):

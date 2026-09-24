@@ -320,5 +320,113 @@ chequear("una lista vacia no rompe", leer_padrones([]) == {})
 lectores.leer_padron = _real2
 
 
+
+print("\n=== PERFILES DE ACCESO ===")
+
+# Tres puertas para armar los perfiles del ejemplo del usuario.
+_ids_puertas = []
+for n, ip in [("Personal", "127.0.1.1"), ("Oficina", "127.0.1.2"), ("Camaras", "127.0.1.3")]:
+    _r = cli.post("/api/dispositivos", json={
+        "nombre": n, "protocolo": "pull", "ip": ip, "puerto": 4370,
+        "cuenta_asistencia": False, "es_acceso": True, "activo": True,
+    })
+    _ids_puertas.append(_r.json()["id"])
+p_personal, p_oficina, p_camaras = _ids_puertas
+
+r = cli.get("/api/perfiles-acceso")
+chequear("GET perfiles responde 200", r.status_code == 200, r.text[:160])
+inicial = r.json()
+chequear("arranca sin perfiles", inicial["perfiles"] == [], inicial["perfiles"])
+chequear("ofrece como columnas solo las puertas",
+         {x["id"] for x in inicial["puertas"]} >= set(_ids_puertas),
+         [x["nombre"] for x in inicial["puertas"]])
+chequear("el lector de asistencia no aparece como puerta",
+         all(x["nombre"] != "Maestro de repuesto" for x in inicial["puertas"]),
+         [x["nombre"] for x in inicial["puertas"]])
+
+r = cli.post("/api/perfiles-acceso", json={
+    "nombre": "Todas las puertas", "dispositivos": _ids_puertas})
+chequear("crea un perfil con todas las puertas", r.status_code == 201, r.text[:160])
+todas = r.json() if r.status_code == 201 else {}
+chequear("guarda las tres puertas", sorted(todas.get("dispositivos", [])) == sorted(_ids_puertas),
+         todas.get("dispositivos"))
+
+r = cli.post("/api/perfiles-acceso", json={
+    "nombre": "Todas menos oficina", "dispositivos": [p_personal, p_camaras]})
+chequear("crea el perfil con exclusion", r.status_code == 201, r.text[:160])
+menos_oficina = r.json() if r.status_code == 201 else {}
+chequear("no incluye oficina", p_oficina not in menos_oficina.get("dispositivos", []),
+         menos_oficina.get("dispositivos"))
+
+r = cli.post("/api/perfiles-acceso", json={"nombre": "Solo oficina", "dispositivos": [p_oficina]})
+solo_oficina = r.json() if r.status_code == 201 else {}
+chequear("crea el perfil de una sola puerta", r.status_code == 201, r.text[:160])
+
+r = cli.post("/api/perfiles-acceso", json={"nombre": "Todas las puertas", "dispositivos": []})
+chequear("no deja repetir el nombre", r.status_code == 409, r.text[:120])
+
+r = cli.post("/api/perfiles-acceso", json={"nombre": "  ", "dispositivos": []})
+chequear("nombre vacio se rechaza", r.status_code == 422, r.text[:120])
+
+r = cli.post("/api/perfiles-acceso", json={"nombre": "Fantasma", "dispositivos": [999999]})
+chequear("no deja apuntar a una puerta que no existe", r.status_code == 400, r.text[:160])
+
+# Un perfil sin ninguna puerta es valido: alguien que no abre nada.
+r = cli.post("/api/perfiles-acceso", json={"nombre": "Sin acceso", "dispositivos": []})
+chequear("un perfil sin puertas es valido", r.status_code == 201, r.text[:160])
+sin_acceso = r.json() if r.status_code == 201 else {}
+
+print("\n=== EDITAR LA MATRIZ ===")
+r = cli.put(f"/api/perfiles-acceso/{solo_oficina['id']}", json={
+    "nombre": "Solo oficina", "activo": True, "orden": 0,
+    "dispositivos": [p_oficina, p_camaras]})
+chequear("agregar una puerta al perfil", r.status_code == 200
+         and sorted(r.json()["dispositivos"]) == sorted([p_oficina, p_camaras]), r.text[:160])
+
+r = cli.put(f"/api/perfiles-acceso/{solo_oficina['id']}", json={
+    "nombre": "Solo oficina", "activo": True, "orden": 0, "dispositivos": [p_oficina]})
+chequear("quitar una puerta del perfil",
+         r.status_code == 200 and r.json()["dispositivos"] == [p_oficina], r.text[:160])
+
+print("\n=== UNA PUERTA NUEVA NO ENTRA SOLA EN NINGUN PERFIL ===")
+r = cli.post("/api/dispositivos", json={
+    "nombre": "Deposito nuevo", "protocolo": "pull", "ip": "127.0.1.9", "puerto": 4370,
+    "cuenta_asistencia": False, "es_acceso": True, "activo": True})
+nueva = r.json()["id"]
+d = cli.get("/api/perfiles-acceso").json()
+chequear("aparece como columna nueva en la matriz",
+         any(x["id"] == nueva for x in d["puertas"]), [x["nombre"] for x in d["puertas"]])
+chequear("ningun perfil la incluye todavia",
+         all(nueva not in pf["dispositivos"] for pf in d["perfiles"]),
+         [(pf["nombre"], pf["dispositivos"]) for pf in d["perfiles"]])
+chequear("ni siquiera el perfil llamado Todas las puertas",
+         nueva not in next(pf["dispositivos"] for pf in d["perfiles"]
+                           if pf["nombre"] == "Todas las puertas"))
+
+print("\n=== BORRAR UN PERFIL EN USO ===")
+_con2 = sqlite3.connect(DB)
+_emp = _con2.execute(
+    "SELECT id FROM empleados WHERE activo=1 AND user_id IS NOT NULL LIMIT 1").fetchone()
+if _emp:
+    _con2.execute("UPDATE empleados SET perfil_acceso_id=? WHERE id=?",
+                  (todas["id"], _emp[0]))
+    _con2.commit()
+_con2.close()
+
+r = cli.delete(f"/api/perfiles-acceso/{todas['id']}")
+chequear("no deja borrar un perfil que alguien usa", r.status_code == 409, r.text[:200])
+
+r = cli.delete(f"/api/perfiles-acceso/{sin_acceso['id']}")
+chequear("si deja borrar uno que no usa nadie", r.status_code == 200, r.text[:160])
+
+r = cli.delete("/api/perfiles-acceso/999999")
+chequear("borrar un perfil inexistente da 404", r.status_code == 404, r.text[:120])
+
+print("\n=== PERMISOS ===")
+_sin = TestClient(main.app)
+r = _sin.get("/api/perfiles-acceso")
+chequear("sin sesion no se ven los perfiles", r.status_code in (401, 403), r.status_code)
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

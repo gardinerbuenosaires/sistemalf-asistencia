@@ -433,6 +433,25 @@
       </table>
     </div>
 
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Perfiles de acceso</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Qué puertas abre cada perfil. Cada empleado tiene uno, y el cargo propone el suyo
+            por defecto. Tildá las puertas de cada perfil: se guarda solo.
+            <b>Una puerta nueva no entra sola en ningún perfil</b> — aparece como columna vacía,
+            a propósito, para que decidas quién la abre.
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
+                style="flex-shrink:0;margin-left:16px" onclick="nuevoPerfil()">+ Nuevo perfil</button>
+      </div>
+      <div id="matriz-perfiles" style="margin-top:16px;overflow-x:auto">
+        <p style="color:#aaa;font-size:.9rem">Cargando...</p>
+      </div>
+    </div>
+
   </div>
 
   <div class="cfg-panel" id="panel-parking">
@@ -2263,7 +2282,7 @@ function switchCfgTab(tab) {
   if (tab === 'premios') cargarTraposCocina();
   if (tab === 'sistema') cargarVpActivo();
   if (tab === 'parking') cargarParkingCorte();
-  if (tab === 'dispositivos') cargarDispositivos();
+  if (tab === 'dispositivos') { cargarDispositivos(); cargarPerfiles(); }
 }
 
 // ── Dispositivos ──────────────────────────────────────────────────────────────
@@ -2456,6 +2475,133 @@ async function eliminarDispositivo(id) {
   if (res.ok) { toast('Equipo borrado'); cargarDispositivos(); return; }
   let e = {};
   try { e = await res.json(); } catch {}
+  toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Perfiles de acceso ────────────────────────────────────────────────────────
+// Una matriz perfil × puerta. El mismo modelo con el que el usuario ya piensa
+// el problema: "todas", "todas menos oficina", "solo oficina", "solo cámaras".
+
+let _perfiles = [], _puertas = [];
+
+async function cargarPerfiles() {
+  const caja = document.getElementById('matriz-perfiles');
+  try {
+    const res = await fetch('/api/perfiles-acceso');
+    if (!res.ok) throw new Error();
+    const d = await res.json();
+    _perfiles = d.perfiles; _puertas = d.puertas;
+  } catch {
+    caja.innerHTML = '<p style="color:#c0392b;font-size:.9rem">No se pudo cargar</p>';
+    return;
+  }
+
+  if (!_puertas.length) {
+    caja.innerHTML = `<p style="color:#888;font-size:.88rem">
+      Todavía no hay ningún equipo marcado como <b>Abre una puerta</b>. Marcá al menos uno
+      arriba y acá vas a poder armar los perfiles.</p>`;
+    return;
+  }
+  if (!_perfiles.length) {
+    caja.innerHTML = '<p style="color:#888;font-size:.88rem">No hay perfiles cargados todavía.</p>';
+    return;
+  }
+
+  const puede = canDo('dispositivos', 'editar');
+  const cols = _puertas.map(p =>
+    `<th style="padding:6px 10px;font-size:.78rem;font-weight:600;text-align:center;min-width:80px">
+       ${_esc(p.nombre)}${p.ubicacion ? `<div style="font-weight:400;color:#888">${_esc(p.ubicacion)}</div>` : ''}
+       ${p.activo ? '' : '<div style="font-weight:400;color:#c0392b">inactivo</div>'}
+     </th>`).join('');
+
+  const filas = _perfiles.map(pf => {
+    const tildes = _puertas.map(p => {
+      const puesto = pf.dispositivos.includes(p.id);
+      return `<td style="text-align:center;padding:6px 10px">
+        <input type="checkbox" ${puesto ? 'checked' : ''} ${puede ? '' : 'disabled'}
+               style="width:16px;height:16px;cursor:${puede ? 'pointer' : 'default'}"
+               onchange="togglePuerta(${pf.id}, ${p.id}, this)"></td>`;
+    }).join('');
+    const cuantas = pf.dispositivos.length;
+    return `<tr${pf.activo ? '' : ' style="opacity:.55"'}>
+      <td style="padding:6px 10px">
+        <b>${_esc(pf.nombre)}</b>
+        <div style="font-size:.75rem;color:#888">
+          ${cuantas} de ${_puertas.length} puertas · ${pf.empleados} empleado(s)</div>
+      </td>
+      ${tildes}
+      <td style="padding:6px 10px;white-space:nowrap">
+        ${puede ? `<button class="btn btn-sm btn-primary" onclick="editarPerfil(${pf.id})">Renombrar</button>` : ''}
+        ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarPerfil(${pf.id})">Borrar</button>` : ''}
+      </td></tr>`;
+  }).join('');
+
+  caja.innerHTML = `
+    <table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
+      <thead><tr style="background:#fafafa">
+        <th style="text-align:left;padding:6px 10px;min-width:200px">Perfil</th>
+        ${cols}<th style="width:180px"></th>
+      </tr></thead>
+      <tbody>${filas}</tbody>
+    </table>`;
+}
+
+async function togglePuerta(perfilId, puertaId, control) {
+  const pf = _perfiles.find(p => p.id === perfilId);
+  if (!pf) return;
+  const antes = [...pf.dispositivos];
+  const ahora = control.checked
+    ? [...new Set([...antes, puertaId])]
+    : antes.filter(x => x !== puertaId);
+
+  const res = await fetch(`/api/perfiles-acceso/${perfilId}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nombre: pf.nombre, descripcion: pf.descripcion,
+                           activo: !!pf.activo, orden: pf.orden, dispositivos: ahora }),
+  });
+  if (!res.ok) {
+    control.checked = !control.checked;   // revertir: el servidor no lo aceptó
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo guardar'));
+  }
+  pf.dispositivos = ahora;
+  cargarPerfiles();
+}
+
+async function nuevoPerfil() {
+  const nombre = prompt('Nombre del perfil\n\nPor ejemplo: Todas las puertas, Todas menos oficina, Solo oficina');
+  if (!nombre || !nombre.trim()) return;
+  const res = await fetch('/api/perfiles-acceso', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nombre: nombre.trim(), dispositivos: [] }),
+  });
+  if (res.ok) { toast('Perfil creado — ahora tildá sus puertas'); cargarPerfiles(); return; }
+  let e = {}; try { e = await res.json(); } catch {}
+  toast('Error: ' + (e.detail || 'no se pudo crear'));
+}
+
+async function editarPerfil(id) {
+  const pf = _perfiles.find(p => p.id === id);
+  if (!pf) return;
+  const nombre = prompt('Nombre del perfil', pf.nombre);
+  if (!nombre || !nombre.trim() || nombre.trim() === pf.nombre) return;
+  const res = await fetch(`/api/perfiles-acceso/${id}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nombre: nombre.trim(), descripcion: pf.descripcion,
+                           activo: !!pf.activo, orden: pf.orden,
+                           dispositivos: pf.dispositivos }),
+  });
+  if (res.ok) { toast('Perfil renombrado'); cargarPerfiles(); return; }
+  let e = {}; try { e = await res.json(); } catch {}
+  toast('Error: ' + (e.detail || 'no se pudo guardar'));
+}
+
+async function eliminarPerfil(id) {
+  const pf = _perfiles.find(p => p.id === id);
+  if (!confirm(`¿Borrar el perfil "${pf ? pf.nombre : id}"?`)) return;
+  const res = await fetch(`/api/perfiles-acceso/${id}`, { method: 'DELETE' });
+  if (res.ok) { toast('Perfil borrado'); cargarPerfiles(); return; }
+  let e = {}; try { e = await res.json(); } catch {}
   toast('Error: ' + (e.detail || 'no se pudo borrar'));
 }
 

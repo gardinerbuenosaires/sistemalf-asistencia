@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 def migrar_accesos(conn):
-    """Crea la tabla de dispositivos y siembra el equipo ya configurado."""
+    """Crea las tablas del módulo y siembra el equipo ya configurado."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS dispositivos (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,7 +79,61 @@ def migrar_accesos(conn):
     conn.execute("""CREATE UNIQUE INDEX IF NOT EXISTS ix_dispositivos_serie
                     ON dispositivos (numero_serie) WHERE numero_serie IS NOT NULL""")
 
+    _migrar_perfiles(conn)
     _sembrar_equipo_actual(conn)
+
+
+def _migrar_perfiles(conn):
+    """
+    Perfiles de acceso: un nombre y el conjunto de puertas que abre.
+
+    Es el modelo con el que el usuario ya piensa el problema —"todas las
+    puertas", "todas menos oficina", "solo oficina", "solo cámaras"— y el mismo
+    que usa Enterprise hoy. De los diez que tiene definidos usa tres.
+
+    La pertenencia se guarda explícita, una fila por perfil y puerta, y no como
+    una regla tipo "todas". Con una regla, una puerta nueva entraría sola en el
+    perfil "todas" sin que nadie lo decida; con la lista explícita aparece como
+    una casilla vacía en la matriz y se ve. El olvido silencioso es justamente
+    el problema que este módulo viene a resolver.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS perfiles_acceso (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre      TEXT NOT NULL UNIQUE,
+            descripcion TEXT,
+            activo      INTEGER NOT NULL DEFAULT 1,
+            orden       INTEGER NOT NULL DEFAULT 0,
+            creado_en   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS perfiles_dispositivos (
+            perfil_id      INTEGER NOT NULL REFERENCES perfiles_acceso(id) ON DELETE CASCADE,
+            dispositivo_id INTEGER NOT NULL REFERENCES dispositivos(id)    ON DELETE CASCADE,
+            PRIMARY KEY (perfil_id, dispositivo_id)
+        )
+    """)
+
+    # El perfil del empleado. Puede quedar en NULL: alguien de administración
+    # que no abre ninguna puerta es un caso válido, no un dato faltante.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(empleados)").fetchall()}
+    if "perfil_acceso_id" not in cols:
+        conn.execute(
+            "ALTER TABLE empleados ADD COLUMN perfil_acceso_id INTEGER "
+            "REFERENCES perfiles_acceso(id)"
+        )
+        logger.info("Migración: columna perfil_acceso_id agregada a empleados")
+
+    # El cargo propone un perfil, y la persona puede tener una excepción. Sin
+    # esto habría que elegir perfil de a uno para cada alta.
+    cols_cargo = {r[1] for r in conn.execute("PRAGMA table_info(cargos)").fetchall()}
+    if "perfil_acceso_id" not in cols_cargo:
+        conn.execute(
+            "ALTER TABLE cargos ADD COLUMN perfil_acceso_id INTEGER "
+            "REFERENCES perfiles_acceso(id)"
+        )
+        logger.info("Migración: columna perfil_acceso_id agregada a cargos")
 
 
 def _sembrar_equipo_actual(conn):

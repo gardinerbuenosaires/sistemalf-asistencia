@@ -1000,5 +1000,56 @@ if emp_id:
              r.status_code == 200 and r.json()["excepciones_borradas"] == 1, r.text[:160])
 
 
+
+print("\n=== NO SE PUEDE SACAR DE LA POLITICA UNA PUERTA DESDE LOS EQUIPOS ===")
+# Destildar "abre una puerta" la saca de la matriz y del plan, pero los perfiles
+# la siguen conteniendo: seria deshacer politica de acceso desde la pantalla de
+# equipos, y en silencio.
+_base = {"nombre": "Oficina", "protocolo": "pull", "ip": "127.0.1.2", "puerto": 4370,
+         "cuenta_asistencia": False, "activo": True}
+
+r = cli.put(f"/api/dispositivos/{p_oficina}", json={**_base, "es_acceso": False})
+chequear("no deja destildar «abre una puerta» si un perfil la usa",
+         r.status_code == 409, r.text[:240])
+chequear("y dice quien la esta usando", "perfil" in r.text.lower(), r.text[:240])
+
+d = cli.get("/api/perfiles-acceso").json()
+chequear("la puerta sigue en la matriz",
+         any(x["id"] == p_oficina for x in d["puertas"]), [x["nombre"] for x in d["puertas"]])
+
+# Desactivarla SI se puede: un lector se rompe y hay que desactivarlo. Pero el
+# plan tiene que decir que dejo de administrarse.
+r = cli.put(f"/api/dispositivos/{p_oficina}", json={**_base, "es_acceso": True, "activo": False})
+chequear("desactivar una puerta si se permite", r.status_code == 200, r.text[:200])
+
+import sync.lectores as _lec2
+_g = _lec2.leer_padrones
+_lec2.leer_padrones = lambda ds: {x["id"]: {"ok": True, "transporte": "udp",
+                                            "usuarios": [], "error": None} for x in ds}
+plan = cli.get("/api/accesos/plan").json()
+_lec2.leer_padrones = _g
+
+_fuera = {f["id"] for f in plan.get("fuera_de_plan", [])}
+chequear("el plan avisa que esa puerta quedo sin administrar",
+         p_oficina in _fuera, plan.get("fuera_de_plan"))
+_f = next(f for f in plan["fuera_de_plan"] if f["id"] == p_oficina)
+chequear("y explica por que", _f["motivo"] == "está desactivada", _f)
+chequear("mientras tanto no aparece entre las puertas del plan",
+         all(x["id"] != p_oficina for x in plan["puertas"]),
+         [x["nombre"] for x in plan["puertas"]])
+
+# Al reactivarla, vuelve a administrarse sola.
+cli.put(f"/api/dispositivos/{p_oficina}", json={**_base, "es_acceso": True, "activo": True})
+_lec2.leer_padrones = lambda ds: {x["id"]: {"ok": True, "transporte": "udp",
+                                            "usuarios": [], "error": None} for x in ds}
+plan2 = cli.get("/api/accesos/plan").json()
+_lec2.leer_padrones = _g
+chequear("al reactivarla vuelve al plan",
+         any(x["id"] == p_oficina for x in plan2["puertas"]),
+         [x["nombre"] for x in plan2["puertas"]])
+chequear("y sale del aviso", all(f["id"] != p_oficina for f in plan2.get("fuera_de_plan", [])),
+         plan2.get("fuera_de_plan"))
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

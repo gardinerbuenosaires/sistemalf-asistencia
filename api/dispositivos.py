@@ -129,8 +129,16 @@ def actualizar(did: int, data: DispositivoIn,
                _user=Depends(require_permiso("dispositivos", "editar"))):
     _validar_direccion(data)
     with db_session() as conn:
-        _traer(conn, did)
+        antes = _traer(conn, did)
         _verificar_queda_uno_de_asistencia(conn, did, sigue=bool(data.cuenta_asistencia and data.activo))
+        # Destildar "abre una puerta" la saca de la matriz y del plan, pero los
+        # perfiles la siguen conteniendo: el sistema dejaria de administrarla en
+        # silencio y quien este cargado ahi se queda para siempre, egresados
+        # incluidos. Es deshacer politica de acceso desde la pantalla de
+        # equipos, asi que se frena igual que el borrado.
+        if antes["es_acceso"] and not data.es_acceso:
+            _verificar_sin_referencias(conn, did, antes["nombre"],
+                                       accion="sacarle «Abre una puerta» a")
         try:
             conn.execute(
                 """UPDATE dispositivos
@@ -160,13 +168,15 @@ def eliminar(did: int, _user=Depends(require_permiso("dispositivos", "eliminar")
     return {"ok": True}
 
 
-def _verificar_sin_referencias(conn, did, nombre):
+def _verificar_sin_referencias(conn, did, nombre, accion="borrar"):
     """
-    No deja borrar una puerta que la política de accesos todavía usa.
+    Frena lo que dejaría a la política de accesos apuntando al vacío.
 
-    Borrarla sin avisar cambiaría en silencio qué abre un perfil, y las
-    excepciones que apuntan a ella romperían la clave foránea, que sale como
-    un error 500 sin explicación. Mejor decir qué la está usando.
+    Vale para borrar la puerta y para sacarle «abre una puerta»: las dos cosas
+    la sacan de la política sin tocar los perfiles, que la siguen conteniendo.
+    Hacerlo en silencio cambia qué abre un perfil sin que nadie lo decida, y en
+    el caso del borrado además rompe la clave foránea de las excepciones, que
+    sale como un error 500 sin explicación. Mejor decir qué la está usando.
     """
     en_perfiles = conn.execute(
         """SELECT p.nombre FROM perfiles_dispositivos pd
@@ -189,7 +199,7 @@ def _verificar_sin_referencias(conn, did, nombre):
         partes.append(f"hay {excepciones} excepción(es) de empleados sobre ella")
     raise HTTPException(
         409,
-        f"No se puede borrar «{nombre}»: " + " y ".join(partes) +
+        f"No se puede {accion} «{nombre}»: " + " y ".join(partes) +
         ". Sacala de ahí primero, así queda claro a quién le cambia el acceso.",
     )
 

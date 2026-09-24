@@ -283,6 +283,26 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
                  ORDER BY orden, id"""
             )
         ]
+        # Puertas que algún perfil todavía da, pero que el sistema no está
+        # administrando: desactivadas, sin IP, o marcadas como que no abren
+        # puerta. Callarlo seria lo peor: la gente sigue cargada ahí y nadie se
+        # entera, egresados incluidos.
+        fuera = [
+            dict(r) for r in conn.execute(
+                """SELECT DISTINCT d.id, d.nombre, d.activo, d.es_acceso, d.protocolo,
+                          (d.ip IS NULL) AS sin_ip
+                     FROM dispositivos d
+                     JOIN perfiles_dispositivos pd ON pd.dispositivo_id = d.id
+                    WHERE NOT (d.activo = 1 AND d.es_acceso = 1
+                               AND d.protocolo = 'pull' AND d.ip IS NOT NULL)
+                 ORDER BY d.orden, d.id"""
+            )
+        ]
+        for f in fuera:
+            f["motivo"] = ("está desactivada" if not f["activo"]
+                           else "ya no figura como puerta" if not f["es_acceso"]
+                           else "es un equipo push" if f["protocolo"] == "push"
+                           else "no tiene IP cargada")
         maestros = [
             dict(r) for r in conn.execute(
                 """SELECT id, nombre, ip, puerto, password, timeout, protocolo
@@ -296,7 +316,7 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
     if not puertas:
         return {"total": {"agregar": 0, "sacar": 0, "sin_huella": 0,
                           "sin_leer": 0, "puertas": 0},
-                "puertas": [], "huellas_verificadas": False,
+                "puertas": [], "huellas_verificadas": False, "fuera_de_plan": fuera,
                 "aviso": "No hay ningún equipo marcado como «Abre una puerta»."}
 
     # Todo junto en una sola tanda: el maestro también, que es solo uno más.
@@ -304,7 +324,7 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
     maestro = lecturas.get(maestros[0]["id"]) if maestros else None
 
     with db_session() as conn:
-        return armar_plan(conn, puertas, lecturas, maestro)
+        return {**armar_plan(conn, puertas, lecturas, maestro), "fuera_de_plan": fuera}
 
 
 @router.get("/sin-perfil")

@@ -2578,8 +2578,18 @@ async function verPlan() {
   }
 
   const caja = document.getElementById('plan-cuerpo');
+  // Puertas que un perfil todavia da pero que el sistema no administra. Va
+  // arriba de todo: es lo unico del plan que no se resuelve mirando el plan.
+  const fuera = (d.fuera_de_plan || []).length
+    ? `<div style="background:#f6dedc;border-left:3px solid #b3261e;padding:9px 12px;border-radius:4px;font-size:.83rem;color:#7a211c;margin-bottom:12px">
+        <b>${d.fuera_de_plan.length} puerta(s) que algún perfil da, pero que el sistema no está administrando:</b>
+        ${d.fuera_de_plan.map(f => `<div style="margin-top:3px">· ${_esc(f.nombre)} — ${_esc(f.motivo)}</div>`).join('')}
+        <div style="margin-top:5px;color:#8a4b46">Quien esté cargado ahí se queda como está, egresados incluidos.
+        Corregí el equipo, o sacá esa puerta de los perfiles.</div></div>`
+    : '';
+
   if (d.aviso) {
-    caja.innerHTML = `<div style="color:#8a5d06;background:#f6e9ce;padding:10px 12px;border-radius:5px">${_esc(d.aviso)}</div>`;
+    caja.innerHTML = fuera + `<div style="color:#8a5d06;background:#f6e9ce;padding:10px 12px;border-radius:5px">${_esc(d.aviso)}</div>`;
     return;
   }
 
@@ -2619,7 +2629,7 @@ async function verPlan() {
   }).join('');
 
   const hayCambios = t.agregar || t.sacar;
-  caja.innerHTML = `
+  caja.innerHTML = fuera + `
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="font-size:.85rem;color:#333"><b>${t.puertas}</b> puertas</span>
       ${chip(t.agregar, 'a cargar', '#dcede2', '#2e7d4f')}

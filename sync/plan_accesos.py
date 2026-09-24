@@ -45,12 +45,14 @@ def estado_deseado(conn) -> dict:
     ):
         excepciones.setdefault(r["empleado_id"], []).append(dict(r))
 
+    # El perfil propio y nada más. El cargo propone, no da acceso: si diera,
+    # cambiarle el cargo a alguien le cambiaría las puertas, y eso lo puede
+    # hacer quien edita empleados aunque no tenga permiso de accesos.
     deseado: dict[int, dict] = {}
     for e in conn.execute(
         """SELECT e.id, e.user_id, e.nombre, e.apellido,
-                  COALESCE(e.perfil_acceso_id, c.perfil_acceso_id) AS perfil_id
+                  e.perfil_acceso_id AS perfil_id
              FROM empleados e
-             LEFT JOIN cargos c ON c.id = e.cargo_id
             WHERE e.activo = 1 AND e.user_id IS NOT NULL AND TRIM(e.user_id) <> ''"""
     ):
         puertas = set(puertas_de_perfil.get(e["perfil_id"], ())) if e["perfil_id"] else set()

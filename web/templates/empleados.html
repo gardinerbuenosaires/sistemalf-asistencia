@@ -1241,11 +1241,10 @@ async function cargarAccesos(id) {
   const puede = canDo('accesos', 'asignar');
   const nombrePuerta = pid => (_accPuertas.find(p => p.id === pid) || {}).nombre || `#${pid}`;
   const perfilActual = datos.perfil ? datos.perfil.id : "";
-  // La opción vacía no significa lo mismo en los dos casos: si el cargo propone
-  // un perfil, dejarla vacía es heredarlo; si no propone ninguno, es quedarse
-  // sin abrir nada. Decir "sin perfil propio" en ambos casos oculta eso.
-  const perfilDelCargo = (_accPerfiles.find(p => p.id === datos.empleado.perfil_del_cargo) || {}).nombre
-                         || 'el del cargo';
+  // El cargo propone, no da acceso. Si propone algo y esta persona no tiene
+  // perfil, se ofrece aplicarlo de un click — pero lo aplica alguien con
+  // permiso de accesos, no pasa solo al cambiarle el cargo.
+  const sug = datos.sugerencia_del_cargo;
 
   const abre = datos.puertas.length
     ? datos.puertas.map(pid => `<span style="background:#dcede2;color:#2e7d4f;padding:3px 9px;border-radius:4px;font-size:.8rem;margin-right:5px;display:inline-block;margin-bottom:4px">${nombrePuerta(pid)}</span>`).join('')
@@ -1272,21 +1271,24 @@ async function cargarAccesos(id) {
           <label>Perfil de acceso</label>
           <select id="f-perfil-acceso" ${puede ? '' : 'disabled'}
                   onchange="guardarPerfilAcceso(${id}, this.value)">
-            <option value="">${datos.empleado.perfil_del_cargo
-              ? `— Heredar del cargo: ${perfilDelCargo} —`
-              : '— Sin acceso a ninguna puerta —'}</option>
+            <option value="">— Sin acceso a ninguna puerta —</option>
             ${_accPerfiles.filter(p => p.activo).map(p =>
               `<option value="${p.id}"${p.id === perfilActual ? ' selected' : ''}>${p.nombre}</option>`).join('')}
           </select>
           <div style="font-size:.78rem;color:#888;margin-top:4px">
-            ${datos.perfil_heredado_del_cargo
-              ? `Hereda <b>${datos.perfil.nombre}</b> de su cargo${datos.empleado.cargo ? ` (${datos.empleado.cargo})` : ''}. Elegí uno acá solo si esta persona es una excepción.`
-              : datos.perfil
-                ? `Perfil propio: no depende del cargo${datos.empleado.perfil_del_cargo ? ', aunque su cargo proponga otro' : ''}.`
-                : 'No abre ninguna puerta: no tiene perfil propio y su cargo tampoco propone uno.'}
+            ${datos.perfil
+              ? 'El acceso sale de este perfil. Cambiarle el cargo no lo modifica.'
+              : 'Hoy no abre ninguna puerta.'}
           </div>
         </div>
       </div>
+
+      ${sug ? `<div style="background:#eef4f9;border-left:3px solid #1b5e8c;padding:8px 11px;font-size:.83rem;color:#24506e;margin-top:4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="flex:1">Su cargo${datos.empleado.cargo ? ` (${datos.empleado.cargo})` : ''}
+          propone <b>${sug.nombre}</b>, pero todavía no se le aplicó: hoy no abre nada.</span>
+        ${puede ? `<button type="button" class="btn btn-sm btn-primary"
+                onclick="guardarPerfilAcceso(${id}, ${sug.id})">Aplicar</button>` : ''}
+      </div>` : ''}
 
       <div style="margin-top:10px">
         <div style="font-size:.78rem;color:#888;margin-bottom:5px">Puertas que abre hoy</div>

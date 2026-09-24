@@ -450,26 +450,71 @@ if emp_id:
     chequear("y aparece en la lista de los que no tienen acceso",
              any(x["id"] == emp_id for x in cli.get("/api/accesos/sin-perfil").json()))
 
-    # 2) El cargo propone: la persona hereda sin que nadie la toque.
+    # 2) El cargo PROPONE, no aplica: la persona sigue sin abrir nada.
     r = cli.put(f"/api/accesos/cargo/{cargo_id}/perfil",
                 json={"perfil_acceso_id": menos_oficina["id"]})
     chequear("se le puede poner perfil a un cargo", r.status_code == 200, r.text[:160])
     a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
-    chequear("la persona hereda el perfil del cargo",
+    chequear("el cargo NO le da acceso solo", a["perfil"] is None, a.get("perfil"))
+    chequear("sigue sin abrir ninguna puerta", a["puertas"] == [], a["puertas"])
+    chequear("pero aparece la sugerencia del cargo",
+             a["sugerencia_del_cargo"]["id"] == menos_oficina["id"],
+             a.get("sugerencia_del_cargo"))
+    chequear("y sigue en la lista de pendientes de asignar",
+             any(x["id"] == emp_id for x in cli.get("/api/accesos/sin-perfil").json()))
+    _pend = next(x for x in cli.get("/api/accesos/sin-perfil").json() if x["id"] == emp_id)
+    chequear("la lista de pendientes trae la sugerencia",
+             _pend["sugerencia_id"] == menos_oficina["id"], _pend)
+
+    # Aplicar el perfil del cargo a los que no tienen: lo decide alguien con permiso.
+    r = cli.post(f"/api/accesos/cargo/{cargo_id}/aplicar")
+    chequear("aplicar el perfil del cargo responde 200", r.status_code == 200, r.text[:160])
+    chequear("y dice a cuantos alcanzo", r.json()["asignados"] >= 1, r.json())
+    a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
+    chequear("recien ahi la persona tiene el perfil",
              a["perfil"]["id"] == menos_oficina["id"], a.get("perfil"))
-    chequear("queda marcado como heredado", a["perfil_heredado_del_cargo"] is True, a)
-    chequear("hereda las puertas del perfil",
+    chequear("y abre las puertas del perfil",
              sorted(a["puertas"]) == sorted([p_personal, p_camaras]), a["puertas"])
-    chequear("ya no figura entre los que no tienen acceso",
+    chequear("ya no figura entre los pendientes",
              all(x["id"] != emp_id for x in cli.get("/api/accesos/sin-perfil").json()))
 
-    # 3) Perfil propio: pisa al del cargo.
+    r = cli.post(f"/api/accesos/cargo/{cargo_id}/aplicar")
+    chequear("aplicar de nuevo no toca a nadie mas", r.json()["asignados"] == 0, r.json())
+
+    # 3) CAMBIAR EL CARGO NO CAMBIA EL ACCESO. Es lo que motivo este modelo:
+    # el cargo lo edita quien tiene permiso de empleados, no de accesos.
+    _c5 = sqlite3.connect(DB)
+    _otro = _c5.execute("SELECT id FROM cargos WHERE id <> ? LIMIT 1", (cargo_id,)).fetchone()
+    _c5.close()
+    if _otro:
+        cli.put(f"/api/accesos/cargo/{_otro[0]}/perfil",
+                json={"perfil_acceso_id": solo_oficina["id"]})
+        _c5 = sqlite3.connect(DB)
+        _c5.execute("UPDATE empleados SET cargo_id=? WHERE id=?", (_otro[0], emp_id))
+        _c5.commit(); _c5.close()
+        a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
+        chequear("cambiarle el cargo NO le cambia el perfil",
+                 a["perfil"]["id"] == menos_oficina["id"], a.get("perfil"))
+        chequear("ni las puertas que abre",
+                 sorted(a["puertas"]) == sorted([p_personal, p_camaras]), a["puertas"])
+        chequear("y no aparece sugerencia porque ya tiene perfil propio",
+                 a["sugerencia_del_cargo"] is None, a.get("sugerencia_del_cargo"))
+        # Aplicar el perfil del cargo nuevo tampoco lo pisa.
+        r = cli.post(f"/api/accesos/cargo/{_otro[0]}/aplicar")
+        a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
+        chequear("aplicar en masa no pisa a quien ya tiene perfil propio",
+                 a["perfil"]["id"] == menos_oficina["id"], a.get("perfil"))
+
+    r = cli.post(f"/api/accesos/cargo/999999/aplicar")
+    chequear("aplicar sobre un cargo inexistente da 404", r.status_code == 404, r.text[:120])
+
+    # 4) Perfil propio: se elige a mano y manda.
     cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
             json={"perfil_acceso_id": solo_oficina["id"]})
     a = cli.get(f"/api/accesos/empleado/{emp_id}").json()
     chequear("el perfil propio le gana al del cargo",
              a["perfil"]["id"] == solo_oficina["id"], a.get("perfil"))
-    chequear("ya no figura como heredado", a["perfil_heredado_del_cargo"] is False, a)
+    chequear("y no queda sugerencia pendiente", a["sugerencia_del_cargo"] is None, a)
     chequear("sus puertas son las del perfil propio", a["puertas"] == [p_oficina], a["puertas"])
 
     # 4) Excepcion: agregarle una puerta suelta.
@@ -740,23 +785,27 @@ if cargo_id:
 
     # Quien tiene perfil propio no hereda: es el numero que dice a cuantos les
     # cambia el acceso si se toca la fila del cargo.
-    # Se arranca sin perfil propio a proposito: otras pruebas de este archivo
-    # ya le pusieron uno, y sin limpiarlo la cuenta no cambiaria y la prueba
-    # pasaria por el motivo equivocado.
+    # Se arranca sin perfil propio a proposito: otras pruebas ya le pusieron
+    # uno. Y se lee el cargo que tiene AHORA, porque tambien se lo cambiaron.
     if emp_id:
+        _cn = sqlite3.connect(DB)
+        _cargo_actual = _cn.execute(
+            "SELECT cargo_id FROM empleados WHERE id=?", (emp_id,)).fetchone()[0]
+        _cn.close()
         cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
         _antes = next(c for c in cli.get("/api/perfiles-acceso").json()["cargos"]
-                      if c["id"] == cargo_id)["heredan"]
+                      if c["id"] == _cargo_actual)["heredan"]
+        chequear("quien no tiene perfil propio se cuenta como pendiente", _antes >= 1, _antes)
         cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
                 json={"perfil_acceso_id": solo_oficina["id"]})
         _despues = next(c for c in cli.get("/api/perfiles-acceso").json()["cargos"]
-                        if c["id"] == cargo_id)["heredan"]
-        chequear("al darle perfil propio a alguien, deja de heredar",
+                        if c["id"] == _cargo_actual)["heredan"]
+        chequear("al darle perfil propio deja de contarse como pendiente",
                  _despues == _antes - 1, (_antes, _despues))
         cli.put(f"/api/accesos/empleado/{emp_id}/perfil", json={"perfil_acceso_id": None})
         _vuelta = next(c for c in cli.get("/api/perfiles-acceso").json()["cargos"]
-                       if c["id"] == cargo_id)["heredan"]
-        chequear("y al sacarselo vuelve a heredar", _vuelta == _antes, (_antes, _vuelta))
+                       if c["id"] == _cargo_actual)["heredan"]
+        chequear("y al sacarselo vuelve a contarse", _vuelta == _antes, (_antes, _vuelta))
 
     cli.put(f"/api/accesos/cargo/{cargo_id}/perfil", json={"perfil_acceso_id": None})
 

@@ -1106,6 +1106,8 @@ function buildForm(e = {}, asignaciones = []) {
 
       <div id="calendario-section">${editandoId ? buildCalendarioSection(asignaciones) : ""}</div>
 
+      <div id="accesos-section"></div>
+
       <div class="form-section">
         <div class="form-section-title">Observaciones</div>
         <div class="form-grid cols-1">
@@ -1196,6 +1198,7 @@ async function editarEmpleado(id) {
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
   document.getElementById("form-contenido").innerHTML = buildForm(e, asignaciones);
   cargarResumenUniformes(id);
+  cargarAccesos(id);
   if (!canDo('empleados', 'editar')) {
     document.querySelectorAll('#emp-form input, #emp-form select, #emp-form textarea').forEach(el => el.disabled = true);
   }
@@ -1205,6 +1208,146 @@ async function editarEmpleado(id) {
   actualizarManzanaLabels();
   ["f-dom-calle","f-dom-numero","f-dom-entre-calle1","f-dom-entre-calle2"]
     .forEach(id => document.getElementById(id)?.addEventListener("input", actualizarManzanaLabels));
+}
+
+// ── Accesos a puertas ─────────────────────────────────────────────────────────
+// Se guarda solo y aparte del resto del legajo, a propósito: cambiarle el acceso
+// a alguien tiene su propio permiso, así RRHH puede hacerlo sin poder redefinir
+// qué significa cada perfil.
+
+let _accPerfiles = [], _accPuertas = [];
+
+async function cargarAccesos(id) {
+  const caja = document.getElementById("accesos-section");
+  if (!caja) return;
+  if (!canDo('accesos', 'ver')) { caja.innerHTML = ""; return; }
+
+  let datos, cat;
+  try {
+    const [aRes, pRes] = await Promise.all([
+      fetch(`/api/accesos/empleado/${id}`),
+      fetch('/api/perfiles-acceso'),
+    ]);
+    if (!aRes.ok || !pRes.ok) throw new Error();
+    datos = await aRes.json();
+    cat = await pRes.json();
+  } catch { caja.innerHTML = ""; return; }
+
+  _accPerfiles = cat.perfiles;
+  _accPuertas = cat.puertas;
+  // Sin puertas ni perfiles cargados todavía, la sección solo confundiría.
+  if (!_accPuertas.length && !_accPerfiles.length) { caja.innerHTML = ""; return; }
+
+  const puede = canDo('accesos', 'asignar');
+  const nombrePuerta = pid => (_accPuertas.find(p => p.id === pid) || {}).nombre || `#${pid}`;
+  const perfilActual = datos.perfil ? datos.perfil.id : "";
+
+  const abre = datos.puertas.length
+    ? datos.puertas.map(pid => `<span style="background:#dcede2;color:#2e7d4f;padding:3px 9px;border-radius:4px;font-size:.8rem;margin-right:5px;display:inline-block;margin-bottom:4px">${nombrePuerta(pid)}</span>`).join('')
+    : '<span style="color:#888;font-size:.85rem">No abre ninguna puerta</span>';
+
+  const excepciones = datos.excepciones.map(x => `
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f4f4f4;font-size:.85rem">
+      <span style="color:${x.modo === 'quitar' ? '#b3261e' : '#2e7d4f'};font-weight:600;min-width:64px">
+        ${x.modo === 'quitar' ? '− quitar' : '+ agregar'}</span>
+      <span style="min-width:120px">${nombrePuerta(x.dispositivo_id)}</span>
+      <span style="color:#888;flex:1">${x.motivo ? x.motivo : '<i>sin motivo</i>'}</span>
+      <span style="color:#bbb;font-size:.75rem">${(x.creado_en || '').slice(0,10)}</span>
+      ${puede ? `<button type="button" class="btn btn-sm btn-secondary" onclick="quitarExcepcion(${id}, ${x.dispositivo_id})">Sacar</button>` : ''}
+    </div>`).join('');
+
+  caja.innerHTML = `
+    <div class="form-section">
+      <div class="form-section-title">Accesos a puertas</div>
+
+      <div class="form-grid">
+        <div class="form-group span-2">
+          <label>Perfil de acceso</label>
+          <select id="f-perfil-acceso" ${puede ? '' : 'disabled'}
+                  onchange="guardarPerfilAcceso(${id}, this.value)">
+            <option value="">— Sin perfil propio —</option>
+            ${_accPerfiles.filter(p => p.activo).map(p =>
+              `<option value="${p.id}"${p.id === perfilActual ? ' selected' : ''}>${p.nombre}</option>`).join('')}
+          </select>
+          <div style="font-size:.78rem;color:#888;margin-top:4px">
+            ${datos.perfil_heredado_del_cargo
+              ? `Hereda <b>${datos.perfil.nombre}</b> del cargo${datos.empleado.cargo ? ` (${datos.empleado.cargo})` : ''}. Elegí uno acá solo si es una excepción.`
+              : datos.perfil ? 'Perfil propio: no depende del cargo.'
+                             : 'Sin perfil propio ni del cargo.'}
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <div style="font-size:.78rem;color:#888;margin-bottom:5px">Puertas que abre hoy</div>
+        ${abre}
+      </div>
+
+      <div style="margin-top:14px">
+        <div style="font-size:.78rem;color:#888;margin-bottom:5px">
+          Excepciones ${datos.excepciones.length ? '' : '<i>— ninguna</i>'}</div>
+        ${excepciones}
+        ${puede && _accPuertas.length ? `
+        <div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">
+          <select id="f-exc-puerta" style="max-width:160px">
+            ${_accPuertas.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
+          </select>
+          <select id="f-exc-modo" style="max-width:120px">
+            <option value="quitar">− quitar</option>
+            <option value="agregar">+ agregar</option>
+          </select>
+          <input type="text" id="f-exc-motivo" placeholder="Motivo" style="flex:1;min-width:140px">
+          <button type="button" class="btn btn-sm btn-primary" onclick="agregarExcepcion(${id})">Agregar</button>
+        </div>
+        <div style="font-size:.76rem;color:#999;margin-top:5px">
+          El motivo no es obligatorio, pero dentro de un año es lo único que va a explicar
+          por qué esta persona tiene algo distinto al resto.</div>` : ''}
+      </div>
+    </div>`;
+}
+
+async function guardarPerfilAcceso(id, valor) {
+  const res = await fetch(`/api/accesos/empleado/${id}/perfil`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ perfil_acceso_id: valor ? Number(valor) : null }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    toast('Error: ' + (e.detail || 'no se pudo guardar'));
+  } else {
+    toast('Perfil de acceso guardado');
+  }
+  cargarAccesos(id);
+}
+
+async function agregarExcepcion(id) {
+  const cuerpo = {
+    dispositivo_id: Number(document.getElementById('f-exc-puerta').value),
+    modo: document.getElementById('f-exc-modo').value,
+    motivo: document.getElementById('f-exc-motivo').value,
+  };
+  const res = await fetch(`/api/accesos/empleado/${id}/excepcion`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(cuerpo),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo agregar'));
+  }
+  toast('Excepción agregada');
+  cargarAccesos(id);
+}
+
+async function quitarExcepcion(id, dispositivoId) {
+  const res = await fetch(`/api/accesos/empleado/${id}/excepcion/${dispositivoId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo sacar'));
+  }
+  toast('Excepción sacada — vuelve a lo que diga su perfil');
+  cargarAccesos(id);
 }
 
 function cancelar() {

@@ -498,7 +498,7 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCargo()">+ Nuevo cargo</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th id="th-aplica-trapos" style="width:120px;text-align:center;display:none">Aplica trapos</th><th>Departamento</th><th style="width:160px">Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th id="th-aplica-trapos" style="width:120px;text-align:center;display:none">Aplica trapos</th><th>Departamento</th><th id="th-perfil-acceso" style="width:180px;display:none">Perfil de acceso</th><th style="width:160px">Acciones</th></tr></thead>
         <tbody id="tabla-cargos"><tr><td colspan="4" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -1645,7 +1645,7 @@ async function _guardarItemCatalogo(tbodyId, id) {
 
 function _renderCargos() {
   const tbody = document.getElementById("tabla-cargos");
-  const cols = 4 + (_traposActivo ? 1 : 0);
+  const cols = 4 + (_traposActivo ? 1 : 0) + (_perfilesCargo.length ? 1 : 0);
   if (!cargos.length) {
     tbody.innerHTML = `<tr><td colspan="${cols}" style="color:#aaa">Sin registros</td></tr>`;
     return;
@@ -1664,6 +1664,12 @@ function _renderCargos() {
           style="width:16px;height:16px;cursor:pointer;accent-color:#e67e22">
       </td>` : ''}
       <td style="color:${item.departamento_nombre ? '#333' : '#bbb'};font-size:.85rem">${item.departamento_nombre || '—'}</td>
+      ${_perfilesCargo.length ? `<td>
+        <select style="padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:.82rem;width:100%"
+                ${canDo('accesos','asignar') ? `onchange="perfilDeCargo(${item.id}, this.value)"` : 'disabled'}>
+          <option value="">— Sin acceso —</option>
+          ${_perfilesCargo.map(pf => `<option value="${pf.id}"${item.perfil_acceso_id === pf.id ? ' selected' : ''}>${_esc(pf.nombre)}</option>`).join('')}
+        </select></td>` : ''}
       <td>
         ${canDo('empleados','editar') ? `
           <button class="btn btn-sm btn-secondary" onclick="editarCargo(${item.id})">Editar</button>
@@ -1900,6 +1906,7 @@ async function cargarCatalogos() {
   const cfgParams = await cfgRes.json();
   _traposActivo = cfgParams.find(p => p.clave === "trapos_cocina_activo")?.valor === "1";
   document.getElementById("th-aplica-trapos").style.display = _traposActivo ? "" : "none";
+  await cargarPerfilesParaCargos();
   _renderCargos();
   _renderDeptos(deptos);
   _renderCatalogo(categorias, "tabla-categorias", "eliminarCategoria");
@@ -2476,6 +2483,40 @@ async function eliminarDispositivo(id) {
   let e = {};
   try { e = await res.json(); } catch {}
   toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Perfil de acceso por cargo ────────────────────────────────────────────────
+// El cargo propone un perfil: es comodidad para no elegir de a uno en cada alta,
+// no una regla. A quien ya tenga perfil propio, esto no lo toca.
+
+let _perfilesCargo = [];
+
+async function cargarPerfilesParaCargos() {
+  try {
+    const res = await fetch('/api/perfiles-acceso');
+    _perfilesCargo = res.ok ? (await res.json()).perfiles.filter(p => p.activo) : [];
+  } catch { _perfilesCargo = []; }
+  // Sin perfiles definidos la columna no aparece: sería un selector vacío
+  // ocupando lugar en una pantalla que ya tiene varias tablas.
+  const th = document.getElementById('th-perfil-acceso');
+  if (th) th.style.display = _perfilesCargo.length ? '' : 'none';
+}
+
+async function perfilDeCargo(cargoId, valor) {
+  const res = await fetch(`/api/accesos/cargo/${cargoId}/perfil`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ perfil_acceso_id: valor ? Number(valor) : null }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    toast('Error: ' + (e.detail || 'no se pudo guardar'));
+    return cargarCatalogos();
+  }
+  const d = await res.json();
+  toast(d.heredan
+    ? `Guardado · ${d.heredan} empleado(s) de este cargo lo heredan`
+    : 'Guardado · nadie lo hereda todavía');
+  cargarCatalogos();
 }
 
 // ── Perfiles de acceso ────────────────────────────────────────────────────────

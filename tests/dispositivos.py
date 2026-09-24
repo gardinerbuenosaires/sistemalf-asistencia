@@ -823,9 +823,9 @@ chequear("el endpoint de aplicar por cargo fue eliminado", r.status_code == 404,
 
 
 
-print("\n=== SACAR EL PERFIL NO SACA LAS EXCEPCIONES ===")
+
+print("\n=== LAS EXCEPCIONES NECESITAN UN PERFIL ===")
 if emp_id:
-    # Perfil que no da oficina, mas una excepcion que se la agrega.
     cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
             json={"perfil_acceso_id": menos_oficina["id"]})
     for _d in (p_oficina, p_personal, p_camaras):
@@ -833,33 +833,46 @@ if emp_id:
     cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
              json={"dispositivo_id": p_oficina, "modo": "agregar", "motivo": "caso raro"})
 
-    # Se le saca el perfil: la excepcion sobrevive y sigue dando esa puerta.
+    # Sacarle el perfil borra las excepciones: una excepcion modifica un perfil,
+    # y sin perfil no hay nada que modificar.
     a = cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
                 json={"perfil_acceso_id": None}).json()
-    chequear("sin perfil, el perfil queda en null", a["perfil"] is None, a.get("perfil"))
-    chequear("las puertas del perfil quedan vacias",
-             a["puertas_del_perfil"] == [], a["puertas_del_perfil"])
-    chequear("pero la excepcion 'agregar' sigue dando su puerta",
-             a["puertas"] == [p_oficina], a["puertas"])
-    _x = a["excepciones"][0]
-    chequear("y esa excepcion NO se marca sin efecto: es lo unico que le da acceso",
-             _x["sin_efecto"] is False, _x)
+    chequear("sacar el perfil borra las excepciones", a["excepciones"] == [], a["excepciones"])
+    chequear("y dice cuantas borro", a["excepciones_borradas"] == 1, a.get("excepciones_borradas"))
+    chequear("no queda abriendo nada por un residuo", a["puertas"] == [], a["puertas"])
 
-    # Sacada la excepcion, recien ahi no abre nada.
-    a = cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_oficina}").json()
-    chequear("sacada la excepcion, ya no abre ninguna puerta", a["puertas"] == [], a["puertas"])
+    # Sin perfil no se puede crear una excepcion.
+    r = cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
+                 json={"dispositivo_id": p_oficina, "modo": "agregar"})
+    chequear("sin perfil no se puede crear una excepcion", r.status_code == 409, r.text[:200])
+    chequear("y el mensaje explica que hacer",
+             "perfil" in r.text.lower() and "cre" in r.text.lower(), r.text[:200])
 
-    # Una excepcion 'quitar' sin perfil no hace nada, y se marca como tal.
+    # Cambiar de un perfil a otro NO las borra: la decision es sobre la persona.
     cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
             json={"perfil_acceso_id": menos_oficina["id"]})
     cli.post(f"/api/accesos/empleado/{emp_id}/excepcion",
-             json={"dispositivo_id": p_personal, "modo": "quitar"})
+             json={"dispositivo_id": p_oficina, "modo": "agregar", "motivo": "sigue valiendo"})
+    a = cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                json={"perfil_acceso_id": solo_oficina["id"]}).json()
+    chequear("cambiar de perfil NO borra las excepciones",
+             len(a["excepciones"]) == 1, a["excepciones"])
+    chequear("no informa borrados al cambiar de perfil",
+             a["excepciones_borradas"] == 0, a.get("excepciones_borradas"))
+    chequear("la que quedo sin efecto se marca",
+             a["excepciones"][0]["sin_efecto"] is True, a["excepciones"])
+
+    # Y al sacarle el perfil, esa tambien se va.
     a = cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
                 json={"perfil_acceso_id": None}).json()
-    chequear("una excepcion 'quitar' sin perfil queda sin efecto",
-             a["excepciones"][0]["sin_efecto"] is True, a["excepciones"])
-    chequear("y no abre nada", a["puertas"] == [], a["puertas"])
-    cli.delete(f"/api/accesos/empleado/{emp_id}/excepcion/{p_personal}")
+    chequear("sacar el perfil las borra aunque esten sin efecto",
+             a["excepciones"] == [] and a["excepciones_borradas"] == 1, a)
+
+    # Sin excepciones, sacar el perfil no borra nada y no molesta.
+    a = cli.put(f"/api/accesos/empleado/{emp_id}/perfil",
+                json={"perfil_acceso_id": None}).json()
+    chequear("sin excepciones no informa ningun borrado",
+             a["excepciones_borradas"] == 0, a.get("excepciones_borradas"))
 
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")

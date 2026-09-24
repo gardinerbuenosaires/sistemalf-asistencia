@@ -144,9 +144,20 @@ def ver_empleado(eid: int, _user=Depends(require_permiso("accesos", "ver"))):
 def asignar_perfil(eid: int, data: AsignacionIn,
                    _user=Depends(require_permiso("accesos", "asignar"))):
     """
-    Le pone un perfil a una persona, o se lo saca para que vuelva a heredar el
-    del cargo. Sin perfil y sin cargo, no abre ninguna puerta — que es un caso
-    válido, no un dato faltante.
+    Le pone un perfil a una persona, o se lo saca y entonces no abre nada.
+
+    Sacarle el perfil **borra sus excepciones**, porque una excepción modifica
+    un perfil: dice "como su perfil, pero sin Oficina". Sin perfil no hay nada
+    que modificar, y dejarlas tiene dos problemas. Quedan como residuo que
+    parece decir algo y no dice nada; y si más adelante se le vuelve a poner un
+    perfil, esa excepción vieja vuelve a actuar sin que nadie lo haya decidido.
+
+    Cambiar de un perfil a otro NO las borra: "esta persona no entra a Oficina"
+    es una decisión sobre la persona, no sobre el perfil, y sigue valiendo.
+    Cuando queda sin efecto, se marca.
+
+    La confirmación la hace la pantalla antes de llamar acá, mostrando cuáles
+    se van a borrar con su motivo.
     """
     with db_session() as conn:
         _empleado(conn, eid)
@@ -156,11 +167,18 @@ def asignar_perfil(eid: int, data: AsignacionIn,
             ).fetchone()
             if not existe:
                 raise HTTPException(400, "Ese perfil no existe")
+
+        borradas = 0
+        if data.perfil_acceso_id is None:
+            borradas = conn.execute(
+                "DELETE FROM accesos_excepciones WHERE empleado_id=?", (eid,)
+            ).rowcount
+
         conn.execute(
             "UPDATE empleados SET perfil_acceso_id=? WHERE id=?",
             (data.perfil_acceso_id, eid),
         )
-        return puertas_de(conn, eid)
+        return {**puertas_de(conn, eid), "excepciones_borradas": borradas}
 
 
 @router.post("/empleado/{eid}/excepcion", status_code=201)
@@ -168,6 +186,11 @@ def crear_excepcion(eid: int, data: ExcepcionIn,
                     usuario=Depends(require_permiso("accesos", "asignar"))):
     """
     Le saca o le da una puerta suelta a una persona, sin tocar el perfil.
+
+    Necesita que la persona tenga un perfil: una excepción lo modifica, y sin
+    perfil no hay nada que modificar. Quien necesita una combinación que no
+    existe necesita un perfil nuevo, no una excepción sobre la nada — un perfil
+    llamado "Solo depósito" se entiende leyéndolo.
 
     Una excepción que repite lo que el perfil ya dice se rechaza: no cambia
     nada y solo ensucia la ficha con ruido que después nadie sabe si borrar.
@@ -181,6 +204,13 @@ def crear_excepcion(eid: int, data: ExcepcionIn,
             raise HTTPException(400, "Ese equipo no existe")
 
         actual = puertas_de(conn, eid)
+        if actual["perfil"] is None:
+            raise HTTPException(
+                409,
+                "Esta persona no tiene perfil de acceso, y una excepción modifica "
+                "un perfil. Asignale uno primero, o creá un perfil nuevo si "
+                "necesita una combinación de puertas que todavía no existe.",
+            )
         ya_tiene = data.dispositivo_id in actual["puertas_del_perfil"]
         if data.modo == "agregar" and ya_tiene:
             raise HTTPException(

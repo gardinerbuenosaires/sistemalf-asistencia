@@ -1215,7 +1215,7 @@ async function editarEmpleado(id) {
 // a alguien tiene su propio permiso, así RRHH puede hacerlo sin poder redefinir
 // qué significa cada perfil.
 
-let _accPerfiles = [], _accPuertas = [];
+let _accPerfiles = [], _accPuertas = [], _accDatos = null;
 
 async function cargarAccesos(id) {
   const caja = document.getElementById("accesos-section");
@@ -1235,6 +1235,7 @@ async function cargarAccesos(id) {
 
   _accPerfiles = cat.perfiles;
   _accPuertas = cat.puertas;
+  _accDatos = datos;
   // Sin puertas ni perfiles cargados todavía, la sección solo confundiría.
   if (!_accPuertas.length && !_accPerfiles.length) { caja.innerHTML = ""; return; }
 
@@ -1307,7 +1308,11 @@ async function cargarAccesos(id) {
             : `esta persona no tiene perfil, así que no hay puertas de las que sacarla.`}
           Conviene ${obsoletas === 1 ? 'sacarla' : 'sacarlas'} para que la ficha diga la verdad.</div>` : ''}
         ${excepciones}
-        ${puede && _accPuertas.length ? `
+        ${puede && _accPuertas.length && !datos.perfil ? `
+        <div style="font-size:.8rem;color:#888;margin-top:8px">
+          Para ponerle una excepción primero necesita un perfil: una excepción lo modifica.
+          Si necesita una combinación de puertas que no existe, creá un perfil nuevo.</div>` : ''}
+        ${puede && _accPuertas.length && datos.perfil ? `
         <div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">
           <select id="f-exc-puerta" style="max-width:160px">
             ${_accPuertas.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
@@ -1327,6 +1332,18 @@ async function cargarAccesos(id) {
 }
 
 async function guardarPerfilAcceso(id, valor) {
+  // Sacarle el perfil borra sus excepciones, porque una excepcion modifica un
+  // perfil. Se avisa antes y con nombre y motivo: cada una la escribio alguien.
+  if (!valor && _accDatos && _accDatos.excepciones.length) {
+    const detalle = _accDatos.excepciones.map(x =>
+      `  ${x.modo === 'quitar' ? '− quitar' : '+ agregar'} ${x.dispositivo}` +
+      (x.motivo ? ` ("${x.motivo}")` : '')).join('\n');
+    const n = _accDatos.excepciones.length;
+    if (!confirm(`Sacarle el perfil también va a borrar ${n === 1 ? 'su excepción' : `sus ${n} excepciones`}:\n\n${detalle}\n\n¿Seguir?`)) {
+      return cargarAccesos(id);   // el selector vuelve a lo que estaba
+    }
+  }
+
   const res = await fetch(`/api/accesos/empleado/${id}/perfil`, {
     method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ perfil_acceso_id: valor ? Number(valor) : null }),
@@ -1335,7 +1352,10 @@ async function guardarPerfilAcceso(id, valor) {
     let e = {}; try { e = await res.json(); } catch {}
     toast('Error: ' + (e.detail || 'no se pudo guardar'));
   } else {
-    toast('Perfil de acceso guardado');
+    const d = await res.json();
+    toast(d.excepciones_borradas
+      ? `Perfil guardado · ${d.excepciones_borradas} excepción(es) borrada(s)`
+      : 'Perfil de acceso guardado');
   }
   cargarAccesos(id);
 }

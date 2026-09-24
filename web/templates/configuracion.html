@@ -420,6 +420,8 @@
                 onclick="revisarTodos()">Revisar todos</button>
         <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
                 style="flex-shrink:0;margin-left:8px" onclick="verPlan()">Ver plan de cambios</button>
+        <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                style="flex-shrink:0;margin-left:8px" onclick="verPendientes()">Sin acceso asignado</button>
         <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
                 style="flex-shrink:0;margin-left:8px" onclick="nuevoDispositivo()">+ Nuevo equipo</button>
       </div>
@@ -459,21 +461,18 @@
         <div>
           <div class="section-title">Perfil que propone cada cargo</div>
           <div class="section-desc" style="margin-bottom:0">
-            El cargo <b>propone</b> un perfil, no se lo pone a nadie. Elegirlo acá no cambia
-            nada: hay que apretar <b>Asignar</b>, y eso les carga ese perfil a los activos de ese
-            cargo que todavía no tienen uno propio. Así cambiarle el cargo a alguien nunca le
-            cambia las puertas por su cuenta. <b>Sin perfil</b> es a cuántos les llegaría.
-            <br><b>Nada de esto toca los lectores.</b> Asignar es en el sistema; lo que llega a
-            los equipos se revisa aparte, en «Ver plan de cambios».
+            Qué acceso le corresponde a cada puesto. Es una anotación: <b>no le cambia el
+            acceso a nadie</b>, ni ahora ni cuando alguien cambie de cargo. Lo único que hace es
+            aparecer como sugerencia en el legajo de quien todavía no tenga perfil, para no tener
+            que acordarse de memoria qué abre un cocinero.
+            El acceso de una persona se cambia siempre desde su legajo.
           </div>
         </div>
       </div>
       <table style="margin-top:16px;font-size:.85rem">
         <thead><tr>
           <th style="text-align:left">Cargo</th>
-          <th style="width:230px">Perfil que propone</th>
-          <th style="width:90px;text-align:center">Sin perfil</th>
-          <th style="width:110px"></th>
+          <th style="width:260px">Perfil que propone</th>
         </tr></thead>
         <tbody id="tabla-perfil-cargo"></tbody>
       </table>
@@ -2505,6 +2504,77 @@ async function eliminarDispositivo(id) {
   toast('Error: ' + (e.detail || 'no se pudo borrar'));
 }
 
+// ── Sin acceso asignado ───────────────────────────────────────────────────────
+// Un reporte, no una pantalla de accion: dice quienes quedaron sin acceso y
+// lleva al legajo de cada uno, que es el unico lugar donde se cambia. Sirve
+// para detectar el olvido —alguien entro y nadie le asigno nada— que es el
+// mismo modo de falla que el egresado que sigue cargado en una puerta.
+
+async function verPendientes() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:760px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Sin acceso asignado</div>
+      <div style="font-size:.8rem;color:#888;margin-top:2px">
+        Activos que hoy no abren ninguna puerta. Puede estar bien, o puede ser alguien
+        a quien nadie le asignó el acceso todavía.</div>
+      <div id="pend-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">Cargando…</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let gente;
+  try {
+    const res = await fetch('/api/accesos/sin-perfil');
+    if (!res.ok) throw new Error();
+    gente = await res.json();
+  } catch {
+    document.getElementById('pend-cuerpo').innerHTML =
+      '<span style="color:#c0392b">No se pudo cargar</span>';
+    return;
+  }
+
+  const caja = document.getElementById('pend-cuerpo');
+  if (!gente.length) {
+    caja.innerHTML = `<div style="background:#dcede2;color:#2e7d4f;padding:10px 12px;border-radius:5px;font-weight:600">
+      Todos los activos tienen un perfil asignado.</div>`;
+    return;
+  }
+
+  const conSugerencia = gente.filter(p => p.sugerencia_id).length;
+  const filas = gente.map(p => `
+    <tr>
+      <td style="padding:6px 10px">
+        <a href="/empleados?id=${p.id}" style="color:#1b5e8c;text-decoration:none;font-weight:600">${_esc(p.apellido)}, ${_esc(p.nombre)}</a>
+        ${p.user_id ? `<span style="font-family:monospace;color:#bbb;font-size:.78rem"> ${_esc(p.user_id)}</span>` : ''}</td>
+      <td style="padding:6px 10px;color:${p.cargo ? '#555' : '#bbb'}">${_esc(p.cargo) || 'sin cargo'}</td>
+      <td style="padding:6px 10px">
+        ${p.sugerencia_nombre
+          ? `<span style="color:#24506e">su cargo propone <b>${_esc(p.sugerencia_nombre)}</b></span>`
+          : '<span style="color:#999">su cargo no propone ninguno</span>'}</td>
+    </tr>`).join('');
+
+  caja.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="background:#f6e9ce;color:#8a5d06;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${gente.length} sin acceso</span>
+      ${conSugerencia ? `<span style="font-size:.82rem;color:#555">${conSugerencia} con sugerencia de su cargo</span>` : ''}
+    </div>
+    <div style="overflow-y:auto;max-height:56vh;margin-top:12px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa"><tr>
+          <th style="text-align:left;padding:6px 10px">Empleado</th>
+          <th style="text-align:left;padding:6px 10px">Cargo</th>
+          <th style="text-align:left;padding:6px 10px">Sugerencia</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <div style="font-size:.78rem;color:#999;margin-top:10px">
+      El acceso se asigna en el legajo de cada persona. Hacé clic en un nombre para abrirlo.</div>`;
+}
+
 // ── Plan de cambios ───────────────────────────────────────────────────────────
 // Lo que habria que cambiar en cada lector para que refleje la politica. No
 // escribe nada: el boton de aplicar no existe hasta que escribir en los equipos
@@ -2628,26 +2698,7 @@ function _renderPerfilPorCargo() {
           <option value="">— Sin acceso —</option>
           ${activos.map(p => `<option value="${p.id}"${c.perfil_acceso_id === p.id ? ' selected' : ''}>${_esc(p.nombre)}</option>`).join('')}
         </select></td>
-      <td style="text-align:center;color:${c.heredan ? '#333' : '#bbb'}">${c.heredan}</td>
-      <td>${puede && c.perfil_acceso_id && c.heredan
-        ? `<button class="btn btn-sm btn-primary" onclick="aplicarPerfilCargo(${c.id}, '${_esc(c.nombre).replace(/'/g, "\\'")}', ${c.heredan})">Asignar a ${c.heredan}</button>`
-        : ''}</td>
     </tr>`).join('');
-}
-
-async function aplicarPerfilCargo(cargoId, nombre, cuantos) {
-  // Se confirma con el numero adelante: es una operacion en masa sobre el
-  // acceso de gente real, y el alcance tiene que verse antes, no despues.
-  if (!confirm(`Asignar el perfil de «${nombre}» a ${cuantos} empleado(s) que hoy no tienen ninguno?\n\nA quien ya tenga perfil propio no se lo toca.
-Esto se guarda en el sistema: no se escribe nada en los lectores.`)) return;
-  const res = await fetch(`/api/accesos/cargo/${cargoId}/aplicar`, { method: 'POST' });
-  if (!res.ok) {
-    let e = {}; try { e = await res.json(); } catch {}
-    return toast('Error: ' + (e.detail || 'no se pudo aplicar'));
-  }
-  const d = await res.json();
-  toast(`${d.asignados} empleado(s) quedaron con ese perfil en el sistema`);
-  cargarPerfiles();
 }
 
 async function perfilDeCargo(cargoId, valor) {
@@ -2660,9 +2711,11 @@ async function perfilDeCargo(cargoId, valor) {
     toast('Error: ' + (e.detail || 'no se pudo guardar'));
   } else {
     const d = await res.json();
+    // Nadie lo hereda: el numero dice a cuantos les va a aparecer como
+    // sugerencia en su legajo, que es lo unico que hace esta anotacion.
     toast(d.heredan
-      ? `Guardado · ${d.heredan} empleado(s) de este cargo lo heredan`
-      : 'Guardado · nadie lo hereda todavía');
+      ? `Guardado · ${d.heredan} empleado(s) de este cargo lo van a ver sugerido`
+      : 'Guardado');
   }
   cargarPerfiles();
 }

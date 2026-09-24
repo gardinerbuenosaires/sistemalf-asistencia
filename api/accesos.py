@@ -303,8 +303,10 @@ def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     sistema no puede distinguirlos, pero sí ponerlos en una lista en vez de que
     aparezcan el día que la persona se queda afuera.
 
-    Los que tienen un cargo que propone algo vienen con esa sugerencia, para
-    aplicarla de un click.
+    Los que tienen un cargo que propone algo vienen con esa sugerencia, y van
+    al final: resolverlos es aceptar lo que ya está escrito. Arriba quedan los
+    que no tienen ninguna, que son los que piden una decisión y por eso los que
+    más fácil se pasan por alto.
     """
     with db_session() as conn:
         filas = conn.execute(
@@ -316,37 +318,6 @@ def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
                  LEFT JOIN cargos c ON c.id = e.cargo_id
                  LEFT JOIN perfiles_acceso p ON p.id = c.perfil_acceso_id
                 WHERE e.activo = 1 AND e.perfil_acceso_id IS NULL
-             ORDER BY (c.perfil_acceso_id IS NULL), e.apellido, e.nombre"""
+             ORDER BY (c.perfil_acceso_id IS NOT NULL), e.apellido, e.nombre"""
         ).fetchall()
     return [dict(f) for f in filas]
-
-
-@router.post("/cargo/{cid}/aplicar")
-def aplicar_perfil_del_cargo(cid: int,
-                             _user=Depends(require_permiso("accesos", "asignar"))):
-    """
-    Le pone el perfil del cargo a los activos de ese cargo que no tienen uno.
-
-    Es lo que reemplaza a la herencia automática: el mismo efecto, pero lo
-    decide alguien con permiso y sabiendo a cuántos alcanza.
-
-    No toca a quien ya tiene perfil propio. Esa persona tiene una decisión
-    tomada —a veces junto con excepciones— y pisarla en masa borraría
-    justamente lo que alguien se tomó el trabajo de definir.
-    """
-    with db_session() as conn:
-        cargo = conn.execute(
-            "SELECT id, nombre, perfil_acceso_id FROM cargos WHERE id=?", (cid,)
-        ).fetchone()
-        if not cargo:
-            raise HTTPException(404, "Cargo no encontrado")
-        if not cargo["perfil_acceso_id"]:
-            raise HTTPException(
-                400, f"El cargo «{cargo['nombre']}» no propone ningún perfil todavía")
-
-        cur = conn.execute(
-            """UPDATE empleados SET perfil_acceso_id = ?
-                WHERE cargo_id = ? AND activo = 1 AND perfil_acceso_id IS NULL""",
-            (cargo["perfil_acceso_id"], cid),
-        )
-        return {"ok": True, "asignados": cur.rowcount}

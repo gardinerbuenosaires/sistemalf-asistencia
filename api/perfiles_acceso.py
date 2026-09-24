@@ -97,14 +97,13 @@ def listar(_user=Depends(require_permiso("accesos", "ver"))):
                     WHERE es_acceso = 1 ORDER BY orden, id"""
             )
         ]
-        # `heredan` = los activos de ese cargo sin perfil propio, o sea a
-        # quiénes les cambia el acceso si se toca el perfil del cargo.
+        # Solo qué propone cada cargo. Cuántos no tienen perfil se mira en la
+        # lista de pendientes, que además dice quiénes y lleva a su legajo:
+        # un número suelto acá no se puede accionar y solo invita a confundirlo
+        # con algo que hay que resolver desde esta pantalla.
         cargos = [
             dict(r) for r in conn.execute(
                 """SELECT c.id, c.nombre, c.perfil_acceso_id,
-                          (SELECT COUNT(*) FROM empleados e
-                            WHERE e.cargo_id = c.id AND e.activo = 1
-                              AND e.perfil_acceso_id IS NULL) AS heredan,
                           (SELECT COUNT(*) FROM empleados e
                             WHERE e.cargo_id = c.id AND e.activo = 1) AS empleados
                      FROM cargos c ORDER BY c.nombre"""

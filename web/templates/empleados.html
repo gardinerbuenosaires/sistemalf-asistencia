@@ -1271,14 +1271,16 @@ async function cargarAccesos(id) {
           <label>Perfil de acceso</label>
           <select id="f-perfil-acceso" ${puede ? '' : 'disabled'}
                   onchange="guardarPerfilAcceso(${id}, this.value)">
-            <option value="">— Sin acceso a ninguna puerta —</option>
+            <option value="">— Sin perfil —</option>
             ${_accPerfiles.filter(p => p.activo).map(p =>
               `<option value="${p.id}"${p.id === perfilActual ? ' selected' : ''}>${p.nombre}</option>`).join('')}
           </select>
           <div style="font-size:.78rem;color:#888;margin-top:4px">
             ${datos.perfil
               ? 'El acceso sale de este perfil. Cambiarle el cargo no lo modifica.'
-              : 'Hoy no abre ninguna puerta.'}
+              : datos.puertas.length
+                ? `Sin perfil, pero abre ${datos.puertas.length} puerta(s) por excepción. Sacá la excepción si no tiene que abrir nada.`
+                : 'Hoy no abre ninguna puerta.'}
           </div>
         </div>
       </div>

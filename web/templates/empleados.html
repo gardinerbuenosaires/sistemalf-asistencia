@@ -1383,6 +1383,11 @@ async function verificarEnLectores(id) {
 
   const r = d.resumen;
   const problemas = r.falta + r.sin_huella + r.sobra;
+  // Sin perfil, el sistema no sabe qué le corresponde, así que TODO lo que tenga
+  // cargado figura como que sobra. Es correcto y engaña: leído sin contexto
+  // parece que hay que sacar a la persona de todas las puertas, cuando lo que
+  // falta es decidir qué le toca.
+  const sinPerfil = !d.ficha.perfil && r.sobra > 0;
   const filas = d.equipos.map(e => {
     const est = _ACC_ESTADOS[e.estado];
     // Cargado sin poder leer las huellas no es lo mismo que cargado sin huella.
@@ -1427,6 +1432,11 @@ async function verificarEnLectores(id) {
       ${r.sin_huella_maestro ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:5px">
         En el equipo de asistencia no tiene huella, así que no hay ninguna huella
         para copiar a las puertas. Esto se arregla primero: hay que enrolarlo ahí.</div>` : ''}
+      ${sinPerfil ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:8px 11px;font-size:.8rem;color:#6b5a26;margin-top:5px">
+        Esta persona no tiene perfil, así que el sistema todavía no sabe qué le
+        corresponde: por eso todo lo que los equipos tienen cargado figura como
+        «SOBRA». No significa que haya que sacarla de esas puertas — significa que
+        falta decidir su perfil. Asignándoselo, estas filas se acomodan solas.</div>` : ''}
       <div style="margin-top:7px">${filas}</div>
       <div style="font-size:.74rem;color:#aaa;margin-top:6px">
         Leído recién de los equipos. No se cambió nada en ninguno.</div>

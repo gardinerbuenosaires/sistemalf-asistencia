@@ -3092,46 +3092,94 @@ async function verPadron(id) {
   const alertas = [
     chip(r.de_baja, 'dados de baja', '#f6dedc', '#b3261e'),
     chip(r.desconocidos, 'no están en el sistema', '#f6e9ce', '#8a5d06'),
+    chip(r.sin_huella, 'sin huella', '#f6dedc', '#b3261e'),
     chip(r.nombre_distinto, 'con otro nombre', '#e8e0f0', '#5b3a8a'),
   ].filter(Boolean).join(' ');
 
-  const filas = data.filas.map(f => {
-    const e = _ESTADOS[f.estado];
-    const quien = f.empleado
-      ? _esc(f.empleado.nombre) + (f.empleado.fecha_egreso
-          ? `<div style="font-size:.75rem;color:#b3261e">egreso ${_esc(f.empleado.fecha_egreso)}</div>` : '')
-      : '<span style="color:#bbb">—</span>';
-    return `<tr style="${e.fondo ? `background:${e.fondo}` : ''}">
-      <td style="font-family:monospace">${_esc(f.user_id)}</td>
-      <td>${_esc(f.nombre) || '<span style="color:#bbb">sin nombre</span>'}</td>
-      <td>${quien}</td>
-      <td style="color:${e.color};font-weight:${e.texto ? 600 : 400};font-size:.8rem">
-        ${e.texto}${f.nombre_distinto ? '<div style="color:#5b3a8a;font-size:.75rem">nombre distinto al legajo</div>' : ''}</td>
-      <td style="text-align:center;color:#888">${f.grupo ?? '—'}</td></tr>`;
-  }).join('');
+  // Se guardan para poder filtrar sin volver a leer el equipo: la lectura tarda
+  // segundos y buscar a alguien no puede costar otra consulta al lector.
+  _padronFilas = data.filas;
+  _padronHuellas = data.huellas_leidas;
 
+  const esPuerta = d && d.es_acceso;
   cuerpo.innerHTML = `
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
-      <span style="font-size:.85rem;color:#333"><b>${r.total}</b> cargados · contestó por ${data.transporte.toUpperCase()}</span>
+      <span style="font-size:.85rem;color:#333"><b id="padron-contador">${r.total} cargados</b> · contestó por ${data.transporte.toUpperCase()}</span>
       ${alertas || '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo en orden</span>'}
     </div>
+    ${r.sin_huella ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:7px 10px;font-size:.8rem;color:#8c1d18;margin:7px 0">
+      ${r.sin_huella === 1 ? 'Hay una persona cargada' : `Hay ${r.sin_huella} personas cargadas`} sin huella en este equipo.
+      ${esPuerta ? 'Figuran en la lista y no abren la puerta.'
+                 : 'Figuran en la lista y no pueden fichar.'}</div>` : ''}
     ${r.nombre_distinto ? `<div style="font-size:.78rem;color:#666;margin:6px 0">
       Los nombres se comparan contra el legajo. Este equipo los guarda cortados a
       ${data.nombre_limite} caracteres, y esos cortes no se marcan: solo aparece lo que
       realmente no coincide, que suele ser un número reutilizado con el empleado anterior adentro.</div>` : ''}
-    <div style="overflow-y:auto;max-height:52vh;margin-top:10px;border:1px solid #eee;border-radius:4px">
+    <input type="text" id="padron-buscar" oninput="filtrarPadron()" autocomplete="off"
+           placeholder="Buscar por número o nombre"
+           style="margin-top:10px;width:100%;padding:7px 10px;font-size:.85rem;border:1px solid #ddd;border-radius:4px">
+    <div style="overflow-y:auto;max-height:52vh;margin-top:8px;border:1px solid #eee;border-radius:4px">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem">
         <thead style="position:sticky;top:0;background:#fafafa">
           <tr><th style="text-align:left;padding:6px 10px">N°</th>
               <th style="text-align:left;padding:6px 10px">En el lector</th>
               <th style="text-align:left;padding:6px 10px">En el sistema</th>
               <th style="text-align:left;padding:6px 10px">Estado</th>
+              ${_padronHuellas ? '<th style="padding:6px 10px">Huellas</th>' : ''}
               <th style="padding:6px 10px">Grupo</th></tr>
         </thead>
-        <tbody>${filas}</tbody>
+        <tbody id="padron-tbody"></tbody>
       </table>
-    </div>`;
+    </div>
+    <div style="font-size:.74rem;color:#aaa;margin-top:6px">
+      Leído recién del equipo. No se cambió nada en él.</div>`;
+  filtrarPadron();
+  document.getElementById('padron-buscar')?.focus();
   cargarDispositivos();
+}
+
+let _padronFilas = [], _padronHuellas = false;
+
+function _padronFilaHtml(f) {
+  const e = _ESTADOS[f.estado];
+  const quien = f.empleado
+    ? _esc(f.empleado.nombre) + (f.empleado.fecha_egreso
+        ? `<div style="font-size:.75rem;color:#b3261e">egreso ${_esc(f.empleado.fecha_egreso)}</div>` : '')
+    : '<span style="color:#bbb">—</span>';
+  // Sin huella no abre, aunque figure en la lista. Que no se hayan podido leer
+  // las huellas es otra cosa y no se dibuja igual: confundirlos manda a recargar
+  // gente que estaba bien.
+  const huella = !_padronHuellas ? ''
+    : f.huellas === null || f.huellas === undefined
+      ? '<td style="text-align:center;color:#b98900;font-size:.78rem">no se pudo leer</td>'
+    : f.huellas === 0
+      ? '<td style="text-align:center;color:#b3261e;font-weight:600;font-size:.8rem">sin huella</td>'
+      : `<td style="text-align:center;color:#888">${f.huellas}</td>`;
+  return `<tr style="${e.fondo ? `background:${e.fondo}` : (f.huellas === 0 ? 'background:#fdf0ee' : '')}">
+    <td style="font-family:monospace">${_esc(f.user_id)}</td>
+    <td>${_esc(f.nombre) || '<span style="color:#bbb">sin nombre</span>'}</td>
+    <td>${quien}</td>
+    <td style="color:${e.color};font-weight:${e.texto ? 600 : 400};font-size:.8rem">
+      ${e.texto}${f.nombre_distinto ? '<div style="color:#5b3a8a;font-size:.75rem">nombre distinto al legajo</div>' : ''}</td>
+    ${huella}
+    <td style="text-align:center;color:#888">${f.grupo ?? '—'}</td></tr>`;
+}
+
+// Buscar por número o por nombre, del lector o del legajo: cuando alguien
+// pregunta "¿estoy cargado?" da el número o el apellido, cualquiera de los dos.
+function filtrarPadron() {
+  const q = (document.getElementById('padron-buscar')?.value || '').trim().toLowerCase();
+  const filas = !q ? _padronFilas : _padronFilas.filter(f =>
+    String(f.user_id).toLowerCase().includes(q)
+    || (f.nombre || '').toLowerCase().includes(q)
+    || (f.empleado?.nombre || '').toLowerCase().includes(q));
+  const tb = document.getElementById('padron-tbody');
+  if (tb) tb.innerHTML = filas.length
+    ? filas.map(_padronFilaHtml).join('')
+    : `<tr><td colspan="6" style="padding:14px;color:#999;text-align:center">
+         Nadie coincide con «${_esc(q)}» en este equipo.</td></tr>`;
+  const c = document.getElementById('padron-contador');
+  if (c) c.textContent = q ? `${filas.length} de ${_padronFilas.length}` : `${_padronFilas.length} cargados`;
 }
 
 // ── Datos fiscales (módulo de uniformes) ──────────────────────────────────────

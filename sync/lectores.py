@@ -163,8 +163,13 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
     reutilizado, con el empleado anterior todavía cargado.
     """
     limite = max((len(u["nombre"]) for u in usuarios), default=0)
+    # Las huellas son una lectura aparte y no siempre se piden. Cuando no se
+    # pidieron, el conteo va en None: informar "0 sin huella" sin haberlas leido
+    # es decir que todos pueden abrir sin haberlo verificado.
+    huellas_leidas = any("huellas" in u for u in usuarios)
     filas, resumen = [], {"total": len(usuarios), "de_baja": 0, "desconocidos": 0,
-                          "nombre_distinto": 0, "ok": 0}
+                          "nombre_distinto": 0, "ok": 0,
+                          "sin_huella": 0 if huellas_leidas else None}
 
     for u in usuarios:
         emp = empleados.get(u["user_id"])
@@ -194,10 +199,17 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
                 fila["nombre_distinto"] = True
                 resumen["nombre_distinto"] += 1
 
+        # Cargado sin huella: figura en la lista y no abre igual. Se cuenta
+        # aparte de los estados porque no es un problema de identidad —la
+        # persona es quien dice ser— sino de que la carga quedó a medias.
+        if u.get("huellas") == 0:
+            resumen["sin_huella"] += 1
+
         filas.append(fila)
 
     # Primero lo que hay que mirar: las bajas arriba de todo, después los
     # desconocidos, y el resto por número.
     orden = {"de_baja": 0, "desconocido": 1, "ok": 2}
     filas.sort(key=lambda f: (orden[f["estado"]], len(f["user_id"]), f["user_id"]))
-    return {"resumen": resumen, "filas": filas, "nombre_limite": limite}
+    return {"resumen": resumen, "filas": filas, "nombre_limite": limite,
+            "huellas_leidas": huellas_leidas}

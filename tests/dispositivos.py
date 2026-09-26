@@ -1330,6 +1330,35 @@ chequear("los problemas se muestran antes que lo que esta bien",
 chequear("una puerta que le toca y el equipo no lo tiene: falta",
          {e["id"]: e["estado"] for e in _v4["equipos"]}[3] == "falta", _v4["equipos"])
 
+# El padron de un equipo: la consulta de siempre, ahora con las huellas. Es lo
+# que se usaba en Enterprise —"quien esta cargado en esta terminal"— y sin la
+# huella dice quien esta cargado, no quien puede abrir.
+from sync.lectores import comparar_con_empleados
+
+_emps = {"10": {"id": 1, "nombre": "Ana", "apellido": "Gomez", "activo": 1,
+                "tipo": "mensual", "fecha_egreso": None},
+         "11": {"id": 2, "nombre": "Luis", "apellido": "Diaz", "activo": 1,
+                "tipo": "mensual", "fecha_egreso": None}}
+_pad = [{"uid": 1, "user_id": "10", "nombre": "GOMEZ", "privilegio": 0, "tarjeta": 0,
+         "grupo": "1", "huellas": 2},
+        {"uid": 2, "user_id": "11", "nombre": "DIAZ", "privilegio": 0, "tarjeta": 0,
+         "grupo": "1", "huellas": 0}]
+_cmp = comparar_con_empleados(_pad, _emps)
+chequear("el padron cuenta a los cargados sin huella",
+         _cmp["resumen"]["sin_huella"] == 1, _cmp["resumen"])
+chequear("y avisa que las huellas se leyeron",
+         _cmp["huellas_leidas"] is True, _cmp)
+chequear("la huella viaja en cada fila",
+         {f["user_id"]: f["huellas"] for f in _cmp["filas"]} == {"10": 2, "11": 0},
+         _cmp["filas"])
+# Sin pedir las huellas no se puede decir que nadie le falta: seria afirmar que
+# todos pueden abrir sin haberlo verificado.
+_sin = comparar_con_empleados([{k: v for k, v in u.items() if k != "huellas"}
+                               for u in _pad], _emps)
+chequear("sin leer las huellas el conteo va en None, no en cero",
+         _sin["resumen"]["sin_huella"] is None, _sin["resumen"])
+chequear("y lo dice", _sin["huellas_leidas"] is False, _sin)
+
 # El endpoint, con la lectura interceptada para no salir a la red.
 _c7 = sqlite3.connect(DB)
 _fila = _c7.execute(

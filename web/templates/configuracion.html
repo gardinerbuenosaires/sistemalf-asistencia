@@ -2362,7 +2362,7 @@ async function cargarDispositivos() {
       <td style="font-size:.8rem">${equipo}</td>
       <td>
         <button class="btn btn-sm btn-secondary" onclick="verPadron(${d.id})">Padrón</button>
-        ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="probarDispositivo(${d.id})">Probar</button>` : ''}
+        ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="probarDispositivo(${d.id}, this)">Probar</button>` : ''}
         ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-primary" style="margin-left:5px" onclick="editarDispositivo(${d.id})">Editar</button>` : ''}
         ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarDispositivo(${d.id})">Borrar</button>` : ''}
       </td></tr>`;
@@ -2487,18 +2487,38 @@ async function _guardarDispositivo(id, modal) {
   document.getElementById('d-error').textContent = detalle;
 }
 
-async function probarDispositivo(id) {
-  toast('Probando...');
-  const res = await fetch(`/api/dispositivos/${id}/probar`, { method: 'POST' });
-  let data = {};
-  try { data = await res.json(); } catch {}
-  if (!res.ok) return toast('Error: ' + (data.detail || 'no se pudo probar'));
-  if (!data.ok) {
-    return toast(`No contesta — ${data.error || 'sin respuesta'}`);
+async function probarDispositivo(id, boton) {
+  // El estado va en el boton y no en un aviso: la prueba puede tardar 20
+  // segundos —intenta TCP y despues reintenta por UDP— y un aviso que dura
+  // tres deja el resto del tiempo sin saber si esta pasando algo. Ademas
+  // deshabilitarlo evita el segundo click, que abriria otra conexion al mismo
+  // equipo mientras la primera sigue esperando.
+  let textoOriginal, contador;
+  if (boton) {
+    textoOriginal = boton.textContent;
+    boton.disabled = true;
+    let seg = 0;
+    boton.textContent = 'Probando…';
+    contador = setInterval(() => { seg++; boton.textContent = `Probando… ${seg}s`; }, 1000);
   }
-  toast(`Contesta por ${data.transporte.toUpperCase()} · ${data.modelo || data.plataforma || 'equipo'}`
-        + (data.algoritmo_huella ? ` · huella v${data.algoritmo_huella}` : ''));
-  cargarDispositivos();
+  try {
+    const res = await fetch(`/api/dispositivos/${id}/probar`, { method: 'POST' });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    if (!res.ok) return toast('Error: ' + (data.detail || 'no se pudo probar'));
+    if (!data.ok) return toast(`No contesta — ${data.error || 'sin respuesta'}`, 6000);
+    toast(`Contesta por ${data.transporte.toUpperCase()} · ${data.modelo || data.plataforma || 'equipo'}`
+          + (data.algoritmo_huella ? ` · huella v${data.algoritmo_huella}` : ''), 6000);
+    cargarDispositivos();
+  } finally {
+    // Va en finally porque los returns de arriba tambien salen por aca: sin
+    // esto, un equipo que no contesta dejaba el boton clavado en "Probando".
+    if (boton) {
+      clearInterval(contador);
+      boton.disabled = false;
+      boton.textContent = textoOriginal;
+    }
+  }
 }
 
 async function eliminarDispositivo(id) {

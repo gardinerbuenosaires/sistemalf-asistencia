@@ -23,9 +23,11 @@
     .\scripts\probar_accesos.ps1 -Puerto 8002
 #>
 param(
-    [string]$Base   = "",
-    [string]$Origen = "C:\ProgramData\SistemAlf\fichajes.db",
-    [int]   $Puerto = 8001
+    [string]$Base    = "",
+    [string]$Origen  = "C:\ProgramData\SistemAlf\fichajes.db",
+    [string]$CodigoProd = "C:\SistemAlf",
+    [int]   $Puerto  = 8001,
+    [switch]$ConFotos
 )
 
 $ErrorActionPreference = "Stop"
@@ -93,6 +95,30 @@ if ((Test-Path $intrusa) -and ((Get-Item $intrusa).Length / 1MB -lt 1)) {
     Escribir "    $intrusa"
     Escribir "  Se creo sola al arrancar sin DB_PATH. No se usa; conviene borrarla" "Yellow"
     Escribir "  para que nadie la confunda con la de produccion." "Yellow"
+}
+
+# La base guarda la RUTA del logo, no la imagen: el archivo vive al lado del
+# codigo, en web\static\uploads, que esta en .gitignore y por eso llega vacia.
+# Sin esto la pantalla se ve sin logo y parece que algo esta roto.
+$logoProd = Join-Path $CodigoProd "web\static\uploads"
+$logoAca  = Join-Path $Raiz "web\static\uploads"
+if (Test-Path $logoProd) {
+    if (-not (Test-Path $logoAca)) { New-Item -ItemType Directory -Path $logoAca -Force | Out-Null }
+    foreach ($f in Get-ChildItem $logoProd -File -ErrorAction SilentlyContinue) {
+        $destino = Join-Path $logoAca $f.Name
+        if (-not (Test-Path $destino)) { Copy-Item $f.FullName $destino }
+    }
+}
+
+# Las fotos de empleados se buscan en la carpeta de la base, y la de pruebas
+# esta en otro lado. No hacen falta para probar accesos, asi que solo se copian
+# si se piden: son cientos de archivos y son fotos de gente real.
+$fotosProd = Join-Path (Split-Path -Parent $Origen) "fotos"
+$fotosAca  = Join-Path $carpetaBase "fotos"
+if ($ConFotos -and (Test-Path $fotosProd) -and -not (Test-Path $fotosAca)) {
+    Escribir ""
+    Escribir "  Copiando las fotos de empleados..." "Gray"
+    Copy-Item $fotosProd $fotosAca -Recurse
 }
 
 # Cuantos empleados tiene: es la confirmacion de que es la base de verdad.

@@ -779,9 +779,18 @@ if emp_id:
         chequear("un egresado no figura como pendiente",
                  all(x["id"] != _baja2[0] for x in cli.get("/api/accesos/sin-perfil").json()))
 
-print("\n=== LA ASIGNACION MASIVA POR CARGO YA NO EXISTE ===")
+print("\n=== EL CARGO NO DA ACCESO POR SI SOLO ===")
+# Lo que se elimino fue que el cargo DIERA acceso: con eso, cambiarle el cargo a
+# alguien le cambiaba las puertas, y eso lo puede hacer quien edita empleados sin
+# permiso de accesos. Asignar perfiles POR cargo si existe (mas abajo), pero ahi
+# el cargo solo elige a quien y no queda guardada ninguna relacion.
 r = cli.post(f"/api/accesos/cargo/{cargo_id}/aplicar")
-chequear("el endpoint de aplicar por cargo fue eliminado", r.status_code == 404, r.status_code)
+chequear("el viejo endpoint por cargo no existe mas", r.status_code == 404, r.status_code)
+_c_ac = sqlite3.connect(DB)
+_cols_ac = {c[1] for c in _c_ac.execute("PRAGMA table_info(cargos)").fetchall()}
+_c_ac.close()
+chequear("y el cargo no guarda ningun perfil",
+         not any("perfil" in c for c in _cols_ac), _cols_ac)
 
 
 
@@ -1523,6 +1532,125 @@ chequear("estar con huella no marca nada",
 chequear("sin poder leer el maestro no se opina",
          _falta_huella("1", None, None) == (False, None),
          _falta_huella("1", None, None))
+
+
+print("\n=== ASIGNAR PERFILES POR CARGO ===")
+# El arranque real: nadie tiene perfil y son cientos de personas. El cargo se usa
+# para elegir a quien, y NO queda guardada ninguna relacion cargo -> perfil: eso
+# es justo lo que se saco cuando el cargo daba acceso.
+
+r = cli.get("/api/accesos/por-cargo")
+chequear("GET por-cargo responde 200", r.status_code == 200, r.text[:200])
+_pc = r.json()
+chequear("trae los cargos, los perfiles y los totales",
+         all(k in _pc for k in ("cargos", "perfiles", "activos", "sin_perfil")), list(_pc))
+
+_c10 = sqlite3.connect(DB)
+_activos = _c10.execute("SELECT COUNT(*) FROM empleados WHERE activo=1").fetchone()[0]
+_c10.close()
+chequear("cuenta a todos los activos una sola vez",
+         sum(c["total"] for c in _pc["cargos"]) == _activos,
+         (sum(c["total"] for c in _pc["cargos"]), _activos))
+chequear("ofrece solo perfiles activos",
+         {p["id"] for p in _pc["perfiles"]} <= {todas["id"], menos_oficina["id"], solo_oficina["id"]},
+         _pc["perfiles"])
+
+# Un cargo con gente, para probar contra algo real.
+_elegido = next((c for c in _pc["cargos"] if c["cargo_id"] is not None and c["sin_perfil"] > 1), None)
+chequear("hay un cargo con gente sin perfil para probar", _elegido is not None, _pc["cargos"][:4])
+
+if _elegido:
+    _cid, _faltan = _elegido["cargo_id"], _elegido["sin_perfil"]
+    r = cli.post("/api/accesos/por-cargo/aplicar",
+                 json={"cargo_id": _cid, "perfil_acceso_id": todas["id"]})
+    chequear("aplicar responde 200", r.status_code == 200, r.text[:200])
+    _res = r.json()
+    chequear("asigna a todos los que no tenian perfil",
+             _res["asignados"] == _faltan, (_res, _faltan))
+
+    # Idempotente: volver a aplicarlo no cambia nada y no pisa a nadie.
+    r2 = cli.post("/api/accesos/por-cargo/aplicar",
+                  json={"cargo_id": _cid, "perfil_acceso_id": menos_oficina["id"]})
+    chequear("sin pisar, no toca a quien ya tiene perfil",
+             r2.json()["asignados"] == 0, r2.json())
+    _pc2 = cli.get("/api/accesos/por-cargo").json()
+    _e2 = next(c for c in _pc2["cargos"] if c["cargo_id"] == _cid)
+    chequear("y el perfil de la gente quedo como estaba",
+             [p["id"] for p in _e2["perfiles_actuales"]] == [todas["id"]],
+             _e2["perfiles_actuales"])
+    chequear("el cargo ya no tiene gente sin perfil", _e2["sin_perfil"] == 0, _e2)
+
+    # Pisar existe porque el caso real es asignarle el perfil equivocado a un
+    # cargo entero. Sin eso, el unico camino serian treinta legajos de a uno.
+    r3 = cli.post("/api/accesos/por-cargo/aplicar",
+                  json={"cargo_id": _cid, "perfil_acceso_id": menos_oficina["id"],
+                        "pisar": True})
+    chequear("con pisar corrige el perfil equivocado",
+             r3.json()["asignados"] == _elegido["total"], (r3.json(), _elegido["total"]))
+    chequear("y dice a cuantos les cambio el que ya tenian",
+             r3.json()["pisados"] == _faltan, r3.json())
+    _pc3 = cli.get("/api/accesos/por-cargo").json()
+    _e3 = next(c for c in _pc3["cargos"] if c["cargo_id"] == _cid)
+    chequear("la gente quedo con el perfil nuevo",
+             [p["id"] for p in _e3["perfiles_actuales"]] == [menos_oficina["id"]],
+             _e3["perfiles_actuales"])
+
+    # Lo que NO tiene que pasar: que quede guardada una relacion cargo->perfil.
+    # Si quedara, cambiarle el cargo a alguien le cambiaria las puertas, y eso lo
+    # puede hacer quien edita empleados sin permiso de accesos.
+    _c11 = sqlite3.connect(DB)
+    _cols = {c[1] for c in _c11.execute("PRAGMA table_info(cargos)").fetchall()}
+    _c11.close()
+    chequear("la tabla cargos no guarda ningun perfil",
+             not any("perfil" in c for c in _cols), _cols)
+
+# Un egresado no recibe perfil: no tiene que abrir nada.
+_c12 = sqlite3.connect(DB)
+_baja = _c12.execute(
+    """SELECT id, cargo_id FROM empleados WHERE activo=0 AND cargo_id IS NOT NULL
+        LIMIT 1""").fetchone()
+_c12.close()
+if _baja:
+    cli.post("/api/accesos/por-cargo/aplicar",
+             json={"cargo_id": _baja[1], "perfil_acceso_id": todas["id"], "pisar": True})
+    _c12 = sqlite3.connect(DB)
+    _q = _c12.execute("SELECT perfil_acceso_id FROM empleados WHERE id=?", (_baja[0],)).fetchone()[0]
+    _c12.close()
+    chequear("a un egresado no se le asigna perfil", _q is None, _q)
+
+# "Sin cargo" es un grupo real: gente que existe y no entra en ningun cargo.
+_pc4 = cli.get("/api/accesos/por-cargo").json()
+_sin = next((c for c in _pc4["cargos"] if c["cargo_id"] is None), None)
+if _sin and _sin["sin_perfil"]:
+    r5 = cli.post("/api/accesos/por-cargo/aplicar",
+                  json={"cargo_id": None, "perfil_acceso_id": solo_oficina["id"]})
+    chequear("se les puede asignar a los que no tienen cargo",
+             r5.status_code == 200 and r5.json()["asignados"] == _sin["sin_perfil"],
+             (r5.status_code, r5.text[:160]))
+
+# Rechazos.
+r = cli.post("/api/accesos/por-cargo/aplicar",
+             json={"cargo_id": 999999, "perfil_acceso_id": todas["id"]})
+chequear("un cargo inexistente se rechaza", r.status_code == 400, r.status_code)
+r = cli.post("/api/accesos/por-cargo/aplicar",
+             json={"cargo_id": None, "perfil_acceso_id": 999999})
+chequear("un perfil inexistente se rechaza", r.status_code == 400, r.status_code)
+# Nunca deja a nadie sin perfil: quitarlo en masa borraria las excepciones de
+# cada uno, y eso necesita permiso de excepciones.
+r = cli.post("/api/accesos/por-cargo/aplicar",
+             json={"cargo_id": None, "perfil_acceso_id": None})
+chequear("no se puede usar para dejar a un cargo sin perfil",
+         r.status_code == 422, r.status_code)
+
+# Permisos: ver para mirar la foto, asignar para aplicarla.
+chequear("con accesos:ver se puede mirar la foto por cargo",
+         _mirar.get("/api/accesos/por-cargo").status_code == 200)
+chequear("pero no aplicarla",
+         _mirar.post("/api/accesos/por-cargo/aplicar",
+                     json={"cargo_id": None, "perfil_acceso_id": todas["id"]}).status_code == 403)
+chequear("con accesos:asignar si",
+         _aplica.post("/api/accesos/por-cargo/aplicar",
+                      json={"cargo_id": None, "perfil_acceso_id": todas["id"]}).status_code == 200)
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

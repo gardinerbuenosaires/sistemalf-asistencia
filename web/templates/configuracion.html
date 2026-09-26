@@ -424,6 +424,8 @@
                 style="flex-shrink:0;margin-left:8px" onclick="verPendientes()">Sin acceso asignado</button>
         <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
                 style="flex-shrink:0;margin-left:8px" onclick="descubrirPerfiles()">Deducir perfiles</button>
+        <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
+                style="flex-shrink:0;margin-left:8px" onclick="asignarPorCargo()">Asignar por cargo</button>
         <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
                 style="flex-shrink:0;margin-left:8px" onclick="nuevoDispositivo()">+ Nuevo equipo</button>
       </div>
@@ -2529,6 +2531,159 @@ async function eliminarDispositivo(id) {
   let e = {};
   try { e = await res.json(); } catch {}
   toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Asignar perfiles por cargo ────────────────────────────────────────────────
+// El otro camino para el arranque, y el que no necesita que los lectores se
+// puedan leer: "Deducir perfiles" saca los grupos de lo que los equipos ya
+// tienen cargado; esto parte de cómo el usuario ya piensa quién entra a dónde.
+//
+// No guarda ninguna relación cargo → perfil. El cargo elige a quién, y después
+// el perfil es de cada persona: cambiarle el cargo a alguien no le cambia las
+// puertas. Eso es a propósito — cambiar un cargo lo puede hacer quien edita
+// empleados, sin permiso de accesos.
+
+let _cargosAcc = null;
+
+async function asignarPorCargo() {
+  const modal = document.createElement('div');
+  modal.id = 'modal-por-cargo';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:880px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Asignar perfiles por cargo</div>
+      <div id="cargo-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">Cargando...</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+              onclick="document.getElementById('modal-por-cargo').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+  await pintarPorCargo();
+}
+
+async function pintarPorCargo() {
+  const caja = document.getElementById('cargo-cuerpo');
+  if (!caja) return;
+  let d;
+  try {
+    const res = await fetch('/api/accesos/por-cargo');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    caja.innerHTML = `<span style="color:#c0392b">No se pudo cargar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  _cargosAcc = d;
+
+  if (!d.perfiles.length) {
+    caja.innerHTML = `<div style="background:#f6e9ce;color:#6b5a26;padding:9px 12px;border-radius:5px;font-size:.85rem">
+      Todavía no hay ningún perfil de acceso creado. Creá los perfiles primero —abajo, en
+      <b>Perfiles de acceso</b>— y después volvé acá a repartirlos por cargo.</div>`;
+    return;
+  }
+
+  const opciones = d.perfiles.map(p =>
+    `<option value="${p.id}">${_esc(p.nombre)}</option>`).join('');
+
+  const filas = d.cargos.map(c => {
+    const clave = c.cargo_id === null ? 'null' : c.cargo_id;
+    const actuales = c.perfiles_actuales.length
+      ? c.perfiles_actuales.map(p =>
+          `<span style="background:#eef3f8;color:#4a6b8a;padding:2px 7px;border-radius:3px;font-size:.74rem;margin-right:4px;white-space:nowrap">${_esc(p.nombre)}: ${p.cuantos}</span>`).join('')
+      : '<span style="color:#bbb;font-size:.78rem">ninguno tiene perfil</span>';
+    return `<tr style="border-bottom:1px solid #f4f4f4">
+      <td style="padding:7px 10px">
+        ${c.cargo_id === null ? '<i style="color:#888">Sin cargo</i>' : _esc(c.cargo)}
+        <div style="font-size:.74rem;color:#aaa">${c.total} activo${c.total === 1 ? '' : 's'}</div>
+      </td>
+      <td style="padding:7px 10px;text-align:center">
+        ${c.sin_perfil
+          ? `<b style="color:#8a5d06">${c.sin_perfil}</b>`
+          : '<span style="color:#2e7d4f;font-size:.8rem">todos asignados</span>'}
+      </td>
+      <td style="padding:7px 10px">${actuales}
+        ${c.con_excepciones ? `<div style="font-size:.74rem;color:#8a5d06;margin-top:3px">
+          ${c.con_excepciones} con excepciones</div>` : ''}</td>
+      <td style="padding:7px 10px;white-space:nowrap">
+        <select id="cargo-perfil-${clave}" style="max-width:150px;font-size:.82rem">${opciones}</select>
+        <button class="btn btn-sm btn-primary" style="margin-left:5px"
+                onclick="aplicarPorCargo(${clave})">Asignar</button>
+      </td></tr>`;
+  }).join('');
+
+  caja.innerHTML = `
+    <div style="font-size:.85rem;color:#444">
+      <b>${d.sin_perfil}</b> de ${d.activos} activos no tienen perfil de acceso.
+    </div>
+    <div style="background:#eef3f8;border-left:3px solid #4a7ba7;padding:8px 11px;font-size:.8rem;color:#2c4d6b;margin-top:8px">
+      El cargo se usa acá solo para <b>elegir a quién</b>. No queda guardada ninguna regla
+      «este cargo lleva este perfil»: después el perfil es de cada persona, y cambiarle el cargo
+      a alguien no le cambia las puertas. Al que entre nuevo mañana hay que asignarle el perfil
+      igual, y lo vas a ver en «Sin acceso asignado».
+    </div>
+    <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;color:#666;margin-top:10px">
+      <input type="checkbox" id="cargo-pisar" onchange="pintarAvisoPisar()">
+      Reemplazar también el perfil de los que ya tienen uno
+    </label>
+    <div id="cargo-aviso-pisar"></div>
+    <div style="overflow-y:auto;max-height:50vh;margin-top:10px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px">Cargo</th>
+              <th style="padding:6px 10px;width:90px">Sin perfil</th>
+              <th style="text-align:left;padding:6px 10px">Perfiles que ya tienen</th>
+              <th style="padding:6px 10px;width:235px"></th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <div style="font-size:.76rem;color:#999;margin-top:9px">
+      Asignar un perfil no le escribe nada a los lectores: define lo que <i>debería</i> ser.
+      Después «Ver plan de cambios» muestra la diferencia contra lo que los equipos tienen hoy.
+    </div>`;
+  pintarAvisoPisar();
+}
+
+function pintarAvisoPisar() {
+  const caja = document.getElementById('cargo-aviso-pisar');
+  if (!caja) return;
+  const pisar = document.getElementById('cargo-pisar')?.checked;
+  caja.innerHTML = pisar
+    ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:6px">
+        Va a reemplazar decisiones ya tomadas. Existe porque el caso real es asignarle el perfil
+        equivocado a un cargo entero y tener que corregirlo, pero si a alguien le habían puesto
+        otro perfil a propósito, esto se lo pisa. Las excepciones no se borran: siguen ahí, y
+        algunas pueden quedar sin efecto contra el perfil nuevo.</div>`
+    : '';
+}
+
+async function aplicarPorCargo(cargoId) {
+  const sel = document.getElementById(`cargo-perfil-${cargoId === null ? 'null' : cargoId}`);
+  const pisar = !!document.getElementById('cargo-pisar')?.checked;
+  if (!sel) return;
+  const perfilId = Number(sel.value);
+  const perfil = (_cargosAcc.perfiles.find(p => p.id === perfilId) || {}).nombre || '';
+  const c = _cargosAcc.cargos.find(x => x.cargo_id === cargoId);
+  const cuantos = pisar ? c.total : c.sin_perfil;
+  if (!cuantos) return toast('No hay nadie a quien asignarle en ese cargo');
+
+  const nombreCargo = cargoId === null ? 'los que no tienen cargo' : c.cargo;
+  if (!confirm(`Asignar «${perfil}» a ${cuantos} persona(s) de ${nombreCargo}.`
+      + (pisar && c.con_perfil ? `\n\nSe reemplaza el perfil de ${c.con_perfil} que ya tenían uno.` : '')
+      + `\n\n¿Seguir?`)) return;
+
+  const res = await fetch('/api/accesos/por-cargo/aplicar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ cargo_id: cargoId, perfil_acceso_id: perfilId, pisar }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo asignar'));
+  }
+  const d = await res.json();
+  toast(`${d.asignados} asignado(s)`
+    + (d.sin_tocar ? ` · ${d.sin_tocar} sin tocar` : '')
+    + (d.con_excepciones ? ` · ${d.con_excepciones} con excepciones, revisalas` : ''));
+  await pintarPorCargo();
 }
 
 // ── Deducir perfiles desde los lectores ───────────────────────────────────────

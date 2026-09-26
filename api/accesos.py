@@ -462,6 +462,150 @@ def aplicar_grupo(data: AplicarGrupoIn,
                 "sin_tocar": len(data.empleados) - cur.rowcount}
 
 
+class AplicarCargoIn(BaseModel):
+    cargo_id: int | None          # null = los que no tienen cargo
+    perfil_acceso_id: int
+    pisar: bool = False
+
+
+@router.get("/por-cargo")
+def por_cargo(_user=Depends(require_permiso("accesos", "ver"))):
+    """
+    Cuánta gente hay por cargo y qué perfil tiene hoy.
+
+    Es la foto para el arranque. Al implementar esto nadie tiene perfil y son
+    cientos de personas: asignarlas de a una no es una opción, y el cargo es la
+    forma en que el usuario ya piensa quién entra a dónde.
+
+    Ojo con lo que esto NO es: no guarda ninguna relación cargo → perfil. El
+    cargo se usa para elegir a quién, y después el perfil es de cada persona.
+    Cambiarle el cargo a alguien no le cambia las puertas, que es justo lo que
+    se quiso evitar cuando el cargo daba acceso: eso lo puede hacer quien edita
+    empleados, sin permiso de accesos.
+    """
+    with db_session() as conn:
+        filas = conn.execute(
+            """SELECT c.id AS cargo_id, c.nombre AS cargo,
+                      COUNT(*)                                        AS total,
+                      SUM(e.perfil_acceso_id IS NULL)                 AS sin_perfil
+                 FROM empleados e
+                 LEFT JOIN cargos c ON c.id = e.cargo_id
+                WHERE e.activo = 1
+             GROUP BY c.id, c.nombre
+             ORDER BY (c.id IS NULL), c.nombre"""
+        ).fetchall()
+
+        # Qué perfiles ya tiene la gente de cada cargo. Importa antes de asignar
+        # en masa: si el cargo ya tiene gente con perfil, hay una decisión previa
+        # ahí y conviene verla antes de pisarla.
+        actuales: dict = {}
+        for r in conn.execute(
+            """SELECT e.cargo_id, p.id AS perfil_id, p.nombre AS perfil,
+                      COUNT(*) AS cuantos
+                 FROM empleados e
+                 JOIN perfiles_acceso p ON p.id = e.perfil_acceso_id
+                WHERE e.activo = 1
+             GROUP BY e.cargo_id, p.id, p.nombre
+             ORDER BY COUNT(*) DESC"""
+        ):
+            actuales.setdefault(r["cargo_id"], []).append(
+                {"id": r["perfil_id"], "nombre": r["perfil"], "cuantos": r["cuantos"]})
+
+        # Con excepciones: cambiarles el perfil no las borra, pero puede dejarlas
+        # sin efecto. Avisarlo antes es más útil que descubrirlo después.
+        con_exc = {
+            r["cargo_id"]: r["cuantos"] for r in conn.execute(
+                """SELECT e.cargo_id, COUNT(DISTINCT e.id) AS cuantos
+                     FROM empleados e
+                     JOIN accesos_excepciones x ON x.empleado_id = e.id
+                    WHERE e.activo = 1
+                 GROUP BY e.cargo_id"""
+            )
+        }
+
+        perfiles = [
+            dict(r) for r in conn.execute(
+                """SELECT id, nombre FROM perfiles_acceso
+                    WHERE activo = 1 ORDER BY orden, nombre"""
+            )
+        ]
+
+    cargos = []
+    for f in filas:
+        d = dict(f)
+        d["con_perfil"] = d["total"] - d["sin_perfil"]
+        d["perfiles_actuales"] = actuales.get(d["cargo_id"], [])
+        d["con_excepciones"] = con_exc.get(d["cargo_id"], 0)
+        cargos.append(d)
+
+    return {"cargos": cargos, "perfiles": perfiles,
+            "activos": sum(c["total"] for c in cargos),
+            "sin_perfil": sum(c["sin_perfil"] for c in cargos)}
+
+
+@router.post("/por-cargo/aplicar")
+def aplicar_cargo(data: AplicarCargoIn,
+                  _user=Depends(require_permiso("accesos", "asignar"))):
+    """
+    Le pone un perfil a todos los activos de un cargo.
+
+    Solo asigna: nunca deja a nadie sin perfil. Quitarlo en masa borraría las
+    excepciones de cada uno —una excepción modifica un perfil, sin perfil no
+    tiene qué modificar— y eso necesita permiso de excepciones. Un borrado así,
+    en masa y con un solo clic, no tiene por qué existir: si hay que sacarle el
+    acceso a alguien, se hace en su legajo y se ve a quién.
+
+    Por defecto no toca a quien ya tiene perfil: esa persona es una decisión
+    tomada. Con `pisar` sí, porque el caso real existe —asignar el perfil
+    equivocado a un cargo entero y tener que corregirlo— y sin eso el único
+    camino serían 30 legajos de a uno.
+    """
+    with db_session() as conn:
+        if not conn.execute("SELECT 1 FROM perfiles_acceso WHERE id=? AND activo=1",
+                            (data.perfil_acceso_id,)).fetchone():
+            raise HTTPException(400, "Ese perfil no existe o está desactivado")
+        if data.cargo_id is not None and not conn.execute(
+                "SELECT 1 FROM cargos WHERE id=?", (data.cargo_id,)).fetchone():
+            raise HTTPException(400, "Ese cargo no existe")
+
+        donde = "e.cargo_id IS NULL" if data.cargo_id is None else "e.cargo_id = ?"
+        args = [] if data.cargo_id is None else [data.cargo_id]
+
+        # A quiénes le va a cambiar el perfil que ya tenían: es el dato que hay
+        # que poder mostrar después, porque es lo que no se puede deshacer solo.
+        pisados = conn.execute(
+            f"""SELECT COUNT(*) FROM empleados e
+                 WHERE e.activo = 1 AND {donde}
+                   AND e.perfil_acceso_id IS NOT NULL
+                   AND e.perfil_acceso_id <> ?""",
+            [*args, data.perfil_acceso_id],
+        ).fetchone()[0]
+
+        # Las excepciones no se borran, pero un perfil nuevo puede dejarlas sin
+        # efecto: "agregar oficina" no hace nada si el perfil nuevo ya la da.
+        con_exc = conn.execute(
+            f"""SELECT COUNT(DISTINCT e.id) FROM empleados e
+                 JOIN accesos_excepciones x ON x.empleado_id = e.id
+                WHERE e.activo = 1 AND {donde}""", args
+        ).fetchone()[0]
+
+        filtro = "" if data.pisar else " AND e.perfil_acceso_id IS NULL"
+        cur = conn.execute(
+            f"""UPDATE empleados SET perfil_acceso_id = ?
+                 WHERE id IN (SELECT e.id FROM empleados e
+                               WHERE e.activo = 1 AND {donde}{filtro})""",
+            [data.perfil_acceso_id, *args],
+        )
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM empleados e WHERE e.activo = 1 AND {donde}", args
+        ).fetchone()[0]
+
+    return {"ok": True, "asignados": cur.rowcount,
+            "sin_tocar": total - cur.rowcount,
+            "pisados": pisados if data.pisar else 0,
+            "con_excepciones": con_exc}
+
+
 @router.get("/sin-perfil")
 def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     """

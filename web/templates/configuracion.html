@@ -34,7 +34,11 @@
   .section.wide { max-width: 100%; }
   .section-title { font-size: 1rem; font-weight: bold; margin-bottom: 6px; }
   .section-desc  { font-size: .82rem; color: #888; margin-bottom: 20px; }
-  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .section-header { display: flex; justify-content: space-between; align-items: center;
+                    margin-bottom: 6px; flex-wrap: wrap; gap: 8px; }
+  /* El bloque de texto no baja de un ancho legible: antes competia con cada
+     boton como un item mas del flex y terminaba partido palabra por palabra. */
+  .section-header > div:first-child { flex: 1 1 320px; min-width: 0; }
 
   /* Tabla genérica */
   table { width: 100%; border-collapse: collapse; font-size: .9rem; }
@@ -416,18 +420,19 @@
             número de serie y algoritmo de huella — no le escribe nada.
           </div>
         </div>
-        <button class="btn btn-secondary btn-sm" style="flex-shrink:0;margin-left:16px"
-                onclick="revisarTodos()">Revisar todos</button>
-        <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
-                style="flex-shrink:0;margin-left:8px" onclick="verPlan()">Ver plan de cambios</button>
-        <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
-                style="flex-shrink:0;margin-left:8px" onclick="verPendientes()">Sin acceso asignado</button>
-        <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
-                style="flex-shrink:0;margin-left:8px" onclick="descubrirPerfiles()">Deducir perfiles</button>
-        <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
-                style="flex-shrink:0;margin-left:8px" onclick="asignarPorCargo()">Asignar por cargo</button>
-        <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
-                style="flex-shrink:0;margin-left:8px" onclick="nuevoDispositivo()">+ Nuevo equipo</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-left:16px">
+          <button class="btn btn-secondary btn-sm" onclick="revisarTodos()">Revisar todos</button>
+          <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                  onclick="verPlan()">Ver plan de cambios</button>
+          <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                  onclick="verPendientes()">Sin acceso asignado</button>
+          <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
+                  onclick="descubrirPerfiles()">Deducir perfiles</button>
+          <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
+                  onclick="asignarPorCargo()">Asignar por cargo</button>
+          <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
+                  onclick="nuevoDispositivo()">+ Nuevo equipo</button>
+        </div>
       </div>
       <table style="margin-top:16px;font-size:.85rem">
         <thead><tr>

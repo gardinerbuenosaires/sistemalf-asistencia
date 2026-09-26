@@ -134,6 +134,52 @@ def ver_empleado(eid: int, _user=Depends(require_permiso("accesos", "ver"))):
         return puertas_de(conn, eid)
 
 
+@router.get("/empleado/{eid}/en-lectores")
+def empleado_en_lectores(eid: int, _user=Depends(require_permiso("accesos", "ver"))):
+    """
+    Lee los equipos y dice si esta persona está realmente cargada en cada uno.
+
+    Es la contracara de la ficha: la ficha dice qué *debería* abrir, esto dice
+    qué tiene el equipo. Cuando alguien se queda afuera, la pregunta es esta.
+
+    Lee también la huella, no solo si figura en la lista: alguien cargado sin su
+    huella aparece en el padrón y no abre igual, y ese caso mirando el padrón
+    parece resuelto.
+
+    No escribe nada.
+    """
+    from sync.lectores import leer_padrones
+    from sync.verificar_acceso import verificar
+
+    with db_session() as conn:
+        ficha = puertas_de(conn, eid)
+        equipos = [
+            dict(r) for r in conn.execute(
+                """SELECT id, nombre, ubicacion, ip, puerto, password, timeout,
+                          protocolo, es_acceso, cuenta_asistencia
+                     FROM dispositivos
+                    WHERE activo = 1 AND protocolo = 'pull' AND ip IS NOT NULL
+                      AND (es_acceso = 1 OR cuenta_asistencia = 1)
+                 ORDER BY orden, id"""
+            )
+        ]
+
+    user_id = (ficha["empleado"]["user_id"] or "").strip()
+    if not user_id:
+        # Sin número de dispositivo no hay a quién buscar en el equipo. No es un
+        # error: es alguien que todavía no se enroló.
+        return {"ficha": ficha, "equipos": [], "resumen": None, "user_id": None,
+                "aviso": "Esta persona no tiene número de dispositivo, así que "
+                         "no puede estar cargada en ningún lector."}
+    if not equipos:
+        return {"ficha": ficha, "equipos": [], "resumen": None, "user_id": user_id,
+                "aviso": "No hay equipos que se puedan consultar."}
+
+    lecturas = leer_padrones(equipos, con_huellas=True)
+    return {"ficha": ficha,
+            **verificar(user_id, equipos, lecturas, set(ficha["puertas"]))}
+
+
 @router.put("/empleado/{eid}/perfil")
 def asignar_perfil(eid: int, data: AsignacionIn,
                    usuario=Depends(require_permiso("accesos", "asignar"))):

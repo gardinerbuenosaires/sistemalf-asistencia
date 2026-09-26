@@ -212,7 +212,7 @@ print("\n=== PADRON: endpoint ===")
 import sync.lectores as lectores
 
 _real = lectores.leer_padron
-lectores.leer_padron = lambda d: {"ok": True, "transporte": "udp",
+lectores.leer_padron = lambda d, con_huellas=False: {"ok": True, "transporte": "udp",
                                   "usuarios": PADRON, "error": None}
 r = cli.get(f"/api/dispositivos/{puerta['id']}/padron")
 chequear("GET padron responde 200", r.status_code == 200, r.text[:160])
@@ -223,7 +223,7 @@ chequear("deja constancia de que el equipo contesto",
          any(x["visto_en"] for x in cli.get("/api/dispositivos").json()
              if x["id"] == puerta["id"]))
 
-lectores.leer_padron = lambda d: {"ok": False, "transporte": None, "usuarios": [],
+lectores.leer_padron = lambda d, con_huellas=False: {"ok": False, "transporte": None, "usuarios": [],
                                   "error": "ZKNetworkError: timed out"}
 r = cli.get(f"/api/dispositivos/{puerta['id']}/padron")
 chequear("un equipo que no contesta devuelve ok=false, no un error 500",
@@ -264,7 +264,7 @@ if _real_emp:
                        "privilegio": 0, "tarjeta": 0, "grupo": "1"})
 
 
-def _falso(d):
+def _falso(d, con_huellas=False):
     if d["ip"] == "127.0.0.2":   # la Puerta deposito que se creo mas arriba
         return {"ok": True, "transporte": "udp", "usuarios": PADRON_REV, "error": None}
     return {"ok": False, "transporte": None, "usuarios": [],
@@ -306,7 +306,7 @@ print("\n=== LECTURA EN PARALELO ===")
 import time
 from sync.lectores import leer_padrones
 
-_lento = lambda d: (time.sleep(0.4), {"ok": True, "transporte": "tcp",
+_lento = lambda d, con_huellas=False: (time.sleep(0.4), {"ok": True, "transporte": "tcp",
                                       "usuarios": [], "error": None})[1]
 lectores.leer_padron = _lento
 equipos = [{"id": i, "ip": f"127.0.0.{i}", "protocolo": "pull"} for i in range(1, 6)]
@@ -1227,6 +1227,122 @@ chequear("con la puerta en un perfil ya no se marca",
 _s2 = next((x for x in _p1["sacar"] if x["user_id"] == _uid_real), None)
 chequear("y el motivo pasa a ser el de siempre",
          _s2 is None or _s2["motivo"] == "sin_derecho", _s2)
+
+
+
+print("\n=== UNA PERSONA CONTRA LOS LECTORES ===")
+# La pregunta de todos los dias: "a Fulano le quedo el deposito?". La funcion es
+# pura, asi que se prueba sin tocar ningun equipo.
+from sync.verificar_acceso import verificar
+
+_eq = [
+    {"id": 1, "nombre": "Personal", "ubicacion": None, "es_acceso": 1, "cuenta_asistencia": 0},
+    {"id": 2, "nombre": "Oficina",  "ubicacion": None, "es_acceso": 1, "cuenta_asistencia": 0},
+    {"id": 3, "nombre": "Camaras",  "ubicacion": None, "es_acceso": 1, "cuenta_asistencia": 0},
+    {"id": 4, "nombre": "Caida",    "ubicacion": None, "es_acceso": 1, "cuenta_asistencia": 0},
+    {"id": 9, "nombre": "Maestro",  "ubicacion": None, "es_acceso": 0, "cuenta_asistencia": 1},
+]
+
+
+def _lec(*usuarios):
+    return {"ok": True, "error": None, "transporte": "udp", "usuarios": list(usuarios)}
+
+
+_yo = {"uid": 7, "user_id": "42", "nombre": "PEREZ", "grupo": "1", "huellas": 2}
+_lecturas = {
+    1: _lec(_yo),                                  # le toca y esta, con huella
+    2: _lec(dict(_yo, huellas=0)),                 # le toca y esta, SIN huella
+    3: _lec({"uid": 3, "user_id": "99", "nombre": "OTRO", "grupo": "0", "huellas": 1}),
+    4: {"ok": False, "error": "timeout", "usuarios": []},
+    9: _lec(_yo),
+}
+_v = verificar("42", _eq, _lecturas, {1, 2, 4})
+_por_id = {e["id"]: e for e in _v["equipos"]}
+
+chequear("cargado con huella en una puerta que le toca: abre",
+         _por_id[1]["estado"] == "abre", _por_id[1])
+chequear("cargado SIN huella no se informa como que abre",
+         _por_id[2]["estado"] == "sin_huella", _por_id[2])
+chequear("y el diagnostico dice que no abre",
+         "no abre" in _por_id[2]["diagnostico"], _por_id[2]["diagnostico"])
+chequear("el equipo que no contesto queda como sin leer",
+         _por_id[4]["estado"] == "sin_leer", _por_id[4])
+chequear("y no se cuenta como que falta cargarlo",
+         _v["resumen"]["falta"] == 0, _v["resumen"])
+chequear("una puerta que no le toca y no lo tiene no molesta",
+         _por_id[3]["estado"] == "no_abre", _por_id[3])
+chequear("del equipo de asistencia no se opina si deberia o no",
+         _por_id[9]["deberia"] is None, _por_id[9])
+chequear("pero se informa que la huella esta ahi para copiar",
+         _por_id[9]["huellas"] == 2, _por_id[9])
+chequear("trae el nombre con el que figura en el equipo",
+         _por_id[1]["nombre_en_equipo"] == "PEREZ", _por_id[1])
+chequear("y el grupo, de donde el equipo saca sus reglas",
+         _por_id[1]["grupo"] == "1", _por_id[1])
+
+# Cargado donde no corresponde: el caso del egresado que sigue abriendo.
+_v2 = verificar("42", _eq, {**_lecturas, 3: _lec(_yo)}, {1})
+chequear("cargado en una puerta que no le toca: sobra",
+         {e["id"]: e["estado"] for e in _v2["equipos"]}[3] == "sobra", _v2["equipos"])
+# Sobra en las dos: en Camaras y en Oficina, donde esta cargado y ya no le toca.
+# Que en Oficina no tenga huella no lo salva —igual figura y hay que sacarlo.
+chequear("cuenta todas las puertas donde sobra", _v2["resumen"]["sobra"] == 2, _v2["resumen"])
+
+# No poder leer las huellas no es lo mismo que no tener huella: confundirlos
+# manda a recargar a alguien que estaba bien.
+_v3 = verificar("42", _eq, {**_lecturas, 1: _lec(dict(_yo, huellas=None))}, {1})
+_f3 = {e["id"]: e for e in _v3["equipos"]}[1]
+chequear("huella no leida no se confunde con huella ausente",
+         _f3["estado"] == "abre" and _f3["huellas"] is None, _f3)
+
+# Lo que esta mal va primero: la lista se mira de arriba.
+_v4 = verificar("42", _eq, _lecturas, {1, 2, 3, 4})
+chequear("los problemas se muestran antes que lo que esta bien",
+         _v4["equipos"][0]["estado"] in ("falta", "sin_huella"),
+         [e["estado"] for e in _v4["equipos"]])
+chequear("una puerta que le toca y el equipo no lo tiene: falta",
+         {e["id"]: e["estado"] for e in _v4["equipos"]}[3] == "falta", _v4["equipos"])
+
+# El endpoint, con la lectura interceptada para no salir a la red.
+_c7 = sqlite3.connect(DB)
+_fila = _c7.execute(
+    "SELECT id, user_id FROM empleados WHERE activo=1 AND user_id IS NOT NULL LIMIT 1").fetchone()
+_c7.close()
+_eid, _uid = _fila[0], str(_fila[1]).strip()
+
+_real3 = lectores.leer_padrones
+lectores.leer_padrones = lambda ds, con_huellas=False: {
+    d["id"]: _lec({"uid": 1, "user_id": _uid, "nombre": "X", "grupo": "0",
+                   "huellas": 1 if con_huellas else None})
+    for d in ds}
+r = cli.get(f"/api/accesos/empleado/{_eid}/en-lectores")
+chequear("el endpoint responde 200", r.status_code == 200, r.text[:200])
+_d = r.json()
+chequear("devuelve la ficha junto con lo leido",
+         all(k in _d for k in ("ficha", "equipos", "resumen")), list(_d))
+chequear("pide las huellas y no solo el padron",
+         all(e["huellas"] == 1 for e in _d["equipos"] if e["cargado"]),
+         [(e["nombre"], e["huellas"]) for e in _d["equipos"]])
+
+# Sin numero de dispositivo no hay a quien buscar: se avisa y no se sale a la red.
+_c8 = sqlite3.connect(DB)
+_c8.execute("UPDATE empleados SET user_id=NULL WHERE id=?", (_eid,))
+_c8.commit()
+_c8.close()
+_salio = {"red": False}
+
+
+def _no_deberia(ds, con_huellas=False):
+    _salio["red"] = True
+    return {}
+
+
+lectores.leer_padrones = _no_deberia
+r = cli.get(f"/api/accesos/empleado/{_eid}/en-lectores")
+chequear("sin numero de dispositivo avisa en vez de fallar",
+         r.status_code == 200 and r.json().get("aviso"), r.text[:200])
+chequear("y no sale a la red al vicio", _salio["red"] is False)
+lectores.leer_padrones = _real3
 
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")

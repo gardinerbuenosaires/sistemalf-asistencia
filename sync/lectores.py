@@ -41,13 +41,40 @@ def _conectar(ip, puerto, password, timeout):
     raise ultimo
 
 
-def leer_padron(dispositivo: dict) -> dict:
+def _contar_huellas(conexion) -> dict | None:
+    """
+    Cuántas huellas tiene cada usuario en este equipo, por uid interno.
+
+    Se lee aparte porque el padrón no la trae: el equipo devuelve los usuarios
+    en un paquete y las huellas en otro. Importa porque un usuario cargado sin
+    huella figura en la lista y no abre igual — parece hecho y no lo está.
+
+    Devuelve None si no se pudo leer. Es a propósito: informar "no tiene huella"
+    porque falló la lectura haría borrar y recargar gente que estaba bien.
+    """
+    try:
+        cuenta: dict[int, int] = {}
+        for h in conexion.get_templates():
+            if getattr(h, "valid", 1):
+                cuenta[h.uid] = cuenta.get(h.uid, 0) + 1
+        return cuenta
+    except Exception as exc:
+        logger.warning("No se pudieron leer las huellas: %s", exc)
+        return None
+
+
+def leer_padron(dispositivo: dict, con_huellas: bool = False) -> dict:
     """
     Trae los usuarios cargados en un lector.
 
     `dispositivo` es una fila de la tabla. Devuelve
     {ok, transporte, usuarios:[...], error}. Nunca levanta excepción: un equipo
     apagado es un resultado válido y la pantalla tiene que poder mostrarlo.
+
+    Con `con_huellas` trae además cuántas huellas tiene cada uno. Es una lectura
+    más y bastante más pesada —son todos los templates del equipo— así que no va
+    por defecto: sirve cuando la pregunta es "¿esta persona realmente puede
+    abrir?", no cuando solo se comparan padrones.
     """
     if dispositivo.get("protocolo") == "push":
         return {"ok": False, "usuarios": [], "transporte": None,
@@ -74,7 +101,12 @@ def leer_padron(dispositivo: dict) -> dict:
             }
             for u in conexion.get_users()
         ]
-        return {"ok": True, "transporte": transporte, "usuarios": usuarios, "error": None}
+        huellas = _contar_huellas(conexion) if con_huellas else None
+        if con_huellas:
+            for u in usuarios:
+                u["huellas"] = huellas.get(u["uid"], 0) if huellas is not None else None
+        return {"ok": True, "transporte": transporte, "usuarios": usuarios,
+                "error": None, "huellas_leidas": None if not con_huellas else huellas is not None}
     except Exception as exc:
         logger.warning("No se pudo leer el padrón de %s: %s", dispositivo.get("ip"), exc)
         return {"ok": False, "usuarios": [], "transporte": None,
@@ -87,7 +119,7 @@ def leer_padron(dispositivo: dict) -> dict:
                 pass
 
 
-def leer_padrones(dispositivos: list) -> dict:
+def leer_padrones(dispositivos: list, con_huellas: bool = False) -> dict:
     """
     Lee varios lectores a la vez. Devuelve {id_dispositivo: resultado}.
 
@@ -103,8 +135,8 @@ def leer_padrones(dispositivos: list) -> dict:
     if not dispositivos:
         return {}
     with ThreadPoolExecutor(max_workers=min(8, len(dispositivos))) as pool:
-        resultados = pool.map(leer_padron, dispositivos)
-    return {d["id"]: r for d, r in zip(dispositivos, resultados)}
+        resultados = pool.map(lambda d: leer_padron(d, con_huellas), dispositivos)
+    return {d["id"]: r for d, r in zip(dispositivos, list(resultados))}
 
 
 # Los equipos viejos guardan el nombre en un campo más corto que el maestro y lo

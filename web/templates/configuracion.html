@@ -2615,10 +2615,9 @@ async function pintarPorCargo() {
       <b>${d.sin_perfil}</b> de ${d.activos} activos no tienen perfil de acceso.
     </div>
     <div style="background:#eef3f8;border-left:3px solid #4a7ba7;padding:8px 11px;font-size:.8rem;color:#2c4d6b;margin-top:8px">
-      El cargo se usa acá solo para <b>elegir a quién</b>. No queda guardada ninguna regla
-      «este cargo lleva este perfil»: después el perfil es de cada persona, y cambiarle el cargo
-      a alguien no le cambia las puertas. Al que entre nuevo mañana hay que asignarle el perfil
-      igual, y lo vas a ver en «Sin acceso asignado».
+      Elegí el perfil que le toca a cada cargo y se lo aplica a toda su gente.
+      Es por una vez: al que entre nuevo hay que asignarle el perfil a mano, y lo vas
+      a encontrar en «Sin acceso asignado».
     </div>
     <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;color:#666;margin-top:10px">
       <input type="checkbox" id="cargo-pisar" onchange="pintarAvisoPisar()">
@@ -2637,8 +2636,8 @@ async function pintarPorCargo() {
       </table>
     </div>
     <div style="font-size:.76rem;color:#999;margin-top:9px">
-      Asignar un perfil no le escribe nada a los lectores: define lo que <i>debería</i> ser.
-      Después «Ver plan de cambios» muestra la diferencia contra lo que los equipos tienen hoy.
+      Esto no le escribe nada a los lectores. «Ver plan de cambios» muestra la diferencia
+      entre lo que asignaste y lo que los equipos tienen cargado hoy.
     </div>`;
   pintarAvisoPisar();
 }
@@ -2649,10 +2648,9 @@ function pintarAvisoPisar() {
   const pisar = document.getElementById('cargo-pisar')?.checked;
   caja.innerHTML = pisar
     ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:6px">
-        Va a reemplazar decisiones ya tomadas. Existe porque el caso real es asignarle el perfil
-        equivocado a un cargo entero y tener que corregirlo, pero si a alguien le habían puesto
-        otro perfil a propósito, esto se lo pisa. Las excepciones no se borran: siguen ahí, y
-        algunas pueden quedar sin efecto contra el perfil nuevo.</div>`
+        Le cambia el perfil también a quien ya tenía uno, incluso si se lo habían puesto
+        a propósito. Las excepciones no se borran, pero algunas pueden quedar sin efecto
+        contra el perfil nuevo.</div>`
     : '';
 }
 

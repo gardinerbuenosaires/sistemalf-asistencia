@@ -2790,13 +2790,18 @@ async function verPlan() {
       ...p.agregar.map(a => `<div style="padding:4px 0 4px 14px;font-size:.83rem">
         <span style="color:#2e7d4f;font-weight:600;min-width:62px;display:inline-block">+ cargar</span>
         <span style="font-family:monospace;color:#888">${_esc(a.user_id)}</span> ${_esc(a.nombre)}
-        ${a.sin_huella ? '<span style="background:#f6e9ce;color:#8a5d06;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px">sin huella enrolada</span>' : ''}
+        ${a.sin_huella ? `<span style="background:#f6e9ce;color:#8a5d06;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px"
+             title="${a.motivo_huella === 'no_en_maestro'
+               ? 'No está cargado en el equipo de asistencia, así que no existe ninguna huella suya para copiar'
+               : 'Está cargado en el equipo de asistencia pero sin ninguna huella enrolada'}">${
+             a.motivo_huella === 'no_en_maestro' ? 'no está en asistencia' : 'sin huella enrolada'}</span>` : ''}
       </div>`),
       ...p.sacar.map(s => `<div style="padding:4px 0 4px 14px;font-size:.83rem">
         <span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">− sacar</span>
         <span style="font-family:monospace;color:#888">${_esc(s.user_id)}</span> ${_esc(s.nombre) || '<i style="color:#999">sin legajo</i>'}
         <span style="color:#999;margin-left:6px">· ${_esc(s.motivo_texto)}</span>
         ${s.fecha_egreso ? `<span style="color:#b3261e;font-size:.75rem"> (egreso ${_esc(s.fecha_egreso)})</span>` : ''}
+        ${s.en_maestro === false ? '<span style="background:#f6dedc;color:#b3261e;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px" title="La baja se sincronizó con el equipo de asistencia pero en esta puerta quedó">tampoco está en asistencia</span>' : ''}
       </div>`),
     ].join('');
     // Una puerta que ningun perfil incluye no es un problema de accesos de la
@@ -2821,6 +2826,7 @@ async function verPlan() {
       ${chip(t.agregar, 'a cargar', '#dcede2', '#2e7d4f')}
       ${chip(t.sacar, 'a sacar', '#f6dedc', '#b3261e')}
       ${chip(t.sin_huella, 'sin huella enrolada', '#f6e9ce', '#8a5d06')}
+      ${chip(t.no_en_maestro, 'bajas no propagadas', '#f6dedc', '#b3261e')}
       ${chip(t.sin_leer, 'no contestaron', '#f6dedc', '#b3261e')}
       ${hayCambios ? '' : '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo al día</span>'}
     </div>
@@ -2828,8 +2834,14 @@ async function verPlan() {
       No se pudo leer el equipo de asistencia, así que no se verificó quién tiene la huella
       enrolada. Los que figuran para cargar podrían no tener nada que copiar.</div>` : ''}
     ${t.sin_huella ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:10px">
-      ${t.sin_huella} persona(s) no están en el lector de asistencia, así que no hay huella
-      para copiarles. Tienen que enrolarse antes, o se las cargaría sin poder abrir igual.</div>` : ''}
+      ${t.sin_huella} persona(s) figuran para cargar y no hay huella suya para copiar: o no están
+      en el equipo de asistencia, o están sin ninguna huella enrolada. Cada una dice cuál de las
+      dos. Tienen que enrolarse antes, o se las cargaría sin poder abrir igual.</div>` : ''}
+    ${t.no_en_maestro ? `<div style="background:#f6dedc;color:#8c1d18;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:10px">
+      <b>${t.no_en_maestro} persona(s) están en puertas y no en el equipo de asistencia.</b>
+      Eso suele ser una baja que no se propagó: la dieron de baja, se sincronizó con el equipo
+      de asistencia, y en las puertas quedó. No pueden fichar y siguen abriendo, que es
+      exactamente al revés de lo que corresponde. Es lo primero para mirar de esta lista.</div>` : ''}
     <div style="overflow-y:auto;max-height:52vh;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>
     <div style="font-size:.78rem;color:#999;margin-top:10px">
       Esto es solo el plan. Aplicarlo va a estar disponible cuando la escritura en los equipos

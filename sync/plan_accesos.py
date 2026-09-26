@@ -72,6 +72,31 @@ def estado_deseado(conn) -> dict:
     return deseado
 
 
+def _falta_huella(user_id, en_maestro, con_huella):
+    """
+    ¿Hay huella para copiarle a esta persona? Son tres situaciones, no dos.
+
+    Devuelve (falta, motivo). Y la certeza importa tanto como la respuesta:
+    afirmar que a alguien le falta la huella sin haberlo verificado manda a
+    enrolar de nuevo a gente que ya estaba bien.
+
+      · No está en el equipo de asistencia. Certeza total y sin leer ninguna
+        huella: si no está cargado ahí, no hay ningún template suyo que copiar.
+      · Está cargado ahí pero sin huella enrolada. Hace falta haber leído los
+        templates para saberlo.
+      · Está cargado y no se leyeron los templates. No se sabe, y se dice.
+    """
+    if en_maestro is None:
+        return False, None                      # no se pudo leer el maestro
+    if user_id not in en_maestro:
+        return True, "no_en_maestro"
+    if con_huella is None:
+        return False, None                      # está, pero sin verificar huella
+    if user_id not in con_huella:
+        return True, "sin_template"
+    return False, None
+
+
 def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dict:
     """
     Compara lo leído de cada puerta contra lo que debería tener.
@@ -100,14 +125,26 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
         )
     }
 
-    # Quién tiene huella para copiar. Si el maestro no contestó no se puede
-    # saber, y el plan lo dice en vez de suponer que todos la tienen.
-    con_huella = None
+    # Dos preguntas distintas sobre el maestro, y antes estaban confundidas en
+    # una: `con_huella` miraba si la persona figuraba en su padrón, que no es lo
+    # mismo que tener la huella. Alguien cargado ahí sin huella quedaba informado
+    # como que la tenía, y el plan proponía copiar algo que no existe.
+    #
+    #   en_maestro   figura en el equipo de asistencia
+    #   con_huella   figura Y tiene al menos una huella enrolada
+    #
+    # Las dos en None si el maestro no contestó: sin leerlo no se sabe, y el plan
+    # lo dice en vez de suponer.
+    en_maestro = con_huella = None
     if maestro and maestro.get("ok"):
-        con_huella = {u["user_id"] for u in maestro["usuarios"]}
+        en_maestro = {u["user_id"] for u in maestro["usuarios"]}
+        if maestro.get("huellas_leidas"):
+            con_huella = {u["user_id"] for u in maestro["usuarios"]
+                          if (u.get("huellas") or 0) > 0}
 
     salida, total = [], {"agregar": 0, "sacar": 0, "sin_huella": 0,
-                         "sin_leer": 0, "puertas": len(puertas)}
+                         "sin_leer": 0, "puertas": len(puertas),
+                         "no_en_maestro": 0}
 
     for d in puertas:
         lectura = lecturas.get(d["id"], {"ok": False, "error": "sin resultado", "usuarios": []})
@@ -128,7 +165,8 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
             persona = dict(debe[user_id])
             # Sin huella en el maestro no hay nada que copiar: cargar al usuario
             # sin su huella lo deja sin poder abrir igual, y encima parece hecho.
-            persona["sin_huella"] = (con_huella is not None and user_id not in con_huella)
+            persona["sin_huella"], persona["motivo_huella"] = _falta_huella(
+                user_id, en_maestro, con_huella)
             if persona["sin_huella"]:
                 total["sin_huella"] += 1
             fila["agregar"].append(persona)
@@ -143,6 +181,13 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
                 motivo = "sin_politica"
             else:
                 motivo = "sin_derecho"
+            # Estar en una puerta y NO estar en el equipo de asistencia es una
+            # baja que no se propagó: la dieron de baja, se sincronizó con el
+            # maestro, y en las puertas quedó. Es evidencia del propio equipo, y
+            # sirve justamente cuando el legajo ya no dice nada de esa persona.
+            esta_en_maestro = None if en_maestro is None else (user_id in en_maestro)
+            if esta_en_maestro is False:
+                total["no_en_maestro"] += 1
             fila["sacar"].append({
                 "user_id": user_id,
                 "nombre": (f"{emp['apellido']}, {emp['nombre']}".strip(", ")
@@ -151,6 +196,7 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
                 "fecha_egreso": emp["fecha_egreso"] if emp else None,
                 "motivo": motivo,
                 "motivo_texto": MOTIVOS_SACAR[motivo],
+                "en_maestro": esta_en_maestro,
             })
 
         orden = {"egresado": 0, "desconocido": 1, "sin_politica": 2, "sin_derecho": 3}
@@ -163,4 +209,5 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
         "total": total,
         "puertas": salida,
         "huellas_verificadas": con_huella is not None,
+        "maestro_leido": en_maestro is not None,
     }

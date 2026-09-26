@@ -720,7 +720,7 @@ if emp_id:
 print("\n=== PLAN: endpoint ===")
 import sync.lectores as _lec
 _guardado = _lec.leer_padrones
-_lec.leer_padrones = lambda ds: {d["id"]: {"ok": True, "transporte": "udp",
+_lec.leer_padrones = lambda ds, con_huellas=False: {d["id"]: {"ok": True, "transporte": "udp",
                                            "usuarios": [], "error": None} for d in ds}
 r = cli.get("/api/accesos/plan")
 chequear("GET plan responde 200", r.status_code == 200, r.text[:200])
@@ -1024,7 +1024,7 @@ chequear("desactivar una puerta si se permite", r.status_code == 200, r.text[:20
 
 import sync.lectores as _lec2
 _g = _lec2.leer_padrones
-_lec2.leer_padrones = lambda ds: {x["id"]: {"ok": True, "transporte": "udp",
+_lec2.leer_padrones = lambda ds, con_huellas=False: {x["id"]: {"ok": True, "transporte": "udp",
                                             "usuarios": [], "error": None} for x in ds}
 plan = cli.get("/api/accesos/plan").json()
 _lec2.leer_padrones = _g
@@ -1040,7 +1040,7 @@ chequear("mientras tanto no aparece entre las puertas del plan",
 
 # Al reactivarla, vuelve a administrarse sola.
 cli.put(f"/api/dispositivos/{p_oficina}", json={**_base, "es_acceso": True, "activo": True})
-_lec2.leer_padrones = lambda ds: {x["id"]: {"ok": True, "transporte": "udp",
+_lec2.leer_padrones = lambda ds, con_huellas=False: {x["id"]: {"ok": True, "transporte": "udp",
                                             "usuarios": [], "error": None} for x in ds}
 plan2 = cli.get("/api/accesos/plan").json()
 _lec2.leer_padrones = _g
@@ -1138,7 +1138,7 @@ chequear("un perfil que incluye de mas NO se propone",
 print("\n=== APLICAR UN GRUPO ===")
 import sync.lectores as _lec3
 _g3 = _lec3.leer_padrones
-_lec3.leer_padrones = lambda ds: {d["id"]: {"ok": True, "transporte": "udp",
+_lec3.leer_padrones = lambda ds, con_huellas=False: {d["id"]: {"ok": True, "transporte": "udp",
                                             "usuarios": [], "error": None} for d in ds}
 r = cli.get("/api/accesos/descubrir")
 chequear("GET descubrir responde 200", r.status_code == 200, r.text[:160])
@@ -1400,6 +1400,129 @@ chequear("sin numero de dispositivo avisa en vez de fallar",
 chequear("y no sale a la red al vicio", _salio["red"] is False)
 lectores.leer_padrones = _real3
 
+
+
+print("\n=== EN LAS PUERTAS Y NO EN EL EQUIPO DE ASISTENCIA ===")
+# El criterio del usuario: si alguien tiene huella en una puerta y no esta en el
+# .201, es una baja que no se propago. La dieron de baja, se sincronizo con el
+# maestro, y en las puertas quedo. Es evidencia del propio equipo, asi que sirve
+# incluso cuando el legajo ya no dice nada de esa persona.
+_pu = [{"id": p_personal, "nombre": "Personal", "ubicacion": None}]
+_fantasma = "888777"     # no existe en el sistema: el egresado purgado
+_lec_p = {p_personal: {"ok": True, "transporte": "udp", "error": None,
+                       "usuarios": [{"user_id": _fantasma}, {"user_id": _uid_real}]}}
+
+# Maestro leido CON huellas: tiene al real, no al fantasma.
+_maestro_ok = {"ok": True, "huellas_leidas": True, "usuarios": [
+    {"user_id": _uid_real, "huellas": 2}]}
+with db_session() as _cn:
+    _pl = armar_plan(_cn, _pu, _lec_p, _maestro_ok)
+
+_s_f = next((x for x in _pl["puertas"][0]["sacar"] if x["user_id"] == _fantasma), None)
+chequear("marca que no esta en el equipo de asistencia",
+         _s_f and _s_f["en_maestro"] is False, _s_f)
+chequear("y lo cuenta aparte", _pl["total"]["no_en_maestro"] == 1, _pl["total"])
+chequear("avisa que el maestro se pudo leer", _pl["maestro_leido"] is True, _pl)
+
+# Si el maestro no contesto no se puede concluir nada: no es lo mismo "no esta"
+# que "no se pudo averiguar". Informarlo como baja mandaria a borrar a alguien.
+with db_session() as _cn:
+    _pl2 = armar_plan(_cn, _pu, _lec_p, {"ok": False, "usuarios": []})
+_s_f2 = next((x for x in _pl2["puertas"][0]["sacar"] if x["user_id"] == _fantasma), None)
+chequear("sin leer el maestro no se afirma que falte",
+         _s_f2 and _s_f2["en_maestro"] is None, _s_f2)
+chequear("y no se cuenta como baja no propagada",
+         _pl2["total"]["no_en_maestro"] == 0, _pl2["total"])
+chequear("y la pantalla sabe que el maestro no se leyo",
+         _pl2["maestro_leido"] is False, _pl2)
+
+# Figurar en el maestro no es tener huella, y antes estaban confundidos: alguien
+# cargado ahi sin huella se informaba como que la tenia, y el plan proponia
+# copiar algo que no existe.
+_c9 = sqlite3.connect(DB)
+_otro = _c9.execute(
+    """SELECT user_id FROM empleados WHERE activo=1 AND user_id IS NOT NULL
+        AND user_id <> ? LIMIT 1""", (_uid_real,)).fetchone()[0]
+_c9.close()
+_otro = str(_otro).strip()
+_r_o = cli.get("/api/perfiles-acceso").json()["perfiles"]
+_p_t = next(x for x in _r_o if x["id"] == todas["id"])
+cli.put(f"/api/perfiles-acceso/{todas['id']}",
+        json={"nombre": _p_t["nombre"], "activo": True, "orden": 0,
+              "dispositivos": sorted(set(_p_t["dispositivos"]) | {p_personal})})
+_c9 = sqlite3.connect(DB)
+_eid_otro = _c9.execute("SELECT id FROM empleados WHERE user_id=?", (_otro,)).fetchone()[0]
+_c9.close()
+cli.put(f"/api/accesos/empleado/{_eid_otro}/perfil",
+        json={"perfil_acceso_id": todas["id"]})
+
+# Esta en el maestro pero SIN huella: hay que cargarlo y no hay nada que copiar.
+_maestro_sin = {"ok": True, "huellas_leidas": True, "usuarios": [
+    {"user_id": _otro, "huellas": 0}]}
+with db_session() as _cn:
+    _pl3 = armar_plan(_cn, [{"id": p_personal, "nombre": "Personal", "ubicacion": None}],
+                      {p_personal: {"ok": True, "transporte": "udp", "error": None,
+                                    "usuarios": []}}, _maestro_sin)
+_a3 = next((x for x in _pl3["puertas"][0]["agregar"] if x["user_id"] == _otro), None)
+chequear("estar en el maestro sin huella no cuenta como tener huella",
+         _a3 and _a3["sin_huella"] is True, _a3)
+
+# Y con huella, no se molesta.
+_maestro_con = {"ok": True, "huellas_leidas": True, "usuarios": [
+    {"user_id": _otro, "huellas": 1}]}
+with db_session() as _cn:
+    _pl4 = armar_plan(_cn, [{"id": p_personal, "nombre": "Personal", "ubicacion": None}],
+                      {p_personal: {"ok": True, "transporte": "udp", "error": None,
+                                    "usuarios": []}}, _maestro_con)
+_a4 = next((x for x in _pl4["puertas"][0]["agregar"] if x["user_id"] == _otro), None)
+chequear("con huella en el maestro no se marca nada",
+         _a4 and _a4["sin_huella"] is False, _a4)
+
+# Sin leer las huellas del maestro no se puede opinar de la huella de nadie.
+_maestro_sin_templates = {"ok": True, "usuarios": [{"user_id": _otro}]}
+with db_session() as _cn:
+    _pl5 = armar_plan(_cn, [{"id": p_personal, "nombre": "Personal", "ubicacion": None}],
+                      {p_personal: {"ok": True, "transporte": "udp", "error": None,
+                                    "usuarios": []}}, _maestro_sin_templates)
+_a5 = next((x for x in _pl5["puertas"][0]["agregar"] if x["user_id"] == _otro), None)
+chequear("sin leer las huellas del maestro no se afirma que falten",
+         _a5 and _a5["sin_huella"] is False and _pl5["huellas_verificadas"] is False,
+         (_a5, _pl5["huellas_verificadas"]))
+
+# Leer varios equipos pidiendo las huellas solo a algunos, en una sola tanda.
+_reg = []
+lectores.leer_padron = lambda d, con_huellas=False: (
+    _reg.append((d["id"], con_huellas)),
+    {"ok": True, "transporte": "udp", "usuarios": [], "error": None})[1]
+leer_padrones([{"id": 1, "ip": "127.0.0.1", "protocolo": "pull"},
+               {"id": 2, "ip": "127.0.0.2", "protocolo": "pull"}],
+              con_huellas={2})
+chequear("las huellas se piden solo a los equipos indicados",
+         sorted(_reg) == [(1, False), (2, True)], _reg)
+lectores.leer_padron = _real2
+
+
+
+# Hay huella para copiar? Son tres situaciones y la certeza de cada una es
+# distinta. Afirmar que a alguien le falta sin haberlo verificado manda a
+# enrolar de nuevo a gente que estaba bien.
+from sync.plan_accesos import _falta_huella
+
+chequear("no estar en el maestro es certeza sin leer ninguna huella",
+         _falta_huella("5", {"1", "2"}, None) == (True, "no_en_maestro"),
+         _falta_huella("5", {"1", "2"}, None))
+chequear("estar sin huella enrolada se distingue de lo anterior",
+         _falta_huella("1", {"1", "2"}, {"2"}) == (True, "sin_template"),
+         _falta_huella("1", {"1", "2"}, {"2"}))
+chequear("estar y no haber leido los templates no afirma nada",
+         _falta_huella("1", {"1", "2"}, None) == (False, None),
+         _falta_huella("1", {"1", "2"}, None))
+chequear("estar con huella no marca nada",
+         _falta_huella("1", {"1"}, {"1"}) == (False, None),
+         _falta_huella("1", {"1"}, {"1"}))
+chequear("sin poder leer el maestro no se opina",
+         _falta_huella("1", None, None) == (False, None),
+         _falta_huella("1", None, None))
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

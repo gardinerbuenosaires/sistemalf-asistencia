@@ -119,7 +119,7 @@ def leer_padron(dispositivo: dict, con_huellas: bool = False) -> dict:
                 pass
 
 
-def leer_padrones(dispositivos: list, con_huellas: bool = False) -> dict:
+def leer_padrones(dispositivos: list, con_huellas=False) -> dict:
     """
     Lee varios lectores a la vez. Devuelve {id_dispositivo: resultado}.
 
@@ -134,8 +134,14 @@ def leer_padrones(dispositivos: list, con_huellas: bool = False) -> dict:
 
     if not dispositivos:
         return {}
+    # `con_huellas` puede ser un booleano para todos, o el conjunto de ids a los
+    # que pedírselas. Existe la segunda forma porque el caso real es mixto: al
+    # maestro hay que leerle las huellas y a las puertas no, y hacerlo en dos
+    # tandas le sumaría a la pantalla el tiempo del maestro en serie.
+    pedir = ((lambda d: bool(con_huellas)) if isinstance(con_huellas, bool)
+             else (lambda d: d["id"] in con_huellas))
     with ThreadPoolExecutor(max_workers=min(8, len(dispositivos))) as pool:
-        resultados = pool.map(lambda d: leer_padron(d, con_huellas), dispositivos)
+        resultados = pool.map(lambda d: leer_padron(d, pedir(d)), dispositivos)
     return {d["id"]: r for d, r in zip(dispositivos, list(resultados))}
 
 

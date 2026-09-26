@@ -365,8 +365,13 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
                 "puertas": [], "huellas_verificadas": False, "fuera_de_plan": fuera,
                 "aviso": "No hay ningún equipo marcado como «Abre una puerta»."}
 
-    # Todo junto en una sola tanda: el maestro también, que es solo uno más.
-    lecturas = leer_padrones(puertas + maestros)
+    # Todo en una sola tanda, pero las huellas solo al maestro: de ahí sale la
+    # huella que habría que copiar, así que sin leerla no se puede distinguir
+    # "le falta esta puerta" de "no hay nada que copiarle". A las puertas no
+    # hacen falta para saber a quién agregar o sacar, y leerles los templates
+    # multiplicaría el tiempo de una pantalla que ya consulta todos los equipos.
+    lecturas = leer_padrones(puertas + maestros,
+                             con_huellas={m["id"] for m in maestros})
     maestro = lecturas.get(maestros[0]["id"]) if maestros else None
 
     with db_session() as conn:

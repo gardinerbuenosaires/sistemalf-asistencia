@@ -14,17 +14,32 @@
     Produccion no se toca: otro puerto, otra base, y contra los lectores todo es
     solo lectura.
 
+    La copia de prueba queda en data\pruebas.db de esta misma instalacion, no
+    al lado de la base de produccion: en carpetas distintas no hay forma de
+    confundirlas.
+
 .EXAMPLE
     .\scripts\probar_accesos.ps1
     .\scripts\probar_accesos.ps1 -Puerto 8002
 #>
 param(
-    [string]$Base   = "C:\ProgramData\SistemAlf\pruebas-accesos.db",
+    [string]$Base   = "",
     [string]$Origen = "C:\ProgramData\SistemAlf\fichajes.db",
     [int]   $Puerto = 8001
 )
 
 $ErrorActionPreference = "Stop"
+
+# La copia de prueba vive DENTRO de esta instalacion, no al lado de la base de
+# produccion. Tenerlas en la misma carpeta es pedir que algun dia alguien se
+# equivoque de archivo; separadas, no hay forma. Y de paso esta instalacion
+# queda autocontenida: se borra la carpeta y no queda nada dado vuelta.
+$Raiz = Split-Path -Parent $PSScriptRoot
+if (-not $Base) { $Base = Join-Path $Raiz "data\pruebas.db" }
+$carpetaBase = Split-Path -Parent $Base
+if (-not (Test-Path $carpetaBase)) {
+    New-Item -ItemType Directory -Path $carpetaBase -Force | Out-Null
+}
 
 function Escribir($texto, $color = "Gray") { Write-Host $texto -ForegroundColor $color }
 
@@ -65,6 +80,19 @@ if ($mb -lt 1) {
     Escribir "  Borrala y volve a correr esto:" "Yellow"
     Escribir "    del `"$Base`""
     exit 1
+}
+
+# El tropiezo tipico: arrancar uvicorn a mano sin DB_PATH, que cae en
+# "data/fichajes.db" relativo a donde uno este parado y sqlite lo crea vacio.
+# No se usa para nada, pero se parece al nombre de la base de produccion y
+# conviene que no quede dando vueltas.
+$intrusa = Join-Path $Raiz "data\fichajes.db"
+if ((Test-Path $intrusa) -and ((Get-Item $intrusa).Length / 1MB -lt 1)) {
+    Escribir ""
+    Escribir "  Ojo: hay una base vacia en" "Yellow"
+    Escribir "    $intrusa"
+    Escribir "  Se creo sola al arrancar sin DB_PATH. No se usa; conviene borrarla" "Yellow"
+    Escribir "  para que nadie la confunda con la de produccion." "Yellow"
 }
 
 # Cuantos empleados tiene: es la confirmacion de que es la base de verdad.

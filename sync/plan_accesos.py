@@ -23,6 +23,7 @@ MOTIVOS_SACAR = {
     "egresado":     "Dado de baja en el sistema",
     "desconocido":  "No existe en el sistema",
     "sin_derecho":  "Su perfil ya no incluye esta puerta",
+    "sin_politica": "Ningún perfil incluye esta puerta todavía",
 }
 
 
@@ -81,6 +82,16 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
     puede saber a quién falta enrolar.
     """
     deseado = estado_deseado(conn)
+    # Puertas que ningun perfil incluye. Importa distinguirlas: si una puerta
+    # estuvo caida cuando se armaron los perfiles, quedo afuera de todos, y
+    # entonces toda su gente figuraria como "su perfil ya no la incluye" —un
+    # motivo falso que invita a sacar a gente que si tiene que entrar. No es lo
+    # mismo "a esta persona le sacaron el acceso" que "esta puerta todavia no
+    # esta en la politica".
+    con_perfil = {
+        r["dispositivo_id"] for r in conn.execute(
+            "SELECT DISTINCT dispositivo_id FROM perfiles_dispositivos")
+    }
     empleados = {
         str(r["user_id"]).strip(): dict(r)
         for r in conn.execute(
@@ -102,6 +113,7 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
         lectura = lecturas.get(d["id"], {"ok": False, "error": "sin resultado", "usuarios": []})
         fila = {"id": d["id"], "nombre": d["nombre"], "ubicacion": d["ubicacion"],
                 "ok": lectura["ok"], "error": lectura.get("error"),
+                "en_algun_perfil": d["id"] in con_perfil,
                 "agregar": [], "sacar": []}
 
         if not lectura["ok"]:
@@ -127,6 +139,8 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
                 motivo = "desconocido"
             elif not emp["activo"]:
                 motivo = "egresado"
+            elif d["id"] not in con_perfil:
+                motivo = "sin_politica"
             else:
                 motivo = "sin_derecho"
             fila["sacar"].append({
@@ -139,7 +153,7 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
                 "motivo_texto": MOTIVOS_SACAR[motivo],
             })
 
-        orden = {"egresado": 0, "desconocido": 1, "sin_derecho": 2}
+        orden = {"egresado": 0, "desconocido": 1, "sin_politica": 2, "sin_derecho": 3}
         fila["sacar"].sort(key=lambda s: (orden[s["motivo"]], len(s["user_id"]), s["user_id"]))
         total["agregar"] += len(fila["agregar"])
         total["sacar"] += len(fila["sacar"])

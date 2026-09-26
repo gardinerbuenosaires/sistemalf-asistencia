@@ -2799,8 +2799,18 @@ async function verPlan() {
         ${s.fecha_egreso ? `<span style="color:#b3261e;font-size:.75rem"> (egreso ${_esc(s.fecha_egreso)})</span>` : ''}
       </div>`),
     ].join('');
+    // Una puerta que ningun perfil incluye no es un problema de accesos de la
+    // gente: es que la politica todavia no la contempla. Sin decirlo, el plan
+    // invita a sacar a todos de ahi.
+    const aviso = !p.en_algun_perfil && p.sacar.length
+      ? `<div style="background:#f6e9ce;color:#6b5a26;padding:7px 10px;border-radius:4px;font-size:.8rem;margin-top:6px">
+           <b>Ningún perfil incluye esta puerta.</b> Por eso figura toda su gente para sacar.
+           Si esta puerta tiene que seguir funcionando, agregala a los perfiles que correspondan
+           antes de aplicar nada. Suele pasar cuando la puerta estaba caída al armar los perfiles.</div>`
+      : '';
     return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0">
       ${cab} <span style="color:#888;font-size:.8rem">· ${p.agregar.length} a cargar, ${p.sacar.length} a sacar</span>
+      ${aviso}
       <div style="margin-top:6px">${filas}</div></div>`;
   }).join('');
 

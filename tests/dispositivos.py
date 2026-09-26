@@ -1175,5 +1175,59 @@ r = _mirar.post("/api/accesos/descubrir/aplicar",
 chequear("aplicar necesita accesos:asignar", r.status_code == 403, r.status_code)
 
 
+
+print("\n=== UNA PUERTA QUE NINGUN PERFIL INCLUYE ===")
+# El caso real: una puerta estaba caida al armar los perfiles, quedo fuera de
+# todos, y despues volvio. Su gente NO perdio el acceso: la politica todavia no
+# la contempla, que es otra cosa y lleva a otra decision.
+from sync.plan_accesos import armar_plan
+
+_c7 = sqlite3.connect(DB)
+_emp_real = _c7.execute(
+    """SELECT user_id FROM empleados WHERE activo=1 AND user_id IS NOT NULL LIMIT 1""").fetchone()[0]
+_c7.close()
+_uid_real = str(_emp_real).strip()
+
+# p_oficina se saca de todos los perfiles, como si nunca hubiera entrado.
+for _pf in (todas, menos_oficina, solo_oficina):
+    _actual = cli.get("/api/perfiles-acceso").json()["perfiles"]
+    _p = next((x for x in _actual if x["id"] == _pf["id"]), None)
+    if _p:
+        cli.put(f"/api/perfiles-acceso/{_p['id']}",
+                json={"nombre": _p["nombre"], "activo": True, "orden": 0,
+                      "dispositivos": [d for d in _p["dispositivos"] if d != p_oficina]})
+
+_puertas = [{"id": p_oficina, "nombre": "Oficina", "ubicacion": None}]
+_lect = {p_oficina: {"ok": True, "transporte": "udp", "error": None,
+                     "usuarios": [{"user_id": _uid_real}]}}
+with db_session() as _cn:
+    plan = armar_plan(_cn, _puertas, _lect, {"ok": True, "usuarios": []})
+
+_p0 = plan["puertas"][0]
+chequear("marca que ningun perfil incluye esa puerta",
+         _p0["en_algun_perfil"] is False, _p0.get("en_algun_perfil"))
+_s = next((x for x in _p0["sacar"] if x["user_id"] == _uid_real), None)
+chequear("la persona figura para sacar", _s is not None, _p0["sacar"][:3])
+chequear("pero el motivo NO es que le sacaron el acceso",
+         _s and _s["motivo"] == "sin_politica", _s)
+chequear("y el texto lo explica",
+         _s and "Ningún perfil incluye" in _s["motivo_texto"], _s)
+
+# Con la puerta en un perfil, el motivo vuelve a ser el de siempre.
+_actual = cli.get("/api/perfiles-acceso").json()["perfiles"]
+_p = next(x for x in _actual if x["id"] == todas["id"])
+cli.put(f"/api/perfiles-acceso/{todas['id']}",
+        json={"nombre": _p["nombre"], "activo": True, "orden": 0,
+              "dispositivos": sorted(set(_p["dispositivos"]) | {p_oficina})})
+with db_session() as _cn:
+    plan2 = armar_plan(_cn, _puertas, _lect, {"ok": True, "usuarios": []})
+_p1 = plan2["puertas"][0]
+chequear("con la puerta en un perfil ya no se marca",
+         _p1["en_algun_perfil"] is True, _p1.get("en_algun_perfil"))
+_s2 = next((x for x in _p1["sacar"] if x["user_id"] == _uid_real), None)
+chequear("y el motivo pasa a ser el de siempre",
+         _s2 is None or _s2["motivo"] == "sin_derecho", _s2)
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

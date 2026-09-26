@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 import uvicorn
 import shutil
@@ -83,7 +84,24 @@ async def lifespan(app: FastAPI):
     init_db()
     ensure_admin()
     _avisar_si_base_vacia()
-    start_scheduler()
+
+    # Una segunda instancia levantada para probar contra los equipos reales no
+    # tiene que correr el scheduler: sincroniza sola, y ademas le reinicia el
+    # lector a las 4 AM, le cambia la hora, y los dias 1 y 15 le BORRA todos los
+    # registros. Todo eso ya lo hace produccion; duplicarlo desde una copia es
+    # tocar hardware en uso sin que nadie lo haya pedido.
+    #
+    # Con SCHEDULER=0 la instancia queda pasiva: solo habla con los equipos
+    # cuando alguien aprieta un boton, que es lo unico que hace falta para
+    # probar el modulo de accesos.
+    if os.getenv("SCHEDULER", "1") == "0":
+        logger.warning("=" * 70)
+        logger.warning("SCHEDULER APAGADO (SCHEDULER=0)")
+        logger.warning("No sincroniza sola, no reinicia el lector, no le cambia la hora")
+        logger.warning("y no le borra los registros. De eso se encarga produccion.")
+        logger.warning("=" * 70)
+    else:
+        start_scheduler()
     yield
 
 

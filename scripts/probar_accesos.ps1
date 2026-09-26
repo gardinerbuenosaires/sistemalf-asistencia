@@ -11,8 +11,8 @@
     sistema arranca como una instalacion nueva. Este script fija la ruta y la
     verifica ANTES de arrancar, asi ese error no puede pasar.
 
-    Produccion no se toca: otro puerto, otra base, y contra los lectores todo es
-    solo lectura.
+    Produccion no se toca: otro puerto, otra base, y el scheduler apagado, asi
+    que esta instancia no sincroniza sola ni le escribe nada a los lectores.
 
     La copia de prueba queda en data\pruebas.db de esta misma instalacion, no
     al lado de la base de produccion: en carpetas distintas no hay forma de
@@ -108,10 +108,19 @@ Escribir "  Base    : $Base  ($mb MB, $empleados empleados)" "Green"
 Escribir "  Puerto  : $Puerto" "Green"
 Escribir "  Carpeta : $(Get-Location)" "Green"
 Escribir ""
+Escribir "  Scheduler: APAGADO - no sincroniza sola ni toca los lectores" "Green"
+Escribir ""
 Escribir "  Entra a  http://127.0.0.1:$Puerto" "Cyan"
 Escribir "  Ctrl+C para cortar. Produccion no se toca." "Gray"
 Escribir ""
 
 $env:DB_PATH = $Base
 if (-not $env:SECRET_KEY) { $env:SECRET_KEY = "pruebas-accesos-local" }
+
+# Sin esto la instancia de prueba correria su propio scheduler contra los
+# lectores de verdad: sincroniza sola, reinicia el equipo a las 4 AM, le cambia
+# la hora y los dias 1 y 15 le borra los registros. Produccion ya hace todo
+# eso; una copia no tiene por que hacerlo de nuevo. Para el modulo de accesos
+# no hace falta: habla con los equipos cuando uno aprieta un boton.
+$env:SCHEDULER = "0"
 python -m uvicorn main:app --host 127.0.0.1 --port $Puerto

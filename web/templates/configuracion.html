@@ -3282,9 +3282,10 @@ async function verPadron(id) {
       ${esPuerta ? 'Figuran en la lista y no abren la puerta.'
                  : 'Figuran en la lista y no pueden fichar.'}</div>` : ''}
     ${r.nombre_distinto ? `<div style="font-size:.78rem;color:#666;margin:6px 0">
-      Los nombres se comparan contra el legajo. Este equipo los guarda cortados a
-      ${data.nombre_limite} caracteres, y esos cortes no se marcan: solo aparece lo que
-      realmente no coincide, que suele ser un número reutilizado con el empleado anterior adentro.</div>` : ''}
+      Los nombres se comparan palabra por palabra, sin acentos y sin importar el orden, y un
+      nombre cortado por el equipo —acá guarda hasta ${data.nombre_limite} caracteres— no se marca.
+      Solo aparece lo que no se parece al legajo, que suele ser un número reutilizado con el
+      empleado anterior todavía adentro. Los dos nombres están en la tabla: mirá y decidí vos.</div>` : ''}
     <input type="text" id="padron-buscar" oninput="filtrarPadron()" autocomplete="off"
            placeholder="Buscar por número o nombre"
            style="margin-top:10px;width:100%;padding:7px 10px;font-size:.85rem;border:1px solid #ddd;border-radius:4px">
@@ -3330,7 +3331,7 @@ function _padronFilaHtml(f) {
     <td>${_esc(f.nombre) || '<span style="color:#bbb">sin nombre</span>'}</td>
     <td>${quien}</td>
     <td style="color:${e.color};font-weight:${e.texto ? 600 : 400};font-size:.8rem">
-      ${e.texto}${f.nombre_distinto ? '<div style="color:#5b3a8a;font-size:.75rem">nombre distinto al legajo</div>' : ''}</td>
+      ${e.texto}${f.nombre_distinto ? '<div style="color:#5b3a8a;font-size:.75rem">no se parece al legajo</div>' : ''}</td>
     ${huella}
     <td style="text-align:center;color:#888">${f.grupo ?? '—'}</td></tr>`;
 }

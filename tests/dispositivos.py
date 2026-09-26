@@ -1652,5 +1652,53 @@ chequear("con accesos:asignar si",
          _aplica.post("/api/accesos/por-cargo/aplicar",
                       json={"cargo_id": None, "perfil_acceso_id": todas["id"]}).status_code == 200)
 
+
+print("\n=== COMPARAR EL NOMBRE DEL LECTOR CONTRA EL LEGAJO ===")
+# El equipo corta el nombre, asi que casi nunca es igual al del legajo. Marcar
+# cada corte como sospecha manda a investigar decenas de casos que no lo son, y
+# una pantalla que marca cosas que no son problemas deja de mirarse.
+from sync.lectores import _mismo_nombre
+
+# Lo que NO se marca: el mismo nombre escrito como lo escribe un equipo viejo.
+for _lector, _legajo, _por_que in [
+    ("GOMEZ", "Gomez, Ana Maria", "apellido solo"),
+    ("GOMEZ, A", "Gomez, Ana Maria", "cortado a la mitad del nombre"),
+    ("GOMEZ CA", "Gomez Castro, Ana", "cortado a la mitad del apellido"),
+    ("PEREZ", "Perez, Juan", "sin acento contra un legajo con acento"),
+    ("ANA GOMEZ", "Gomez, Ana", "nombre y apellido al reves"),
+    ("G", "Gomez, Ana", "cortado a una letra"),
+    ("ANA MARIA", "Gomez, Ana Maria", "solo los nombres de pila"),
+    ("", "Gomez, Ana", "el equipo no guardo nombre"),
+    ("GOMEZ", "", "el legajo no tiene nombre"),
+]:
+    chequear(f"no marca: {_por_que}", _mismo_nombre(_lector, _legajo),
+             (_lector, _legajo))
+
+# Lo que SI se marca: otro nombre. Es el caso que importa —un numero reutilizado
+# con el empleado anterior todavia cargado en el equipo.
+for _lector, _legajo, _por_que in [
+    ("PEREZ", "Gomez, Ana", "otro apellido"),
+    ("GOMEZ, LUIS", "Gomez, Ana", "mismo apellido, otra persona"),
+    ("RODRIGUEZ", "Gomez, Ana Maria", "nada que ver"),
+]:
+    chequear(f"marca: {_por_que}", not _mismo_nombre(_lector, _legajo),
+             (_lector, _legajo))
+
+# Y no depende de adivinar el ancho del campo: el metodo viejo media el nombre
+# mas largo del equipo y solo perdonaba el corte si medía exactamente eso, asi
+# que cualquier nombre cortado a otro largo quedaba marcado.
+_emps_n = {"10": {"id": 1, "nombre": "Ana", "apellido": "Gomez", "activo": 1,
+                  "tipo": "mensual", "fecha_egreso": None},
+           "11": {"id": 2, "nombre": "Juan", "apellido": "Perez", "activo": 1,
+                  "tipo": "mensual", "fecha_egreso": None}}
+_pad_n = [{"uid": 1, "user_id": "10", "nombre": "GOM", "privilegio": 0, "tarjeta": 0,
+           "grupo": "1"},
+          {"uid": 2, "user_id": "11", "nombre": "PEREZ, JUAN", "privilegio": 0,
+           "tarjeta": 0, "grupo": "1"}]
+_cmp_n = comparar_con_empleados(_pad_n, _emps_n)
+chequear("un corte de otro largo tampoco se marca",
+         _cmp_n["resumen"]["nombre_distinto"] == 0,
+         [(f["nombre"], f["nombre_distinto"]) for f in _cmp_n["filas"]])
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

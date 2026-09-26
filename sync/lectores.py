@@ -145,11 +145,40 @@ def leer_padrones(dispositivos: list, con_huellas=False) -> dict:
     return {d["id"]: r for d, r in zip(dispositivos, list(resultados))}
 
 
-# Los equipos viejos guardan el nombre en un campo más corto que el maestro y lo
-# cortan al grabarlo. Un nombre cortado no es un problema; confundirlo con otra
-# persona manda a investigar decenas de casos que no lo son.
-def _nombre_cortado(en_lector: str, en_sistema: str, limite: int) -> bool:
-    return bool(limite) and len(en_lector) == limite and en_sistema.upper().startswith(en_lector.upper())
+# Los equipos viejos guardan el nombre en un campo más corto y lo cortan al
+# grabarlo, así que el nombre del lector CASI NUNCA es igual al del legajo. Un
+# nombre cortado no es un problema; confundirlo con otra persona manda a
+# investigar decenas de casos que no lo son, y una pantalla que marca cosas que
+# no son problemas deja de mirarse.
+#
+# Por eso la comparación es por palabras y tolerante:
+#
+#   · sin acentos, sin mayúsculas, sin puntuación — el equipo guarda PEREZ y el
+#     legajo dice Pérez, y son la misma persona
+#   · sin importar el orden — "ANA GOMEZ" y "GOMEZ, ANA" son la misma persona
+#   · cada palabra del lector alcanza con que sea el COMIENZO de alguna del
+#     legajo, que es exactamente lo que hace el corte por largo
+#
+# Solo se marca cuando alguna palabra del lector no se parece a ninguna del
+# legajo. Eso ya no es un corte: es otro nombre, y casi siempre un número
+# reutilizado con el empleado anterior todavía adentro.
+def _normalizar(texto: str) -> list:
+    import unicodedata
+    sin_tilde = "".join(c for c in unicodedata.normalize("NFKD", texto or "")
+                        if not unicodedata.combining(c))
+    limpio = "".join(c if c.isalnum() else " " for c in sin_tilde.upper())
+    return [p for p in limpio.split() if p]
+
+
+def _mismo_nombre(en_lector: str, en_sistema: str) -> bool:
+    palabras_lector = _normalizar(en_lector)
+    palabras_sistema = _normalizar(en_sistema)
+    if not palabras_lector or not palabras_sistema:
+        return True          # sin con qué comparar no se acusa a nadie
+    return all(
+        any(p.startswith(q) or q.startswith(p) for q in palabras_sistema)
+        for p in palabras_lector
+    )
 
 
 def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
@@ -168,6 +197,9 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
     del legajo y no es un simple corte por largo: eso suele ser un número
     reutilizado, con el empleado anterior todavía cargado.
     """
+    # El nombre más largo que hay en este equipo. Es informativo —da una idea de
+    # a cuántos caracteres corta— y nada depende de él: la comparación de nombres
+    # tolera el corte por sí sola, sin tener que adivinar el ancho del campo.
     limite = max((len(u["nombre"]) for u in usuarios), default=0)
     # Las huellas son una lectura aparte y no siempre se piden. Cuando no se
     # pidieron, el conteo va en None: informar "0 sin huella" sin haberlas leido
@@ -197,11 +229,7 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
             else:
                 resumen["ok"] += 1
 
-            comparable = (emp["apellido"] or "").strip()
-            if (u["nombre"] and comparable
-                    and u["nombre"].upper() not in nombre_sistema.upper()
-                    and not _nombre_cortado(u["nombre"], comparable, limite)
-                    and not _nombre_cortado(u["nombre"], nombre_sistema, limite)):
+            if not _mismo_nombre(u["nombre"], nombre_sistema):
                 fila["nombre_distinto"] = True
                 resumen["nombre_distinto"] += 1
 

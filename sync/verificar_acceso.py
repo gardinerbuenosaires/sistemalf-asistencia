@@ -19,16 +19,24 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Qué se concluye de cada combinación, para una puerta.
-#
-#   debería abrir · está cargado · tiene huella
+# Qué se concluye de cada combinación de: le corresponde · está cargado · tiene
+# huella. Los equipos que no son puerta tienen sus propios estados y no comparten
+# ninguno con las puertas: el maestro no abre nada, y decir de él que "abre"
+# —aunque sea por reusar una etiqueta— es afirmar algo falso sobre un equipo.
 DIAGNOSTICOS = {
-    "abre":          "Abre esta puerta",
-    "sin_huella":    "Cargado pero SIN huella: no abre",
-    "falta":         "Debería abrir y no está cargado",
-    "sobra":         "Está cargado y no debería abrir",
-    "no_abre":       "No abre, y no está cargado",
-    "sin_leer":      "No se pudo leer el equipo",
+    # Puertas.
+    "abre":         "Abre esta puerta",
+    "sin_huella":   "Cargado pero SIN huella: no abre",
+    "falta":        "Debería abrir y no está cargado",
+    "sobra":        "Está cargado y no debería abrir",
+    "no_abre":      "No abre, y no está cargado",
+    # Equipo de asistencia. No abre puertas: registra la huella y de ahí se copia
+    # a las puertas, así que lo único que se informa es si está enrolado.
+    "enrolado":             "Enrolado para asistencia (este equipo no abre puertas)",
+    "maestro_sin_huella":   "Enrolado SIN huella: no puede fichar ni hay huella para copiar",
+    "no_enrolado":          "No está enrolado en el equipo de asistencia",
+    # Cualquiera de los dos.
+    "sin_leer":     "No se pudo leer el equipo",
 }
 
 
@@ -47,7 +55,8 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set) -> dict:
     """
     user_id = str(user_id).strip()
     filas = []
-    resumen = {"abre": 0, "falta": 0, "sobra": 0, "sin_huella": 0, "sin_leer": 0}
+    resumen = {"abre": 0, "falta": 0, "sobra": 0, "sin_huella": 0, "sin_leer": 0,
+               "sin_huella_maestro": False}
 
     for d in equipos:
         lectura = lecturas.get(d["id"]) or {
@@ -86,9 +95,14 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set) -> dict:
         sin_huella = encontrado is not None and encontrado.get("huellas") == 0
 
         if not es_puerta:
-            # El equipo de asistencia. No se juzga, se informa.
-            fila["estado"] = ("sin_huella" if sin_huella
-                              else "abre" if encontrado else "no_abre")
+            # El equipo de asistencia. No se juzga si debería estar o no —ahí
+            # está por fichar— y sobre todo no se dice que abre: no abre nada.
+            fila["estado"] = ("maestro_sin_huella" if sin_huella
+                              else "enrolado" if encontrado else "no_enrolado")
+            if sin_huella or not encontrado:
+                # Sin huella en el maestro no hay nada que copiar a ninguna
+                # puerta: es la causa de raíz de que falte en todas.
+                resumen["sin_huella_maestro"] = True
         elif debe and encontrado and sin_huella:
             fila["estado"] = "sin_huella"
             resumen["sin_huella"] += 1
@@ -108,7 +122,10 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set) -> dict:
         filas.append(fila)
 
     # Primero lo que está mal, y dentro de eso el orden del listado de equipos.
-    orden = {"falta": 0, "sin_huella": 1, "sobra": 2, "sin_leer": 3,
-             "abre": 4, "no_abre": 5}
+    # Primero lo que hay que hacer algo al respecto, y el maestro sin huella
+    # arriba de todo: si falta ahí, falta en todas las puertas por ese motivo.
+    orden = {"maestro_sin_huella": 0, "no_enrolado": 1, "falta": 2,
+             "sin_huella": 3, "sobra": 4, "sin_leer": 5,
+             "abre": 6, "enrolado": 7, "no_abre": 8}
     filas.sort(key=lambda f: (orden[f["estado"]], not f["es_puerta"]))
     return {"user_id": user_id, "resumen": resumen, "equipos": filas}

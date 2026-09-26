@@ -1335,13 +1335,19 @@ async function cargarAccesos(id) {
 // Lo que los lectores realmente tienen. Va aparte y a pedido porque son varias
 // conexiones a equipos viejos y tarda unos segundos: no puede colgar el legajo
 // cada vez que alguien abre una ficha.
+// El equipo de asistencia tiene sus propias etiquetas y no comparte ninguna con
+// las puertas: ese equipo no abre nada, y ponerle "ABRE" —aunque sea por reusar
+// un cartel— es decir algo falso de un equipo.
 const _ACC_ESTADOS = {
-  falta:      { color: '#b3261e', fondo: '#fbe9e7', texto: 'FALTA' },
-  sin_huella: { color: '#b3261e', fondo: '#fbe9e7', texto: 'SIN HUELLA' },
-  sobra:      { color: '#8a6d1f', fondo: '#f6f2e6', texto: 'SOBRA' },
-  sin_leer:   { color: '#777',    fondo: '#f2f2f2', texto: 'SIN LEER' },
-  abre:       { color: '#2e7d4f', fondo: '#dcede2', texto: 'ABRE' },
-  no_abre:    { color: '#999',    fondo: '#f7f7f7', texto: '—' },
+  falta:              { color: '#b3261e', fondo: '#fbe9e7', texto: 'FALTA' },
+  sin_huella:         { color: '#b3261e', fondo: '#fbe9e7', texto: 'SIN HUELLA' },
+  sobra:              { color: '#8a6d1f', fondo: '#f6f2e6', texto: 'SOBRA' },
+  sin_leer:           { color: '#777',    fondo: '#f2f2f2', texto: 'SIN LEER' },
+  abre:               { color: '#2e7d4f', fondo: '#dcede2', texto: 'ABRE' },
+  no_abre:            { color: '#999',    fondo: '#f7f7f7', texto: '—' },
+  maestro_sin_huella: { color: '#b3261e', fondo: '#fbe9e7', texto: 'SIN HUELLA' },
+  no_enrolado:        { color: '#8a6d1f', fondo: '#f6f2e6', texto: 'NO ENROLADO' },
+  enrolado:           { color: '#4a6b8a', fondo: '#eef3f8', texto: 'ENROLADO' },
 };
 
 async function verificarEnLectores(id) {
@@ -1395,11 +1401,14 @@ async function verificarEnLectores(id) {
         <span style="background:${est.fondo};color:${est.color};font-weight:700;font-size:.7rem;
                      padding:2px 7px;border-radius:3px;min-width:78px;text-align:center;flex:none">${est.texto}</span>
         <span style="min-width:140px;flex:none">
-          ${e.nombre}${e.es_puerta ? '' : ' <span style="color:#aaa;font-size:.74rem">(asistencia)</span>'}
+          ${e.nombre}${e.es_puerta ? '' : ' <span style="color:#aaa;font-size:.74rem">(no abre puertas)</span>'}
           ${e.ubicacion ? `<span style="color:#bbb;font-size:.74rem"> · ${e.ubicacion}</span>` : ''}
         </span>
         <span style="flex:1;color:#777">${detalle}</span>
-      </div>`;
+      </div>
+      ${e.es_puerta ? '' : `<div style="font-size:.74rem;color:#aaa;padding:0 0 6px 87px">
+        Solo registra la asistencia. Se muestra porque de acá sale la huella que
+        se copia a las puertas.</div>`}`;
   }).join('');
 
   caja.innerHTML = `
@@ -1415,6 +1424,9 @@ async function verificarEnLectores(id) {
       ${r.sin_huella ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:5px">
         Ojo con «SIN HUELLA»: figura en la lista del equipo, así que revisando el
         padrón parece resuelto, pero sin huella no abre.</div>` : ''}
+      ${r.sin_huella_maestro ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:5px">
+        En el equipo de asistencia no tiene huella, así que no hay ninguna huella
+        para copiar a las puertas. Esto se arregla primero: hay que enrolarlo ahí.</div>` : ''}
       <div style="margin-top:7px">${filas}</div>
       <div style="font-size:.74rem;color:#aaa;margin-top:6px">
         Leído recién de los equipos. No se cambió nada en ninguno.</div>

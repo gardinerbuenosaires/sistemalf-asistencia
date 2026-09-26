@@ -1275,6 +1275,33 @@ chequear("del equipo de asistencia no se opina si deberia o no",
          _por_id[9]["deberia"] is None, _por_id[9])
 chequear("pero se informa que la huella esta ahi para copiar",
          _por_id[9]["huellas"] == 2, _por_id[9])
+# El maestro no abre puertas. Reusar la etiqueta de las puertas hacia que la
+# pantalla dijera que abre un equipo que no abre nada.
+chequear("del equipo de asistencia NUNCA se dice que abre",
+         _por_id[9]["estado"] == "enrolado", _por_id[9]["estado"])
+chequear("y su diagnostico aclara que no abre puertas",
+         "no abre puertas" in _por_id[9]["diagnostico"], _por_id[9]["diagnostico"])
+chequear("ningun estado de puerta se usa para el equipo de asistencia",
+         all(e["estado"] not in ("abre", "no_abre", "falta", "sobra", "sin_huella")
+             for e in _v["equipos"] if not e["es_puerta"]),
+         [(e["nombre"], e["estado"]) for e in _v["equipos"]])
+
+# Si en el maestro no tiene huella no hay nada que copiar a ninguna puerta: es la
+# causa de raiz de que falte en todas, y se avisa como tal.
+_v0 = verificar("42", _eq, {**_lecturas, 9: _lec(dict(_yo, huellas=0))}, {1})
+_m0 = {e["id"]: e for e in _v0["equipos"]}[9]
+chequear("maestro sin huella tiene su propio estado",
+         _m0["estado"] == "maestro_sin_huella", _m0["estado"])
+chequear("y se marca como la causa de raiz",
+         _v0["resumen"]["sin_huella_maestro"] is True, _v0["resumen"])
+chequear("y va primero en la lista",
+         _v0["equipos"][0]["id"] == 9, [e["id"] for e in _v0["equipos"]])
+_v0b = verificar("42", _eq, {**_lecturas, 9: _lec()}, {1})
+chequear("no estar enrolado en el maestro tambien se avisa",
+         {e["id"]: e["estado"] for e in _v0b["equipos"]}[9] == "no_enrolado"
+         and _v0b["resumen"]["sin_huella_maestro"] is True, _v0b["resumen"])
+chequear("con huella en el maestro no se avisa nada",
+         _v["resumen"]["sin_huella_maestro"] is False, _v["resumen"])
 chequear("trae el nombre con el que figura en el equipo",
          _por_id[1]["nombre_en_equipo"] == "PEREZ", _por_id[1])
 chequear("y el grupo, de donde el equipo saca sus reglas",

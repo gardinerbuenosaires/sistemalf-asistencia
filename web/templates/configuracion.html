@@ -3277,6 +3277,14 @@ async function verPadron(id) {
       <span style="font-size:.85rem;color:#333"><b id="padron-contador">${r.total} cargados</b> · contestó por ${data.transporte.toUpperCase()}</span>
       ${alertas || '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo en orden</span>'}
     </div>
+    ${data.franjas_leidas ? (r.con_franja
+      ? `<div style="background:#f6e9ce;border-left:3px solid #c8a951;padding:7px 10px;font-size:.8rem;color:#6b5a26;margin:7px 0">
+          <b>${r.con_franja} persona(s) tienen franja horaria propia en este equipo.</b>
+          El equipo les aplica un horario particular, y hoy escribirles una huella se lo borraría.
+          Hay que resolverlo antes de que el sistema le escriba algo a esta puerta.</div>`
+      : `<div style="font-size:.78rem;color:#888;margin:7px 0">
+          Nadie tiene franja horaria propia acá: el acceso lo gobierna el grupo. Escribir una
+          huella no le pisa ningún horario a nadie.</div>`) : ''}
     ${r.sin_huella ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:7px 10px;font-size:.8rem;color:#8c1d18;margin:7px 0">
       ${r.sin_huella === 1 ? 'Hay una persona cargada' : `Hay ${r.sin_huella} personas cargadas`} sin huella en este equipo.
       ${esPuerta ? 'Figuran en la lista y no abren la puerta.'

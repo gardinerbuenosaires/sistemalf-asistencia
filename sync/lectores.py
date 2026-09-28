@@ -63,7 +63,45 @@ def _contar_huellas(conexion) -> dict | None:
         return None
 
 
-def leer_padron(dispositivo: dict, con_huellas: bool = False) -> dict:
+def _leer_franjas(conexion) -> dict | None:
+    """
+    La franja horaria de cada usuario, por uid interno. Solo lectura.
+
+    Hay que desempaquetar el padrón a mano porque pyzk sí lee este campo pero lo
+    tira: lo desempaqueta en `get_users` y no lo pone en el objeto User, que ni
+    siquiera tiene dónde guardarlo. Y al grabar lo escribe en cero, siempre.
+
+    Importa antes de escribir cualquier cosa. Agregarle una huella a alguien
+    reenvía su registro completo —el protocolo los manda juntos— así que le
+    pisaría la franja con cero. Si nadie la usa, no hay nada que perder y el
+    problema no existe; si alguien la usa, hay que resolverlo antes.
+
+    Devuelve None si no se pudo leer: no saber no es lo mismo que no haber.
+    """
+    from struct import unpack
+    from zk import const
+
+    try:
+        if conexion.user_packet_size != 28:
+            # El formato de 72 bytes guarda la franja en otro lado y este
+            # desempaquetado no le corresponde. Mejor no contestar que mentir.
+            return None
+        datos, _ = conexion.read_with_buffer(const.CMD_USERTEMP_RRQ, const.FCT_USER)
+        datos = datos[4:]
+        franjas = {}
+        while len(datos) >= 28:
+            uid, _priv, _pw, _nom, _card, _grupo, franja, _uid_txt = unpack(
+                "<HB5s8sIxBhI", datos[:28])
+            franjas[uid] = franja
+            datos = datos[28:]
+        return franjas
+    except Exception as exc:
+        logger.warning("No se pudieron leer las franjas horarias: %s", exc)
+        return None
+
+
+def leer_padron(dispositivo: dict, con_huellas: bool = False,
+                con_franja: bool = False) -> dict:
     """
     Trae los usuarios cargados en un lector.
 
@@ -105,6 +143,10 @@ def leer_padron(dispositivo: dict, con_huellas: bool = False) -> dict:
         if con_huellas:
             for u in usuarios:
                 u["huellas"] = huellas.get(u["uid"], 0) if huellas is not None else None
+        if con_franja:
+            franjas = _leer_franjas(conexion)
+            for u in usuarios:
+                u["franja"] = franjas.get(u["uid"]) if franjas is not None else None
         return {"ok": True, "transporte": transporte, "usuarios": usuarios,
                 "error": None, "huellas_leidas": None if not con_huellas else huellas is not None}
     except Exception as exc:
@@ -141,7 +183,7 @@ def leer_padrones(dispositivos: list, con_huellas=False) -> dict:
     pedir = ((lambda d: bool(con_huellas)) if isinstance(con_huellas, bool)
              else (lambda d: d["id"] in con_huellas))
     with ThreadPoolExecutor(max_workers=min(8, len(dispositivos))) as pool:
-        resultados = pool.map(lambda d: leer_padron(d, pedir(d)), dispositivos)
+        resultados = pool.map(lambda d: leer_padron(d, con_huellas=pedir(d)), dispositivos)
     return {d["id"]: r for d, r in zip(dispositivos, list(resultados))}
 
 
@@ -205,9 +247,11 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
     # pidieron, el conteo va en None: informar "0 sin huella" sin haberlas leido
     # es decir que todos pueden abrir sin haberlo verificado.
     huellas_leidas = any("huellas" in u for u in usuarios)
+    franjas_leidas = any(u.get("franja") is not None for u in usuarios)
     filas, resumen = [], {"total": len(usuarios), "de_baja": 0, "desconocidos": 0,
                           "nombre_distinto": 0, "ok": 0,
-                          "sin_huella": 0 if huellas_leidas else None}
+                          "sin_huella": 0 if huellas_leidas else None,
+                          "con_franja": 0 if franjas_leidas else None}
 
     for u in usuarios:
         emp = empleados.get(u["user_id"])
@@ -238,6 +282,10 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
         # persona es quien dice ser— sino de que la carga quedó a medias.
         if u.get("huellas") == 0:
             resumen["sin_huella"] += 1
+        # Franja distinta de cero: a esta persona el equipo le aplica un horario
+        # propio, y escribirle una huella se lo borraria.
+        if u.get("franja"):
+            resumen["con_franja"] += 1
 
         filas.append(fila)
 
@@ -246,4 +294,4 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
     orden = {"de_baja": 0, "desconocido": 1, "ok": 2}
     filas.sort(key=lambda f: (orden[f["estado"]], len(f["user_id"]), f["user_id"]))
     return {"resumen": resumen, "filas": filas, "nombre_limite": limite,
-            "huellas_leidas": huellas_leidas}
+            "huellas_leidas": huellas_leidas, "franjas_leidas": franjas_leidas}

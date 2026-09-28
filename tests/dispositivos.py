@@ -212,7 +212,7 @@ print("\n=== PADRON: endpoint ===")
 import sync.lectores as lectores
 
 _real = lectores.leer_padron
-lectores.leer_padron = lambda d, con_huellas=False: {"ok": True, "transporte": "udp",
+lectores.leer_padron = lambda d, **kw: {"ok": True, "transporte": "udp",
                                   "usuarios": PADRON, "error": None}
 r = cli.get(f"/api/dispositivos/{puerta['id']}/padron")
 chequear("GET padron responde 200", r.status_code == 200, r.text[:160])
@@ -223,7 +223,7 @@ chequear("deja constancia de que el equipo contesto",
          any(x["visto_en"] for x in cli.get("/api/dispositivos").json()
              if x["id"] == puerta["id"]))
 
-lectores.leer_padron = lambda d, con_huellas=False: {"ok": False, "transporte": None, "usuarios": [],
+lectores.leer_padron = lambda d, **kw: {"ok": False, "transporte": None, "usuarios": [],
                                   "error": "ZKNetworkError: timed out"}
 r = cli.get(f"/api/dispositivos/{puerta['id']}/padron")
 chequear("un equipo que no contesta devuelve ok=false, no un error 500",
@@ -264,7 +264,7 @@ if _real_emp:
                        "privilegio": 0, "tarjeta": 0, "grupo": "1"})
 
 
-def _falso(d, con_huellas=False):
+def _falso(d, **kw):
     if d["ip"] == "127.0.0.2":   # la Puerta deposito que se creo mas arriba
         return {"ok": True, "transporte": "udp", "usuarios": PADRON_REV, "error": None}
     return {"ok": False, "transporte": None, "usuarios": [],
@@ -306,7 +306,7 @@ print("\n=== LECTURA EN PARALELO ===")
 import time
 from sync.lectores import leer_padrones
 
-_lento = lambda d, con_huellas=False: (time.sleep(0.4), {"ok": True, "transporte": "tcp",
+_lento = lambda d, **kw: (time.sleep(0.4), {"ok": True, "transporte": "tcp",
                                       "usuarios": [], "error": None})[1]
 lectores.leer_padron = _lento
 equipos = [{"id": i, "ip": f"127.0.0.{i}", "protocolo": "pull"} for i in range(1, 6)]
@@ -720,7 +720,7 @@ if emp_id:
 print("\n=== PLAN: endpoint ===")
 import sync.lectores as _lec
 _guardado = _lec.leer_padrones
-_lec.leer_padrones = lambda ds, con_huellas=False: {d["id"]: {"ok": True, "transporte": "udp",
+_lec.leer_padrones = lambda ds, **kw: {d["id"]: {"ok": True, "transporte": "udp",
                                            "usuarios": [], "error": None} for d in ds}
 r = cli.get("/api/accesos/plan")
 chequear("GET plan responde 200", r.status_code == 200, r.text[:200])
@@ -1033,7 +1033,7 @@ chequear("desactivar una puerta si se permite", r.status_code == 200, r.text[:20
 
 import sync.lectores as _lec2
 _g = _lec2.leer_padrones
-_lec2.leer_padrones = lambda ds, con_huellas=False: {x["id"]: {"ok": True, "transporte": "udp",
+_lec2.leer_padrones = lambda ds, **kw: {x["id"]: {"ok": True, "transporte": "udp",
                                             "usuarios": [], "error": None} for x in ds}
 plan = cli.get("/api/accesos/plan").json()
 _lec2.leer_padrones = _g
@@ -1049,7 +1049,7 @@ chequear("mientras tanto no aparece entre las puertas del plan",
 
 # Al reactivarla, vuelve a administrarse sola.
 cli.put(f"/api/dispositivos/{p_oficina}", json={**_base, "es_acceso": True, "activo": True})
-_lec2.leer_padrones = lambda ds, con_huellas=False: {x["id"]: {"ok": True, "transporte": "udp",
+_lec2.leer_padrones = lambda ds, **kw: {x["id"]: {"ok": True, "transporte": "udp",
                                             "usuarios": [], "error": None} for x in ds}
 plan2 = cli.get("/api/accesos/plan").json()
 _lec2.leer_padrones = _g
@@ -1147,7 +1147,7 @@ chequear("un perfil que incluye de mas NO se propone",
 print("\n=== APLICAR UN GRUPO ===")
 import sync.lectores as _lec3
 _g3 = _lec3.leer_padrones
-_lec3.leer_padrones = lambda ds, con_huellas=False: {d["id"]: {"ok": True, "transporte": "udp",
+_lec3.leer_padrones = lambda ds, **kw: {d["id"]: {"ok": True, "transporte": "udp",
                                             "usuarios": [], "error": None} for d in ds}
 r = cli.get("/api/accesos/descubrir")
 chequear("GET descubrir responde 200", r.status_code == 200, r.text[:160])
@@ -1376,9 +1376,9 @@ _c7.close()
 _eid, _uid = _fila[0], str(_fila[1]).strip()
 
 _real3 = lectores.leer_padrones
-lectores.leer_padrones = lambda ds, con_huellas=False: {
+lectores.leer_padrones = lambda ds, **kw: {
     d["id"]: _lec({"uid": 1, "user_id": _uid, "nombre": "X", "grupo": "0",
-                   "huellas": 1 if con_huellas else None})
+                   "huellas": 1 if kw.get("con_huellas") else None})
     for d in ds}
 r = cli.get(f"/api/accesos/empleado/{_eid}/en-lectores")
 chequear("el endpoint responde 200", r.status_code == 200, r.text[:200])
@@ -1397,7 +1397,7 @@ _c8.close()
 _salio = {"red": False}
 
 
-def _no_deberia(ds, con_huellas=False):
+def _no_deberia(ds, **kw):
     _salio["red"] = True
     return {}
 
@@ -1500,8 +1500,8 @@ chequear("sin leer las huellas del maestro no se afirma que falten",
 
 # Leer varios equipos pidiendo las huellas solo a algunos, en una sola tanda.
 _reg = []
-lectores.leer_padron = lambda d, con_huellas=False: (
-    _reg.append((d["id"], con_huellas)),
+lectores.leer_padron = lambda d, **kw: (
+    _reg.append((d["id"], bool(kw.get("con_huellas")))),
     {"ok": True, "transporte": "udp", "usuarios": [], "error": None})[1]
 leer_padrones([{"id": 1, "ip": "127.0.0.1", "protocolo": "pull"},
                {"id": 2, "ip": "127.0.0.2", "protocolo": "pull"}],
@@ -1699,6 +1699,50 @@ _cmp_n = comparar_con_empleados(_pad_n, _emps_n)
 chequear("un corte de otro largo tampoco se marca",
          _cmp_n["resumen"]["nombre_distinto"] == 0,
          [(f["nombre"], f["nombre_distinto"]) for f in _cmp_n["filas"]])
+
+
+print("\n=== FRANJA HORARIA POR USUARIO ===")
+# Importa antes de escribir nada: agregarle una huella a alguien reenvia su
+# registro completo —el protocolo los manda juntos— y pyzk escribe la franja en
+# cero, siempre. Si nadie la usa no hay nada que perder; si alguien la usa, hay
+# que resolverlo antes.
+_emps_f = {"10": {"id": 1, "nombre": "Ana", "apellido": "Gomez", "activo": 1,
+                  "tipo": "mensual", "fecha_egreso": None},
+           "11": {"id": 2, "nombre": "Luis", "apellido": "Diaz", "activo": 1,
+                  "tipo": "mensual", "fecha_egreso": None}}
+_pad_f = [{"uid": 1, "user_id": "10", "nombre": "GOMEZ", "grupo": "1", "franja": 0},
+          {"uid": 2, "user_id": "11", "nombre": "DIAZ", "grupo": "1", "franja": 3}]
+_cmp_f = comparar_con_empleados(_pad_f, _emps_f)
+chequear("cuenta a quien tiene franja horaria propia",
+         _cmp_f["resumen"]["con_franja"] == 1, _cmp_f["resumen"])
+chequear("franja cero no cuenta como tenerla",
+         _cmp_f["resumen"]["con_franja"] == 1, _cmp_f["resumen"])
+chequear("avisa que las franjas se leyeron",
+         _cmp_f["franjas_leidas"] is True, _cmp_f["franjas_leidas"])
+
+# Si no se leyeron, el conteo va en None. No saber no es lo mismo que no haber:
+# informar "nadie tiene franja" sin haberlo leido autoriza a escribir a ciegas.
+_cmp_f2 = comparar_con_empleados(
+    [{k: v for k, v in u.items() if k != "franja"} for u in _pad_f], _emps_f)
+chequear("sin leerlas el conteo va en None, no en cero",
+         _cmp_f2["resumen"]["con_franja"] is None, _cmp_f2["resumen"])
+chequear("y lo dice", _cmp_f2["franjas_leidas"] is False, _cmp_f2["franjas_leidas"])
+
+# Un equipo que contesto pero no supo dar las franjas: viene en None por usuario
+# y tampoco se cuenta como que nadie la tiene.
+_cmp_f3 = comparar_con_empleados(
+    [dict(u, franja=None) for u in _pad_f], _emps_f)
+chequear("franja que no se pudo leer no cuenta como cero",
+         _cmp_f3["resumen"]["con_franja"] is None, _cmp_f3["resumen"])
+
+# El desempaquetado usa el mismo formato con el que pyzk lee el padron, asi que
+# tiene que devolver lo mismo que el propio pyzk saca del paquete.
+from struct import pack, unpack
+_crudo = pack("<HB5s8sIxBhI", 7, 0, b"", b"PEREZ", 0, 1, 5, 42)
+_u = unpack("<HB5s8sIxBhI", _crudo)
+chequear("el formato de 28 bytes ubica la franja donde se espera",
+         len(_crudo) == 28 and _u[0] == 7 and _u[5] == 1 and _u[6] == 5 and _u[7] == 42,
+         _u)
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

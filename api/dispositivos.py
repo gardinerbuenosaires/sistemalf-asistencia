@@ -390,7 +390,7 @@ def padron(did: int, _user=Depends(require_permiso("dispositivos", "ver"))):
     # Con las huellas: es la mirada en profundidad a UN equipo, y sin ellas la
     # lista dice quien esta cargado pero no quien puede abrir. "Revisar todos" no
     # las pide, porque son bastantes mas datos por equipo y ahi se leen todos.
-    lectura = leer_padron(d, con_huellas=True)
+    lectura = leer_padron(d, con_huellas=True, con_franja=True)
     if not lectura["ok"]:
         return {"ok": False, "error": lectura["error"], "dispositivo": d}
 

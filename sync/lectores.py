@@ -12,10 +12,14 @@ salen las reglas de acceso que el equipo aplica solo. Se lee y se informa, pero
 no se toca: el día que el sistema escriba usuarios va a tener que respetarlo,
 porque cambiarlo sin querer le cambia a alguien por dónde y cuándo entra.
 
-Lo que todavía no se lee es la franja horaria por usuario. El equipo la tiene y
-el protocolo la manda, pero pyzk la descarta al parsear, así que sacarla
-requiere rehacer ese parseo. No hace falta para comparar padrones; sí va a hacer
-falta antes de escribir, porque pyzk la pisa con cero al grabar un usuario.
+Sobre la franja horaria por usuario. Se lee (ver `_leer_franjas`), y hubo que
+desempaquetarla a mano porque pyzk la descarta al parsear. Importa porque pyzk
+la pisa con cero al grabar, y grabar una huella reenvía el registro del usuario
+entero: agregarle un dedo a alguien le borraría su horario.
+
+Hoy en los equipos de este local están todas en cero, así que no hay nada que
+perder. Si algún día dejan de estarlo, el camino de escritura tiene que
+resolverlo ANTES de tocar ese equipo; está anotado en `plan_accesos`.
 """
 import logging
 

@@ -12,6 +12,26 @@ nada: la próxima vez que se lo alcance, se corrige.
 
 Acá no se escribe nada. Esto arma el plan; aplicarlo es otra cosa, y no se
 habilita hasta que escribir esté probado contra los equipos reales.
+
+Cuando se escriba, dos cosas que no se pueden olvidar:
+
+  · La franja horaria. Grabar una huella reenvía el registro del usuario entero
+    —el protocolo los manda en el mismo paquete— y pyzk la escribe en cero.
+    Mientras estén todas en cero no se pierde nada, pero eso hay que
+    verificarlo, no suponerlo: `leer_padron(con_franja=True)` lo contesta. Si
+    alguna no es cero, hay que preservarla antes de escribirle a ese equipo.
+
+  · El grupo. Se lee y se vuelve a escribir tal cual, pero solo si se le pasa a
+    `set_user` el usuario leído del equipo. Un alta nace en grupo 0, y qué
+    permite el grupo 0 depende de cómo esté configurado cada lector.
+
+Y si alguna vez se quieren horarios de verdad —"cocina entra de 6 a 16"— el
+lugar donde cuelgan es `perfiles_dispositivos`: su clave es (perfil, puerta), y
+como cada puerta es un equipo y el equipo guarda una franja por usuario y por
+equipo, el grano ya coincide. Sería una columna nueva que apunte a una tabla de
+horarios, más el mismo cambio en `accesos_excepciones`. Nada de lo que hay hoy
+estorba: lo que cambia es que los conjuntos de puertas pasan a ser mapas de
+puerta a horario.
 """
 import logging
 

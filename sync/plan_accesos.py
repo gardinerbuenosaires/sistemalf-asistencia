@@ -25,6 +25,35 @@ Cuando se escriba, dos cosas que no se pueden olvidar:
     `set_user` el usuario leído del equipo. Un alta nace en grupo 0, y qué
     permite el grupo 0 depende de cómo esté configurado cada lector.
 
+El final del módulo: dar de baja tiene que liberar el número.
+
+Hoy la baja es solo `activo = 0`. El número queda tomado para siempre —`user_id`
+es UNIQUE en empleados— y la persona sigue cargada en los equipos, porque de eso
+se ocupa Enterprise. Cuando Enterprise no esté, la baja tiene que borrar a la
+persona de TODOS los equipos (las puertas y el de asistencia) y recién después
+liberar el número para que se pueda reutilizar.
+
+El orden no se puede invertir. Si el número se libera antes de confirmar los
+borrados, queda disponible para otra persona mientras la huella vieja todavía
+abre una puerta: el dedo del que se fue pasa a fichar y a abrir como el empleado
+nuevo. No es solo un acceso indebido, es atribución equivocada.
+
+Y la falla parcial es lo normal: siempre hay un equipo apagado. Así que hace
+falta un estado intermedio —de baja en el sistema, número todavía no liberado
+porque falta confirmar en tal puerta— y no una operación que asuma que los cinco
+equipos contestan.
+
+La parte difícil ya está hecha y no fue a propósito: `estado_deseado` excluye a
+los inactivos, así que una baja ya genera el "sacar" en todas las puertas sola.
+Falta el equipo de asistencia, que hoy este módulo solo lee, y la compuerta que
+libera el número cuando todos confirmaron.
+
+El historial aguanta: los fichajes guardan `empleado_id`, y ninguna consulta
+cruza fichajes con empleados por `user_id`. Vaciar el `user_id` del legajo viejo
+le deja sus fichajes intactos y bien atribuidos. Lo que sí se pierde es poder
+contestar "quién tenía el 42 antes", así que conviene guardarlo en algún lado
+antes de vaciarlo.
+
 Y si alguna vez se quieren horarios de verdad —"cocina entra de 6 a 16"— el
 lugar donde cuelgan es `perfiles_dispositivos`: su clave es (perfil, puerta), y
 como cada puerta es un equipo y el equipo guarda una franja por usuario y por

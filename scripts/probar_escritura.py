@@ -11,6 +11,16 @@ Lo que NUNCA hace:
   · escribirle al equipo de asistencia (se niega si la IP es la del maestro)
   · escribir si la lectura previa no es confiable
   · usar un número que ya exista en el equipo o en el sistema
+  · tocar ninguna base de datos
+
+Sobre la base. La lee, y solo para dos cosas: saber cuál es el equipo de
+asistencia —para negarse a tocarlo— y qué números ya están usados. Son tres
+SELECT; no llama a `init_db()`, así que no crea tablas ni corre migraciones.
+
+Y lee la de PRODUCCIÓN a propósito, no una copia. Las dos preguntas que hace
+solo valen contra la lista real: en una copia de hace días, un número puede
+figurar libre y estar asignado desde ayer. Una protección que consulta datos
+viejos es peor que no tenerla, porque da confianza sin darla.
 
 Sobre el índice interno. Cada usuario tiene un `uid`, que es su posición dentro
 del equipo, distinta de su número de legajo. `set_user` sin uid usa el que pyzk
@@ -211,6 +221,7 @@ def main():
           + (f"  ({puerta['nombre']})" if puerta else "  (no está en el sistema)"))
     print(f"  Número : {numero}")
     print(f"  Base   : {os.environ.get('DB_PATH', '(la que resuelva config)')}")
+    print(f"           se lee, NO se escribe: de acá salen los números ya usados")
     print(f"  Maestro: {maestro_ip}  — no se toca")
 
     try:

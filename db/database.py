@@ -1060,6 +1060,12 @@ def _migrate(conn):
     if "departamento_dist" not in cols_usuarios:
         conn.execute("ALTER TABLE usuarios ADD COLUMN departamento_dist INTEGER")
         logger.info("Migración: columna departamento_dist agregada a usuarios")
+    # Eliminado = borrado a la vista. Un usuario con registros a su nombre no se
+    # puede borrar de verdad sin perder quién hizo cada cosa; se oculta de la
+    # lista y conserva su email, porque algunas tablas guardan al autor por email.
+    if "eliminado" not in cols_usuarios:
+        conn.execute("ALTER TABLE usuarios ADD COLUMN eliminado INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna eliminado agregada a usuarios")
 
     # Catálogos configurables del legajo (turno y sector)
     conn.execute("""

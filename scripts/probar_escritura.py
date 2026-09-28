@@ -29,8 +29,9 @@ viniera incompleta, el máximo saldría bajo y se sobrescribiría a alguien que 
 está. Ese es el modo de falla que destruye datos sin avisar, y es la razón de
 que acá se verifique la lectura antes de escribir y se pase el uid explícito.
 
-Uso:  python scripts/probar_escritura.py alta   IP NUMERO [--grupo N]
-      python scripts/probar_escritura.py huella IP NUMERO NUMERO_EN_EL_MAESTRO
+Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
+      python scripts/probar_escritura.py huella  IP NUMERO NUMERO_EN_EL_MAESTRO
+      python scripts/probar_escritura.py borrado IP NUMERO
 
       IP          la puerta donde probar. NUNCA el maestro.
       NUMERO      el número descartable (por ejemplo 9990)
@@ -46,6 +47,11 @@ Uso:  python scripts/probar_escritura.py alta   IP NUMERO [--grupo N]
                   destino tiene que llamarse PRUEBA: es la red contra el error
                   que más caro sale, que es equivocarse de número y pisarle la
                   huella a un empleado real.
+
+      borrado     borra el usuario de prueba y verifica que no se haya
+                  llevado a nadie por delante. Es la única operación
+                  irreversible en el equipo, y la que más importa verificar:
+                  los lectores viejos reordenan índices internos al borrar.
 
       --si        no preguntar antes de escribir (para no tipear dos veces)
 """
@@ -452,12 +458,87 @@ def modo_huella(ip, numero, numero_maestro):
             pass
 
 
+def modo_borrado(ip, numero):
+    """
+    Borra el usuario de prueba y verifica que no se haya llevado a nadie por
+    delante. Es la única de las tres operaciones que es irreversible en ese
+    equipo, y la que más importa verificar: los lectores viejos reordenan
+    índices internos, y un borrado mal hecho se nota recién cuando alguien no
+    puede entrar.
+
+    `delete_user` manda el índice interno y nada más (`pack('h', uid)`), así que
+    un índice equivocado borra a otra persona. Por eso se usa el de la foto ya
+    verificada y no el que resolvería pyzk por su cuenta.
+    """
+    maestro_ip, clave, puerta = datos_del_sistema(ip, numero, False)
+    cabecera("borrar el usuario de prueba", ip, numero, puerta, maestro_ip)
+    conexion = abrir(ip, clave)
+
+    try:
+        antes = foto(conexion)
+        ok, detalle = lectura_confiable(antes)
+        print(f"  Lectura previa: {detalle}")
+        if not ok:
+            salir("Lectura no confiable. NO se borra nada.")
+
+        objetivo = antes["usuarios"].get(numero)
+        if objetivo is None:
+            salir(f"El equipo no tiene ningún usuario {numero}. Nada que borrar.")
+        if objetivo["nombre"].upper() != "PRUEBA":
+            salir(f"El usuario {numero} se llama «{objetivo['nombre']}», no PRUEBA.\n"
+                  f"  Este script solo borra el usuario de prueba. Para sacar gente\n"
+                  f"  de verdad va a haber otra herramienta, con backup obligatorio.")
+
+        print(f"\n  Se va a borrar:")
+        print(f"     número {numero}, nombre «{objetivo['nombre']}», "
+              f"índice interno {objetivo['uid']}, {objetivo['huellas']} huella(s)")
+        print(f"  Quedan {len(antes['usuarios']) - 1} usuarios, que tienen que "
+              f"seguir igual.")
+
+        if "--si" not in sys.argv:
+            if input("\n  ¿Borrar? (s/n) ").strip().lower() != "s":
+                salir("Cancelado. No se borró nada.")
+
+        conexion.delete_user(uid=objetivo["uid"])
+        print("\n  Borrado. Volviendo a leer para verificar…")
+
+        despues = foto(conexion)
+        ok2, detalle2 = lectura_confiable(despues)
+        sigue = despues["usuarios"].get(numero)
+        problemas = comparar(antes, despues, numero)
+
+        print(f"\n  {'OK   ' if not sigue else 'FALLA'} el usuario {numero} "
+              f"{'ya no está en el equipo' if not sigue else 'TODAVÍA ESTÁ'}")
+        print(f"  {'OK   ' if not problemas else 'FALLA'} los otros "
+              f"{len(antes['usuarios']) - 1} usuarios "
+              f"{'quedaron intactos, con sus huellas' if not problemas else 'NO quedaron intactos'}")
+        for p in problemas:
+            print(f"        {p}")
+        if not ok2:
+            print(f"  OJO   la lectura posterior no es confiable: {detalle2}")
+
+        if not sigue and not problemas and ok2:
+            print(f"\n  El borrado funciona y no se lleva a nadie por delante.")
+            print(f"  La puerta quedó como estaba antes de todas estas pruebas.")
+            print(f"\n  Las tres operaciones estan probadas contra este equipo.")
+        else:
+            print(f"\n  Algo no salió como se esperaba. Tenés el backup de esta")
+            print(f"  puerta de antes de empezar; no toques nada y contámelo.")
+    finally:
+        try:
+            conexion.disconnect()
+        except Exception:
+            pass
+
+
 def main():
     modo = sys.argv[1] if len(sys.argv) > 1 else ""
     if modo == "alta" and len(sys.argv) >= 4:
         modo_alta(sys.argv[2], str(sys.argv[3]).strip())
     elif modo == "huella" and len(sys.argv) >= 5:
         modo_huella(sys.argv[2], str(sys.argv[3]).strip(), str(sys.argv[4]).strip())
+    elif modo == "borrado" and len(sys.argv) >= 4:
+        modo_borrado(sys.argv[2], str(sys.argv[3]).strip())
     else:
         print(__doc__)
         raise SystemExit(1)

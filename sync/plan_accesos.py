@@ -33,15 +33,27 @@ se ocupa Enterprise. Cuando Enterprise no esté, la baja tiene que borrar a la
 persona de TODOS los equipos (las puertas y el de asistencia) y recién después
 liberar el número para que se pueda reutilizar.
 
-El orden no se puede invertir. Si el número se libera antes de confirmar los
-borrados, queda disponible para otra persona mientras la huella vieja todavía
-abre una puerta: el dedo del que se fue pasa a fichar y a abrir como el empleado
-nuevo. No es solo un acceso indebido, es atribución equivocada.
+Hay una sola condición, y de ella se deduce todo lo demás:
 
-Y la falla parcial es lo normal: siempre hay un equipo apagado. Así que hace
-falta un estado intermedio —de baja en el sistema, número todavía no liberado
-porque falta confirmar en tal puerta— y no una operación que asuma que los cinco
-equipos contestan.
+    el sistema borra del .201 recién cuando confirmó que ese número no está
+    en ninguna puerta.
+
+Alcanza con eso porque el lector solo ofrece números que él no tiene: mientras
+el sistema no lo borre del .201, el lector lo sigue viendo ocupado y no se lo
+sugiere a nadie. O sea que el número vuelve a circulación exactamente cuando el
+sistema lo devuelve, y no puede reasignarse antes de que las puertas estén
+limpias. No hay dos lados que sincronizar.
+
+Esto vale porque el sistema va a ser el ÚNICO que borra. Hoy Enterprise también
+borra, y esa convivencia —dos actores repartiendo el mismo recurso— es la que
+obliga a liberar el número a mano cuando el lector reusa uno que el sistema
+tiene tomado. Ese procedimiento manual ya existe y funciona; deja de hacer falta
+cuando Enterprise no esté.
+
+Y la falla parcial es lo normal: siempre hay un equipo apagado. Si la .204 no
+contesta, el número no se libera y queda esperando; el trabajo nocturno lo
+retoma y lo completa el día que el equipo vuelva. Sin cola de órdenes: vuelve a
+comparar y sigue donde estaba.
 
 La parte difícil ya está hecha y no fue a propósito: `estado_deseado` excluye a
 los inactivos, así que una baja ya genera el "sacar" en todas las puertas sola.

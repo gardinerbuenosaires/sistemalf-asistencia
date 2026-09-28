@@ -147,32 +147,62 @@ def main():
     # El maestro no se toca. Es el único equipo donde la huella es original y no
     # una copia: una prueba que salga mal ahí no se repara con un backup, se
     # repara volviendo a enrolar gente.
-    maestro_ip = clave = None
+    # De dónde sale el maestro depende de qué base se esté mirando. La de
+    # producción todavía no tiene la tabla `dispositivos` —la crea la rama de
+    # accesos— y ahí la IP del lector vive en `configuracion.device_ip`. Las dos
+    # sirven: lo único que hace falta es saber cuál equipo NO tocar.
+    maestro_ip = clave = puerta = None
     try:
         from db.database import db_session
         with db_session() as conn:
-            fila = conn.execute(
-                """SELECT ip, password FROM dispositivos
-                    WHERE activo=1 AND cuenta_asistencia=1 AND ip IS NOT NULL
-                 ORDER BY orden, id LIMIT 1""").fetchone()
-            if fila:
-                maestro_ip, clave = fila["ip"], fila["password"]
-            puerta = conn.execute(
-                "SELECT nombre, password FROM dispositivos WHERE ip=?", (ip,)).fetchone()
-            if puerta:
-                clave = puerta["password"]
+            hay_tabla = conn.execute(
+                """SELECT 1 FROM sqlite_master
+                    WHERE type='table' AND name='dispositivos'""").fetchone()
+            if hay_tabla:
+                fila = conn.execute(
+                    """SELECT ip, password FROM dispositivos
+                        WHERE activo=1 AND cuenta_asistencia=1 AND ip IS NOT NULL
+                     ORDER BY orden, id LIMIT 1""").fetchone()
+                if fila:
+                    maestro_ip, clave = fila["ip"], fila["password"]
+                puerta = conn.execute(
+                    "SELECT nombre, password FROM dispositivos WHERE ip=?", (ip,)).fetchone()
+                if puerta:
+                    clave = puerta["password"]
+            else:
+                cfg = {r["clave"]: r["valor"] for r in conn.execute(
+                    "SELECT clave, valor FROM configuracion WHERE clave LIKE 'device_%'")}
+                maestro_ip = (cfg.get("device_ip") or "").strip() or None
+                clave = cfg.get("device_password") or 0
+
             ocupado = conn.execute(
                 """SELECT apellido, nombre, activo FROM empleados
                     WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
+            # Para sugerir uno libre si el pedido está tomado. Pasa más de lo
+            # que uno espera: los números redondos ya se usaron alguna vez, y
+            # la importación desde el lector crea legajos con ese nombre.
+            tomados = {str(r[0]).strip() for r in conn.execute(
+                "SELECT user_id FROM empleados WHERE user_id IS NOT NULL")}
     except Exception as exc:
         salir(f"No se pudo leer la base del sistema: {exc}\n"
               f"  Sin eso no puedo verificar que la IP no sea el maestro.")
 
-    if maestro_ip and ip == maestro_ip:
+    # Sin saber cuál es el maestro no hay protección, y esa protección es el
+    # motivo por el que este script consulta la base. Mejor no correr.
+    if not maestro_ip:
+        salir("La base no dice cuál es el equipo de asistencia.\n"
+              "  Sin eso no puedo garantizar que esta IP no sea el maestro, que es\n"
+              "  lo único que este script no puede tocar.")
+
+    if ip == maestro_ip:
         salir(f"{ip} es el equipo de asistencia. Este script no le escribe.")
     if ocupado:
+        libres = [str(n) for n in range(9990, 9000, -1) if str(n) not in tomados][:4]
         salir(f"El número {numero} es de {ocupado['apellido']}, {ocupado['nombre']} "
-              f"({'activo' if ocupado['activo'] else 'dado de baja'}). Elegí otro.")
+              f"({'activo' if ocupado['activo'] else 'dado de baja'}).\n"
+              f"  Un legajo dado de baja sigue ocupando el número, así que no sirve.\n"
+              + (f"  Libres en la base: {', '.join(libres)}"
+                 if libres else "  No encontré ninguno libre entre 9001 y 9990."))
 
     grupo_pedido = argumento("--grupo")
     print(f"\n  Prueba de ESCRITURA — alta de un usuario")
@@ -180,6 +210,8 @@ def main():
     print(f"  Puerta : {ip}"
           + (f"  ({puerta['nombre']})" if puerta else "  (no está en el sistema)"))
     print(f"  Número : {numero}")
+    print(f"  Base   : {os.environ.get('DB_PATH', '(la que resuelva config)')}")
+    print(f"  Maestro: {maestro_ip}  — no se toca")
 
     try:
         conexion, transporte = conectar(ip, clave or 0)

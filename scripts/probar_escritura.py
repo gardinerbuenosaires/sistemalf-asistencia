@@ -29,15 +29,24 @@ viniera incompleta, el máximo saldría bajo y se sobrescribiría a alguien que 
 está. Ese es el modo de falla que destruye datos sin avisar, y es la razón de
 que acá se verifique la lectura antes de escribir y se pase el uid explícito.
 
-Uso:  python scripts/probar_escritura.py alta IP NUMERO [--grupo N]
+Uso:  python scripts/probar_escritura.py alta   IP NUMERO [--grupo N]
+      python scripts/probar_escritura.py huella IP NUMERO NUMERO_EN_EL_MAESTRO
 
-      alta        crear el usuario de prueba
       IP          la puerta donde probar. NUNCA el maestro.
-      NUMERO      el número descartable (por ejemplo 9999)
+      NUMERO      el número descartable (por ejemplo 9990)
+
+      alta        crea el usuario de prueba, sin huella. No abre la puerta.
       --grupo N   en qué grupo crearlo. Por defecto, el grupo más frecuente
                   entre los que ya están en ese equipo: si todos abren estando
                   en el grupo 1, crear el de prueba en el 1 reproduce lo que
                   pasa de verdad. Crearlo en otro probaría otra cosa.
+
+      huella      copia al usuario de prueba las huellas que una persona tiene
+                  en el maestro. El maestro se LEE, nunca se le escribe. El
+                  destino tiene que llamarse PRUEBA: es la red contra el error
+                  que más caro sale, que es equivocarse de número y pisarle la
+                  huella a un empleado real.
+
       --si        no preguntar antes de escribir (para no tipear dos veces)
 """
 import os
@@ -97,6 +106,10 @@ def foto(conexion):
             huellas[h.uid] += 1
     return {
         "declarados": declarados,
+        # Los objetos tal como los devuelve pyzk. Hacen falta para escribir una
+        # huella: `save_user_template` quiere el User del equipo DESTINO, y
+        # armarlo a mano perdería el grupo y el privilegio que ya tiene.
+        "crudos": {str(u.user_id).strip(): u for u in usuarios},
         "usuarios": {
             str(u.user_id).strip(): {
                 "uid": u.uid,
@@ -125,14 +138,19 @@ def lectura_confiable(f):
     return True, f"{leidos} usuarios, coincide con lo que declara el equipo"
 
 
-def comparar(antes, despues, esperado_nuevo):
+def comparar(antes, despues, excepto=None):
     """
-    Que el usuario nuevo esté no alcanza: hay que probar que los demás quedaron
-    exactamente como estaban. Un alta que corre índices o pisa a alguien se ve
-    acá y en ningún otro lado.
+    Que el cambio buscado haya ocurrido no alcanza: hay que probar que a los
+    demás no les pasó nada. Un alta que corre índices, o una huella que se
+    escribe encima de otra persona, se ven acá y en ningún otro lado.
+
+    `excepto` es el número al que SÍ se le espera un cambio. Todos los demás
+    tienen que quedar idénticos, y nadie más puede aparecer.
     """
     problemas = []
     for numero, a in antes["usuarios"].items():
+        if numero == excepto:
+            continue
         d = despues["usuarios"].get(numero)
         if d is None:
             problemas.append(f"DESAPARECIÓ el {numero} ({a['nombre']})")
@@ -143,24 +161,50 @@ def comparar(antes, despues, esperado_nuevo):
                     f"al {numero} ({a['nombre']}) le cambió {campo}: "
                     f"{a[campo]} -> {d[campo]}")
     aparecidos = set(despues["usuarios"]) - set(antes["usuarios"])
-    for numero in sorted(aparecidos - {esperado_nuevo}):
+    for numero in sorted(aparecidos - {excepto}):
         problemas.append(f"APARECIÓ un {numero} que nadie creó")
     return problemas
 
 
-def main():
-    if len(sys.argv) < 4 or sys.argv[1] != "alta":
-        print(__doc__)
-        raise SystemExit(1)
-    ip, numero = sys.argv[2], str(sys.argv[3]).strip()
+def leer_huellas_del_maestro(ip, clave, numero):
+    """
+    Trae las huellas de una persona del equipo donde se enrola. SOLO LECTURA.
 
-    # El maestro no se toca. Es el único equipo donde la huella es original y no
-    # una copia: una prueba que salga mal ahí no se repara con un backup, se
-    # repara volviendo a enrolar gente.
-    # De dónde sale el maestro depende de qué base se esté mirando. La de
-    # producción todavía no tiene la tabla `dispositivos` —la crea la rama de
-    # accesos— y ahí la IP del lector vive en `configuracion.device_ip`. Las dos
-    # sirven: lo único que hace falta es saber cuál equipo NO tocar.
+    El maestro es el único equipo donde la huella es original y no una copia:
+    una prueba que salga mal ahí no se repara con un backup, se repara volviendo
+    a enrolar gente. Por eso acá solo se lee, nunca se escribe.
+    """
+    conexion = None
+    try:
+        conexion, transporte = conectar(ip, clave)
+        usuarios = conexion.get_users()
+        yo = next((u for u in usuarios if str(u.user_id).strip() == numero), None)
+        if yo is None:
+            salir(f"El número {numero} no está en el equipo de asistencia ({ip}).")
+        mias = [h for h in conexion.get_templates()
+                if h.uid == yo.uid and getattr(h, "valid", 1)]
+        return transporte, (yo.name or "").strip(), mias
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
+def datos_del_sistema(ip, numero, numero_debe_estar_libre):
+    """
+    Lo que hace falta saber antes de escribirle a un equipo. SOLO SELECT.
+
+    Devuelve (maestro_ip, clave, puerta). El maestro no se toca nunca: es el
+    único equipo donde la huella es original y no una copia, así que una prueba
+    que salga mal ahí no se repara con un backup sino volviendo a enrolar gente.
+
+    De dónde sale el maestro depende de qué base se esté mirando. La de
+    producción todavía no tiene la tabla `dispositivos` —la crea la rama de
+    accesos— y ahí la IP del lector vive en `configuracion.device_ip`. Las dos
+    sirven: lo único que hace falta es saber cuál equipo NO tocar.
+    """
     maestro_ip = clave = puerta = None
     try:
         from db.database import db_session
@@ -206,17 +250,19 @@ def main():
 
     if ip == maestro_ip:
         salir(f"{ip} es el equipo de asistencia. Este script no le escribe.")
-    if ocupado:
+    if ocupado and numero_debe_estar_libre:
         libres = [str(n) for n in range(9990, 9000, -1) if str(n) not in tomados][:4]
         salir(f"El número {numero} es de {ocupado['apellido']}, {ocupado['nombre']} "
               f"({'activo' if ocupado['activo'] else 'dado de baja'}).\n"
               f"  Un legajo dado de baja sigue ocupando el número, así que no sirve.\n"
               + (f"  Libres en la base: {', '.join(libres)}"
                  if libres else "  No encontré ninguno libre entre 9001 y 9990."))
+    return maestro_ip, clave, puerta
 
-    grupo_pedido = argumento("--grupo")
-    print(f"\n  Prueba de ESCRITURA — alta de un usuario")
-    print(f"  ---------------------------------------")
+
+def cabecera(titulo, ip, numero, puerta, maestro_ip):
+    print(f"\n  Prueba de ESCRITURA — {titulo}")
+    print(f"  " + "-" * (23 + len(titulo)))
     print(f"  Puerta : {ip}"
           + (f"  ({puerta['nombre']})" if puerta else "  (no está en el sistema)"))
     print(f"  Número : {numero}")
@@ -224,11 +270,21 @@ def main():
     print(f"           se lee, NO se escribe: de acá salen los números ya usados")
     print(f"  Maestro: {maestro_ip}  — no se toca")
 
+
+def abrir(ip, clave):
     try:
         conexion, transporte = conectar(ip, clave or 0)
     except Exception as exc:
         salir(f"El equipo no contestó: {type(exc).__name__}: {exc}")
     print(f"  Conectado por {transporte.upper()}")
+    return conexion
+
+
+def modo_alta(ip, numero):
+    maestro_ip, clave, puerta = datos_del_sistema(ip, numero, True)
+    grupo_pedido = argumento("--grupo")
+    cabecera("alta de un usuario", ip, numero, puerta, maestro_ip)
+    conexion = abrir(ip, clave)
 
     try:
         antes = foto(conexion)
@@ -298,6 +354,113 @@ def main():
             conexion.disconnect()
         except Exception:
             pass
+
+
+def modo_huella(ip, numero, numero_maestro):
+    """
+    Copia la huella de una persona del maestro al usuario de prueba de una
+    puerta. Es lo que prueba de verdad que las huellas son portables entre
+    equipos: hasta acá solo sabíamos que Enterprise las copia, no que nosotros
+    podamos.
+
+    El usuario destino tiene que llamarse PRUEBA. Es la red contra el error que
+    más caro sale: equivocarse de número y escribirle la huella de alguien
+    encima de un empleado real.
+    """
+    maestro_ip, clave, puerta = datos_del_sistema(ip, numero, False)
+    cabecera("escribir una huella", ip, numero, puerta, maestro_ip)
+
+    print(f"\n  Leyendo la huella del {numero_maestro} en el maestro…")
+    transporte_m, nombre_m, mias = leer_huellas_del_maestro(
+        maestro_ip, clave, numero_maestro)
+    if not mias:
+        salir(f"El {numero_maestro} ({nombre_m}) no tiene ninguna huella "
+              f"enrolada en el maestro. No hay nada que copiar.")
+    dedos = ", ".join(str(h.fid) for h in mias)
+    print(f"  {nombre_m}: {len(mias)} huella(s), dedo(s) {dedos}  "
+          f"(leído por {transporte_m.upper()}, sin escribirle nada)")
+
+    conexion = abrir(ip, clave)
+    try:
+        antes = foto(conexion)
+        ok, detalle = lectura_confiable(antes)
+        print(f"  Lectura previa: {detalle}")
+        if not ok:
+            salir("Lectura no confiable. NO se escribe nada.")
+
+        destino = antes["crudos"].get(numero)
+        if destino is None:
+            salir(f"El equipo no tiene ningún usuario {numero}. "
+                  f"Corré primero el alta.")
+        actual = antes["usuarios"][numero]
+        if actual["nombre"].upper() != "PRUEBA":
+            salir(f"El usuario {numero} de este equipo se llama "
+                  f"«{actual['nombre']}», no PRUEBA.\n"
+                  f"  Este script solo le escribe al usuario de prueba: si le "
+                  f"escribiera a\n  una persona real, le pisaría la huella.")
+
+        print(f"\n  Se le va a escribir al usuario {numero} («{actual['nombre']}», "
+              f"índice {destino.uid}):")
+        print(f"     {len(mias)} huella(s) copiada(s) del {numero_maestro}")
+        print(f"     hoy tiene {actual['huellas']}")
+        print(f"\n  Después vas a poder apoyar el dedo en esa puerta.")
+
+        if "--si" not in sys.argv:
+            if input("\n  ¿Escribir? (s/n) ").strip().lower() != "s":
+                salir("Cancelado. No se escribió nada.")
+
+        conexion.save_user_template(destino, mias)
+        print("\n  Escrito. Volviendo a leer para verificar…")
+
+        despues = foto(conexion)
+        ok2, detalle2 = lectura_confiable(despues)
+        quedo = despues["usuarios"].get(numero)
+        problemas = comparar(antes, despues, numero)
+
+        bien = quedo and quedo["huellas"] == len(mias)
+        print(f"\n  {'OK   ' if bien else 'FALLA'} el usuario {numero} "
+              f"quedó con {quedo['huellas'] if quedo else 0} huella(s), "
+              f"se escribieron {len(mias)}")
+        if quedo and (quedo["grupo"] != actual["grupo"]
+                      or quedo["nombre"] != actual["nombre"]):
+            # Escribir una huella reenvía el registro del usuario entero, así
+            # que el grupo y el nombre pueden cambiar sin que nadie lo pida.
+            print(f"        OJO: le cambió algo del registro. "
+                  f"grupo {actual['grupo']} -> {quedo['grupo']}, "
+                  f"nombre «{actual['nombre']}» -> «{quedo['nombre']}»")
+        print(f"  {'OK   ' if not problemas else 'FALLA'} los otros "
+              f"{len(antes['usuarios']) - 1} usuarios "
+              f"{'quedaron intactos' if not problemas else 'NO quedaron intactos'}")
+        for p in problemas:
+            print(f"        {p}")
+        if not ok2:
+            print(f"  OJO   la lectura posterior no es confiable: {detalle2}")
+
+        if bien and not problemas and ok2:
+            print(f"\n  La huella se escribió y nadie más se movió.")
+            print(f"  Ahora andá a esa puerta y apoyá el dedo.")
+            print(f"     Si abre: las huellas son portables y el camino sirve.")
+            print(f"     Si no abre: el usuario existe con huella, así que el")
+            print(f"     problema es el grupo {actual['grupo']} o la puerta misma,")
+            print(f"     no la copia. Probá con --grupo distinto en el alta.")
+        else:
+            print(f"\n  Algo no salió como se esperaba. Contámelo antes de seguir.")
+    finally:
+        try:
+            conexion.disconnect()
+        except Exception:
+            pass
+
+
+def main():
+    modo = sys.argv[1] if len(sys.argv) > 1 else ""
+    if modo == "alta" and len(sys.argv) >= 4:
+        modo_alta(sys.argv[2], str(sys.argv[3]).strip())
+    elif modo == "huella" and len(sys.argv) >= 5:
+        modo_huella(sys.argv[2], str(sys.argv[3]).strip(), str(sys.argv[4]).strip())
+    else:
+        print(__doc__)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

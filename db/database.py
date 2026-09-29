@@ -1066,6 +1066,11 @@ def _migrate(conn):
     if "eliminado" not in cols_usuarios:
         conn.execute("ALTER TABLE usuarios ADD COLUMN eliminado INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna eliminado agregada a usuarios")
+    # Empleado que es la misma persona que el usuario. Sirve para que un rol sin
+    # planificacion:propia no pueda cambiarse su propio horario.
+    if "empleado_id" not in cols_usuarios:
+        conn.execute("ALTER TABLE usuarios ADD COLUMN empleado_id INTEGER REFERENCES empleados(id)")
+        logger.info("Migración: columna empleado_id agregada a usuarios")
 
     # Catálogos configurables del legajo (turno y sector)
     conn.execute("""

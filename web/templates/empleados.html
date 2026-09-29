@@ -1358,7 +1358,8 @@ async function quitarCalendario(asignacionId) {
     toast("Calendario quitado");
     await refrescarCalendarioSection();
   } else {
-    toast("Error al quitar el calendario");
+    const err = await res.json().catch(() => ({}));
+    toast(err.detail || "Error al quitar el calendario");
   }
 }
 

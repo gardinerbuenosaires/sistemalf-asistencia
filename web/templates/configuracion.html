@@ -1044,7 +1044,7 @@ async function guardarParam(clave) {
 // ── Usuarios ──────────────────────────────────────────────────────────────────
 const COLORES_ROL = ["#2c3e50","#2980b9","#8e44ad","#f39c12","#e74c3c","#16a085","#d35400"];
 
-let usuarios = [], roles = [], usrEditandoId = null, meId = null, deptsDist = [];
+let usuarios = [], roles = [], usrEditandoId = null, meId = null, deptsDist = [], empleadosVinc = [];
 
 function colorRol(rid) {
   return COLORES_ROL[(rid || 0) % COLORES_ROL.length];
@@ -1061,14 +1061,16 @@ function iniciales(nombre) {
 }
 
 async function cargarUsuarios() {
-  const [uRes, rRes, meRes, dRes] = await Promise.all([
-    fetch("/api/usuarios"), fetch("/api/roles"), fetch("/api/auth/me"), fetch("/api/departamentos")
+  const [uRes, rRes, meRes, dRes, eRes] = await Promise.all([
+    fetch("/api/usuarios"), fetch("/api/roles"), fetch("/api/auth/me"), fetch("/api/departamentos"),
+    fetch("/api/usuarios/empleados")
   ]);
   usuarios  = await uRes.json();
   roles     = await rRes.json();
   const me  = await meRes.json();
   meId      = me.id;
   deptsDist = (await dRes.json()).filter(d => d.usa_distribucion);
+  empleadosVinc = eRes.ok ? await eRes.json() : [];
 
   document.getElementById("usr-cnt").textContent = usuarios.length;
   document.getElementById("usr-list").innerHTML = usuarios.map(u => `
@@ -1120,6 +1122,14 @@ function buildForm(u={}) {
         ${optsRol}
       </select>
       <div class="hint" id="rol-hint">${descRol}</div>
+    </div>
+    <div class="form-group">
+      <label>Empleado</label>
+      <select id="f-empleado" ${dis}>
+        <option value="">— No es empleado —</option>
+        ${empleadosVinc.map(e => `<option value="${e.id}"${u.empleado_id===e.id?' selected':''}>${e.apellido}, ${e.nombre}</option>`).join('')}
+      </select>
+      <div class="hint">Su propio legajo. Si el rol no tiene "Planificación › Propia", no puede cambiarse su horario ni su calendario.</div>
     </div>
     <div class="form-group">
       <label>Página de inicio</label>
@@ -1206,14 +1216,15 @@ async function guardarUsuario() {
   const pagina_inicio = document.getElementById("f-pagina-inicio")?.value || "";
   const turno_dist       = document.getElementById("f-turno-dist")?.value || "";
   const departamento_dist = parseInt(document.getElementById("f-dept-dist")?.value) || null;
+  const empleado_id       = parseInt(document.getElementById("f-empleado")?.value) || null;
 
   if (!nombre || !email || !rol_id) { toast("Completá todos los campos"); return; }
 
   const url    = usrEditandoId ? `/api/usuarios/${usrEditandoId}` : "/api/usuarios";
   const method = usrEditandoId ? "PUT" : "POST";
   const body   = usrEditandoId
-    ? { nombre, email, rol_id, activo, password, pagina_inicio, turno_dist, departamento_dist }
-    : { nombre, email, rol_id, password, pagina_inicio, turno_dist, departamento_dist };
+    ? { nombre, email, rol_id, activo, password, pagina_inicio, turno_dist, departamento_dist, empleado_id }
+    : { nombre, email, rol_id, password, pagina_inicio, turno_dist, departamento_dist, empleado_id };
 
   const res = await fetch(url, { method, headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
   if (res.ok) {
@@ -1247,7 +1258,7 @@ const ACCION_LABELS = {
   ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
   corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir", carga_inicial:"Carga inicial",
   ver_todos:"Ver todos", confirmar:"Confirmar", jubilacion:"Jubilación",
-  fichaje_manual:"Fichaje manual"
+  fichaje_manual:"Fichaje manual", propia:"Propia"
 };
 // Qué acciones aplica cada módulo: lo define el backend (auth/core.py) y llega
 // por /api/roles/modulos, así la matriz no se desincroniza del código.

@@ -28,11 +28,15 @@ MODULOS = [
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
     "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia"]
 # corregir       → asistencia:corregir (novedades en planilla)
 # fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
 #                  individuales o por fuerza mayor). Separado de "editar" porque
 #                  inventa una marca que el reloj nunca registró.
+# propia         → planificacion:propia (tocar la planificación o el calendario
+#                  del empleado vinculado al propio usuario). Sin él, "editar"
+#                  alcanza para todos menos para uno mismo: cambiarse el horario
+#                  del día después de llegar borra la llegada tarde.
 
 # Acciones que cada módulo realmente usa. Es la fuente única: la matriz de roles
 # se dibuja con esto y set_permisos rechaza lo que no figure acá. Al agregar un
@@ -41,7 +45,7 @@ MODULO_ACCIONES = {
     "dashboard":     ["ver"],
     "empleados":     ["ver", "editar", "jubilacion"],
     "horarios":      ["ver", "editar", "eliminar"],
-    "planificacion": ["ver", "editar"],
+    "planificacion": ["ver", "editar", "propia"],
     "calendarios":   ["ver", "editar", "eliminar"],
     "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos", "fichaje_manual"],
     "resultados":    ["ver", "procesar"],
@@ -163,6 +167,20 @@ def require_permiso(modulo: str, accion: str):
                                 f"Sin permiso: {modulo}.{accion}")
         return user
     return _check
+
+
+def check_no_es_propia(conn, user: dict, empleado_ids) -> None:
+    """Rechaza tocar la planificación del empleado vinculado al usuario si el rol
+    no tiene planificacion:propia. Un usuario sin empleado vinculado no se frena."""
+    if tiene_permiso(user.get("rol_id") or 0, "planificacion", "propia"):
+        return
+    row = conn.execute(
+        "SELECT empleado_id FROM usuarios WHERE id=?", (user.get("sub"),)
+    ).fetchone()
+    propio = row["empleado_id"] if row else None
+    if propio and propio in {int(e) for e in empleado_ids if e is not None}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "No podés modificar tu propia planificación. Pedíselo a otro usuario.")
 
 
 def check_page_auth(token: str | None, modulo: str, accion: str = "ver") -> bool:

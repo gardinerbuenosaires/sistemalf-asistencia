@@ -32,8 +32,29 @@ from db.database import db_session
 router = APIRouter(prefix="/api/accesos", tags=["accesos"])
 
 
+# Los niveles que se usan. El equipo también entiende 14 (super admin), pero no
+# se ofrece: no se usa acá, y una opción que nadie necesita en una lista de
+# permisos es una invitación a elegirla por error. Si un equipo trae un 14, se
+# lee y se informa; otra cosa es ponerlo desde acá.
+NIVELES_LECTOR = {0: "No administra el lector",
+                  2: "Enrolador — puede dar de alta y tomar huellas",
+                  6: "Administrador del lector"}
+
+
 class AsignacionIn(BaseModel):
     perfil_acceso_id: int | None = None
+
+
+class NivelLectorIn(BaseModel):
+    nivel_lector: int
+
+    @field_validator("nivel_lector")
+    @classmethod
+    def _nivel(cls, v):
+        if v not in NIVELES_LECTOR:
+            raise ValueError(f"Nivel inválido. Los que se usan son "
+                             f"{', '.join(str(k) for k in NIVELES_LECTOR)}")
+        return v
 
 
 class ExcepcionIn(BaseModel):
@@ -52,7 +73,7 @@ class ExcepcionIn(BaseModel):
 def _empleado(conn, eid):
     fila = conn.execute(
         """SELECT e.id, e.nombre, e.apellido, e.user_id, e.activo, e.perfil_acceso_id,
-                  e.cargo_id, c.nombre AS cargo
+                  e.nivel_lector, e.cargo_id, c.nombre AS cargo
              FROM empleados e
              LEFT JOIN cargos c ON c.id = e.cargo_id
             WHERE e.id = ?""",
@@ -120,6 +141,7 @@ def puertas_de(conn, eid) -> dict:
 
     return {
         "empleado": emp,
+        "niveles_lector": NIVELES_LECTOR,
         "perfil": perfil,
         "puertas_del_perfil": sorted(del_perfil),
         "excepciones": excepciones,
@@ -131,6 +153,28 @@ def puertas_de(conn, eid) -> dict:
 def ver_empleado(eid: int, _user=Depends(require_permiso("accesos", "ver"))):
     """De dónde sale cada puerta de esta persona: del perfil o de una excepción."""
     with db_session() as conn:
+        return puertas_de(conn, eid)
+
+
+@router.put("/empleado/{eid}/nivel-lector")
+def nivel_lector(eid: int, data: NivelLectorIn,
+                 _user=Depends(require_permiso("accesos", "editar"))):
+    """
+    Quién puede administrar el equipo de asistencia parado frente a él.
+
+    Pide el permiso más fuerte de accesos, y no el de asignar, porque no es
+    aplicar una política: un enrolador puede dar de alta a cualquiera y tomarle
+    la huella. Eso es crear identidades, que es de donde sale todo lo demás —el
+    fichaje y las puertas. Quien puede hacer eso puede fabricarse un acceso sin
+    pasar por ninguna de las pantallas que controlamos acá.
+
+    Vale para el equipo de asistencia y no para las puertas: no tienen pantalla,
+    así que en ellas no hay nada que administrar.
+    """
+    with db_session() as conn:
+        _empleado(conn, eid)     # 404 si no existe
+        conn.execute("UPDATE empleados SET nivel_lector=? WHERE id=?",
+                     (data.nivel_lector, eid))
         return puertas_de(conn, eid)
 
 

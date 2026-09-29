@@ -1779,5 +1779,45 @@ chequear("un nivel desconocido no se traduce a cualquier cosa",
 chequear("pero se cuenta igual: algo distinto de cero administra",
          _cmp_n4["resumen"]["administran"] == 1, _cmp_n4["resumen"])
 
+
+print("\n=== NIVEL DE ADMINISTRACION DEL LECTOR ===")
+# Es una sola propiedad de la persona y no una por equipo: las puertas no tienen
+# pantalla, asi que ahi no hay nada que administrar. Vale para el .201.
+if emp_id:
+    r = cli.get(f"/api/accesos/empleado/{emp_id}")
+    chequear("la ficha trae el nivel y el catalogo",
+             "nivel_lector" in r.json()["empleado"] and r.json()["niveles_lector"],
+             list(r.json()))
+    chequear("arranca en cero", r.json()["empleado"]["nivel_lector"] == 0,
+             r.json()["empleado"]["nivel_lector"])
+
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/nivel-lector", json={"nivel_lector": 2})
+    chequear("se puede poner enrolador", r.status_code == 200, r.text[:160])
+    chequear("y queda guardado",
+             cli.get(f"/api/accesos/empleado/{emp_id}").json()["empleado"]["nivel_lector"] == 2)
+
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/nivel-lector", json={"nivel_lector": 6})
+    chequear("y administrador", r.status_code == 200, r.text[:160])
+
+    # 14 existe en el equipo pero no se ofrece: no se usa, y una opcion que nadie
+    # necesita en una lista de permisos se elige por error.
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/nivel-lector", json={"nivel_lector": 14})
+    chequear("un nivel que no se usa se rechaza", r.status_code == 422, r.status_code)
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/nivel-lector", json={"nivel_lector": 99})
+    chequear("y uno inventado tambien", r.status_code == 422, r.status_code)
+
+    # Pide el permiso mas fuerte: un enrolador puede dar de alta a cualquiera y
+    # tomarle la huella, o sea crear identidades.
+    chequear("con accesos:asignar NO alcanza",
+             _aplica.put(f"/api/accesos/empleado/{emp_id}/nivel-lector",
+                         json={"nivel_lector": 2}).status_code == 403)
+    chequear("con accesos:ver tampoco",
+             _mirar.put(f"/api/accesos/empleado/{emp_id}/nivel-lector",
+                        json={"nivel_lector": 2}).status_code == 403)
+    cli.put(f"/api/accesos/empleado/{emp_id}/nivel-lector", json={"nivel_lector": 0})
+
+r = cli.put("/api/accesos/empleado/999999/nivel-lector", json={"nivel_lector": 0})
+chequear("un empleado inexistente da 404", r.status_code == 404, r.status_code)
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

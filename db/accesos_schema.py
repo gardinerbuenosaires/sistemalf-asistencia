@@ -125,6 +125,20 @@ def _migrar_perfiles(conn):
         )
         logger.info("Migración: columna perfil_acceso_id agregada a empleados")
 
+    # Quién puede administrar el lector desde el lector: dar de alta gente y
+    # tomarle la huella parado frente al equipo. Es UNA sola propiedad de la
+    # persona y no una por equipo, aunque el campo exista en todos: las puertas
+    # no tienen pantalla, así que ahí no hay nada que administrar. El valor vale
+    # para el equipo de asistencia, que es el único con menú.
+    #
+    # Arranca en 0 para todos, a propósito. Que la mayoría no administre nada es
+    # el estado correcto, y un valor que se hereda sin que nadie lo decida es la
+    # forma en que se acumula gente con permisos que ya no le corresponden.
+    if "nivel_lector" not in cols:
+        conn.execute(
+            "ALTER TABLE empleados ADD COLUMN nivel_lector INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna nivel_lector agregada a empleados")
+
     # El cargo llego a proponer un perfil, como comodidad para no elegirlo de a
     # uno en cada alta. Se saco: se usaba un par de veces por mes y su valor
     # dependia de que el acceso se dedujera limpio del puesto, que no es el

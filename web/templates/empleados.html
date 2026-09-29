@@ -1242,6 +1242,11 @@ async function cargarAccesos(id) {
   // Dos permisos distintos: aplicar la politica y desviarse de ella.
   const puede = canDo('accesos', 'asignar');
   const puedeExcepcion = canDo('accesos', 'excepcion');
+  // Nivel del lector: pide el permiso más fuerte. Un enrolador puede dar de
+  // alta a cualquiera y tomarle la huella, o sea crear identidades, que es de
+  // donde sale el fichaje y las puertas.
+  const puedeEditar = canDo('accesos', 'editar');
+  const nivelActual = Number(datos.empleado.nivel_lector || 0);
   const nombrePuerta = pid => (_accPuertas.find(p => p.id === pid) || {}).nombre || `#${pid}`;
   const perfilActual = datos.perfil ? datos.perfil.id : "";
 
@@ -1281,6 +1286,22 @@ async function cargarAccesos(id) {
                 ? `Sin perfil, pero abre ${datos.puertas.length} puerta(s) por excepción. Sacá la excepción si no tiene que abrir nada.`
                 : 'Hoy no abre ninguna puerta.'}
           </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid #f0f0f0">
+        <div style="font-size:.78rem;color:#888;margin-bottom:5px">
+          Administración del equipo de fichaje</div>
+        <select id="f-nivel-lector" style="max-width:340px" ${puedeEditar ? '' : 'disabled'}
+                onchange="guardarNivelLector(${id}, this.value)">
+          ${Object.entries(datos.niveles_lector || {}).map(([v, t]) =>
+            `<option value="${v}"${Number(v) === nivelActual ? ' selected' : ''}>${t}</option>`).join('')}
+        </select>
+        <div style="font-size:.76rem;color:#999;margin-top:4px">
+          Es el permiso para manejar el equipo de fichaje parado frente a él: dar de alta
+          gente y tomarle la huella. No tiene que ver con las puertas —no tienen pantalla—
+          ni con lo que esta persona puede hacer dentro del sistema.
+          ${puedeEditar ? '' : '<br>Cambiarlo necesita permiso para editar accesos.'}
         </div>
       </div>
 
@@ -1441,6 +1462,21 @@ async function verificarEnLectores(id) {
       <div style="font-size:.74rem;color:#aaa;margin-top:6px">
         Leído recién de los equipos. No se cambió nada en ninguno.</div>
     </div>`;
+}
+
+async function guardarNivelLector(id, valor) {
+  const res = await fetch(`/api/accesos/empleado/${id}/nivel-lector`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nivel_lector: Number(valor) }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    toast('Error: ' + (e.detail || 'no se pudo guardar'));
+  } else {
+    toast(Number(valor) ? 'Puede administrar el equipo de fichaje'
+                        : 'Ya no administra el equipo de fichaje');
+  }
+  cargarAccesos(id);
 }
 
 async function guardarPerfilAcceso(id, valor) {

@@ -31,7 +31,8 @@ que acá se verifique la lectura antes de escribir y se pase el uid explícito.
 
 Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
       python scripts/probar_escritura.py huella  IP NUMERO NUMERO_EN_EL_MAESTRO
-      python scripts/probar_escritura.py borrado IP NUMERO
+      python scripts/probar_escritura.py borrado IP NUMERO [--nombre X]
+      python scripts/probar_escritura.py restaurar IP NUMERO
 
       IP          la puerta donde probar. NUNCA el maestro.
       NUMERO      el número descartable (por ejemplo 9990)
@@ -52,6 +53,15 @@ Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
                   llevado a nadie por delante. Es la única operación
                   irreversible en el equipo, y la que más importa verificar:
                   los lectores viejos reordenan índices internos al borrar.
+
+      restaurar   vuelve a poner a esa persona desde el respaldo que dejó el
+                  borrado. Es la vuelta atrás, y de paso un anticipo de lo que
+                  va a hacer el trabajo real al cargar a alguien en una puerta.
+
+      --nombre X  al borrar a alguien que no sea PRUEBA, hay que escribir el
+                  nombre que el equipo tiene para ese número. Si no coincide,
+                  el número está equivocado y no se borra nada. Un "¿estás
+                  seguro?" no sirve de guardia: a eso se le dice que sí.
 
       --si        no preguntar antes de escribir (para no tipear dos veces)
 """
@@ -107,11 +117,18 @@ def foto(conexion):
     usuarios = conexion.get_users()
     declarados = getattr(conexion, "users", None)
     huellas = Counter()
+    crudas = {}
     for h in conexion.get_templates():
         if getattr(h, "valid", 1):
             huellas[h.uid] += 1
+            crudas.setdefault(h.uid, []).append(h)
     return {
         "declarados": declarados,
+        # Las huellas tal como vinieron. Hacen falta para que un borrado pueda
+        # guardarse su propio respaldo: sin los templates, deshacerlo depende de
+        # que la persona siga enrolada en el maestro, y el caso que más importa
+        # —los que no están en la base— es justamente el que no lo está.
+        "huellas_crudas": crudas,
         # Los objetos tal como los devuelve pyzk. Hacen falta para escribir una
         # huella: `save_user_template` quiere el User del equipo DESTINO, y
         # armarlo a mano perdería el grupo y el privilegio que ya tiene.
@@ -458,6 +475,130 @@ def modo_huella(ip, numero, numero_maestro):
             pass
 
 
+def carpeta_respaldos():
+    """
+    Al lado de la base, como los backups del relevamiento. Tiene huellas
+    adentro: no sale de esta PC.
+    """
+    from pathlib import Path
+    base = os.environ.get("DB_PATH")
+    raiz = Path(base).resolve().parent if base else Path(RAIZ)
+    destino = raiz / "borrados"
+    destino.mkdir(parents=True, exist_ok=True)
+    return destino
+
+
+def guardar_respaldo(ip, numero, datos, fingers):
+    """
+    Guarda todo lo necesario para volver a poner a esta persona tal como estaba:
+    sus campos y sus huellas completas.
+
+    Guardar las huellas y no solo el número es la diferencia entre poder
+    deshacer y depender de que la persona siga enrolada en el maestro. Y el caso
+    que más importa —los que están en una puerta y no existen en la base— es
+    justamente el que no está en el maestro.
+
+    Se vuelve a leer del disco después de escribirlo: un respaldo que no se
+    comprobó no es un respaldo.
+    """
+    import json
+
+    ruta = carpeta_respaldos() / f"{ip.replace('.', '-')}-{numero}.json"
+    contenido = {
+        "ip": ip, "numero": numero,
+        "uid": datos["uid"], "nombre": datos["nombre"],
+        "grupo": datos["grupo"], "privilegio": datos["privilegio"],
+        "huellas": [h.json_pack() for h in fingers],
+    }
+    ruta.write_text(json.dumps(contenido, ensure_ascii=False, indent=1),
+                    encoding="utf-8")
+    releido = json.loads(ruta.read_text(encoding="utf-8"))
+    if len(releido["huellas"]) != len(fingers):
+        salir(f"El respaldo quedó incompleto en {ruta}. No se borra nada.")
+    for a, b in zip(contenido["huellas"], releido["huellas"]):
+        if a["template"] != b["template"]:
+            salir(f"El respaldo no coincide con lo leído. No se borra nada.")
+    return ruta
+
+
+def modo_restaurar(ip, numero):
+    """
+    Vuelve a poner en una puerta a alguien que se borró, desde su respaldo.
+
+    Es la vuelta atrás del borrado, y también un anticipo de lo que va a hacer
+    el trabajo real cuando tenga que cargar a alguien en una puerta: crear el
+    usuario y escribirle sus huellas.
+    """
+    import json
+    from zk.finger import Finger
+
+    maestro_ip, clave, puerta = datos_del_sistema(ip, numero, False)
+    ruta = carpeta_respaldos() / f"{ip.replace('.', '-')}-{numero}.json"
+    if not ruta.exists():
+        salir(f"No encuentro el respaldo:\n     {ruta}")
+    guardado = json.loads(ruta.read_text(encoding="utf-8"))
+
+    cabecera("restaurar un usuario", ip, numero, puerta, maestro_ip)
+    print(f"\n  Respaldo: {ruta}")
+    print(f"     nombre «{guardado['nombre']}», grupo {guardado['grupo']}, "
+          f"{len(guardado['huellas'])} huella(s)")
+
+    conexion = abrir(ip, clave)
+    try:
+        antes = foto(conexion)
+        ok, detalle = lectura_confiable(antes)
+        print(f"  Lectura previa: {detalle}")
+        if not ok:
+            salir("Lectura no confiable. NO se escribe nada.")
+        if numero in antes["usuarios"]:
+            salir(f"El equipo ya tiene un usuario {numero} "
+                  f"(«{antes['usuarios'][numero]['nombre']}»). No hay que restaurar nada.")
+
+        usados = {u["uid"] for u in antes["usuarios"].values()}
+        # El índice original si sigue libre —así queda igual que antes— y si no,
+        # uno nuevo: el número de legajo es lo que identifica a la persona, el
+        # índice es solo su posición adentro del equipo.
+        uid = guardado["uid"] if guardado["uid"] not in usados else max(usados) + 1
+        if uid != guardado["uid"]:
+            print(f"  El índice original {guardado['uid']} está ocupado; "
+                  f"se usa el {uid}.")
+
+        if "--si" not in sys.argv:
+            if input("\n  ¿Restaurar? (s/n) ").strip().lower() != "s":
+                salir("Cancelado.")
+
+        conexion.set_user(uid=uid, name=guardado["nombre"],
+                          privilege=int(guardado["privilegio"]), password="",
+                          group_id=guardado["grupo"], user_id=numero)
+        fingers = [Finger.json_unpack(h) for h in guardado["huellas"]]
+        if fingers:
+            recien = next((u for u in conexion.get_users()
+                           if str(u.user_id).strip() == numero), None)
+            if recien is None:
+                salir("Se creó el usuario pero no aparece al releer. Parate acá.")
+            conexion.save_user_template(recien, fingers)
+        print("\n  Restaurado. Volviendo a leer para verificar…")
+
+        despues = foto(conexion)
+        vuelto = despues["usuarios"].get(numero)
+        problemas = comparar(antes, despues, numero)
+        bien = vuelto and vuelto["huellas"] == len(guardado["huellas"])
+        print(f"\n  {'OK   ' if bien else 'FALLA'} el {numero} volvió con "
+              f"{vuelto['huellas'] if vuelto else 0} de "
+              f"{len(guardado['huellas'])} huella(s)")
+        print(f"  {'OK   ' if not problemas else 'FALLA'} los demás "
+              f"{'quedaron intactos' if not problemas else 'NO quedaron intactos'}")
+        for p in problemas:
+            print(f"        {p}")
+        if bien and not problemas:
+            print(f"\n  Quedó como estaba. El borrado se puede deshacer.")
+    finally:
+        try:
+            conexion.disconnect()
+        except Exception:
+            pass
+
+
 def modo_borrado(ip, numero):
     """
     Borra el usuario de prueba y verifica que no se haya llevado a nadie por
@@ -484,10 +625,30 @@ def modo_borrado(ip, numero):
         objetivo = antes["usuarios"].get(numero)
         if objetivo is None:
             salir(f"El equipo no tiene ningún usuario {numero}. Nada que borrar.")
+
+        # Borrar al usuario de prueba no necesita ceremonia: lo creamos nosotros.
+        # Borrar a una persona real sí, y el guardia útil no es un "¿estás
+        # seguro?" —a eso se le dice que sí sin leer— sino tener que escribir el
+        # nombre que el equipo tiene. Si no coincide, el número está equivocado.
         if objetivo["nombre"].upper() != "PRUEBA":
-            salir(f"El usuario {numero} se llama «{objetivo['nombre']}», no PRUEBA.\n"
-                  f"  Este script solo borra el usuario de prueba. Para sacar gente\n"
-                  f"  de verdad va a haber otra herramienta, con backup obligatorio.")
+            esperado = argumento("--nombre")
+            if not esperado:
+                salir(f"El usuario {numero} de este equipo se llama "
+                      f"«{objetivo['nombre']}», no PRUEBA.\n"
+                      f"  Si es a propósito, confirmá el nombre:\n"
+                      f"      ... borrado {ip} {numero} --nombre \"{objetivo['nombre']}\"")
+            if esperado.strip().upper() != objetivo["nombre"].upper():
+                salir(f"Pusiste --nombre «{esperado}» y el equipo dice "
+                      f"«{objetivo['nombre']}».\n"
+                      f"  No coinciden, así que el número puede estar equivocado. "
+                      f"No se borra nada.")
+
+        respaldo = guardar_respaldo(ip, numero, objetivo,
+                                    antes["huellas_crudas"].get(objetivo["uid"], []))
+        print(f"\n  Respaldo de este usuario guardado en:")
+        print(f"     {respaldo}")
+        print(f"  Con eso se lo puede volver a poner tal cual:")
+        print(f"     scripts\\restaurar_usuario.bat {ip} {numero}")
 
         print(f"\n  Se va a borrar:")
         print(f"     número {numero}, nombre «{objetivo['nombre']}», "
@@ -539,6 +700,8 @@ def main():
         modo_huella(sys.argv[2], str(sys.argv[3]).strip(), str(sys.argv[4]).strip())
     elif modo == "borrado" and len(sys.argv) >= 4:
         modo_borrado(sys.argv[2], str(sys.argv[3]).strip())
+    elif modo == "restaurar" and len(sys.argv) >= 4:
+        modo_restaurar(sys.argv[2], str(sys.argv[3]).strip())
     else:
         print(__doc__)
         raise SystemExit(1)

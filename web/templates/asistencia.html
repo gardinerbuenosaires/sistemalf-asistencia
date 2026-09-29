@@ -863,7 +863,8 @@ async function guardarGrupal() {
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({fecha, empleados, motivo_manual: motivo}),
   });
-  const r = await res.json();
+  const r = await res.json().catch(() => ({}));
+  if (!res.ok) { toast('Error: ' + (r.detail || res.status)); return; }
   toast(`${r.creados} fichajes creados${r.errores.length ? ` · ${r.errores.length} con error` : ''}`);
   cerrarModal();
   cargar();

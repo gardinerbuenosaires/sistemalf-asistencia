@@ -28,7 +28,7 @@ MODULOS = [
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
     "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio"]
 # corregir       → asistencia:corregir (novedades en planilla)
 # fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
 #                  individuales o por fuerza mayor). Separado de "editar" porque
@@ -37,6 +37,9 @@ ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reab
 #                  del empleado vinculado al propio usuario). Sin él, "editar"
 #                  alcanza para todos menos para uno mismo: cambiarse el horario
 #                  del día después de llegar borra la llegada tarde.
+# fichaje_propio → asistencia:fichaje_propio (crear y borrar fichadas manuales
+#                  del empleado vinculado al propio usuario). Igual que "propia":
+#                  una entrada manual anterior a la marca real tapa la tardanza.
 
 # Acciones que cada módulo realmente usa. Es la fuente única: la matriz de roles
 # se dibuja con esto y set_permisos rechaza lo que no figure acá. Al agregar un
@@ -47,7 +50,7 @@ MODULO_ACCIONES = {
     "horarios":      ["ver", "editar", "eliminar"],
     "planificacion": ["ver", "editar", "propia"],
     "calendarios":   ["ver", "editar", "eliminar"],
-    "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos", "fichaje_manual"],
+    "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos", "fichaje_manual", "fichaje_propio"],
     "resultados":    ["ver", "procesar"],
     "usuarios":      ["ver", "editar", "eliminar"],
     "roles":         ["ver", "editar", "eliminar"],
@@ -169,10 +172,18 @@ def require_permiso(modulo: str, accion: str):
     return _check
 
 
-def check_no_es_propia(conn, user: dict, empleado_ids) -> None:
-    """Rechaza tocar la planificación del empleado vinculado al usuario si el rol
-    no tiene planificacion:propia. Un usuario sin empleado vinculado no se frena."""
-    if tiene_permiso(user.get("rol_id") or 0, "planificacion", "propia"):
+# Acciones que habilitan a un usuario a tocarse a sí mismo, y qué se le dice si no
+# la tiene. Cambiarse el propio vínculo con un empleado exige todas.
+PERMISOS_PROPIOS = {
+    ("planificacion", "propia"):         "No podés modificar tu propia planificación.",
+    ("asistencia",    "fichaje_propio"): "No podés cargar ni borrar tus propias fichadas.",
+}
+
+
+def _check_no_es_propio(conn, user: dict, empleado_ids, modulo: str, accion: str) -> None:
+    """Rechaza actuar sobre el empleado vinculado al usuario si el rol no tiene
+    modulo:accion. Un usuario sin empleado vinculado no se frena."""
+    if tiene_permiso(user.get("rol_id") or 0, modulo, accion):
         return
     row = conn.execute(
         "SELECT empleado_id FROM usuarios WHERE id=?", (user.get("sub"),)
@@ -180,7 +191,15 @@ def check_no_es_propia(conn, user: dict, empleado_ids) -> None:
     propio = row["empleado_id"] if row else None
     if propio and propio in {int(e) for e in empleado_ids if e is not None}:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            "No podés modificar tu propia planificación. Pedíselo a otro usuario.")
+                            PERMISOS_PROPIOS[(modulo, accion)] + " Pedíselo a otro usuario.")
+
+
+def check_no_es_propia(conn, user: dict, empleado_ids) -> None:
+    _check_no_es_propio(conn, user, empleado_ids, "planificacion", "propia")
+
+
+def check_no_es_fichaje_propio(conn, user: dict, empleado_ids) -> None:
+    _check_no_es_propio(conn, user, empleado_ids, "asistencia", "fichaje_propio")
 
 
 def check_page_auth(token: str | None, modulo: str, accion: str = "ver") -> bool:

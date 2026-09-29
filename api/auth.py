@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 from db.database import db_session
 from auth.core import (verify_password, create_token, get_current_user,
-                       hash_password, require_permiso, invalidar_cache, tiene_permiso,
+                       hash_password, require_permiso, invalidar_cache, tiene_permiso, PERMISOS_PROPIOS,
                        MODULOS, ACCIONES, MODULO_ACCIONES, MODULO_GRUPOS,
                        INACTIVITY_TTL)
 
@@ -153,11 +153,12 @@ def update_usuario(uid: int, data: UsuarioIn, user=Depends(require_permiso("usua
         if not conn.execute("SELECT id FROM usuarios WHERE id=?", (uid,)).fetchone():
             raise HTTPException(404)
         _check_email_libre(conn, data.email.strip(), excluir_id=uid)
-        # Desvincularse (o vincularse a otro) sería la salida fácil a la
-        # restricción de planificacion:propia.
+        # Desvincularse (o vincularse a otro) sería la salida fácil a las
+        # restricciones sobre uno mismo (planificación, fichadas).
         if uid == int(user.get("sub") or 0):
             actual = conn.execute("SELECT empleado_id FROM usuarios WHERE id=?", (uid,)).fetchone()[0]
-            if actual != data.empleado_id and not tiene_permiso(user.get("rol_id") or 0, "planificacion", "propia"):
+            rol = user.get("rol_id") or 0
+            if actual != data.empleado_id and not all(tiene_permiso(rol, m, a) for m, a in PERMISOS_PROPIOS):
                 raise HTTPException(403, "No podés cambiar tu propio empleado vinculado. Pedíselo a otro usuario.")
         pagina = data.pagina_inicio.strip() or None
         turno_dist = data.turno_dist.strip() or None

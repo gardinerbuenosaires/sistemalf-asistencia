@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import datetime
 from collections import defaultdict
 
-from auth.core import require_permiso
+from auth.core import require_permiso, check_no_es_fichaje_propio
 from db.database import db_session
 
 router = APIRouter(prefix="/api/fichajes", tags=["fichajes"])
@@ -106,6 +106,7 @@ def crear_fichaje_manual(
 
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
+        check_no_es_fichaje_propio(conn, user, [data.empleado_id])
         check_periodo_abierto(conn, ts[:10])
         emp = conn.execute(
             "SELECT id, user_id FROM empleados WHERE id=?", (data.empleado_id,)
@@ -153,6 +154,7 @@ def crear_fichajes_grupal(
     errores: list[dict] = []
 
     with db_session() as conn:
+        check_no_es_fichaje_propio(conn, user, [i.empleado_id for i in data.empleados])
         check_periodo_abierto(conn, data.fecha)
         for item in data.empleados:
             emp = conn.execute(
@@ -228,6 +230,7 @@ def eliminar_fichaje(
             raise HTTPException(404, "Fichaje no encontrado")
         if not f["es_manual"]:
             raise HTTPException(400, "Solo se pueden eliminar fichajes manuales")
+        check_no_es_fichaje_propio(conn, _user, [f["empleado_id"]])
         check_periodo_abierto(conn, f["fecha"])
         # Limpiar referencias en resultados_dia antes de borrar
         conn.execute(

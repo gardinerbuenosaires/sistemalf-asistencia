@@ -25,6 +25,16 @@ Cuando se escriba, dos cosas que no se pueden olvidar:
     `set_user` el usuario leído del equipo. Un alta nace en grupo 0, y qué
     permite el grupo 0 depende de cómo esté configurado cada lector.
 
+  · El nivel de usuario, que es quién puede administrar el lector parado frente
+    a él: crear gente y tomarle la huella. `set_user` de pyzk hace
+
+        if privilege not in [USER_DEFAULT, USER_ADMIN]: privilege = USER_DEFAULT
+
+    o sea que a un enrolador (2) o a un administrador (6) los deja en usuario
+    común sin avisar, y son justamente los dos niveles que se usan para eso.
+    No se puede escribir con `set_user`: hay que armar el paquete sin ese
+    recorte, como hace `escribir_usuario` en `scripts/probar_escritura.py`.
+
 El final del módulo: dar de baja tiene que liberar el número.
 
 Hoy la baja es solo `activo = 0`. El número queda tomado para siempre —`user_id`

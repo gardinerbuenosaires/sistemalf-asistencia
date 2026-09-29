@@ -3263,6 +3263,7 @@ async function verPadron(id) {
     chip(r.de_baja, 'dados de baja', '#f6dedc', '#b3261e'),
     chip(r.desconocidos, 'no están en el sistema', '#f6e9ce', '#8a5d06'),
     chip(r.sin_huella, 'sin huella', '#f6dedc', '#b3261e'),
+    chip(r.administran, 'administran el lector', '#e6eef6', '#2c4d6b'),
     chip(r.nombre_distinto, 'con otro nombre', '#e8e0f0', '#5b3a8a'),
   ].filter(Boolean).join(' ');
 
@@ -3336,7 +3337,8 @@ function _padronFilaHtml(f) {
       : `<td style="text-align:center;color:#888">${f.huellas}</td>`;
   return `<tr style="${e.fondo ? `background:${e.fondo}` : (f.huellas === 0 ? 'background:#fdf0ee' : '')}">
     <td style="font-family:monospace">${_esc(f.user_id)}</td>
-    <td>${_esc(f.nombre) || '<span style="color:#bbb">sin nombre</span>'}</td>
+    <td>${_esc(f.nombre) || '<span style="color:#bbb">sin nombre</span>'}
+      ${f.nivel && f.privilegio ? `<div style="font-size:.74rem;color:#2c4d6b">${_esc(f.nivel)}</div>` : ''}</td>
     <td>${quien}</td>
     <td style="color:${e.color};font-weight:${e.texto ? 600 : 400};font-size:.8rem">
       ${e.texto}${f.nombre_distinto ? '<div style="color:#5b3a8a;font-size:.75rem">no se parece al legajo</div>' : ''}</td>

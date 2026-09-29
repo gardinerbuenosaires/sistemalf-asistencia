@@ -1744,5 +1744,40 @@ chequear("el formato de 28 bytes ubica la franja donde se espera",
          len(_crudo) == 28 and _u[0] == 7 and _u[5] == 1 and _u[6] == 5 and _u[7] == 42,
          _u)
 
+
+print("\n=== QUIEN ADMINISTRA EL LECTOR ===")
+# En Enterprise se le da a ciertas personas permiso para administrar el equipo:
+# crear usuarios y tomar huellas parado frente a el. Es el campo `privilege`, y
+# es una propiedad del equipo, no del legajo: no se ve en ningun otro lado.
+_emps_n2 = {"10": {"id": 1, "nombre": "Ana", "apellido": "Gomez", "activo": 1,
+                   "tipo": "mensual", "fecha_egreso": None},
+            "11": {"id": 2, "nombre": "Luis", "apellido": "Diaz", "activo": 1,
+                   "tipo": "mensual", "fecha_egreso": None},
+            "12": {"id": 3, "nombre": "Eva", "apellido": "Ruiz", "activo": 1,
+                   "tipo": "mensual", "fecha_egreso": None}}
+_pad_n3 = [{"uid": 1, "user_id": "10", "nombre": "GOMEZ", "grupo": "1", "privilegio": 0},
+           {"uid": 2, "user_id": "11", "nombre": "DIAZ", "grupo": "1", "privilegio": 2},
+           {"uid": 3, "user_id": "12", "nombre": "RUIZ", "grupo": "1", "privilegio": 14}]
+_cmp_n3 = comparar_con_empleados(_pad_n3, _emps_n2)
+_por_num = {f["user_id"]: f for f in _cmp_n3["filas"]}
+chequear("traduce el nivel a algo legible",
+         _por_num["11"]["nivel"] == "enrolador"
+         and _por_num["12"]["nivel"] == "super admin", 
+         [(f["user_id"], f["nivel"]) for f in _cmp_n3["filas"]])
+chequear("el usuario comun tambien se informa",
+         _por_num["10"]["nivel"] == "usuario comun".replace("comun", "común"),
+         _por_num["10"]["nivel"])
+chequear("cuenta cuantos administran el lector",
+         _cmp_n3["resumen"]["administran"] == 2, _cmp_n3["resumen"])
+
+# Un nivel que el equipo devuelva y no conozcamos no se inventa.
+_cmp_n4 = comparar_con_empleados(
+    [{"uid": 9, "user_id": "10", "nombre": "GOMEZ", "grupo": "1", "privilegio": 7}],
+    _emps_n2)
+chequear("un nivel desconocido no se traduce a cualquier cosa",
+         _cmp_n4["filas"][0]["nivel"] is None, _cmp_n4["filas"][0]["nivel"])
+chequear("pero se cuenta igual: algo distinto de cero administra",
+         _cmp_n4["resumen"]["administran"] == 1, _cmp_n4["resumen"])
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

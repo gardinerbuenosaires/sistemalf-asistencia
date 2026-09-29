@@ -475,6 +475,52 @@ def modo_huella(ip, numero, numero_maestro):
             pass
 
 
+# Los cuatro niveles que maneja el equipo. Los dos del medio son los que sirven
+# para que alguien pueda administrar el lector desde el lector: dar de alta gente
+# y tomarle la huella parado ahí.
+NIVELES = {0: "usuario común", 2: "enrolador", 6: "administrador", 14: "super admin"}
+
+
+def escribir_usuario(conexion, uid, nombre, privilegio, grupo, numero,
+                     tarjeta=0, franja=0):
+    """
+    Crea o reescribe un usuario SIN degradarle el nivel.
+
+    Existe porque `set_user` de pyzk hace esto antes de empaquetar:
+
+        if privilege not in [USER_DEFAULT, USER_ADMIN]:
+            privilege = USER_DEFAULT
+
+    O sea que a un enrolador (2) o a un administrador (6) los deja como usuario
+    común, sin avisar. Son justamente los niveles que se usan para que alguien
+    pueda administrar el lector, así que perderlos no es un detalle: esa persona
+    deja de poder enrolar a nadie, y nadie se entera hasta que lo necesita.
+
+    Acá se arma el mismo paquete que arma pyzk y se manda con el mismo comando;
+    lo único que no se hace es recortar el nivel. Y de paso la franja horaria
+    viaja como parámetro en vez de ir clavada en cero.
+
+    Usa `__send_command`, que es interno de pyzk. Es el precio de no poder pasar
+    por `set_user`, y queda acotado a esta función.
+    """
+    from struct import pack
+    from zk import const
+
+    if conexion.user_packet_size != 28:
+        salir("Este equipo usa el formato de 72 bytes. Esta función es para las "
+              "puertas, que usan el de 28.")
+    codificacion = getattr(conexion, "encoding", "latin-1")
+    paquete = pack(
+        "HB5s8sIxBHI", int(uid), int(privilegio), b"",
+        (nombre or "").encode(codificacion, errors="ignore"),
+        int(tarjeta), int(grupo or 0), int(franja), int(numero))
+    enviar = getattr(conexion, "_ZK__send_command")
+    respuesta = enviar(const.CMD_USER_WRQ, paquete, 1024)
+    if not respuesta.get("status"):
+        raise RuntimeError("El equipo rechazó la escritura del usuario")
+    conexion.refresh_data()
+
+
 def carpeta_respaldos():
     """
     Al lado de la base, como los backups del relevamiento. Tiene huellas
@@ -540,8 +586,13 @@ def modo_restaurar(ip, numero):
 
     cabecera("restaurar un usuario", ip, numero, puerta, maestro_ip)
     print(f"\n  Respaldo: {ruta}")
+    nivel = int(guardado["privilegio"])
     print(f"     nombre «{guardado['nombre']}», grupo {guardado['grupo']}, "
           f"{len(guardado['huellas'])} huella(s)")
+    print(f"     nivel {nivel} — {NIVELES.get(nivel, 'desconocido')}")
+    if nivel not in (0, 14):
+        print(f"     se restaura tal cual: set_user de pyzk lo habría dejado "
+              f"en usuario común")
 
     conexion = abrir(ip, clave)
     try:
@@ -567,9 +618,9 @@ def modo_restaurar(ip, numero):
             if input("\n  ¿Restaurar? (s/n) ").strip().lower() != "s":
                 salir("Cancelado.")
 
-        conexion.set_user(uid=uid, name=guardado["nombre"],
-                          privilege=int(guardado["privilegio"]), password="",
-                          group_id=guardado["grupo"], user_id=numero)
+        escribir_usuario(conexion, uid=uid, nombre=guardado["nombre"],
+                         privilegio=int(guardado["privilegio"]),
+                         grupo=guardado["grupo"], numero=numero)
         fingers = [Finger.json_unpack(h) for h in guardado["huellas"]]
         if fingers:
             recien = next((u for u in conexion.get_users()
@@ -650,9 +701,12 @@ def modo_borrado(ip, numero):
         print(f"  Con eso se lo puede volver a poner tal cual:")
         print(f"     scripts\\restaurar_usuario.bat {ip} {numero}")
 
+        nivel = int(objetivo["privilegio"])
         print(f"\n  Se va a borrar:")
         print(f"     número {numero}, nombre «{objetivo['nombre']}», "
               f"índice interno {objetivo['uid']}, {objetivo['huellas']} huella(s)")
+        print(f"     nivel {nivel} — {NIVELES.get(nivel, 'desconocido')}"
+              + ("   OJO: esta persona administra este lector" if nivel else ""))
         print(f"  Quedan {len(antes['usuarios']) - 1} usuarios, que tienen que "
               f"seguir igual.")
 

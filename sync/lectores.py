@@ -227,6 +227,14 @@ def _mismo_nombre(en_lector: str, en_sistema: str) -> bool:
     )
 
 
+# Los cuatro niveles del equipo. Los dos del medio son los que permiten
+# administrar el lector desde el lector: dar de alta gente y tomarle la huella
+# parado ahí. Se leen y se informan; el día que el sistema escriba usuarios va a
+# tener que conservarlos, porque `set_user` de pyzk los deja en cero sin avisar.
+NIVELES = {0: "usuario común", 2: "enrolador", 6: "administrador",
+           14: "super admin"}
+
+
 def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
     """
     Cruza el padrón del lector contra los empleados del sistema.
@@ -253,7 +261,7 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
     huellas_leidas = any("huellas" in u for u in usuarios)
     franjas_leidas = any(u.get("franja") is not None for u in usuarios)
     filas, resumen = [], {"total": len(usuarios), "de_baja": 0, "desconocidos": 0,
-                          "nombre_distinto": 0, "ok": 0,
+                          "nombre_distinto": 0, "ok": 0, "administran": 0,
                           "sin_huella": 0 if huellas_leidas else None,
                           "con_franja": 0 if franjas_leidas else None}
 
@@ -290,6 +298,13 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
         # propio, y escribirle una huella se lo borraria.
         if u.get("franja"):
             resumen["con_franja"] += 1
+
+        # Quién puede administrar este lector parado frente a él. Es una
+        # propiedad del equipo, no del legajo, así que no se ve en ningún otro
+        # lado del sistema.
+        fila["nivel"] = NIVELES.get(u.get("privilegio"), None)
+        if u.get("privilegio"):
+            resumen["administran"] += 1
 
         filas.append(fila)
 

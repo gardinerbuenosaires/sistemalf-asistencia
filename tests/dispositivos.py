@@ -1819,5 +1819,75 @@ if emp_id:
 r = cli.put("/api/accesos/empleado/999999/nivel-lector", json={"nivel_lector": 0})
 chequear("un empleado inexistente da 404", r.status_code == 404, r.status_code)
 
+
+print("\n=== ADOPTAR LOS NIVELES QUE EL EQUIPO YA TIENE ===")
+# El cero del legajo no significa "no administra": significa que nadie lo
+# decidio. Si el sistema escribiera desde ahi, le sacaria el permiso a todos los
+# que hoy lo tienen. Por eso el equipo gana UNA vez, al adoptar.
+_c13 = sqlite3.connect(DB)
+_tres = _c13.execute(
+    """SELECT id, user_id FROM empleados
+        WHERE activo=1 AND user_id IS NOT NULL LIMIT 3""").fetchall()
+_c13.close()
+
+if len(_tres) >= 2:
+    (_e1, _u1), (_e2, _u2) = (_tres[0][0], str(_tres[0][1]).strip()), \
+                             (_tres[1][0], str(_tres[1][1]).strip())
+    _padron_maestro = {"ok": True, "transporte": "tcp", "error": None, "usuarios": [
+        {"uid": 1, "user_id": _u1, "nombre": "UNO", "privilegio": 6,
+         "tarjeta": 0, "grupo": "1"},
+        {"uid": 2, "user_id": _u2, "nombre": "DOS", "privilegio": 0,
+         "tarjeta": 0, "grupo": "1"},
+        {"uid": 3, "user_id": "777777", "nombre": "AJENO", "privilegio": 2,
+         "tarjeta": 0, "grupo": "1"},
+    ]}
+    _real4 = lectores.leer_padron
+    lectores.leer_padron = lambda d, **kw: _padron_maestro
+
+    r = cli.get("/api/accesos/niveles-lector")
+    chequear("GET niveles-lector responde 200", r.status_code == 200, r.text[:200])
+    _nl = r.json()
+    _dif = {f["empleado_id"]: f for f in _nl["diferencias"]}
+    chequear("muestra al que el equipo tiene con nivel y el legajo no",
+             _e1 in _dif and _dif[_e1]["en_el_equipo"] == 6
+             and _dif[_e1]["en_el_legajo"] == 0, _nl["diferencias"])
+    chequear("el que ya coincide no aparece como diferencia",
+             _e2 not in _dif, _nl["diferencias"])
+    chequear("los que no estan en el sistema van aparte",
+             any(a["user_id"] == "777777" for a in _nl["ajenos"]), _nl["ajenos"])
+
+    # Importar es a mano y de a quien se elija: adoptar en bloque una lista que
+    # nadie reviso hace anios es heredar justo los permisos que habria que sacar.
+    r = cli.post("/api/accesos/niveles-lector/importar", json={"empleados": [_e1]})
+    chequear("importar responde 200", r.status_code == 200, r.text[:200])
+    chequear("y copia el nivel del equipo", r.json()["importados"] == 1, r.json())
+    chequear("el legajo quedo con el nivel del equipo",
+             cli.get(f"/api/accesos/empleado/{_e1}").json()["empleado"]["nivel_lector"] == 6)
+
+    # Ya importado, deja de ser una diferencia: el sistema y el equipo coinciden.
+    _nl2 = cli.get("/api/accesos/niveles-lector").json()
+    chequear("ya no figura como diferencia",
+             all(f["empleado_id"] != _e1 for f in _nl2["diferencias"]),
+             _nl2["diferencias"])
+
+    # Un nivel que no esta entre los que se usan no entra al legajo: seria un
+    # valor que despues nadie puede elegir ni corregir desde la pantalla.
+    _padron_maestro["usuarios"][1]["privilegio"] = 14
+    r = cli.post("/api/accesos/niveles-lector/importar", json={"empleados": [_e2]})
+    chequear("un nivel que no se usa no se importa",
+             r.json()["importados"] == 0 and r.json()["sin_tocar"] == 1, r.json())
+
+    chequear("importar necesita accesos:editar",
+             _aplica.post("/api/accesos/niveles-lector/importar",
+                          json={"empleados": [_e1]}).status_code == 403)
+    chequear("mirar alcanza con accesos:ver",
+             _mirar.get("/api/accesos/niveles-lector").status_code == 200)
+
+    r = cli.post("/api/accesos/niveles-lector/importar", json={"empleados": []})
+    chequear("sin empleados se rechaza", r.status_code == 400, r.status_code)
+
+    cli.put(f"/api/accesos/empleado/{_e1}/nivel-lector", json={"nivel_lector": 0})
+    lectores.leer_padron = _real4
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

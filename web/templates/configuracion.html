@@ -430,6 +430,8 @@
                   onclick="descubrirPerfiles()">Deducir perfiles</button>
           <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
                   onclick="asignarPorCargo()">Asignar por cargo</button>
+          <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                  onclick="adoptarNiveles()">Quién administra</button>
           <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
                   onclick="nuevoDispositivo()">+ Nuevo equipo</button>
         </div>
@@ -2536,6 +2538,130 @@ async function eliminarDispositivo(id) {
   let e = {};
   try { e = await res.json(); } catch {}
   toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Adoptar los niveles que el equipo de fichaje ya tiene ─────────────────────
+// El momento de adopción, y pasa una sola vez. La columna del legajo arranca en
+// cero para todos, y ese cero no significa "no administra": significa que nadie
+// lo decidió. Si el sistema empezara a escribir desde ahí, le sacaría el permiso
+// a todos los que hoy lo tienen. Así que primero se trae lo que el equipo tiene,
+// se mira de a uno, y recién después el sistema pasa a mandar.
+
+let _nivelesDif = [];
+
+async function adoptarNiveles() {
+  const modal = document.createElement('div');
+  modal.id = 'modal-niveles';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Quién administra el equipo de fichaje</div>
+      <div id="niveles-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+        Leyendo el equipo… puede tardar unos segundos.</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+              onclick="document.getElementById('modal-niveles').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+  await pintarNiveles();
+}
+
+async function pintarNiveles() {
+  const caja = document.getElementById('niveles-cuerpo');
+  if (!caja) return;
+  let d;
+  try {
+    const res = await fetch('/api/accesos/niveles-lector');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    caja.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  if (!d.ok) {
+    caja.innerHTML = `<div style="color:#c0392b">${_esc(d.aviso || 'El equipo no contestó.')}</div>
+      ${d.error ? `<div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(d.error)}</div>` : ''}`;
+    return;
+  }
+
+  _nivelesDif = d.diferencias;
+  const nombre = n => ({0: 'no administra', 2: 'enrolador', 6: 'administrador',
+                        14: 'super admin'}[n] || `nivel ${n}`);
+
+  if (!d.diferencias.length && !d.ajenos.length) {
+    caja.innerHTML = `<div style="background:#dcede2;color:#2e7d4f;padding:9px 12px;border-radius:5px;font-size:.85rem">
+      El equipo <b>${_esc(d.equipo)}</b> y los legajos dicen lo mismo para los ${d.iguales} usuarios.
+      No hay nada que adoptar.</div>`;
+    return;
+  }
+
+  const filas = d.diferencias.map(f => `
+    <tr style="border-bottom:1px solid #f4f4f4">
+      <td style="padding:6px 10px"><input type="checkbox" class="nivel-chk" value="${f.empleado_id}"
+          ${f.conocido ? 'checked' : 'disabled'}></td>
+      <td style="padding:6px 10px;font-family:monospace;color:#888">${_esc(f.user_id)}</td>
+      <td style="padding:6px 10px">${_esc(f.nombre)}
+        ${f.activo ? '' : '<span style="color:#b3261e;font-size:.75rem"> (dado de baja)</span>'}</td>
+      <td style="padding:6px 10px;color:#2c4d6b;font-weight:600">${nombre(f.en_el_equipo)}
+        ${f.conocido ? '' : '<div style="font-size:.72rem;color:#8a5d06">no se puede adoptar: no está entre los que se usan</div>'}</td>
+      <td style="padding:6px 10px;color:#999">${nombre(f.en_el_legajo)}</td>
+    </tr>`).join('');
+
+  caja.innerHTML = `
+    <div style="font-size:.85rem;color:#444">
+      Equipo <b>${_esc(d.equipo)}</b> · ${d.iguales} usuarios ya coinciden con su legajo.
+    </div>
+    <div style="background:#eef3f8;border-left:3px solid #4a7ba7;padding:8px 11px;font-size:.8rem;color:#2c4d6b;margin-top:8px">
+      Esta es la única vez que el equipo le gana al sistema. Lo que adoptes acá queda en el
+      legajo, y de ahí en más manda el legajo. Mirá la lista antes de aceptarla: es una lista
+      de permisos que puede tener años.
+    </div>
+    ${d.ajenos.length ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:7px">
+      <b>${d.ajenos.length} usuario(s) administran el equipo y no existen en el sistema:</b>
+      ${d.ajenos.map(a => `${_esc(a.user_id)} «${_esc(a.nombre)}» (${nombre(a.nivel)})`).join(' · ')}.
+      No se pueden adoptar porque no tienen legajo. Mirá quiénes son.</div>` : ''}
+    ${d.diferencias.length ? `
+    <div style="overflow-y:auto;max-height:50vh;margin-top:10px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="padding:6px 10px;width:34px"></th>
+              <th style="text-align:left;padding:6px 10px">N°</th>
+              <th style="text-align:left;padding:6px 10px">Empleado</th>
+              <th style="text-align:left;padding:6px 10px">En el equipo</th>
+              <th style="text-align:left;padding:6px 10px">En el legajo</th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+      <button class="btn btn-sm btn-secondary" onclick="marcarNiveles(true)">Marcar todos</button>
+      <button class="btn btn-sm btn-secondary" onclick="marcarNiveles(false)">Ninguno</button>
+      <button class="btn btn-sm btn-primary" onclick="importarNiveles()">Adoptar los marcados</button>
+    </div>` : ''}`;
+}
+
+function marcarNiveles(valor) {
+  document.querySelectorAll('.nivel-chk:not([disabled])').forEach(c => c.checked = valor);
+}
+
+async function importarNiveles() {
+  const ids = [...document.querySelectorAll('.nivel-chk:checked')].map(c => Number(c.value));
+  if (!ids.length) return toast('No marcaste a nadie');
+  const suben = _nivelesDif.filter(f => ids.includes(f.empleado_id) && f.en_el_equipo > 0).length;
+  if (!confirm(`Adoptar el nivel del equipo para ${ids.length} persona(s).`
+      + (suben ? `\n\n${suben} van a quedar pudiendo administrar el equipo de fichaje.` : '')
+      + `\n\n¿Seguir?`)) return;
+
+  const res = await fetch('/api/accesos/niveles-lector/importar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ empleados: ids }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo adoptar'));
+  }
+  const d = await res.json();
+  toast(`${d.importados} adoptado(s)` + (d.sin_tocar ? ` · ${d.sin_tocar} sin tocar` : ''));
+  await pintarNiveles();
 }
 
 // ── Asignar perfiles por cargo ────────────────────────────────────────────────

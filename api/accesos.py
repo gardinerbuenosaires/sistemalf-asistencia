@@ -650,6 +650,109 @@ def aplicar_cargo(data: AplicarCargoIn,
             "con_excepciones": con_exc}
 
 
+class ImportarNivelesIn(BaseModel):
+    empleados: list[int]
+
+
+def _leer_niveles_del_maestro():
+    """Lee el equipo de asistencia y cruza su nivel por usuario con los legajos."""
+    from sync.lectores import leer_padron
+
+    with db_session() as conn:
+        maestro = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo
+                 FROM dispositivos
+                WHERE activo=1 AND cuenta_asistencia=1 AND protocolo='pull'
+                  AND ip IS NOT NULL
+             ORDER BY orden, id LIMIT 1""").fetchone()
+        if not maestro:
+            return None, None, {}
+        empleados = {
+            str(r["user_id"]).strip(): dict(r) for r in conn.execute(
+                """SELECT id, user_id, nombre, apellido, activo, nivel_lector
+                     FROM empleados WHERE user_id IS NOT NULL""")
+        }
+    return dict(maestro), leer_padron(dict(maestro)), empleados
+
+
+@router.get("/niveles-lector")
+def niveles_lector(_user=Depends(require_permiso("accesos", "ver"))):
+    """
+    Qué nivel tiene cada uno en el equipo de fichaje, contra lo que dice su legajo.
+
+    Existe para el momento de adopción. La columna del legajo arranca en cero
+    para todos, y ese cero no significa "no administra": significa que nadie lo
+    decidió todavía. Si el sistema empezara a escribir desde ahí, le sacaría el
+    permiso a todos los que hoy lo tienen. Así que primero se trae lo que el
+    equipo ya tiene, se mira, y recién después el sistema pasa a mandar.
+
+    Solo lectura.
+    """
+    maestro, lectura, empleados = _leer_niveles_del_maestro()
+    if maestro is None:
+        return {"ok": False, "aviso": "No hay ningún equipo de asistencia cargado."}
+    if not lectura["ok"]:
+        return {"ok": False, "equipo": maestro["nombre"], "error": lectura["error"]}
+
+    filas, ajenos = [], []
+    for u in lectura["usuarios"]:
+        nivel = u.get("privilegio") or 0
+        emp = empleados.get(u["user_id"])
+        if emp is None:
+            if nivel:
+                ajenos.append({"user_id": u["user_id"], "nombre": u["nombre"],
+                               "nivel": nivel})
+            continue
+        if nivel == emp["nivel_lector"]:
+            continue
+        filas.append({
+            "empleado_id": emp["id"], "user_id": u["user_id"],
+            "nombre": f"{emp['apellido']}, {emp['nombre']}".strip(", "),
+            "activo": bool(emp["activo"]),
+            "en_el_equipo": nivel, "en_el_legajo": emp["nivel_lector"],
+            "conocido": nivel in NIVELES_LECTOR,
+        })
+    filas.sort(key=lambda f: (-f["en_el_equipo"], f["nombre"]))
+    return {"ok": True, "equipo": maestro["nombre"], "diferencias": filas,
+            "ajenos": ajenos,
+            "iguales": len(lectura["usuarios"]) - len(filas) - len(ajenos)}
+
+
+@router.post("/niveles-lector/importar")
+def importar_niveles(data: ImportarNivelesIn,
+                     _user=Depends(require_permiso("accesos", "editar"))):
+    """
+    Copia al legajo el nivel que el equipo tiene, para los que se elijan.
+
+    Es la única vez que el equipo le gana al sistema, y es a mano: adoptar en
+    bloque una lista de permisos que nadie revisó hace años es la forma de
+    heredar exactamente los que habría que sacar.
+    """
+    if not data.empleados:
+        raise HTTPException(400, "No viene ningún empleado")
+    maestro, lectura, empleados = _leer_niveles_del_maestro()
+    if maestro is None or not lectura["ok"]:
+        raise HTTPException(400, "No se pudo leer el equipo de asistencia")
+
+    por_id = {e["id"]: e for e in empleados.values()}
+    niveles = {u["user_id"]: (u.get("privilegio") or 0) for u in lectura["usuarios"]}
+    cambiados = 0
+    with db_session() as conn:
+        for eid in data.empleados:
+            emp = por_id.get(eid)
+            if emp is None:
+                continue
+            nivel = niveles.get(str(emp["user_id"]).strip())
+            # Un nivel que no está entre los que se usan no se copia: entraría al
+            # legajo un valor que después nadie puede elegir ni corregir.
+            if nivel is None or nivel not in NIVELES_LECTOR:
+                continue
+            conn.execute("UPDATE empleados SET nivel_lector=? WHERE id=?", (nivel, eid))
+            cambiados += 1
+    return {"ok": True, "importados": cambiados,
+            "sin_tocar": len(data.empleados) - cambiados}
+
+
 @router.get("/sin-perfil")
 def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     """

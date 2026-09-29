@@ -612,7 +612,7 @@ def modo_borrado(ip, numero):
     verificada y no el que resolvería pyzk por su cuenta.
     """
     maestro_ip, clave, puerta = datos_del_sistema(ip, numero, False)
-    cabecera("borrar el usuario de prueba", ip, numero, puerta, maestro_ip)
+    cabecera("borrar un usuario", ip, numero, puerta, maestro_ip)
     conexion = abrir(ip, clave)
 
     try:

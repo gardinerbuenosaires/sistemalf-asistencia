@@ -445,7 +445,7 @@
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" style="flex-shrink:0;margin-left:16px" onclick="agregarCargo()">+ Nuevo cargo</button>
       </div>
       <table style="margin-top:16px">
-        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th id="th-aplica-trapos" style="width:120px;text-align:center;display:none">Aplica trapos</th><th>Departamento</th><th style="width:160px">Acciones</th></tr></thead>
+        <thead><tr><th>Nombre</th><th style="width:120px;text-align:center">Aplica premio</th><th>Departamento</th><th style="width:160px">Acciones</th></tr></thead>
         <tbody id="tabla-cargos"><tr><td colspan="4" style="color:#aaa">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -671,7 +671,7 @@
           <input type="checkbox" id="chk-trapos-activo" onchange="toggleTraposCocina(this.checked)">
           Activar descuento trapos de cocina
         </label>
-        <p style="margin:6px 0 0 24px;font-size:.82rem;color:#666">Descuenta un monto mensual configurable a los cargos marcados como "aplica trapos" en la tabla de cargos. El monto total se ingresa directamente en la vista de Premios.</p>
+        <p style="margin:6px 0 0 24px;font-size:.82rem;color:#666">Muestra en Premios un valor de trapos y un checkbox por empleado: a cada tildado se le descuenta ese valor del premio. El valor se carga directamente en la vista de Premios.</p>
       </div>
     </div>
 
@@ -806,10 +806,7 @@ async function cargarTraposCocina() {
   const params = await res.json();
   const activo = params.find(p => p.clave === "trapos_cocina_activo");
   const chk = document.getElementById("chk-trapos-activo");
-  _traposActivo = activo?.valor === "1";
-  if (chk) chk.checked = _traposActivo;
-  document.getElementById("th-aplica-trapos").style.display = _traposActivo ? "" : "none";
-  _renderCargos();
+  if (chk) chk.checked = activo?.valor === "1";
 }
 
 async function toggleTraposCocina(activo) {
@@ -821,14 +818,6 @@ async function toggleTraposCocina(activo) {
     toast(activo ? "Descuento trapos activado" : "Descuento trapos desactivado");
     await cargarTraposCocina();
   } else toast("Error al guardar");
-}
-
-async function guardarTraposValor(valor) {
-  const res = await fetch("/api/configuracion/trapos_cocina_valor", {
-    method: "PUT", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ valor: String(parseInt(valor) || 0) }),
-  });
-  if (!res.ok) toast("Error al guardar valor de trapos");
 }
 
 async function cargarVpActivo() {
@@ -1549,7 +1538,6 @@ async function eliminarRol(id) {
 
 // ── Catálogos (Cargos, Departamentos y Categorías) ────────────────────────────
 let cargos = [], deptos = [], categorias = [];
-let _traposActivo = false;
 
 const _catStore = {};  // tbodyId → { lista, eliminarFn, api }
 const _catApis = {
@@ -1623,7 +1611,7 @@ async function _guardarItemCatalogo(tbodyId, id) {
 
 function _renderCargos() {
   const tbody = document.getElementById("tabla-cargos");
-  const cols = 4 + (_traposActivo ? 1 : 0);
+  const cols = 4;
   if (!cargos.length) {
     tbody.innerHTML = `<tr><td colspan="${cols}" style="color:#aaa">Sin registros</td></tr>`;
     return;
@@ -1636,11 +1624,6 @@ function _renderCargos() {
           ${canDo('empleados','editar') ? `onchange="toggleApremio(${item.id}, this.checked)"` : "disabled"}
           style="width:16px;height:16px;cursor:pointer;accent-color:#2c3e50">
       </td>
-      ${_traposActivo ? `<td style="text-align:center">
-        <input type="checkbox" ${item.aplica_trapos ? "checked" : ""}
-          ${canDo('premios','corregir') ? `onchange="toggleAtrapos(${item.id}, this.checked)"` : "disabled"}
-          style="width:16px;height:16px;cursor:pointer;accent-color:#e67e22">
-      </td>` : ''}
       <td style="color:${item.departamento_nombre ? '#333' : '#bbb'};font-size:.85rem">${item.departamento_nombre || '—'}</td>
       <td>
         ${canDo('empleados','editar') ? `
@@ -1664,10 +1647,6 @@ function editarCargo(id) {
       <input type="checkbox" ${item.aplica_premio ? "checked" : ""} id="cargo-edit-premio-${id}"
         style="width:16px;height:16px;cursor:pointer;accent-color:#2c3e50">
     </td>
-    ${_traposActivo ? `<td style="text-align:center">
-      <input type="checkbox" ${item.aplica_trapos ? "checked" : ""} id="cargo-edit-trapos-${id}"
-        style="width:16px;height:16px;cursor:pointer;accent-color:#e67e22">
-    </td>` : ''}
     <td>
       <select id="cargo-edit-dept-${id}" style="width:100%;padding:4px 6px;border:1px solid #ced4da;border-radius:4px;font-size:.85rem">
         ${optsDepto}
@@ -1683,12 +1662,10 @@ function editarCargo(id) {
 async function guardarCargo(id) {
   const nombre = document.getElementById(`cargo-edit-nombre-${id}`).value.trim();
   const aplica_premio = document.getElementById(`cargo-edit-premio-${id}`).checked;
-  const aplica_trapos = _traposActivo ? (document.getElementById(`cargo-edit-trapos-${id}`)?.checked ?? false) : undefined;
   const deptVal = document.getElementById(`cargo-edit-dept-${id}`)?.value;
   const departamento_id = deptVal ? parseInt(deptVal) : null;
   if (!nombre) { toast("Ingresá el nombre"); return; }
   const body = { nombre, aplica_premio, departamento_id };
-  if (_traposActivo) body.aplica_trapos = aplica_trapos;
   const res = await fetch(`/api/cargos/${id}`, {
     method: "PATCH", headers: {"Content-Type":"application/json"},
     body: JSON.stringify(body)
@@ -1699,7 +1676,6 @@ async function guardarCargo(id) {
     if (cargo) {
       cargo.nombre = updated.nombre;
       cargo.aplica_premio = updated.aplica_premio;
-      cargo.aplica_trapos = updated.aplica_trapos;
       cargo.departamento_id = updated.departamento_id;
       cargo.departamento_nombre = updated.departamento_nombre;
     }
@@ -1720,23 +1696,6 @@ async function toggleApremio(id, value) {
     const updated = await res.json();
     const cargo = cargos.find(c => c.id === id);
     if (cargo) cargo.aplica_premio = updated.aplica_premio;
-    toast("Cargo actualizado");
-  } else {
-    const e = await res.json().catch(()=>({}));
-    toast("Error: " + (e.detail || "desconocido"));
-    await cargarCatalogos();
-  }
-}
-
-async function toggleAtrapos(id, value) {
-  const res = await fetch(`/api/cargos/${id}`, {
-    method: "PATCH", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ aplica_trapos: value })
-  });
-  if (res.ok) {
-    const updated = await res.json();
-    const cargo = cargos.find(c => c.id === id);
-    if (cargo) cargo.aplica_trapos = updated.aplica_trapos;
     toast("Cargo actualizado");
   } else {
     const e = await res.json().catch(()=>({}));
@@ -1866,18 +1825,15 @@ async function guardarDepto(id) {
 let _horarios = [];
 
 async function cargarCatalogos() {
-  const [cRes, dRes, catRes, tlRes, slRes, nlRes, cfgRes, hRes] = await Promise.all([
+  const [cRes, dRes, catRes, tlRes, slRes, nlRes, hRes] = await Promise.all([
     fetch("/api/cargos"), fetch("/api/departamentos"), fetch("/api/categorias"),
     fetch("/api/turnos-legajo"), fetch("/api/sectores-legajo"), fetch("/api/niveles-estudio"),
-    fetch("/api/configuracion"), fetch("/api/horarios")
+    fetch("/api/horarios")
   ]);
   cargos = await cRes.json();
   deptos = await dRes.json();
   _horarios = await hRes.json();
   categorias = await catRes.json();
-  const cfgParams = await cfgRes.json();
-  _traposActivo = cfgParams.find(p => p.clave === "trapos_cocina_activo")?.valor === "1";
-  document.getElementById("th-aplica-trapos").style.display = _traposActivo ? "" : "none";
   _renderCargos();
   _renderDeptos(deptos);
   _renderCatalogo(categorias, "tabla-categorias", "eliminarCategoria");

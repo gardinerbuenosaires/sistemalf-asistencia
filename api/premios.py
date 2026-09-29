@@ -28,6 +28,7 @@ class EvaluacionUpdate(BaseModel):
     tolerar_lsg: Optional[bool] = None
     desempenio_penaliza: Optional[bool] = None
     anular_premio: Optional[bool] = None
+    trapos: Optional[bool] = None
 
 
 class PremiosPeriodoIn(BaseModel):
@@ -204,57 +205,26 @@ def _finalizar(desglose: dict, valor_bruto: int, params: dict) -> dict:
     return desglose
 
 
-def _aplicar_trapos(conn, periodo: str, params: dict) -> dict | None:
-    """(Re)distribuye el monto de trapos del período y actualiza los valores de TODAS las
-    filas. Recalcula desde el estado guardado de cada fila (respeta tolerancias/BPM/monto),
-    reparte el total entre los que califican (valor sin trapos > 0 y cargo aplica_trapos) y
-    resetea el descuento de los que no califican. Se llama tras generar y tras cada
-    corrección manual que pueda cambiar quién califica."""
+def _trapos_valor(conn) -> int:
+    """Valor de trapos a descontar a cada empleado tildado (0 si la función está apagada)."""
     ta = conn.execute("SELECT valor FROM configuracion WHERE clave='trapos_cocina_activo'").fetchone()
-    trapos_activo = bool(ta and ta["valor"] == "1")
+    if not (ta and ta["valor"] == "1"):
+        return 0
     tv = conn.execute("SELECT valor FROM configuracion WHERE clave='trapos_cocina_valor'").fetchone()
-    trapos_valor = int(tv["valor"]) if (trapos_activo and tv and tv["valor"]) else 0
+    return int(tv["valor"]) if (tv and tv["valor"]) else 0
 
-    rows = conn.execute(
-        """SELECT pe.*, c.aplica_trapos
-           FROM premios_evaluacion pe
-           JOIN empleados e ON e.id = pe.empleado_id
-           JOIN cargos c ON c.id = e.cargo_id
-           WHERE pe.periodo=?""",
-        (periodo,)
-    ).fetchall()
 
-    # Valor SIN trapos con el estado guardado → define quién califica
-    base_calc = {}
-    for r in rows:
-        ev = dict(r)
-        ev["deduccion_trapos"] = 0
-        base_calc[r["id"]] = (ev, _calcular(ev, params))
-
-    # Elegibles = tienen premio a cobrar (valor sin trapos > 0), su cargo aplica trapos
-    # y el premio NO fue anulado manualmente. Los anulados no cobran, así que no deben
-    # contar en el divisor ni recibir descuento.
-    elegibles = {rid for rid, (ev, d) in base_calc.items()
-                 if d["valor_calculado"] > 0 and ev.get("aplica_trapos")
-                 and not ev.get("anular_premio")}
-    count = len(elegibles)
-    deduccion = round(trapos_valor / count) if (trapos_valor > 0 and count) else 0
-
-    for rid, (ev, d) in base_calc.items():
-        ded = deduccion if rid in elegibles else 0
-        if ded:
-            ev["deduccion_trapos"] = ded
-            d = _calcular(ev, params)
+def _recalcular_filas(conn, periodo: str, params: dict):
+    """Recalcula las filas del período desde su estado guardado (tolerancias, BPM, monto y
+    el descuento de trapos que tenga cada una). El descuento de trapos es un monto fijo
+    guardado por fila: solo cambia al tildar/destildar o al cambiar el valor, nunca acá."""
+    for r in conn.execute("SELECT * FROM premios_evaluacion WHERE periodo=?", (periodo,)).fetchall():
+        d = _calcular(dict(r), params)
         conn.execute(
-            """UPDATE premios_evaluacion SET deduccion_trapos=?, desglose_json=?,
-               valor_calculado=?, valor_final=?, modificado_en=datetime('now','localtime')
-               WHERE id=?""",
-            (ded, json.dumps(d), d["valor_calculado"], d["valor_final"], rid)
+            """UPDATE premios_evaluacion SET desglose_json=?, valor_calculado=?, valor_final=?,
+               modificado_en=datetime('now','localtime') WHERE id=?""",
+            (json.dumps(d), d["valor_calculado"], d["valor_final"], r["id"])
         )
-
-    if trapos_activo and trapos_valor > 0:
-        return {"monto_total": trapos_valor, "count": count, "deduccion": deduccion}
-    return None
 
 
 def _acumular_periodo(conn, empleado_id: int, periodo: str) -> dict:
@@ -377,20 +347,33 @@ def update_parametros(updates: list[ParametroUpdate], _user=Depends(require_perm
 
 class TraposValorIn(BaseModel):
     valor: int
+    periodo: Optional[str] = None
 
 
 @router.put("/trapos-valor")
 def set_trapos_valor(data: TraposValorIn, _user=Depends(require_permiso("premios", "corregir"))):
-    """Guarda el monto total de trapos de cocina. Protegido por premios:corregir
-    (coherente con la habilitación del campo en la UI); antes iba por el endpoint
-    genérico de configuración, que exigía usuarios:editar (solo perfil Sistema)."""
+    """Guarda el valor de trapos de cocina (monto que se descuenta a cada empleado tildado).
+    Protegido por premios:corregir (coherente con la habilitación del campo en la UI).
+    Si se indica un período abierto, actualiza a los ya tildados de ESE período con el
+    valor nuevo; los períodos cerrados y los demás meses conservan lo que tenían."""
+    valor = max(0, int(data.valor))
+    actualizados = 0
     with db_session() as conn:
         conn.execute(
             "INSERT INTO configuracion (clave, valor) VALUES ('trapos_cocina_valor', ?) "
             "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
-            (str(int(data.valor)),)
+            (str(valor),)
         )
-    return {"ok": True}
+        if data.periodo:
+            anio, mes = data.periodo.split("-")
+            if not es_premios_cerrado(conn, int(anio), int(mes)):
+                actualizados = conn.execute(
+                    "UPDATE premios_evaluacion SET deduccion_trapos=? "
+                    "WHERE periodo=? AND deduccion_trapos > 0",
+                    (valor, data.periodo)
+                ).rowcount
+                _recalcular_filas(conn, data.periodo, _get_params(conn))
+    return {"ok": True, "actualizados": actualizados}
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
@@ -612,17 +595,9 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
         fecha_desde = f"{anio}-{mes}-01"
         dias_min = int(params.get("dias_minimos_antiguedad", 90))
         diag = _diagnostico(conn, fecha_desde, dias_min)
-        trapos_cfg = conn.execute(
-            "SELECT valor FROM configuracion WHERE clave='trapos_cocina_activo'"
-        ).fetchone()
-        trapos_activo = trapos_cfg and trapos_cfg["valor"] == "1"
-        trapos_valor_cfg = conn.execute(
-            "SELECT valor FROM configuracion WHERE clave='trapos_cocina_valor'"
-        ).fetchone()
-        trapos_valor = int(trapos_valor_cfg["valor"]) if trapos_activo and trapos_valor_cfg else 0
 
         empleados = conn.execute("""
-            SELECT e.id, c.aplica_trapos FROM empleados e
+            SELECT e.id FROM empleados e
             JOIN cargos c ON c.id = e.cargo_id
             WHERE """ + _SQL_VIGENTE_PREMIOS + """ AND e.tipo != 'acceso'
               AND c.aplica_premio = 1
@@ -650,7 +625,7 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
             ).fetchall()
         }
 
-        # Pasada 1: calcular todos sin trapos
+        # Pasada 1: contadores de asistencia (el descuento de trapos guardado no se toca)
         generados = 0
         for emp in empleados:
             eid = emp["id"]
@@ -676,7 +651,6 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
                     dias_ausente=excluded.dias_ausente,
                     dias_lsg=excluded.dias_lsg,
                     monto_base=CASE WHEN monto_base_manual=1 THEN monto_base ELSE excluded.monto_base END,
-                    deduccion_trapos=0,
                     desglose_json=excluded.desglose_json,
                     valor_calculado=excluded.valor_calculado,
                     valor_final=excluded.valor_final,
@@ -690,10 +664,10 @@ def generar_evaluaciones(periodo: str, _user=Depends(require_permiso("premios", 
             ))
             generados += 1
 
-        # Pasada 2: repartir trapos (respeta las tolerancias guardadas)
-        trapos_distribucion = _aplicar_trapos(conn, periodo, params)
+        # Pasada 2: recalcular desde el estado guardado (tolerancias, anulado, trapos)
+        _recalcular_filas(conn, periodo, params)
 
-    return {"ok": True, "generados": generados, "diagnostico": diag, "trapos_distribucion": trapos_distribucion}
+    return {"ok": True, "generados": generados, "diagnostico": diag}
 
 
 @router.put("/evaluacion/{ev_id}")
@@ -708,7 +682,7 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
 
         campos_corregir = [data.tolerar_nf, data.tolerar_e, data.tolerar_retardo,
                            data.tolerar_ausente, data.tolerar_lsg, data.desempenio_penaliza,
-                           data.anular_premio]
+                           data.anular_premio, data.trapos]
         if any(v is not None for v in campos_corregir):
             if not tiene_permiso(_user.get("rol_id"), "premios", "corregir"):
                 raise HTTPException(403, "Sin permiso: premios.corregir")
@@ -734,6 +708,11 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             ev["desempenio_penaliza"] = int(data.desempenio_penaliza)
         if data.anular_premio is not None:
             ev["anular_premio"] = int(data.anular_premio)
+        if data.trapos is not None:
+            valor = _trapos_valor(conn) if data.trapos else 0
+            if data.trapos and not valor:
+                raise HTTPException(400, "Cargá primero el valor de trapos de cocina")
+            ev["deduccion_trapos"] = valor
 
         params = _get_params(conn)
         desglose = _calcular(ev, params)
@@ -742,7 +721,7 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             UPDATE premios_evaluacion SET
                 bpm=?, desempenio=?, monto_base=?, monto_base_manual=?,
                 tolerar_nf=?, tolerar_e=?, tolerar_retardo=?, tolerar_ausente=?, tolerar_lsg=?,
-                desempenio_penaliza=?, anular_premio=?,
+                desempenio_penaliza=?, anular_premio=?, deduccion_trapos=?,
                 desglose_json=?, valor_calculado=?, valor_final=?,
                 modificado_en=datetime('now','localtime')
             WHERE id=?
@@ -750,26 +729,12 @@ def update_evaluacion(ev_id: int, data: EvaluacionUpdate, _user=Depends(require_
             ev["bpm"], ev["desempenio"], ev["monto_base"], ev.get("monto_base_manual", 0),
             ev.get("tolerar_nf", 0), ev.get("tolerar_e", 0), ev.get("tolerar_retardo", 0),
             ev.get("tolerar_ausente", 0), ev.get("tolerar_lsg", 0),
-            ev.get("desempenio_penaliza", 0), ev.get("anular_premio", 0),
+            ev.get("desempenio_penaliza", 0), ev.get("anular_premio", 0), ev.get("deduccion_trapos", 0),
             json.dumps(desglose), desglose["valor_calculado"], desglose["valor_final"],
             ev_id
         ))
 
         ev.update({"desglose": desglose, "valor_calculado": desglose["valor_calculado"], "valor_final": desglose["valor_final"]})
-
-        # Si hay trapos activos, un cambio de calificación (tolerar/BPM/monto/anular) cambia
-        # quién califica y por ende el reparto: re-repartir todo el período.
-        ta = conn.execute("SELECT valor FROM configuracion WHERE clave='trapos_cocina_activo'").fetchone()
-        if ta and ta["valor"] == "1":
-            _aplicar_trapos(conn, ev["periodo"], params)
-            row2 = conn.execute(
-                "SELECT valor_calculado, valor_final, desglose_json FROM premios_evaluacion WHERE id=?",
-                (ev_id,)
-            ).fetchone()
-            ev["valor_calculado"] = row2["valor_calculado"]
-            ev["valor_final"] = row2["valor_final"]
-            ev["desglose"] = json.loads(row2["desglose_json"])
-            ev["trapos_recalculado"] = True
     return ev
 
 

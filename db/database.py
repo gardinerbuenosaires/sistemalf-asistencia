@@ -527,7 +527,7 @@ def _migrate(conn):
             ('trapos_cocina_activo', '0',
              'Si está en 1, aplica descuento de trapos de cocina en el cálculo de premios (específico por restaurante)'),
             ('trapos_cocina_valor', '0',
-             'Valor mensual de descuento por trapos de cocina ($). Solo se usa cuando trapos_cocina_activo=1'),
+             'Valor de trapos de cocina ($) que se descuenta a cada empleado tildado en Premios. Solo se usa cuando trapos_cocina_activo=1'),
             ('vp_activo', '0',
              'Si está en 1, habilita la columna VP (vacaciones pagadas) en la planilla mensual (específico por restaurante)'),
             ('parking_corte_turno', '16:00',

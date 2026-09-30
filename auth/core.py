@@ -28,7 +28,7 @@ MODULOS = [
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
     "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio", "asignar"]
 # corregir       → asistencia:corregir (novedades en planilla)
 # fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
 #                  individuales o por fuerza mayor). Separado de "editar" porque
@@ -40,6 +40,10 @@ ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reab
 # fichaje_propio → asistencia:fichaje_propio (crear y borrar fichadas manuales
 #                  del empleado vinculado al propio usuario). Igual que "propia":
 #                  una entrada manual anterior a la marca real tapa la tardanza.
+# asignar        → vacaciones:asignar (poner o sacar una V, desde la planilla o
+#                  desde las grillas de distribución). Separado de
+#                  asistencia:corregir y de editar las grillas, que cubren el
+#                  resto de las novedades y los horarios.
 
 # Acciones que cada módulo realmente usa. Es la fuente única: la matriz de roles
 # se dibuja con esto y set_permisos rechaza lo que no figure acá. Al agregar un
@@ -56,7 +60,7 @@ MODULO_ACCIONES = {
     "roles":         ["ver", "editar", "eliminar"],
     "sync":          ["procesar"],
     "premios":       ["ver", "editar", "corregir", "cerrar", "reabrir"],
-    "vacaciones":    ["ver", "editar", "carga_inicial"],
+    "vacaciones":    ["ver", "editar", "carga_inicial", "asignar"],
     "periodos":      ["ver", "cerrar", "reabrir"],
     "distribucion":  ["ver", "editar", "confirmar"],
     "mozos":         ["ver", "editar", "confirmar"],
@@ -202,6 +206,14 @@ def check_no_es_fichaje_propio(conn, user: dict, empleado_ids) -> None:
     _check_no_es_propio(conn, user, empleado_ids, "asistencia", "fichaje_propio")
 
 
+def check_asignar_vacaciones(user: dict) -> None:
+    """Para los caminos que ponen o sacan una V dentro de un endpoint que ya
+    exige otro permiso (novedades de la planilla, celdas de las grillas)."""
+    if not tiene_permiso(user.get("rol_id") or 0, "vacaciones", "asignar"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "No tenés permiso para asignar ni quitar vacaciones.")
+
+
 def check_page_auth(token: str | None, modulo: str, accion: str = "ver") -> bool:
     """Para rutas de página (no API): verifica cookie sin lanzar excepción."""
     if not token:
@@ -235,7 +247,7 @@ PERMISOS_DEFAULT = {
         "resultados":    ["ver","procesar"],
         "sync":          ["procesar"],
         "premios":       ["ver"],
-        "vacaciones":    ["ver"],
+        "vacaciones":    ["ver","asignar"],
         "periodos":      ["ver","cerrar","reabrir"],
         "distribucion":  ["ver","editar","confirmar"],
         "mozos":         ["ver","editar","confirmar"],
@@ -265,6 +277,7 @@ PERMISOS_DEFAULT = {
         "dashboard":     ["ver"],
         "planificacion": ["ver","editar"],
         "asistencia":    ["ver"],
+        "vacaciones":    ["asignar"],
         "distribucion":  ["ver","editar","confirmar"],
         "mozos":         ["ver","editar","confirmar"],
         "barmans":       ["ver","editar","confirmar"],

@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import date, timedelta
 from collections import defaultdict
 from db.database import db_session
-from auth.core import require_permiso
+from auth.core import require_permiso, check_asignar_vacaciones
 
 router = APIRouter(prefix="/api/asistencia", tags=["asistencia_mensual"])
 
@@ -1051,6 +1051,14 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
         raise HTTPException(400, "La compensación de presencia requiere una descripción")
     if data.tipo == "CO" and not data.descripcion:
         raise HTTPException(400, "El comentario requiere una descripción")
+    # Poner una V, o pisar una V con otra novedad, es asignar/quitar vacaciones.
+    with db_session() as conn:
+        previa = conn.execute(
+            "SELECT tipo FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=?",
+            (data.empleado_id, data.fecha, data.bloque)
+        ).fetchone()
+    if data.tipo == "V" or (previa and previa["tipo"] == "V"):
+        check_asignar_vacaciones(user)
     if data.tipo == "CO":
         with db_session() as conn:
             existing = conn.execute(
@@ -1158,6 +1166,8 @@ def eliminar_novedades_rango(data: NovedadRangoIn, _user=Depends(require_permiso
                 (data.empleado_id, data.fecha_desde, data.fecha_hasta, data.bloque),
             ).fetchall()
         }
+        if "V" in tipos_afectados:
+            check_asignar_vacaciones(_user)
         conn.execute(
             """DELETE FROM novedades
                WHERE empleado_id=? AND fecha>=? AND fecha<=? AND bloque=?""",
@@ -1179,6 +1189,8 @@ def eliminar_novedad(nov_id: int, _user=Depends(require_permiso("asistencia", "c
         row = conn.execute("SELECT id, fecha, tipo, empleado_id FROM novedades WHERE id=?", (nov_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Novedad no encontrada")
+        if row["tipo"] == "V":
+            check_asignar_vacaciones(_user)
         check_periodo_abierto(conn, row["fecha"])
         conn.execute("DELETE FROM novedades WHERE id=?", (nov_id,))
         tipo, fecha, empleado_id = row["tipo"], row["fecha"], row["empleado_id"]

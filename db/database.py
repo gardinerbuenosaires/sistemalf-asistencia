@@ -1556,6 +1556,23 @@ def _migrate(conn):
         if n:
             logger.info("Migración: asistencia:fichaje_manual otorgado a %d rol(es) con asistencia:editar", n)
 
+    # vacaciones:asignar se separó de asistencia:corregir (V en la planilla) y de
+    # editar las grillas de distribución (V en la grilla). Mismo criterio: quien ya
+    # podía poner vacaciones lo conserva, y sacárselo se decide en Roles.
+    ya_migrado = conn.execute(
+        "SELECT COUNT(*) FROM permisos WHERE modulo='vacaciones' AND accion='asignar'"
+    ).fetchone()[0]
+    if not ya_migrado:
+        n = conn.execute(
+            """INSERT OR IGNORE INTO permisos (rol_id, modulo, accion)
+               SELECT DISTINCT p.rol_id, 'vacaciones', 'asignar'
+               FROM permisos p JOIN roles r ON r.id = p.rol_id
+               WHERE (p.modulo='asistencia' AND p.accion='corregir')
+                  OR (p.modulo IN ('distribucion','mozos','barmans','peones') AND p.accion='editar')"""
+        ).rowcount
+        if n:
+            logger.info("Migración: vacaciones:asignar otorgado a %d rol(es) que ya cargaban vacaciones", n)
+
     # Filas de permisos que no pueden corresponder a nada. Se recalcula en cada
     # arranque a propósito: son invariantes, no una migración de una sola vez.
     #

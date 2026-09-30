@@ -34,7 +34,9 @@ from api.mozos import router as mozos_router
 from api.barmans import router as barmans_router
 from api.parking import router as parking_router
 from api.uniformes import router as uniformes_router
-from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
+from api.actualizacion import router as actualizacion_router, cerrar_pendientes_al_arrancar
+from auth.actividad import registrar as registrar_actividad
+from auth.core import decode_token, ensure_admin,check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,6 +81,10 @@ async def lifespan(app: FastAPI):
     FOTOS_PENDIENTES_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
     ensure_admin()
+    try:
+        cerrar_pendientes_al_arrancar()
+    except Exception as e:      # nunca impedir el arranque por esto
+        logger.error("No se pudo cerrar el registro de actualizaciones: %s", e)
     _avisar_si_base_vacia()
     start_scheduler()
     yield
@@ -135,6 +141,10 @@ class SlidingSessionMiddleware(BaseHTTPMiddleware):
                     )
                     resp.delete_cookie("session")
                     return resp
+                if request.headers.get("X-Poll") == "1":
+                    registrar_actividad(payload)
+                else:
+                    registrar_actividad({**payload, "la": time.time()})
                 response = await call_next(request)
                 if request.headers.get("X-Poll") != "1":
                     response.set_cookie(
@@ -170,6 +180,7 @@ app.include_router(mozos_router)
 app.include_router(barmans_router)
 app.include_router(parking_router)
 app.include_router(uniformes_router)
+app.include_router(actualizacion_router)
 
 
 def _page(request: Request, template: str, modulo: str, accion: str = "ver"):

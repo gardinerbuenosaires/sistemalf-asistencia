@@ -26,7 +26,7 @@ INACTIVITY_TTL  = 600  # segundos — 10 minutos sin actividad desloguea
 MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
-    "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
+    "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes", "actualizacion",
 ]
 ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio", "asignar"]
 # corregir       → asistencia:corregir (novedades en planilla)
@@ -71,6 +71,9 @@ MODULO_ACCIONES = {
     #   digitalización y sacárselo después.
     # uniformes:eliminar      → anular una constancia emitida, con motivo obligatorio.
     "uniformes":      ["ver", "editar", "carga_inicial", "eliminar"],
+    # actualizacion:procesar → bajar la versión nueva de GitHub y reiniciar el
+    #   sistema desde Configuración. De entrada, solo Sistema.
+    "actualizacion":  ["procesar"],
 }
 
 # Cómo se agrupan los módulos en la pantalla de Roles. Un módulo que no figure
@@ -80,7 +83,7 @@ MODULO_GRUPOS = [
     ("Programación", ["horarios", "planificacion", "calendarios"]),
     ("Distribución", ["distribucion", "mozos", "barmans", "peones"]),
     ("Personal",     ["empleados", "vacaciones", "premios", "uniformes"]),
-    ("Sistema",      ["dashboard", "usuarios", "roles"]),
+    ("Sistema",      ["dashboard", "usuarios", "roles", "actualizacion"]),
 ]
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}

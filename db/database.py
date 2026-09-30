@@ -1573,6 +1573,23 @@ def _migrate(conn):
         if n:
             logger.info("Migración: vacaciones:asignar otorgado a %d rol(es) que ya cargaban vacaciones", n)
 
+    # Actualizaciones hechas desde Configuración (api/actualizacion.py). Una fila
+    # por intento; 'reiniciando' la cierra el arranque siguiente.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS actualizaciones (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id     INTEGER,
+            usuario_nombre TEXT,
+            iniciada_en    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            finalizada_en  TEXT,
+            version_desde  TEXT,
+            version_hasta  TEXT,
+            estado         TEXT NOT NULL,   -- en_curso | reiniciando | ok | error
+            paso           TEXT,
+            detalle        TEXT
+        )
+    """)
+
     # Filas de permisos que no pueden corresponder a nada. Se recalcula en cada
     # arranque a propósito: son invariantes, no una migración de una sola vez.
     #

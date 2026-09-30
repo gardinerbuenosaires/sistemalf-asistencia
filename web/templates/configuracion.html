@@ -244,6 +244,7 @@
     <button class="cfg-tab" data-perm="premios:ver" id="tab-premios" onclick="switchCfgTab('premios')">Premios</button>
     <button class="cfg-tab" id="tab-parking"   onclick="switchCfgTab('parking')">Parking</button>
     <button class="cfg-tab" id="tab-automatico" onclick="switchCfgTab('automatico')">Procesos automáticos</button>
+    <button class="cfg-tab" data-perm="actualizacion:procesar" id="tab-actualizacion" onclick="switchCfgTab('actualizacion')">Actualización</button>
   </div>
 
   <!-- ── Panel: Sistema ── -->
@@ -753,7 +754,31 @@
     </div>
   </div>
 
+  <!-- ── Panel: Actualización ── -->
+  <div class="cfg-panel" id="panel-actualizacion">
+    <div class="section">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Actualización del sistema</div>
+          <div class="section-desc" style="margin-bottom:0">Baja la última versión desde GitHub e instala los cambios en esta máquina. Antes respalda la base y prueba que la versión nueva arranque; si algo falla, vuelve sola a la anterior.</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="cargarActualizacion(true)">Buscar actualizaciones</button>
+      </div>
+      <div id="act-contenido" style="margin-top:16px"><p style="color:#aaa;font-size:.9rem">Cargando...</p></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Últimas actualizaciones</div>
+      <div id="act-historial" style="margin-top:10px"></div>
+    </div>
+  </div>
+
 </main>
+<div id="act-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:white;border-radius:8px;padding:28px 32px;max-width:460px;width:90%;text-align:center">
+    <div style="font-weight:bold;font-size:1.05rem;margin-bottom:10px">Actualizando el sistema</div>
+    <div id="act-overlay-msg" style="color:#555;font-size:.9rem;white-space:pre-line">Iniciando…</div>
+  </div>
+</div>
 <div id="toast"></div>
 
 <script src="/static/js/session.js"></script>
@@ -1241,7 +1266,7 @@ const MODULO_LABELS = {
   resultados:"Resultados", usuarios:"Usuarios", roles:"Roles", sync:"Sincronización",
   premios:"Premios", vacaciones:"Vacaciones", periodos:"Períodos", distribucion:"Horarios Cocina",
   mozos:"Mozos", barmans:"Barmans", peones:"Peones",
-  uniformes:"Uniformes y EPP"
+  uniformes:"Uniformes y EPP", actualizacion:"Actualización"
 };
 const ACCION_LABELS = {
   ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
@@ -2216,6 +2241,154 @@ function switchCfgTab(tab) {
   if (tab === 'premios') cargarTraposCocina();
   if (tab === 'sistema') cargarVpActivo();
   if (tab === 'parking') cargarParkingCorte();
+  if (tab === 'actualizacion') cargarActualizacion(true);
+}
+
+// ── Actualización del sistema ─────────────────────────────────────────────────
+const ACT_PASOS = {
+  inicio: "Preparando…", respaldo: "Respaldando la base…", descarga: "Bajando los cambios de GitHub…",
+  librerias: "Instalando librerías nuevas…", prueba: "Probando que la versión nueva arranque…",
+  reinicio: "Reiniciando el sistema…",
+};
+const ACT_ESTADOS = {
+  ok: ['Actualizada', '#27ae60'], error: ['Falló', '#c0392b'],
+  en_curso: ['En curso', '#2980b9'], reiniciando: ['Reiniciando', '#2980b9'],
+};
+
+// Hasta 3 min sin actividad se lo cuenta como trabajando; después, como una
+// página que quedó abierta.
+const ACT_TRABAJANDO_SEG = 180;
+let _actConectados = [];
+
+function _actHace(seg) {
+  const m = Math.floor(seg / 60);
+  return m < 1 ? 'recién' : `hace ${m} min`;
+}
+
+function _actConectadosHtml(lista) {
+  const otros = lista.filter(c => !c.soy_yo);
+  if (!otros.length) return '<p style="color:#27ae60;font-size:.85rem;margin-top:10px">✓ Nadie más tiene el sistema abierto ahora.</p>';
+  return `<div style="margin-top:12px;font-size:.85rem"><b>Usuarios conectados ahora:</b>
+    <ul style="margin:6px 0 0 18px">${otros.map(c => c.inactivo_seg <= ACT_TRABAJANDO_SEG
+      ? `<li><b style="color:#c0392b">${escHtml(c.nombre)}</b> — activo ${_actHace(c.inactivo_seg)}</li>`
+      : `<li>${escHtml(c.nombre)} — página abierta, sin actividad ${_actHace(c.inactivo_seg)}</li>`).join('')}</ul></div>`;
+}
+
+async function cargarActualizacion(buscar = true) {
+  const cont = document.getElementById('act-contenido');
+  if (buscar) cont.innerHTML = '<p style="color:#aaa;font-size:.9rem">Consultando GitHub…</p>';
+  const r = await fetch(`/api/actualizacion/estado?buscar=${buscar ? 1 : 0}`);
+  if (!r.ok) { cont.innerHTML = '<p style="color:#c0392b">No se pudo consultar el estado.</p>'; return; }
+  const d = await r.json();
+  const inst = d.instalada;
+  _actConectados = d.conectados || [];
+  let html = `<div style="font-size:.88rem;line-height:1.7">
+    <div><b>Equipo:</b> ${escHtml(d.equipo)}</div>
+    <div><b>Versión instalada:</b> ${inst ? `<code>${escHtml(inst.hash)}</code> — ${escHtml(inst.fecha)} — ${escHtml(inst.mensaje)}` : '—'}</div>
+  </div>` + _actConectadosHtml(_actConectados);
+  if (!d.git) {
+    html += '<p style="color:#c0392b;margin-top:12px">No se encontró git en esta máquina. Actualizá con update.bat.</p>';
+  } else if (d.error_busqueda) {
+    html += `<p style="color:#c0392b;margin-top:12px;white-space:pre-line">No se pudo consultar GitHub: ${escHtml(d.error_busqueda)}</p>`;
+  } else if (!d.pendientes.length) {
+    html += '<p style="color:#27ae60;margin-top:12px">✓ Esta máquina tiene la última versión.</p>';
+  } else {
+    const n = d.pendientes.length, pl = n > 1 ? 's' : '';
+    html += `<div style="margin-top:14px;font-size:.88rem"><b>Hay ${n} cambio${pl} nuevo${pl}:</b>
+      <ul style="margin:6px 0 14px 18px">${d.pendientes.map(c =>
+        `<li>${escHtml(c.fecha.slice(0, 10))} — ${escHtml(c.mensaje)}</li>`).join('')}</ul></div>`;
+    if (d.en_curso) {
+      html += '<p style="color:#2980b9">Hay una actualización en curso.</p>';
+    } else if (!d.servicio) {
+      html += '<p style="color:#888;font-size:.85rem">Este sistema no corre como servicio de Windows (por ejemplo, en una PC de pruebas): actualizá con update.bat.</p>';
+    } else {
+      html += '<button class="btn btn-primary" onclick="actualizarAhora()">Actualizar ahora</button>';
+    }
+  }
+  cont.innerHTML = html;
+
+  const hist = document.getElementById('act-historial');
+  if (!d.historial.length) { hist.innerHTML = '<p style="color:#aaa;font-size:.85rem">Todavía no se actualizó desde acá.</p>'; return; }
+  hist.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.83rem">
+    <thead><tr style="background:#f8f9fa;border-bottom:2px solid #dee2e6">
+      <th style="padding:8px;text-align:left">Cuándo</th><th style="padding:8px;text-align:left">Quién</th>
+      <th style="padding:8px;text-align:left">Versión</th><th style="padding:8px;text-align:left">Resultado</th></tr></thead>
+    <tbody>${d.historial.map(h => {
+      const [txt, color] = ACT_ESTADOS[h.estado] || [h.estado, '#666'];
+      return `<tr style="border-bottom:1px solid #f0f0f0;vertical-align:top">
+        <td style="padding:8px;white-space:nowrap">${escHtml(h.iniciada_en)}</td>
+        <td style="padding:8px">${escHtml(h.usuario_nombre || '—')}</td>
+        <td style="padding:8px;white-space:nowrap"><code>${escHtml(h.version_desde || '?')}</code> → <code>${escHtml(h.version_hasta || '?')}</code></td>
+        <td style="padding:8px"><b style="color:${color}">${txt}</b>${h.detalle
+          ? `<div style="white-space:pre-line;color:#666;font-size:.78rem;margin-top:4px">${escHtml(h.detalle)}</div>` : ''}</td></tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+async function actualizarAhora() {
+  // Se vuelve a mirar en el momento: la lista en pantalla puede tener minutos.
+  await cargarActualizacion(false);
+  const otros = _actConectados.filter(c => !c.soy_yo);
+  const trabajando = otros.filter(c => c.inactivo_seg <= ACT_TRABAJANDO_SEG);
+  let aviso = '';
+  if (trabajando.length) {
+    aviso = `⚠ Están usando el sistema ahora: ${trabajando.map(c => c.nombre).join(', ')}.\n` +
+            'Van a perder lo que no hayan guardado.\n\n';
+  } else if (otros.length) {
+    aviso = `Tienen una página abierta pero sin actividad: ${otros.map(c => c.nombre).join(', ')}.\n\n`;
+  }
+  if (!confirm('Se va a actualizar el sistema en esta máquina.\n\n' + aviso +
+               'El sistema se reinicia y todos los usuarios conectados ' +
+               'van a tener que volver a iniciar sesión.\n\n¿Continuar?')) return;
+  const r = await fetch('/api/actualizacion/actualizar', { method: 'POST' });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    toast('Error: ' + (e.detail || r.status));
+    return cargarActualizacion(false);
+  }
+  const { id } = await r.json();
+  seguirActualizacion(id);
+}
+
+function seguirActualizacion(id) {
+  const overlay = document.getElementById('act-overlay');
+  const msg = document.getElementById('act-overlay-msg');
+  overlay.style.display = 'flex';
+  let caido = false;
+  const t0 = Date.now();
+  const tick = async () => {
+    if (!caido) {
+      try {
+        const r = await fetch('/api/actualizacion/estado?buscar=0', { headers: { 'X-Poll': '1' } });
+        const d = await r.json();
+        const h = (d.historial || []).find(x => x.id === id);
+        if (h && h.estado === 'error') {
+          overlay.style.display = 'none';
+          await cargarActualizacion(false);
+          alert('La actualización falló y el sistema quedó como estaba.\n\n' + (h.detalle || ''));
+          return;
+        }
+        if (h) msg.textContent = ACT_PASOS[h.paso] || 'Actualizando…';
+      } catch (_) {
+        caido = true;   // el proceso se cerró: ahora hay que esperar que vuelva
+      }
+    }
+    if (caido) {
+      msg.textContent = 'Reiniciando el sistema…\nEsto puede tardar hasta un minuto.';
+      try {
+        await fetch('/api/ping', { headers: { 'X-Poll': '1' } });
+        // Respondió (aunque sea 401): el sistema volvió. La sesión ya no vale.
+        msg.textContent = 'Listo: el sistema volvió.\nIniciá sesión y revisá el resultado en Configuración › Actualización.';
+        setTimeout(() => { location.href = '/login'; }, 3500);
+        return;
+      } catch (_) {}
+    }
+    if (Date.now() - t0 > 5 * 60 * 1000) {
+      msg.textContent = 'El sistema tarda más de lo normal en volver.\nProbá recargar en unos minutos; si no responde, habrá que entrar a la máquina y correr update.bat.';
+      return;
+    }
+    setTimeout(tick, 2000);
+  };
+  tick();
 }
 
 // ── Datos fiscales (módulo de uniformes) ──────────────────────────────────────
@@ -2481,7 +2654,7 @@ async function guardarAvisoDist(turno) {
 }
 
 _loadPerms().then(() => {
-  switchCfgTab('sistema');
+  switchCfgTab(location.hash === '#actualizacion' && _perms.has('actualizacion:procesar') ? 'actualizacion' : 'sistema');
   cargarParams();
   cargarUsuarios();
   cargarRoles();

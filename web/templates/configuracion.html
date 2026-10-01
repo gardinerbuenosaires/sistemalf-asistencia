@@ -3520,8 +3520,13 @@ async function verPasadas(id, dias) {
     return;
   }
   if (!data.ok) {
-    cuerpo.innerHTML = `<div style="color:#c0392b">El equipo no contestó.</div>
-      <div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(data.error)}</div>`;
+    // Un formato que no sabemos leer no es lo mismo que un equipo que no
+    // contesta: el equipo contestó bien, lo que falta es de este lado.
+    cuerpo.innerHTML = data.formato_desconocido
+      ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:9px 12px;font-size:.85rem;color:#6b5a26">
+           ${_esc(data.error)}</div>`
+      : `<div style="color:#c0392b">El equipo no contestó.</div>
+         <div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(data.error)}</div>`;
     return;
   }
 
@@ -3649,8 +3654,13 @@ async function verPadron(id) {
 
   const cuerpo = document.getElementById('padron-cuerpo');
   if (!data.ok) {
-    cuerpo.innerHTML = `<div style="color:#c0392b">El equipo no contestó.</div>
-      <div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(data.error)}</div>`;
+    // Un formato que no sabemos leer no es lo mismo que un equipo que no
+    // contesta: el equipo contestó bien, lo que falta es de este lado.
+    cuerpo.innerHTML = data.formato_desconocido
+      ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:9px 12px;font-size:.85rem;color:#6b5a26">
+           ${_esc(data.error)}</div>`
+      : `<div style="color:#c0392b">El equipo no contestó.</div>
+         <div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(data.error)}</div>`;
     return;
   }
 

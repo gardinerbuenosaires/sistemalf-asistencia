@@ -326,19 +326,29 @@ def _formato_de_8(datos: bytes, reloj=None):
         ("<HBB4s", lambda c: (c[0], c[3])),    # uid, estado, punch, tiempo
         ("<HB4sB", lambda c: (c[0], c[2])),    # uid, estado, tiempo, punch (pyzk)
     ]
-    mejor, puntaje_mejor = candidatos[0], -1
+    mejor, puntaje_mejor, de_cuantos = None, -1, 0
     for patron, extraer in candidatos:
-        puntaje, muestra = 0, datos[:8 * 60]
+        puntaje, leidos, muestra = 0, 0, datos[:8 * 60]
         while len(muestra) >= 8:
             _uid, hora = extraer(unpack(patron, muestra[:8]))
             muestra = muestra[8:]
+            leidos += 1
             try:
                 if _plausible(_hora_zk(hora), reloj):
                     puntaje += 1
             except Exception:
                 pass
+        de_cuantos = leidos
         if puntaje > puntaje_mejor:
             mejor, puntaje_mejor = (patron, extraer), puntaje
+
+    # Si el que mejor anduvo no llega ni a la mitad, ninguno de los formatos
+    # conocidos sirve para este equipo. Devolver el "menos malo" llenaría la
+    # pantalla de fechas del siglo XXII, que es peor que no mostrar nada: una
+    # fecha inventada se lee como un dato y una pantalla vacía con un motivo se
+    # lee como lo que es.
+    if de_cuantos and puntaje_mejor < de_cuantos / 2:
+        return None
     return mejor
 
 
@@ -361,11 +371,11 @@ def _registros_crudos(conexion, reloj=None) -> tuple:
     usuarios = {u.uid: str(u.user_id).strip() for u in conexion.get_users()}
     conexion.read_sizes()
     if not getattr(conexion, "records", 0):
-        return [], 0, 0
+        return [], 0, 0, True
 
     datos, _ = conexion.read_with_buffer(const.CMD_ATTLOG_RRQ)
     if len(datos) < 4:
-        return [], 0, 0
+        return [], 0, 0, True
     total = unpack("I", datos[:4])[0]
     datos = datos[4:]
     tam = total // conexion.records if conexion.records else 0
@@ -380,7 +390,13 @@ def _registros_crudos(conexion, reloj=None) -> tuple:
     if tam == 8:
         # Dónde cae el tiempo adentro del registro no es fijo, así que se
         # averigua. El índice interno se resuelve contra el padrón acá.
-        patron, bruto = _formato_de_8(datos, reloj)
+        elegido = _formato_de_8(datos, reloj)
+        if elegido is None:
+            # Ningún formato conocido sirve para este equipo. No se devuelve el
+            # menos malo: se devuelve nada, y quien llame avisa.
+            return [], 0, tam, False
+        patron, bruto = elegido
+
         def extraer(c, _b=bruto):
             uid, hora = _b(c)
             return usuarios.get(uid, str(uid)), hora
@@ -396,7 +412,7 @@ def _registros_crudos(conexion, reloj=None) -> tuple:
             registros.append((numero, _hora_zk(hora_cruda)))
         except Exception:
             ilegibles += 1
-    return registros, ilegibles, tam
+    return registros, ilegibles, tam, True
 
 
 def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
@@ -433,7 +449,7 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
         # y de paso se informa cuánto está corrido. Todas las pasadas que
         # devuelve están desplazadas exactamente eso.
         reloj = leer_reloj(conexion)
-        todos, ilegibles, tam = _registros_crudos(conexion, reloj)
+        todos, ilegibles, tam, entendido = _registros_crudos(conexion, reloj)
         registros = []
         for numero, ts in todos:
             if (desde and ts < desde) or (hasta and ts > hasta):
@@ -446,6 +462,20 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
                 "hora": ts.strftime("%H:%M:%S"),
                 "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
             })
+        if not entendido:
+            # Mostrar fechas inventadas es peor que no mostrar nada: una fecha
+            # se lee como un dato, y un motivo se lee como lo que es.
+            return {"ok": False, "registros": [], "transporte": transporte,
+                    "total": 0, "ilegibles": 0, "tamano_registro": tam,
+                    "reloj": reloj.strftime("%Y-%m-%d %H:%M:%S") if reloj else None,
+                    "desfase_minutos": None, "formato_desconocido": True,
+                    "error": "Este equipo guarda las pasadas en un formato que el "
+                             "sistema todavía no sabe leer. Las fechas saldrían "
+                             "inventadas, así que no se muestra ninguna. Para "
+                             "averiguar su formato, correr en la PC del sistema: "
+                             "scripts/diagnosticar_pasadas.bat "
+                             + str(dispositivo.get("ip") or "")}
+
         registros.sort(key=lambda r: r["timestamp"], reverse=True)
         from datetime import datetime
         desfase = round((reloj - datetime.now()).total_seconds() / 60) if reloj else None

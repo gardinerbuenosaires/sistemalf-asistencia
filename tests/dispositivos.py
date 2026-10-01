@@ -2027,12 +2027,13 @@ class _ConexionFalsa:
         return pack("I", len(cuerpo)) + cuerpo, 0
 
 from sync.lectores import _registros_crudos
-_regs, _ileg, _tam = _registros_crudos(_ConexionFalsa())
+_regs, _ileg, _tam, _ok8 = _registros_crudos(_ConexionFalsa())
 chequear("el registro imposible no tira abajo la lectura", len(_regs) == 2, _regs)
 chequear("y se cuenta aparte", _ileg == 1, _ileg)
 chequear("el numero se resuelve por indice interno",
          all(n == "42" for n, _ in _regs), _regs)
 chequear("detecta el tamano de registro", _tam == 8, _tam)
+chequear("y entiende el formato", _ok8 is True, _ok8)
 
 
 print("\n=== DONDE CAE EL TIEMPO EN UN REGISTRO DE 8 BYTES ===")
@@ -2155,6 +2156,40 @@ chequear("a un equipo push no se le pone la hora",
 chequear("ni se le consulta", _lr.ver_reloj({"protocolo": "push"})["ok"] is False)
 
 _lr._conectar = _real6
+
+
+print("\n=== UN FORMATO QUE NO SABEMOS LEER ===")
+# Dos equipos del mismo local devuelven formatos distintos. Cuando ninguno de
+# los conocidos sirve, mostrar el "menos malo" llena la pantalla de fechas del
+# siglo XXII, y una fecha inventada se lee como un dato.
+from sync.lectores import _formato_de_8, _registros_crudos
+
+_basura = bytes([0x73, 0x00, 0x08, 0x00, 0xFD, 0x8E, 0x68, 0xEE]) * 60
+chequear("con bytes que ningun formato entiende, no elige ninguno",
+         _formato_de_8(_basura, datetime.now()) is None,
+         _formato_de_8(_basura, datetime.now()))
+
+# Y con datos que si entiende, elige.
+def _cod3(d):
+    t = (d.year-2000)*12 + (d.month-1); t = t*31 + (d.day-1); t = t*24 + d.hour
+    t = t*60 + d.minute; return t*60 + d.second
+_buenos = b"".join(
+    pack("<HBB", 7, 0, 0) + pack("<I", _cod3(datetime.now() - timedelta(hours=i)))
+    for i in range(30))
+chequear("con datos que entiende, elige un formato",
+         _formato_de_8(_buenos, datetime.now()) is not None)
+
+# El lector completo tiene que decir que no entendio, no devolver cualquier cosa.
+class _Raro:
+    records = 60
+    class _U:
+        def __init__(s, uid, nid): s.uid, s.user_id = uid, nid
+    def get_users(s): return [s._U(0x73, "115")]
+    def read_sizes(s): pass
+    def read_with_buffer(s, cmd): return pack("I", len(_basura)) + _basura, 0
+_regs, _ileg, _tam, _entendido = _registros_crudos(_Raro(), datetime.now())
+chequear("el lector avisa que no entendio el formato", _entendido is False)
+chequear("y no devuelve ningun registro inventado", _regs == [], _regs[:2])
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

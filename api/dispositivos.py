@@ -442,7 +442,8 @@ def registros(did: int, dias: int = 7,
 
     lectura = leer_registros(d, desde=desde)
     if not lectura["ok"]:
-        return {"ok": False, "error": lectura["error"], "dispositivo": d}
+        return {"ok": False, "error": lectura["error"], "dispositivo": d,
+                "formato_desconocido": lectura.get("formato_desconocido", False)}
 
     # El nombre se resuelve acá y no en la pantalla: un número suelto no le dice
     # nada a nadie, y es lo único que el equipo guarda.

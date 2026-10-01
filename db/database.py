@@ -543,7 +543,7 @@ def _migrate(conn):
             ('trapos_cocina_activo', '0',
              'Si está en 1, aplica descuento de trapos de cocina en el cálculo de premios (específico por restaurante)'),
             ('trapos_cocina_valor', '0',
-             'Valor mensual de descuento por trapos de cocina ($). Solo se usa cuando trapos_cocina_activo=1'),
+             'Valor de trapos de cocina ($) que se descuenta a cada empleado tildado en Premios. Solo se usa cuando trapos_cocina_activo=1'),
             ('vp_activo', '0',
              'Si está en 1, habilita la columna VP (vacaciones pagadas) en la planilla mensual (específico por restaurante)'),
             ('parking_corte_turno', '16:00',
@@ -1076,6 +1076,17 @@ def _migrate(conn):
     if "departamento_dist" not in cols_usuarios:
         conn.execute("ALTER TABLE usuarios ADD COLUMN departamento_dist INTEGER")
         logger.info("Migración: columna departamento_dist agregada a usuarios")
+    # Eliminado = borrado a la vista. Un usuario con registros a su nombre no se
+    # puede borrar de verdad sin perder quién hizo cada cosa; se oculta de la
+    # lista y conserva su email, porque algunas tablas guardan al autor por email.
+    if "eliminado" not in cols_usuarios:
+        conn.execute("ALTER TABLE usuarios ADD COLUMN eliminado INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migración: columna eliminado agregada a usuarios")
+    # Empleado que es la misma persona que el usuario. Sirve para que un rol sin
+    # planificacion:propia no pueda cambiarse su propio horario.
+    if "empleado_id" not in cols_usuarios:
+        conn.execute("ALTER TABLE usuarios ADD COLUMN empleado_id INTEGER REFERENCES empleados(id)")
+        logger.info("Migración: columna empleado_id agregada a usuarios")
 
     # Catálogos configurables del legajo (turno y sector)
     conn.execute("""
@@ -1560,6 +1571,40 @@ def _migrate(conn):
         ).rowcount
         if n:
             logger.info("Migración: asistencia:fichaje_manual otorgado a %d rol(es) con asistencia:editar", n)
+
+    # vacaciones:asignar se separó de asistencia:corregir (V en la planilla) y de
+    # editar las grillas de distribución (V en la grilla). Mismo criterio: quien ya
+    # podía poner vacaciones lo conserva, y sacárselo se decide en Roles.
+    ya_migrado = conn.execute(
+        "SELECT COUNT(*) FROM permisos WHERE modulo='vacaciones' AND accion='asignar'"
+    ).fetchone()[0]
+    if not ya_migrado:
+        n = conn.execute(
+            """INSERT OR IGNORE INTO permisos (rol_id, modulo, accion)
+               SELECT DISTINCT p.rol_id, 'vacaciones', 'asignar'
+               FROM permisos p JOIN roles r ON r.id = p.rol_id
+               WHERE (p.modulo='asistencia' AND p.accion='corregir')
+                  OR (p.modulo IN ('distribucion','mozos','barmans','peones') AND p.accion='editar')"""
+        ).rowcount
+        if n:
+            logger.info("Migración: vacaciones:asignar otorgado a %d rol(es) que ya cargaban vacaciones", n)
+
+    # Actualizaciones hechas desde Configuración (api/actualizacion.py). Una fila
+    # por intento; 'reiniciando' la cierra el arranque siguiente.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS actualizaciones (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id     INTEGER,
+            usuario_nombre TEXT,
+            iniciada_en    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            finalizada_en  TEXT,
+            version_desde  TEXT,
+            version_hasta  TEXT,
+            estado         TEXT NOT NULL,   -- en_curso | reiniciando | ok | error
+            paso           TEXT,
+            detalle        TEXT
+        )
+    """)
 
     # Filas de permisos que no pueden corresponder a nada. Se recalcula en cada
     # arranque a propósito: son invariantes, no una migración de una sola vez.

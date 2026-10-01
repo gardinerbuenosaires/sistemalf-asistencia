@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta
 from db.database import db_session
-from auth.core import require_permiso
+from auth.core import require_permiso, check_no_es_propia
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,8 @@ def set_dia(data: PlanDiaIn, _user=Depends(require_permiso("planificacion", "edi
     Si horario_id es None y es_franco es False, elimina la asignación.
     """
     from api.periodos_cerrados import check_periodo_abierto
+    with db_session() as conn:
+        check_no_es_propia(conn, _user, [data.empleado_id])
     if data.horario_id is None and not data.es_franco:
         # Borrar asignación y resultado asociado (si no fue corregido manualmente)
         with db_session() as conn:
@@ -163,6 +165,7 @@ def quitar_franco(data: QuitarFrancoIn, _user=Depends(require_permiso("planifica
     from api.periodos_cerrados import check_periodo_abierto
     weekday = date.fromisoformat(data.fecha).weekday()  # 0=lunes … 6=domingo
     with db_session() as conn:
+        check_no_es_propia(conn, _user, [data.empleado_id])
         check_periodo_abierto(conn, data.fecha)
 
         # Calendario vigente del empleado en esa fecha
@@ -252,6 +255,7 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
     fecha_sig = str(fecha + timedelta(days=1))
 
     with db_session() as conn:
+        check_no_es_propia(conn, _user, [empleado_id])
         check_periodo_abierto(conn, fecha_str)
         plan = conn.execute(
             "SELECT id, es_franco FROM planificacion WHERE empleado_id=? AND fecha=?",
@@ -351,6 +355,7 @@ def asignar_horario_ft(body: dict, _user=Depends(require_permiso("planificacion"
 def delete_dia(empleado_id: int, fecha: str, _user=Depends(require_permiso("planificacion", "editar"))):
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
+        check_no_es_propia(conn, _user, [empleado_id])
         check_periodo_abierto(conn, fecha)
         conn.execute(
             "DELETE FROM planificacion WHERE empleado_id = ? AND fecha = ?",

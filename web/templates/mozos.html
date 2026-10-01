@@ -1041,7 +1041,7 @@ function abrirNovModal(empId, fecha, turno) {
     `${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()} — ${turno}`;
 
   const grid = document.getElementById('nov-tipos-grid');
-  grid.innerHTML = TIPOS_MOZOS.map(t => {
+  grid.innerHTML = TIPOS_MOZOS.filter(t => t !== 'V' || canDo('vacaciones', 'asignar')).map(t => {
     const c = MOZOS_COLORES[t];
     const lbl = t === 'P' ? '|' : t;
     return `<button class="mozos-tipo-btn" data-tipo="${t}" onclick="selTipoNov('${t}')"

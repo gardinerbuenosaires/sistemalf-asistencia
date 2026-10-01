@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta
 from db.database import db_session
-from auth.core import require_permiso, get_current_user
+from auth.core import require_permiso, get_current_user, check_asignar_vacaciones
 from api.periodos_cerrados import check_periodo_abierto, check_rango_abierto
 
 router = APIRouter(prefix="/api/barmans", tags=["barmans"])
@@ -233,6 +233,14 @@ def set_celda(body: CeldaIn, user=Depends(require_permiso("barmans", "editar")))
             "SELECT id, estado FROM barmans_semana WHERE departamento_id=? AND semana_inicio=?",
             (body.departamento_id, lunes)
         ).fetchone()
+        # Poner una V en la celda, o cambiar una V por otra cosa, es asignar/quitar
+        # vacaciones: al confirmar se vuelve novedad.
+        previa = semana and conn.execute(
+            "SELECT valor FROM barmans_detalle WHERE semana_id=? AND empleado_id=? AND fecha=? AND turno=?",
+            (semana["id"], body.empleado_id, body.fecha, body.turno)
+        ).fetchone()
+        if body.valor == "V" or (previa and previa["valor"] == "V"):
+            check_asignar_vacaciones(user)
         if not semana:
             cur = conn.execute(
                 """INSERT INTO barmans_semana (departamento_id, semana_inicio, estado, creado_por, creado_en)

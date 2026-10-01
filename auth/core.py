@@ -27,13 +27,24 @@ MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
     "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
-    "dispositivos", "accesos",
+    "actualizacion", "dispositivos", "accesos",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "asignar", "excepcion"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio", "asignar", "excepcion"]
 # corregir       → asistencia:corregir (novedades en planilla)
 # fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
 #                  individuales o por fuerza mayor). Separado de "editar" porque
 #                  inventa una marca que el reloj nunca registró.
+# propia         → planificacion:propia (tocar la planificación o el calendario
+#                  del empleado vinculado al propio usuario). Sin él, "editar"
+#                  alcanza para todos menos para uno mismo: cambiarse el horario
+#                  del día después de llegar borra la llegada tarde.
+# fichaje_propio → asistencia:fichaje_propio (crear y borrar fichadas manuales
+#                  del empleado vinculado al propio usuario). Igual que "propia":
+#                  una entrada manual anterior a la marca real tapa la tardanza.
+# asignar        → vacaciones:asignar (poner o sacar una V, desde la planilla o
+#                  desde las grillas de distribución). Separado de
+#                  asistencia:corregir y de editar las grillas, que cubren el
+#                  resto de las novedades y los horarios.
 
 # Acciones que cada módulo realmente usa. Es la fuente única: la matriz de roles
 # se dibuja con esto y set_permisos rechaza lo que no figure acá. Al agregar un
@@ -42,15 +53,15 @@ MODULO_ACCIONES = {
     "dashboard":     ["ver"],
     "empleados":     ["ver", "editar", "jubilacion"],
     "horarios":      ["ver", "editar", "eliminar"],
-    "planificacion": ["ver", "editar"],
+    "planificacion": ["ver", "editar", "propia"],
     "calendarios":   ["ver", "editar", "eliminar"],
-    "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos", "fichaje_manual"],
+    "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos", "fichaje_manual", "fichaje_propio"],
     "resultados":    ["ver", "procesar"],
     "usuarios":      ["ver", "editar", "eliminar"],
     "roles":         ["ver", "editar", "eliminar"],
     "sync":          ["procesar"],
     "premios":       ["ver", "editar", "corregir", "cerrar", "reabrir"],
-    "vacaciones":    ["ver", "editar", "carga_inicial"],
+    "vacaciones":    ["ver", "editar", "carga_inicial", "asignar"],
     "periodos":      ["ver", "cerrar", "reabrir"],
     "distribucion":  ["ver", "editar", "confirmar"],
     "mozos":         ["ver", "editar", "confirmar"],
@@ -61,13 +72,14 @@ MODULO_ACCIONES = {
     #   digitalización y sacárselo después.
     # uniformes:eliminar      → anular una constancia emitida, con motivo obligatorio.
     "uniformes":      ["ver", "editar", "carga_inicial", "eliminar"],
+    # actualizacion:procesar → bajar la versión nueva de GitHub y reiniciar el
+    #   sistema desde Configuración. De entrada, solo Sistema.
+    "actualizacion":  ["procesar"],
     # dispositivos → los lectores biométricos: el maestro de asistencia y los de
     #   puerta. Es configuración técnica, por eso arranca solo en Sistema: tocar
     #   una IP mal deja al restaurante sin fichaje.
     "dispositivos":   ["ver", "editar", "eliminar"],
     # accesos → la politica de quien abre que puerta, separada de los equipos.
-    #   editar  → redefinir que puertas incluye un perfil. Es una decision de
-    #             politica y cambia el acceso de todos los que lo tienen.
     #   editar    → redefinir que puertas incluye un perfil. Cambia el acceso de
     #               todos los que lo tengan.
     #   asignar   → ponerle un perfil a una persona. Es aplicar la politica, se
@@ -86,7 +98,8 @@ MODULO_GRUPOS = [
     ("Programación", ["horarios", "planificacion", "calendarios"]),
     ("Distribución", ["distribucion", "mozos", "barmans", "peones"]),
     ("Personal",     ["empleados", "vacaciones", "premios", "uniformes"]),
-    ("Sistema",      ["dashboard", "usuarios", "roles", "dispositivos", "accesos"]),
+    ("Sistema",      ["dashboard", "usuarios", "roles", "actualizacion",
+                      "dispositivos", "accesos"]),
 ]
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}
@@ -182,6 +195,44 @@ def require_permiso(modulo: str, accion: str):
     return _check
 
 
+# Acciones que habilitan a un usuario a tocarse a sí mismo, y qué se le dice si no
+# la tiene. Cambiarse el propio vínculo con un empleado exige todas.
+PERMISOS_PROPIOS = {
+    ("planificacion", "propia"):         "No podés modificar tu propia planificación.",
+    ("asistencia",    "fichaje_propio"): "No podés cargar ni borrar tus propias fichadas.",
+}
+
+
+def _check_no_es_propio(conn, user: dict, empleado_ids, modulo: str, accion: str) -> None:
+    """Rechaza actuar sobre el empleado vinculado al usuario si el rol no tiene
+    modulo:accion. Un usuario sin empleado vinculado no se frena."""
+    if tiene_permiso(user.get("rol_id") or 0, modulo, accion):
+        return
+    row = conn.execute(
+        "SELECT empleado_id FROM usuarios WHERE id=?", (user.get("sub"),)
+    ).fetchone()
+    propio = row["empleado_id"] if row else None
+    if propio and propio in {int(e) for e in empleado_ids if e is not None}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            PERMISOS_PROPIOS[(modulo, accion)] + " Pedíselo a otro usuario.")
+
+
+def check_no_es_propia(conn, user: dict, empleado_ids) -> None:
+    _check_no_es_propio(conn, user, empleado_ids, "planificacion", "propia")
+
+
+def check_no_es_fichaje_propio(conn, user: dict, empleado_ids) -> None:
+    _check_no_es_propio(conn, user, empleado_ids, "asistencia", "fichaje_propio")
+
+
+def check_asignar_vacaciones(user: dict) -> None:
+    """Para los caminos que ponen o sacan una V dentro de un endpoint que ya
+    exige otro permiso (novedades de la planilla, celdas de las grillas)."""
+    if not tiene_permiso(user.get("rol_id") or 0, "vacaciones", "asignar"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "No tenés permiso para asignar ni quitar vacaciones.")
+
+
 def check_page_auth(token: str | None, modulo: str, accion: str = "ver") -> bool:
     """Para rutas de página (no API): verifica cookie sin lanzar excepción."""
     if not token:
@@ -215,7 +266,7 @@ PERMISOS_DEFAULT = {
         "resultados":    ["ver","procesar"],
         "sync":          ["procesar"],
         "premios":       ["ver"],
-        "vacaciones":    ["ver"],
+        "vacaciones":    ["ver","asignar"],
         "periodos":      ["ver","cerrar","reabrir"],
         "distribucion":  ["ver","editar","confirmar"],
         "mozos":         ["ver","editar","confirmar"],
@@ -245,6 +296,7 @@ PERMISOS_DEFAULT = {
         "dashboard":     ["ver"],
         "planificacion": ["ver","editar"],
         "asistencia":    ["ver"],
+        "vacaciones":    ["asignar"],
         "distribucion":  ["ver","editar","confirmar"],
         "mozos":         ["ver","editar","confirmar"],
         "barmans":       ["ver","editar","confirmar"],

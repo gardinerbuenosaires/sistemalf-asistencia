@@ -393,7 +393,8 @@ async function asignar(empleadoId, fecha, horarioId, esFranco) {
     toast(msg);
     cargar();
   } else {
-    toast("Error al guardar");
+    const err = await res.json().catch(() => ({}));
+    toast(err.detail || "Error al guardar");
   }
 }
 

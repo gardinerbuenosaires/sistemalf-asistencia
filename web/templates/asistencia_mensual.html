@@ -2095,7 +2095,8 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   }
   document.getElementById('modal-estado-actual').textContent = desc;
 
-  const tipos = esCortado ? TIPOS_NOVEDAD_CORTADO : TIPOS_NOVEDAD;
+  const tipos = (esCortado ? TIPOS_NOVEDAD_CORTADO : TIPOS_NOVEDAD)
+    .filter(t => t !== 'V' || canDo('vacaciones', 'asignar'));
   const grid = document.getElementById('tipos-grid');
   grid.innerHTML = tipos.map(t => {
     const col = C[t] || {bg:'#eee',txt:'#333'};
@@ -2787,7 +2788,8 @@ function abrirModalMulti() {
 
   const items = [...multiSel.values()];
   const todosCortado = items.every(x => x.esCortado);
-  const tipos = todosCortado ? TIPOS_NOVEDAD_CORTADO : TIPOS_NOVEDAD;
+  const tipos = (todosCortado ? TIPOS_NOVEDAD_CORTADO : TIPOS_NOVEDAD)
+    .filter(t => t !== 'V' || canDo('vacaciones', 'asignar'));
 
   modalCtx = { multiSel: items };
 

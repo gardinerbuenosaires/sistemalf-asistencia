@@ -229,7 +229,7 @@
   <div id="trapos-panel" style="display:none;background:#fdf6ec;border:1px solid #f0c070;border-radius:8px;
        padding:6px 16px;margin-bottom:8px;font-size:.88rem;color:#7d4900;align-items:center;gap:12px;flex-wrap:wrap">
     <span style="font-weight:bold">Trapos de cocina</span>
-    <span>Total del mes ($):</span>
+    <span>Valor a descontar ($):</span>
     <input type="number" id="inp-trapos-total" min="0" step="1000"
       style="width:120px;padding:4px 8px;border:1px solid #f0c070;border-radius:4px;font-size:.88rem;color:#333"
       onchange="guardarTraposTotal(this.value)">
@@ -307,7 +307,7 @@ let _usaBpm = true;   // si false: se oculta la columna BPM y no bloquea
 let _premiosCerrado = false;
 let _premiosReabierto = false;
 let _traposActivo = false;
-let _traposDistribucion = null;
+let _traposValor = 0;
 
 async function _loadPerms() {
   try {
@@ -538,7 +538,7 @@ function _filaHtml(ev, editar, corregir) {
       ${bloqueado
         ? (!sinBpm ? `<div style="font-size:.78rem;color:#ccc;font-style:italic;margin-top:3px">${_fmtPesos(vfPantalla)}</div>` : '')
         : _fmtPesos(vfPantalla)}
-      ${_traposActivo && (d.deduccion_trapos > 0) ? `<div style="font-size:.65rem;color:#888;margin-top:2px">trapos −${_fmtPesos(d.deduccion_trapos)}</div>` : ''}
+      ${_traposActivo ? _traposHtml(ev, corregir) : ''}
   ${_periodoAbierto && !bloqueado ? '<div style="font-size:.65rem;color:#b8860b;font-style:italic;line-height:1.1;margin-top:2px">a confirmar</div>' : ''}
     </td>
     <td class="det-col">${chkAnula}</td>
@@ -561,17 +561,31 @@ function _filaHtml(ev, editar, corregir) {
   </tr>`;
 }
 
-// Refresca el texto "÷ N empleados = $X c/u" desde los datos vigentes en pantalla.
-// Se llama en cada render para que anular/tolerar/recargar lo mantengan actualizado.
+// Trapos: checkbox por empleado. Tildado = se le descuenta el monto guardado en su fila
+// (el valor vigente al tildarlo). En impresión solo aparece la marca en los tildados.
+function _traposHtml(ev, corregir) {
+  const ded = ev.deduccion_trapos || 0;
+  const marca = ded > 0 ? `trapos −${_fmtPesos(ded)}` : 'trapos';
+  const estilo = 'font-size:.65rem;color:#888;margin-top:2px';
+  const print = ded > 0 ? `<div class="print-only" style="${estilo}">${marca}</div>` : '';
+  if (!corregir) return ded > 0 ? `<div style="${estilo}">${marca}</div>` : '';
+  const sinValor = !ded && !_traposValor;
+  return `<label class="screen-only" style="${estilo};display:flex;align-items:center;gap:3px;cursor:${sinValor ? 'not-allowed' : 'pointer'}"
+      title="${sinValor ? 'Cargá primero el valor de trapos' : 'Descontar trapos de cocina a este empleado'}">
+      <input type="checkbox" style="margin:0" ${ded > 0 ? 'checked' : ''} ${sinValor ? 'disabled' : ''}
+        onchange="guardarDeterminante(${ev.id}, 'trapos', this.checked)">${marca}</label>${print}`;
+}
+
+// Resumen del panel: cuántos tildados y cuánto suman.
 function _actualizarTraposInfo() {
   const el = document.getElementById("trapos-dist-info");
   if (!el) return;
   if (!_traposActivo) { el.textContent = ""; return; }
-  const eleg = _evaluaciones.filter(ev => (ev.deduccion_trapos || 0) > 0);
-  const count = eleg.length;
-  el.textContent = count
-    ? `÷ ${count} empleados = ${_fmtPesos(eleg[0].deduccion_trapos)} c/u`
-    : "sin empleados que califiquen";
+  const tildados = _evaluaciones.filter(ev => (ev.deduccion_trapos || 0) > 0);
+  const total = tildados.reduce((s, ev) => s + ev.deduccion_trapos, 0);
+  el.textContent = tildados.length
+    ? `${tildados.length} empleado(s) tildado(s) · total ${_fmtPesos(total)}`
+    : "ningún empleado tildado";
 }
 
 function _renderTabla(data) {
@@ -640,27 +654,23 @@ async function guardarDeterminante(id, campo, valor) {
   });
   if (res.ok) {
     const ev = await res.json();
-    if (ev.trapos_recalculado) {
-      // El reparto de trapos cambió para todos → recargar la tabla, preservando el scroll.
-      const cont = document.getElementById('tbody-premios')?.closest('.section');
-      const sy = cont ? cont.scrollTop : 0;
-      await cargar();
-      if (cont) requestAnimationFrame(() => { cont.scrollTop = sy; });
-      return;
-    }
     const idx = _evaluaciones.findIndex(e => e.id === id);
     if (idx !== -1) {
       _evaluaciones[idx] = {..._evaluaciones[idx], ...ev,
         tolerar_nf: ev.tolerar_nf, tolerar_e: ev.tolerar_e, tolerar_retardo: ev.tolerar_retardo,
         tolerar_ausente: ev.tolerar_ausente, tolerar_lsg: ev.tolerar_lsg,
-        desempenio_penaliza: ev.desempenio_penaliza, anular_premio: ev.anular_premio};
+        desempenio_penaliza: ev.desempenio_penaliza, anular_premio: ev.anular_premio,
+        deduccion_trapos: ev.deduccion_trapos};
       _sincGrupos(idx);
       const row = document.querySelector(`tr[data-id="${id}"]`);
       if (row) row.outerHTML = _filaHtml(_evaluaciones[idx], canDo("premios","editar"), canDo("premios","corregir"));
     }
     _recalcularCards();
+    _actualizarTraposInfo();
   } else {
-    toast("Error al guardar determinante");
+    const e = await res.json().catch(() => ({}));
+    toast(e.detail || "Error al guardar determinante");
+    await cargar(false);
   }
 }
 
@@ -816,13 +826,23 @@ async function cargar(spinner = true) {
 }
 
 async function guardarTraposTotal(valor) {
+  const periodo = document.getElementById("periodo-sel").value;
+  const nuevo = Math.max(0, parseInt(valor) || 0);
+  const tildados = _premiosCerrado ? 0 : _evaluaciones.filter(ev => (ev.deduccion_trapos || 0) > 0).length;
+  if (tildados && nuevo === 0 &&
+      !confirm(`Con valor $0 se destildan los ${tildados} empleado(s) tildados de ${_fmtPeriodo(periodo)}. ¿Continuar?`)) {
+    document.getElementById('inp-trapos-total').value = _traposValor;
+    return;
+  }
   const r = await fetch("/api/premios/trapos-valor", {
     method: "PUT", headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({ valor: parseInt(valor) || 0 })
+    body: JSON.stringify({ valor: nuevo, periodo })
   });
   if (!r.ok) { toast("Sin permiso para editar el valor de trapos (requiere Premios: Corregir)"); return; }
-  // El cambio de trapos es una acción explícita → se aplica aunque el período esté reabierto.
-  await generarPeriodo(true);
+  _traposValor = nuevo;
+  const d = await r.json();
+  if (d.actualizados) toast(`Valor de trapos actualizado en ${d.actualizados} empleado(s) tildado(s)`);
+  await cargar(false);
 }
 
 async function recalcularTodo() {
@@ -854,15 +874,6 @@ async function generarPeriodo(forzar = false) {
         (d.diagnostico.cargo_sin_premio||0) + (d.diagnostico.sin_fecha_ingreso||0) +
         (d.diagnostico.sin_antiguedad||0)
       : 0;
-    if (_traposActivo && d.trapos_distribucion) {
-      _traposDistribucion = d.trapos_distribucion;
-      const td = d.trapos_distribucion;
-      document.getElementById("trapos-dist-info").textContent =
-        `÷ ${td.count} empleados = ${_fmtPesos(td.deduccion)} c/u`;
-    } else {
-      _traposDistribucion = null;
-      document.getElementById("trapos-dist-info").textContent = "";
-    }
     toast(`Generados: ${d.generados}${excl ? ` · ${excl} excluidos` : ''}`);
     await cargar(false);
   } else {
@@ -889,8 +900,8 @@ _loadPerms().then(async () => {
     if (cfgNombre.nombre) _nombreEmpresa = cfgNombre.nombre;
     _traposActivo = cfgAll.find(c => c.clave === 'trapos_cocina_activo')?.valor === '1';
     if (_traposActivo) {
-      const traposValor = cfgAll.find(c => c.clave === 'trapos_cocina_valor')?.valor || '0';
-      document.getElementById('inp-trapos-total').value = traposValor;
+      _traposValor = parseInt(cfgAll.find(c => c.clave === 'trapos_cocina_valor')?.valor) || 0;
+      document.getElementById('inp-trapos-total').value = _traposValor;
       document.getElementById('inp-trapos-total').disabled = !canDo('premios', 'corregir');
       document.getElementById('trapos-panel').style.display = 'flex';
     }
@@ -1007,7 +1018,7 @@ async function toggleFormula() {
     `<b>Redondeo:</b> al múltiplo de ${get('redondeo') || '—'}`,
   ];
   if (_traposActivo) {
-    pasos.push(`<b>Trapos de cocina:</b> el monto total del mes se divide en partes iguales entre los cargos con "aplica trapos" que tengan premio a cobrar (valor calculado > $0 y no anulados)`);
+    pasos.push(`<b>Trapos de cocina:</b> a cada empleado tildado se le descuenta el valor cargado (${_fmtPesos(_traposValor)}). El premio nunca queda por debajo de $0`);
   }
   document.getElementById("formula-pasos-premios").innerHTML =
     pasos.map(p => `<div style="padding:2px 0;border-bottom:1px solid #eee">${p}</div>`).join("");

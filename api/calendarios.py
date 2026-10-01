@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta
 from db.database import db_session
-from auth.core import require_permiso, get_current_user
+from auth.core import require_permiso, get_current_user, check_no_es_propia
 from api.periodos_cerrados import check_periodo_abierto, check_rango_abierto
 
 router = APIRouter(prefix="/api/calendarios", tags=["calendarios"])
@@ -180,6 +180,7 @@ def asignar(data: AsignacionIn, _user=Depends(require_permiso("calendarios", "ed
     d_hasta = max(d_desde + timedelta(days=30), hoy + timedelta(days=30))
 
     with db_session() as conn:
+        check_no_es_propia(conn, _user, data.empleado_ids)
         check_periodo_abierto(conn, data.fecha_desde)
 
         dias_cal = conn.execute(
@@ -302,6 +303,7 @@ def eliminar_asignacion(asignacion_id: int, _user=Depends(require_permiso("calen
         ).fetchone()
         if not row:
             raise HTTPException(404, "Asignación no encontrada")
+        check_no_es_propia(conn, _user, [row["empleado_id"]])
         check_periodo_abierto(conn, hoy)
         eid = row["empleado_id"]
         # Si todavía no había empezado, se cierra el mismo día que empieza:

@@ -1,9 +1,11 @@
+import sqlite3
+
 from fastapi import APIRouter, HTTPException, Response, Depends
 from pydantic import BaseModel
 from typing import Optional
 from db.database import db_session
 from auth.core import (verify_password, create_token, get_current_user,
-                       hash_password, require_permiso, invalidar_cache,
+                       hash_password, require_permiso, invalidar_cache, tiene_permiso, PERMISOS_PROPIOS,
                        MODULOS, ACCIONES, MODULO_ACCIONES, MODULO_GRUPOS,
                        INACTIVITY_TTL)
 
@@ -29,6 +31,7 @@ class UsuarioIn(BaseModel):
     pagina_inicio: str = ""
     turno_dist: str = ""
     departamento_dist: Optional[int] = None
+    empleado_id: Optional[int] = None
 
 
 class RolIn(BaseModel):
@@ -51,7 +54,7 @@ def login(data: LoginIn, response: Response):
             """SELECT u.*, r.nombre as rol_nombre,
                       COALESCE(u.pagina_inicio, r.pagina_inicio, '/') AS pagina_inicio_eff
                FROM usuarios u LEFT JOIN roles r ON r.id=u.rol_id
-               WHERE u.email=? AND u.activo=1""",
+               WHERE u.email=? AND u.activo=1 AND u.eliminado=0""",
             (data.email.strip(),)
         ).fetchone()
     if not row or not verify_password(data.password, row["password_hash"]):
@@ -107,9 +110,24 @@ def list_usuarios(user=Depends(require_permiso("usuarios", "ver"))):
     with db_session() as conn:
         rows = conn.execute(
             """SELECT u.id, u.nombre, u.email, u.rol_id, u.activo, u.creado_en,
-                      u.pagina_inicio, u.turno_dist, u.departamento_dist, r.nombre as rol_nombre
+                      u.pagina_inicio, u.turno_dist, u.departamento_dist, u.empleado_id,
+                      r.nombre as rol_nombre
                FROM usuarios u LEFT JOIN roles r ON r.id=u.rol_id
+               WHERE u.eliminado=0
                ORDER BY u.nombre"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/api/usuarios/empleados")
+def empleados_vinculables(user=Depends(require_permiso("usuarios", "ver"))):
+    """Empleados para elegir cuál es la misma persona que el usuario. Va por
+    usuarios:ver y no por empleados:ver: quien arma usuarios no siempre ve legajos."""
+    with db_session() as conn:
+        rows = conn.execute(
+            """SELECT id, apellido, nombre FROM empleados
+               WHERE activo=1 AND tipo != 'acceso'
+               ORDER BY apellido, nombre"""
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -119,13 +137,12 @@ def create_usuario(data: UsuarioIn, user=Depends(require_permiso("usuarios", "ed
     if not data.password or len(data.password) < 6:
         raise HTTPException(400, "Contraseña de al menos 6 caracteres")
     with db_session() as conn:
-        if conn.execute("SELECT id FROM usuarios WHERE email=?", (data.email,)).fetchone():
-            raise HTTPException(409, "Email ya registrado")
+        _check_email_libre(conn, data.email.strip())
         turno_dist = data.turno_dist.strip() or None
         cur = conn.execute(
-            "INSERT INTO usuarios (nombre, email, password_hash, rol_id, activo, turno_dist, departamento_dist) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO usuarios (nombre, email, password_hash, rol_id, activo, turno_dist, departamento_dist, empleado_id) VALUES (?,?,?,?,?,?,?,?)",
             (data.nombre.strip(), data.email.strip(), hash_password(data.password),
-             data.rol_id, data.activo, turno_dist, data.departamento_dist)
+             data.rol_id, data.activo, turno_dist, data.departamento_dist, data.empleado_id)
         )
         return {"id": cur.lastrowid, "ok": True}
 
@@ -135,20 +152,28 @@ def update_usuario(uid: int, data: UsuarioIn, user=Depends(require_permiso("usua
     with db_session() as conn:
         if not conn.execute("SELECT id FROM usuarios WHERE id=?", (uid,)).fetchone():
             raise HTTPException(404)
+        _check_email_libre(conn, data.email.strip(), excluir_id=uid)
+        # Desvincularse (o vincularse a otro) sería la salida fácil a las
+        # restricciones sobre uno mismo (planificación, fichadas).
+        if uid == int(user.get("sub") or 0):
+            actual = conn.execute("SELECT empleado_id FROM usuarios WHERE id=?", (uid,)).fetchone()[0]
+            rol = user.get("rol_id") or 0
+            if actual != data.empleado_id and not all(tiene_permiso(rol, m, a) for m, a in PERMISOS_PROPIOS):
+                raise HTTPException(403, "No podés cambiar tu propio empleado vinculado. Pedíselo a otro usuario.")
         pagina = data.pagina_inicio.strip() or None
         turno_dist = data.turno_dist.strip() or None
         if data.password:
             if len(data.password) < 6:
                 raise HTTPException(400, "Mínimo 6 caracteres")
             conn.execute(
-                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,password_hash=?,pagina_inicio=?,turno_dist=?,departamento_dist=? WHERE id=?",
+                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,password_hash=?,pagina_inicio=?,turno_dist=?,departamento_dist=?,empleado_id=? WHERE id=?",
                 (data.nombre.strip(), data.email.strip(), data.rol_id,
-                 data.activo, hash_password(data.password), pagina, turno_dist, data.departamento_dist, uid)
+                 data.activo, hash_password(data.password), pagina, turno_dist, data.departamento_dist, data.empleado_id, uid)
             )
         else:
             conn.execute(
-                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,pagina_inicio=?,turno_dist=?,departamento_dist=? WHERE id=?",
-                (data.nombre.strip(), data.email.strip(), data.rol_id, data.activo, pagina, turno_dist, data.departamento_dist, uid)
+                "UPDATE usuarios SET nombre=?,email=?,rol_id=?,activo=?,pagina_inicio=?,turno_dist=?,departamento_dist=?,empleado_id=? WHERE id=?",
+                (data.nombre.strip(), data.email.strip(), data.rol_id, data.activo, pagina, turno_dist, data.departamento_dist, data.empleado_id, uid)
             )
     return {"ok": True}
 
@@ -157,9 +182,40 @@ def update_usuario(uid: int, data: UsuarioIn, user=Depends(require_permiso("usua
 def delete_usuario(uid: int, user=Depends(require_permiso("usuarios", "eliminar"))):
     if str(uid) == str(user["sub"]):
         raise HTTPException(400, "No podés eliminarte a vos mismo")
-    with db_session() as conn:
-        conn.execute("DELETE FROM usuarios WHERE id=?", (uid,))
+    # Un usuario que ya operó queda referenciado como autor (fichadas manuales,
+    # cierres, constancias...) y la base no deja borrarlo. En ese caso se lo marca
+    # eliminado: sale de la lista, no entra más y sus registros siguen diciendo
+    # quién los hizo. Las asignaciones a departamentos sí se sacan, como haría
+    # el borrado real, para que no siga figurando como encargado de nada.
+    try:
+        with db_session() as conn:
+            conn.execute("DELETE FROM usuarios WHERE id=?", (uid,))
+    except sqlite3.IntegrityError:
+        with db_session() as conn:
+            conn.execute("UPDATE usuarios SET eliminado=1, activo=0 WHERE id=?", (uid,))
+            for tabla in ("usuarios_mozos", "usuarios_barmans",
+                          "usuarios_distribucion", "usuarios_peones"):
+                conn.execute(f"DELETE FROM {tabla} WHERE usuario_id=?", (uid,))
     return {"ok": True}
+
+
+def _check_email_libre(conn, email: str, excluir_id: int | None = None):
+    row = conn.execute(
+        "SELECT id, nombre, eliminado FROM usuarios WHERE email=? AND id IS NOT ?",
+        (email, excluir_id)
+    ).fetchone()
+    if not row:
+        return
+    if row["eliminado"]:
+        # No se libera: hay registros que guardan al autor por email y se
+        # mezclarían con los del usuario nuevo.
+        raise HTTPException(
+            409,
+            f"Ese email ya lo usó {row['nombre']}, un usuario eliminado que no "
+            "aparece en la lista. No se puede reutilizar porque sus registros "
+            "quedarían mezclados con los del usuario nuevo. Usá otro email."
+        )
+    raise HTTPException(409, f"Ese email ya lo tiene el usuario {row['nombre']}")
 
 
 # ── Roles ─────────────────────────────────────────────────────────────────────

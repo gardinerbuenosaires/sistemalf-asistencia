@@ -31,7 +31,7 @@ if not exist "C:\SistemAlf\tools\nssm.exe" (
     exit /b 1
 )
 
-echo Paso 1/2 -- Descargando cambios del repositorio...
+echo Paso 1/3 -- Descargando cambios del repositorio...
 cd /d "C:\SistemAlf"
 git pull
 if %errorlevel% neq 0 (
@@ -40,8 +40,20 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: Si el cambio trajo una libreria nueva, sin esto el servicio no arranca.
+:: Si no hay nada nuevo, no hace nada. Mismo python que uso install.ps1.
 echo.
-echo Paso 2/2 -- Reiniciando servicio...
+echo Paso 2/3 -- Instalando librerias nuevas, si las hay...
+python -m pip install -r requirements.txt --quiet --disable-pip-version-check
+if %errorlevel% neq 0 (
+    echo ERROR: No se pudieron instalar las librerias.
+    echo El servicio NO se reinicio: sigue funcionando la version anterior.
+    pause
+    exit /b 1
+)
+
+echo.
+echo Paso 3/3 -- Reiniciando servicio...
 "C:\SistemAlf\tools\nssm.exe" restart SistemAlf
 if %errorlevel% neq 0 (
     echo ADVERTENCIA: El servicio no se pudo reiniciar automaticamente.

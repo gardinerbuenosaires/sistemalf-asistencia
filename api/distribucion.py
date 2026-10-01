@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta, datetime
 from db.database import db_session
-from auth.core import require_permiso, get_current_user
+from auth.core import require_permiso, get_current_user, check_asignar_vacaciones
 from api.vacaciones import _calcular_dias_formula, _get_arrastre
 from api.catalogos import JOIN_TURNO_LEGAJO, cond_turno_legajo
 
@@ -946,6 +946,7 @@ class VacDistIn(BaseModel):
 @router.post("/semana/{dist_id}/vacaciones")
 def add_vac_dist(dist_id: int, body: VacDistIn,
                  user=Depends(require_permiso("distribucion", "editar"))):
+    check_asignar_vacaciones(user)
     uid = int(user["sub"])
     with db_session() as conn:
         dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
@@ -979,6 +980,7 @@ def add_vac_dist(dist_id: int, body: VacDistIn,
 @router.delete("/semana/{dist_id}/vacaciones/{fecha}/{emp_id}")
 def del_vac_dist(dist_id: int, fecha: str, emp_id: int,
                  user=Depends(require_permiso("distribucion", "editar"))):
+    check_asignar_vacaciones(user)
     with db_session() as conn:
         dist = conn.execute("SELECT * FROM distribucion_semana WHERE id=?", (dist_id,)).fetchone()
         if not dist:

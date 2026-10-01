@@ -887,7 +887,7 @@ function renderGrilla() {
         }
         return [`<span class="badge-franco" style="background:#b8d8f0;color:#1a3a5c;border-color:#7aabcc;opacity:.8" title="Vacaciones registradas en RRHH">${nombre}</span>`];
       }).join('');
-      const addBtn = puedoEditar
+      const addBtn = puedoEditar && canDo('vacaciones', 'asignar')
         ? `<button class="btn-add-franco" style="border-color:#95B3D7;color:#1a3a5c" onclick="abrirModalVacaciones('${d}')">+ Vac</button>`
         : '';
       const allBadges = badgesStaged + badgesReal;
@@ -1508,7 +1508,7 @@ async function quitarVacaciones(fecha, empleadoId) {
   if (_distribucion.estado === 'confirmado') { toast('No se puede modificar horarios confirmados', true); return; }
   try {
     const r = await fetch(`/api/distribucion/semana/${_distribucion.id}/vacaciones/${fecha}/${empleadoId}`, { method: 'DELETE' });
-    if (!r.ok) { toast('Error al quitar vacaciones', true); return; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); toast(e.detail || 'Error al quitar vacaciones', true); return; }
     await cargarGrilla();
     toast('Vacaciones quitadas');
   } catch(e) {

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta
 from db.database import db_session
-from auth.core import require_permiso
+from auth.core import require_permiso, check_asignar_vacaciones
 from api.periodos_cerrados import check_periodo_abierto, check_rango_abierto
 
 router = APIRouter(prefix="/api/mozos", tags=["mozos"])
@@ -458,6 +458,14 @@ def set_celda(body: CeldaIn, user=Depends(require_permiso("mozos", "editar"))):
             "SELECT id, estado FROM mozos_semana WHERE departamento_id=? AND semana_inicio=?",
             (body.departamento_id, lunes)
         ).fetchone()
+        # Poner una V en la celda, o cambiar una V por otra cosa, es asignar/quitar
+        # vacaciones: al confirmar se vuelve novedad.
+        previa = semana and conn.execute(
+            "SELECT estado FROM mozos_detalle WHERE semana_id=? AND empleado_id=? AND fecha=? AND turno=?",
+            (semana["id"], body.empleado_id, body.fecha, body.turno)
+        ).fetchone()
+        if body.estado == "V" or (previa and previa["estado"] == "V"):
+            check_asignar_vacaciones(user)
         if not semana:
             cur = conn.execute(
                 """INSERT INTO mozos_semana (departamento_id, semana_inicio, estado, creado_por, creado_en)

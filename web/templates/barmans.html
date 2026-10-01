@@ -763,7 +763,7 @@ function abrirModal(eid, fecha, turno) {
     `${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()} — ${turno}`;
 
   const grid = document.getElementById('bar-modal-grid');
-  grid.innerHTML = TIPOS_BARMANS.map(v => {
+  grid.innerHTML = TIPOS_BARMANS.filter(v => v !== 'V' || _perms.has('vacaciones:asignar')).map(v => {
     const c = BARMANS_COLORES[v];
     const lbl = v === '1' ? '|' : v;
     return `<button class="bar-tipo-btn" data-val="${v}" onclick="selTipoBar('${v}')"

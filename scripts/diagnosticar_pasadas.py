@@ -121,6 +121,52 @@ def main():
             trozo = datos[i * 8:(i + 1) * 8]
             print(f"      {' '.join(f'{b:02X}' for b in trozo)}")
 
+        # La forma del bloque entero. Las puntas engañaron: los dos extremos
+        # eran el mismo usuario y el par alto bajaba del primero al último, así
+        # que esto no es una lista ordenada por tiempo y mirar ocho registros de
+        # cada lado no alcanza.
+        print("\n  FORMA DEL BLOQUE")
+        cuantos = len(datos) // 8
+        uids, altos, orden_uids, campos23 = {}, {}, [], set()
+        for i in range(cuantos):
+            r = datos[i * 8:(i + 1) * 8]
+            u = r[0] | r[1] << 8
+            if u not in uids:
+                orden_uids.append((i, u))
+            uids[u] = uids.get(u, 0) + 1
+            campos23.add(r[2] | r[3] << 8)
+            altos[r[6] << 8 | r[7]] = altos.get(r[6] << 8 | r[7], 0) + 1
+
+        print(f"    {len(uids)} usuarios distintos en {cuantos} registros")
+        print(f"    bytes 2-3: {len(campos23)} valor(es) distinto(s) -> "
+              + ", ".join(f"0x{v:04X}" for v in sorted(campos23)[:6]))
+        print(f"    dónde aparece cada usuario por primera vez (indice: uid):")
+        print("      " + "  ".join(f"{i}:{u}" for i, u in orden_uids[:14]))
+        agrupado = all(orden_uids[k][0] < orden_uids[k + 1][0]
+                       for k in range(len(orden_uids) - 1)) and len(uids) > 3
+        print(f"      -> {'parecen agrupados por usuario' if agrupado else 'mezclados'}")
+
+        en_orden = sorted(altos)
+        print(f"\n    par alto (bytes 6-7 en BE): {len(altos)} valores distintos")
+        print(f"      del 0x{en_orden[0]:04X} al 0x{en_orden[-1]:04X}")
+        print(f"      los 8 más repetidos: " + "  ".join(
+            f"0x{k:04X}({v})" for k, v in sorted(altos.items(), key=lambda x: -x[1])[:8]))
+
+        # Si el tiempo fuesen segundos armados como par_alto*65536 + par_bajo,
+        # el máximo tiene que caer sobre el reloj del equipo. La fecha desde la
+        # que habría que contar para que eso pase identifica la época, que es el
+        # único dato que falta.
+        print("\n    si el tiempo fuesen segundos = par_alto*65536 + par_bajo:")
+        for nombre, leer in (("alto BE", lambda r: r[6] << 8 | r[7]),
+                             ("alto LE", lambda r: r[7] << 8 | r[6])):
+            vals = [leer(datos[i * 8:(i + 1) * 8]) * 65536
+                    + (datos[i * 8 + 4] | datos[i * 8 + 5] << 8)
+                    for i in range(cuantos)]
+            span = (max(vals) - min(vals)) / 86400
+            desde = referencia - timedelta(seconds=max(vals))
+            print(f"      {nombre}: abarca {span:.1f} días; para que el más nuevo"
+                  f" sea ahora habría que contar desde {desde:%d-%m-%Y}")
+
         # Cada candidato: donde cae el numero y donde el tiempo.
         candidatos = [
             ("8  ZK empaquetado en el byte 4",   8, "<HBB4s", 0, 3, hora_zk),

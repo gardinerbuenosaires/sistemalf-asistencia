@@ -33,6 +33,7 @@ Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
       python scripts/probar_escritura.py huella  IP NUMERO NUMERO_EN_EL_MAESTRO
       python scripts/probar_escritura.py borrado IP NUMERO [--nombre X]
       python scripts/probar_escritura.py restaurar IP NUMERO
+      python scripts/probar_escritura.py limpiar IP
 
       IP          la puerta donde probar. NUNCA el maestro.
       NUMERO      el número descartable (por ejemplo 9990)
@@ -62,6 +63,11 @@ Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
                   nombre que el equipo tiene para ese número. Si no coincide,
                   el número está equivocado y no se borra nada. Un "¿estás
                   seguro?" no sirve de guardia: a eso se le dice que sí.
+
+      limpiar     borra las pasadas guardadas en una puerta, para empezar de
+                  cero con el reloj ya en hora. No toca usuarios ni huellas, y
+                  se niega contra el equipo de asistencia: sus registros son los
+                  fichajes de la planilla.
 
       --si        no preguntar antes de escribir (para no tipear dos veces)
 """
@@ -746,6 +752,108 @@ def modo_borrado(ip, numero):
             pass
 
 
+def modo_limpiar(ip):
+    """
+    Borra las pasadas guardadas en una puerta y empieza de cero.
+
+    Para qué. Un lector que estuvo años con el reloj roto tiene miles de pasadas
+    fechadas en el siglo XXII. Esas fechas no se pueden arreglar: el equipo
+    guardó lo que creía que era, y no hay forma de saber cuánto estaba corrido en
+    cada momento. Con el reloj ya en hora, empezar de nuevo deja un registro que
+    sirve, en vez de uno que hay que explicar cada vez que se mira.
+
+    Lo que NO se borra: usuarios ni huellas. `clear_attendance` toca solamente
+    el área de registros, y acá se verifica releyendo que las dos cosas hayan
+    quedado como estaban.
+
+    Y nunca el equipo de asistencia. Sus registros se convierten en los fichajes
+    de la planilla, y los que todavía no se descargaron no están en ningún otro
+    lado. De ese se encarga el sistema los días 1 y 15, después de bajarlos.
+    """
+    import json
+    from datetime import datetime
+
+    maestro_ip, clave, puerta = datos_del_sistema(ip, "", False)
+    cabecera("borrar las pasadas", ip, "—", puerta, maestro_ip)
+    conexion = abrir(ip, clave)
+
+    try:
+        reloj = None
+        try:
+            reloj = conexion.get_time()
+        except Exception:
+            pass
+        antes = foto(conexion)
+        ok, detalle = lectura_confiable(antes)
+        print(f"  Lectura previa: {detalle}")
+        if not ok:
+            salir("Lectura no confiable. NO se borra nada.")
+        huellas_antes = sum(u["huellas"] or 0 for u in antes["usuarios"].values())
+
+        from zk import const
+        conexion.read_sizes()
+        cuantas = getattr(conexion, "records", 0)
+        print(f"  Reloj del equipo: {reloj}")
+        print(f"  Tiene {cuantas} pasadas guardadas")
+        print(f"  Y {len(antes['usuarios'])} usuarios con {huellas_antes} huellas,"
+              f" que NO se tocan")
+
+        if not cuantas:
+            salir("No hay pasadas que borrar.")
+
+        # Respaldo del bloque crudo. Son unos pocos KB y cuesta nada; sin él,
+        # «empezar de nuevo» sería irreversible por completo.
+        crudo, _ = conexion.read_with_buffer(const.CMD_ATTLOG_RRQ)
+        ruta = carpeta_respaldos() / f"pasadas-{ip.replace('.', '-')}-{datetime.now():%Y%m%d-%H%M%S}.json"
+        ruta.write_text(json.dumps({
+            "ip": ip, "cuando": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "reloj_del_equipo": reloj.strftime("%Y-%m-%d %H:%M:%S") if reloj else None,
+            "registros": cuantas, "bytes": crudo.hex(),
+        }, indent=1), encoding="utf-8")
+        if len(bytes.fromhex(json.loads(ruta.read_text(encoding="utf-8"))["bytes"])) != len(crudo):
+            salir(f"El respaldo quedó incompleto en {ruta}. No se borra nada.")
+        print(f"\n  Respaldo del bloque crudo ({len(crudo)} bytes):")
+        print(f"     {ruta}")
+
+        print(f"\n  Se van a borrar las {cuantas} pasadas de esta puerta.")
+        print(f"  No se puede deshacer en el equipo: el respaldo son los bytes,")
+        print(f"  no una copia que se pueda volver a cargar.")
+
+        if "--si" not in sys.argv:
+            if input("\n  ¿Borrar las pasadas? (s/n) ").strip().lower() != "s":
+                salir("Cancelado. No se borró nada.")
+
+        conexion.clear_attendance()
+        print("\n  Borradas. Volviendo a leer para verificar…")
+
+        conexion.read_sizes()
+        quedan = getattr(conexion, "records", None)
+        despues = foto(conexion)
+        huellas_despues = sum(u["huellas"] or 0 for u in despues["usuarios"].values())
+        problemas = comparar(antes, despues)
+
+        print(f"\n  {'OK   ' if quedan == 0 else 'FALLA'} el equipo quedó con "
+              f"{quedan} pasadas")
+        print(f"  {'OK   ' if not problemas else 'FALLA'} los {len(antes['usuarios'])} "
+              f"usuarios y sus {huellas_antes} huellas "
+              f"{'siguen enteros' if not problemas else 'NO siguen enteros'}")
+        for p in problemas:
+            print(f"        {p}")
+        if huellas_despues != huellas_antes:
+            print(f"        OJO: las huellas pasaron de {huellas_antes} a {huellas_despues}")
+
+        if quedan == 0 and not problemas and huellas_despues == huellas_antes:
+            print(f"\n  Listo. Esta puerta empieza a registrar de cero, con la hora")
+            print(f"  en la que está ahora. Lo que anote de acá en más va a servir.")
+        else:
+            print(f"\n  Algo no salió como se esperaba. Contámelo antes de seguir.")
+    finally:
+        try:
+            conexion.disconnect()
+        except Exception:
+            pass
+
+
 def main():
     modo = sys.argv[1] if len(sys.argv) > 1 else ""
     if modo == "alta" and len(sys.argv) >= 4:
@@ -756,6 +864,8 @@ def main():
         modo_borrado(sys.argv[2], str(sys.argv[3]).strip())
     elif modo == "restaurar" and len(sys.argv) >= 4:
         modo_restaurar(sys.argv[2], str(sys.argv[3]).strip())
+    elif modo == "limpiar" and len(sys.argv) >= 3:
+        modo_limpiar(sys.argv[2])
     else:
         print(__doc__)
         raise SystemExit(1)

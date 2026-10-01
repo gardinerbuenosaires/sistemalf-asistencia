@@ -49,6 +49,21 @@ def hora_hex(crudo):
     return datetime(a + 2000, m, d, h, mi, s)
 
 
+# Unix, por si el equipo guarda segundos desde 1970 en vez del empaquetado de
+# ZK. Se prueban varias composiciones de los cuatro bytes porque las lecturas
+# directas dan fechas del siglo XXI tardio, y en un equipo los bytes del tiempo
+# aparecieron en un orden que no es ni little ni big endian puro.
+def unix_le(c):  return datetime.fromtimestamp(int.from_bytes(c[:4], "little"))
+def unix_be(c):  return datetime.fromtimestamp(int.from_bytes(c[:4], "big"))
+def unix_mix(c): return datetime.fromtimestamp(
+    (c[2] << 24) | (c[3] << 16) | (c[1] << 8) | c[0])
+def unix_mix2(c): return datetime.fromtimestamp(
+    (c[3] << 24) | (c[2] << 16) | (c[0] << 8) | c[1])
+def unix_le_utc(c): return datetime.utcfromtimestamp(int.from_bytes(c[:4], "little"))
+def unix_mix_utc(c): return datetime.utcfromtimestamp(
+    (c[2] << 24) | (c[3] << 16) | (c[1] << 8) | c[0])
+
+
 def main():
     from zk import ZK, const
 
@@ -102,10 +117,16 @@ def main():
 
         # Cada candidato: donde cae el numero y donde el tiempo.
         candidatos = [
-            ("8  uid(2) est(1) punch(1) tiempo(4)", 8, "<HBB4s", 0, 3, hora_zk),
-            ("8  uid(2) est(1) tiempo(4) punch(1)", 8, "<HB4sB", 0, 2, hora_zk),
-            ("16 legajo(4) tiempo(4) ...",          16, "<I4sBB2sI", 0, 1, hora_zk),
-            ("16 legajo(4) tiempohex(6) ...",       16, "<I6s6s", 0, 1, hora_hex),
+            ("8  ZK empaquetado en el byte 4",   8, "<HBB4s", 0, 3, hora_zk),
+            ("8  ZK empaquetado en el byte 3",   8, "<HB4sB", 0, 2, hora_zk),
+            ("8  Unix little endian",            8, "<HBB4s", 0, 3, unix_le),
+            ("8  Unix big endian",               8, "<HBB4s", 0, 3, unix_be),
+            ("8  Unix mezclado (alto BE)",       8, "<HBB4s", 0, 3, unix_mix),
+            ("8  Unix mezclado (bajo BE)",       8, "<HBB4s", 0, 3, unix_mix2),
+            ("8  Unix little endian en UTC",     8, "<HBB4s", 0, 3, unix_le_utc),
+            ("8  Unix mezclado en UTC",          8, "<HBB4s", 0, 3, unix_mix_utc),
+            ("16 legajo(4) + ZK empaquetado",    16, "<I4sBB2sI", 0, 1, hora_zk),
+            ("16 legajo(4) + tiempohex(6)",      16, "<I6s6s", 0, 1, hora_hex),
         ]
         limite = datetime.now() + timedelta(days=2)
         piso = datetime(2015, 1, 1)

@@ -300,10 +300,16 @@ def _plausible(fecha, referencia=None) -> bool:
     fechó el equipo con su propia hora, así que compararlos contra la nuestra
     daría todo por inverosímil justamente cuando el equipo está desfasado, que
     es cuando más falta hace leerlo bien.
+
+    Y contra ese reloj el futuro no existe: el equipo no pudo fechar una pasada
+    después del momento en que cree estar. Los cinco minutos de gracia son para
+    el tiempo que pasa entre leerle la hora y leerle los registros, nada más.
+    Una pasada de pasado mañana no es una pasada: es una fecha escrita cuando el
+    reloj estaba mal.
     """
     from datetime import datetime, timedelta
     ahora = referencia or datetime.now()
-    return datetime(2015, 1, 1) <= fecha <= ahora + timedelta(days=2)
+    return datetime(2015, 1, 1) <= fecha <= ahora + timedelta(minutes=5)
 
 
 def _formato_de_8(datos: bytes, reloj=None):

@@ -2191,5 +2191,25 @@ _regs, _ileg, _tam, _entendido = _registros_crudos(_Raro(), datetime.now())
 chequear("el lector avisa que no entendio el formato", _entendido is False)
 chequear("y no devuelve ningun registro inventado", _regs == [], _regs[:2])
 
+
+print("\n=== EL FUTURO NO EXISTE PARA UN REGISTRO ===")
+# El equipo no pudo fechar una pasada despues del momento en que cree estar. Una
+# pasada de pasado maniana es una fecha escrita cuando el reloj estaba mal.
+_reloj_equipo = datetime(2026, 10, 1, 18, 25)
+chequear("una pasada de hace un rato pasa",
+         _plausible(_reloj_equipo - timedelta(hours=3), _reloj_equipo))
+chequear("una de hace cinco minutos tambien",
+         _plausible(_reloj_equipo - timedelta(minutes=5), _reloj_equipo))
+chequear("una de pasado maniana NO",
+         not _plausible(_reloj_equipo + timedelta(days=2), _reloj_equipo))
+chequear("ni una de maniana",
+         not _plausible(_reloj_equipo + timedelta(days=1), _reloj_equipo))
+chequear("ni una de dentro de una hora",
+         not _plausible(_reloj_equipo + timedelta(hours=1), _reloj_equipo))
+# Unos minutos de gracia: entre que se le lee la hora y se le leen los registros
+# pasa un rato, y el equipo sigue andando mientras tanto.
+chequear("dos minutos adelante si, que es el tiempo de la propia lectura",
+         _plausible(_reloj_equipo + timedelta(minutes=2), _reloj_equipo))
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

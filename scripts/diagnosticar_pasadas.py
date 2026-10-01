@@ -106,14 +106,20 @@ def main():
             print(f"  Tamaño por registro: {total / conexion.records:.3f}"
                   f"   (entero: {total // conexion.records})")
 
-        print(f"\n  Primeros {CUANTOS} registros, en bloques de 8 y de 16 bytes:")
-        for tam in (8, 16):
-            print(f"\n    --- de a {tam} bytes ---")
-            for i in range(CUANTOS):
-                trozo = datos[i * tam:(i + 1) * tam]
-                if len(trozo) < tam:
-                    break
-                print(f"      {' '.join(f'{b:02X}' for b in trozo)}")
+        print(f"\n  PRIMEROS {CUANTOS} registros, de a 8 bytes:")
+        for i in range(CUANTOS):
+            trozo = datos[i * 8:(i + 1) * 8]
+            if len(trozo) < 8:
+                break
+            print(f"      {' '.join(f'{b:02X}' for b in trozo)}")
+
+        # El dato que decide. Media docena de ordenes de bytes dan fechas
+        # plausibles; solo uno pone la pasada mas nueva a horas del reloj del
+        # propio equipo, que es donde tiene que estar si la puerta se usa.
+        print(f"\n  ULTIMOS {CUANTOS} registros (tienen que ser de hace horas):")
+        for i in range(max(0, len(datos) // 8 - CUANTOS), len(datos) // 8):
+            trozo = datos[i * 8:(i + 1) * 8]
+            print(f"      {' '.join(f'{b:02X}' for b in trozo)}")
 
         # Cada candidato: donde cae el numero y donde el tiempo.
         candidatos = [
@@ -153,10 +159,22 @@ def main():
                 except Exception:
                     malas += 1
                 resto = resto[tam:]
+            # El ultimo registro del bloque es el que decide entre candidatos
+            # que parecen todos creibles.
+            ultimo = None
+            try:
+                fin = (len(datos) // tam - 1) * tam
+                ultimo = decodificar(unpack(patron, datos[fin:fin + tam])[i_t])
+            except Exception:
+                pass
             marca = "  <<< ESTE" if buenas and buenas >= malas else ""
-            print(f"    {nombre:38} creibles {buenas:>4}  raras {malas:>4}{marca}")
+            print(f"    {nombre:34} creibles {buenas:>4}  raras {malas:>4}{marca}")
             for m in muestra:
                 print(f"        {m}")
+            if ultimo:
+                horas = abs((referencia - ultimo).total_seconds()) / 3600
+                print(f"        ultimo: {ultimo:%d-%m-%Y %H:%M:%S}"
+                      f"   a {horas:.1f} h del reloj del equipo")
     finally:
         try:
             conexion.disconnect()

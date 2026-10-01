@@ -55,6 +55,10 @@
   /* Formulario */
   .form-scroll { padding: 20px; flex: 1; min-height: 0; overflow-y: auto; }
   .form-section { margin-bottom: 20px; }
+  .legajo-tab { background: none; border: none; border-bottom: 2px solid transparent;
+                padding: 9px 14px; font-size: .86rem; color: #888; cursor: pointer; }
+  .legajo-tab:hover { color: #555; }
+  .legajo-tab.activa { color: #2c3e50; font-weight: 600; border-bottom-color: #2c3e50; }
   .form-section-title { font-size: .75rem; font-weight: bold; text-transform: uppercase; letter-spacing: .06em; color: #888; margin-bottom: 10px; padding-bottom: 4px; border-bottom: 1px solid #eee; }
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
   .form-grid.cols-1 { grid-template-columns: 1fr; }
@@ -319,6 +323,13 @@
         <button class="btn btn-secondary btn-sm" onclick="cancelar()">Cancelar</button>
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" onclick="guardar()">Guardar</button>
       </div>
+    </div>
+
+    <div id="legajo-tabs" style="display:none;gap:2px;padding:0 16px;border-bottom:1px solid #e8e8e8">
+      <button type="button" class="legajo-tab activa" id="ltab-legajo"
+              onclick="cambiarPestanaLegajo('legajo')">Legajo</button>
+      <button type="button" class="legajo-tab" id="ltab-accesos"
+              onclick="cambiarPestanaLegajo('accesos')">Accesos</button>
     </div>
 
     <div class="form-scroll" id="form-contenido">
@@ -887,6 +898,7 @@ function abrirQrFotos() {
 function buildForm(e = {}, asignaciones = []) {
   return `
     <form id="emp-form" onsubmit="return false">
+      <div id="pane-legajo">
       ${buildFotoSection(e)}
       <div class="form-section">
         <div class="form-section-title">Datos personales</div>
@@ -1106,8 +1118,6 @@ function buildForm(e = {}, asignaciones = []) {
 
       <div id="calendario-section">${editandoId ? buildCalendarioSection(asignaciones) : ""}</div>
 
-      <div id="accesos-section"></div>
-
       <div class="form-section">
         <div class="form-section-title">Observaciones</div>
         <div class="form-grid cols-1">
@@ -1157,6 +1167,11 @@ function buildForm(e = {}, asignaciones = []) {
         ${e.activo && editandoId && canDo('empleados','editar') ? `
         <button class="btn btn-danger btn-sm" onclick="toggleBajaPanel()">Dar de baja</button>` : ''}
       </div>
+      </div>
+
+      <div id="pane-accesos" style="display:none">
+        <div id="accesos-section"></div>
+      </div>
     </form>`;
 }
 
@@ -1197,6 +1212,8 @@ async function editarEmpleado(id) {
   document.getElementById("form-titulo").textContent = `${e.apellido}, ${e.nombre}`;
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
   document.getElementById("form-contenido").innerHTML = buildForm(e, asignaciones);
+  mostrarPestanasLegajo(canDo('accesos', 'ver'));
+  cambiarPestanaLegajo("legajo");
   cargarResumenUniformes(id);
   cargarAccesos(id);
   if (!canDo('empleados', 'editar')) {
@@ -1210,6 +1227,29 @@ async function editarEmpleado(id) {
     .forEach(id => document.getElementById(id)?.addEventListener("input", actualizarManzanaLabels));
 }
 
+// ── Pestañas del legajo ───────────────────────────────────────────────────────
+// Los accesos son otro tipo de dato que el resto del legajo: no se guardan con
+// el formulario sino solos, y tienen sus propios permisos. Tenerlos en medio de
+// los domicilios y los contactos de emergencia mezclaba dos cosas que ni se
+// editan igual.
+
+function cambiarPestanaLegajo(cual) {
+  document.getElementById("pane-legajo").style.display = cual === "legajo" ? "" : "none";
+  document.getElementById("pane-accesos").style.display = cual === "accesos" ? "" : "none";
+  document.getElementById("ltab-legajo")?.classList.toggle("activa", cual === "legajo");
+  document.getElementById("ltab-accesos")?.classList.toggle("activa", cual === "accesos");
+  // El formulario es largo: al cambiar de pestaña se vuelve arriba, si no la
+  // pestaña nueva aparece scrolleada por la mitad.
+  document.getElementById("form-contenido")?.scrollTo(0, 0);
+}
+
+// La pestaña solo existe si hay algo que mostrar: al crear a alguien todavía no
+// hay a quién asignarle accesos, y sin permiso no hay nada que ver.
+function mostrarPestanasLegajo(hay) {
+  const barra = document.getElementById("legajo-tabs");
+  if (barra) barra.style.display = hay ? "flex" : "none";
+}
+
 // ── Accesos a puertas ─────────────────────────────────────────────────────────
 // Se guarda solo y aparte del resto del legajo, a propósito: cambiarle el acceso
 // a alguien tiene su propio permiso, así RRHH puede hacerlo sin poder redefinir
@@ -1220,7 +1260,7 @@ let _accPerfiles = [], _accPuertas = [], _accDatos = null;
 async function cargarAccesos(id) {
   const caja = document.getElementById("accesos-section");
   if (!caja) return;
-  if (!canDo('accesos', 'ver')) { caja.innerHTML = ""; return; }
+  if (!canDo('accesos', 'ver')) { caja.innerHTML = ""; mostrarPestanasLegajo(false); return; }
 
   let datos, cat;
   try {
@@ -1231,13 +1271,15 @@ async function cargarAccesos(id) {
     if (!aRes.ok || !pRes.ok) throw new Error();
     datos = await aRes.json();
     cat = await pRes.json();
-  } catch { caja.innerHTML = ""; return; }
+  } catch { caja.innerHTML = ""; mostrarPestanasLegajo(false); return; }
 
   _accPerfiles = cat.perfiles;
   _accPuertas = cat.puertas;
   _accDatos = datos;
   // Sin puertas ni perfiles cargados todavía, la sección solo confundiría.
-  if (!_accPuertas.length && !_accPerfiles.length) { caja.innerHTML = ""; return; }
+  if (!_accPuertas.length && !_accPerfiles.length) {
+    caja.innerHTML = ""; mostrarPestanasLegajo(false); return;
+  }
 
   // Dos permisos distintos: aplicar la politica y desviarse de ella.
   const puede = canDo('accesos', 'asignar');
@@ -1249,6 +1291,13 @@ async function cargarAccesos(id) {
   const nivelActual = Number(datos.empleado.nivel_lector || 0);
   const nombrePuerta = pid => (_accPuertas.find(p => p.id === pid) || {}).nombre || `#${pid}`;
   const perfilActual = datos.perfil ? datos.perfil.id : "";
+
+  const tab = document.getElementById("ltab-accesos");
+  if (tab) {
+    tab.innerHTML = datos.puertas.length
+      ? `Accesos <span style="color:#2e7d4f;font-weight:600">· ${datos.puertas.length}</span>`
+      : `Accesos <span style="color:#bbb;font-weight:400">· sin acceso</span>`;
+  }
 
   const abre = datos.puertas.length
     ? datos.puertas.map(pid => `<span style="background:#dcede2;color:#2e7d4f;padding:3px 9px;border-radius:4px;font-size:.8rem;margin-right:5px;display:inline-block;margin-bottom:4px">${nombrePuerta(pid)}</span>`).join('')
@@ -1269,6 +1318,10 @@ async function cargarAccesos(id) {
   caja.innerHTML = `
     <div class="form-section">
       <div class="form-section-title">Accesos a puertas</div>
+      <div style="font-size:.78rem;color:#888;margin:-4px 0 10px">
+        Lo de esta pestaña se guarda al momento de cambiarlo: no hace falta Guardar.
+        Tiene permisos propios, aparte de los del resto del legajo.
+      </div>
 
       <div class="form-grid">
         <div class="form-group span-2">
@@ -1542,6 +1595,7 @@ function cancelar() {
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
   editandoId = null;
   document.getElementById("form-titulo").textContent = "Seleccioná un empleado";
+  mostrarPestanasLegajo(false);
   document.getElementById("form-contenido").innerHTML = '<div class="empty-state">Seleccioná un empleado de la lista.</div>';
   document.querySelectorAll(".emp-item").forEach(el => el.classList.remove("activo"));
 }

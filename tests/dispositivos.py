@@ -2078,5 +2078,42 @@ chequear("hoy es plausible", _plausible(datetime.now()))
 chequear("el siglo XXII no", not _plausible(datetime(2133, 7, 22)))
 chequear("ni el ano 2000", not _plausible(datetime(2000, 1, 1)))
 
+
+print("\n=== EL RELOJ DEL EQUIPO ===")
+# A las puertas nadie les sincroniza la hora: el sistema solo se la pone al de
+# asistencia. Un lector de quince anios puede estar corrido meses, y entonces
+# todas sus pasadas estan corridas lo mismo.
+from sync.lectores import leer_reloj, _plausible, _formato_de_8
+
+class _SinReloj:
+    def get_time(s): raise RuntimeError("no contesta")
+chequear("si el equipo no da la hora, se informa None",
+         leer_reloj(_SinReloj()) is None)
+
+class _ConReloj:
+    def get_time(s): return datetime(2026, 8, 15, 10, 0, 0)
+chequear("y si la da, se devuelve", leer_reloj(_ConReloj()) == datetime(2026, 8, 15, 10, 0, 0))
+
+# Lo importante: las fechas se juzgan contra el reloj DEL EQUIPO. Con el de esta
+# PC, un equipo adelantado daria todas sus pasadas por inverosimiles, que es
+# justo cuando mas falta hace leerlas bien.
+_adelantado = datetime.now() + timedelta(days=120)
+_futura = datetime.now() + timedelta(days=100)
+chequear("contra el reloj de la PC, una pasada de un equipo adelantado no pasa",
+         not _plausible(_futura))
+chequear("contra el reloj del equipo, si",
+         _plausible(_futura, _adelantado))
+
+# Y por eso el formato se elige usando esa misma referencia.
+def _cod2(d):
+    t = (d.year-2000)*12 + (d.month-1); t = t*31 + (d.day-1); t = t*24 + d.hour
+    t = t*60 + d.minute; return t*60 + d.second
+_datos_fut = b"".join(
+    pack("<HBB", 7, 0, 0) + pack("<I", _cod2(_adelantado - timedelta(hours=i)))
+    for i in range(20))
+chequear("con un equipo adelantado, el formato se detecta igual",
+         _formato_de_8(_datos_fut, _adelantado)[0] == "<HBB4s",
+         _formato_de_8(_datos_fut, _adelantado)[0])
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

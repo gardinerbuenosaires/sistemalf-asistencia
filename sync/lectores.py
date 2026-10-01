@@ -189,17 +189,39 @@ def _hora_zk(crudo):
     return datetime(t + 2000, mes, dia, hora, minuto, segundo)
 
 
-def _plausible(fecha) -> bool:
+def leer_reloj(conexion):
+    """
+    Qué hora cree que es el equipo. Solo lectura; devuelve None si no contesta.
+
+    Importa más de lo que parece. A las puertas nadie les sincroniza la hora: el
+    sistema se la pone solo al equipo de asistencia. Un lector de quince años
+    puede estar corrido meses, y entonces todas las pasadas que informa están
+    corridas lo mismo — no están mal leídas, están mal fechadas desde el origen.
+    """
+    try:
+        return conexion.get_time()
+    except Exception as exc:
+        logger.warning("No se pudo leer el reloj del equipo: %s", exc)
+        return None
+
+
+def _plausible(fecha, referencia=None) -> bool:
     """
     Una fecha que podría ser de una pasada real: ni del futuro ni de hace veinte
     años. Es el criterio con el que se elige cómo leer el registro, así que no
     pretende ser exacto — solo distinguir una fecha de un número cualquiera.
+
+    La referencia es el reloj DEL EQUIPO y no el de esta PC. Los registros los
+    fechó el equipo con su propia hora, así que compararlos contra la nuestra
+    daría todo por inverosímil justamente cuando el equipo está desfasado, que
+    es cuando más falta hace leerlo bien.
     """
     from datetime import datetime, timedelta
-    return datetime(2015, 1, 1) <= fecha <= datetime.now() + timedelta(days=2)
+    ahora = referencia or datetime.now()
+    return datetime(2015, 1, 1) <= fecha <= ahora + timedelta(days=2)
 
 
-def _formato_de_8(datos: bytes):
+def _formato_de_8(datos: bytes, reloj=None):
     """
     Dónde está el tiempo dentro de un registro de 8 bytes: lo decide la evidencia.
 
@@ -226,7 +248,7 @@ def _formato_de_8(datos: bytes):
             _uid, hora = extraer(unpack(patron, muestra[:8]))
             muestra = muestra[8:]
             try:
-                if _plausible(_hora_zk(hora)):
+                if _plausible(_hora_zk(hora), reloj):
                     puntaje += 1
             except Exception:
                 pass
@@ -235,7 +257,7 @@ def _formato_de_8(datos: bytes):
     return mejor
 
 
-def _registros_crudos(conexion) -> tuple:
+def _registros_crudos(conexion, reloj=None) -> tuple:
     """
     Las pasadas del equipo, salteando las que no se pueden leer.
 
@@ -273,7 +295,7 @@ def _registros_crudos(conexion) -> tuple:
     if tam == 8:
         # Dónde cae el tiempo adentro del registro no es fijo, así que se
         # averigua. El índice interno se resuelve contra el padrón acá.
-        patron, bruto = _formato_de_8(datos)
+        patron, bruto = _formato_de_8(datos, reloj)
         def extraer(c, _b=bruto):
             uid, hora = _b(c)
             return usuarios.get(uid, str(uid)), hora
@@ -322,7 +344,11 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
             dispositivo["ip"], dispositivo.get("puerto", 4370),
             dispositivo.get("password", 0), dispositivo.get("timeout", 30),
         )
-        todos, ilegibles, tam = _registros_crudos(conexion)
+        # El reloj del equipo primero: con él se juzga si una fecha es creíble,
+        # y de paso se informa cuánto está corrido. Todas las pasadas que
+        # devuelve están desplazadas exactamente eso.
+        reloj = leer_reloj(conexion)
+        todos, ilegibles, tam = _registros_crudos(conexion, reloj)
         registros = []
         for numero, ts in todos:
             if (desde and ts < desde) or (hasta and ts > hasta):
@@ -334,9 +360,13 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
                 "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
             })
         registros.sort(key=lambda r: r["timestamp"], reverse=True)
+        from datetime import datetime
+        desfase = round((reloj - datetime.now()).total_seconds() / 60) if reloj else None
         return {"ok": True, "transporte": transporte, "registros": registros,
                 "total": len(todos), "ilegibles": ilegibles,
-                "tamano_registro": tam, "error": None}
+                "tamano_registro": tam, "error": None,
+                "reloj": reloj.strftime("%Y-%m-%d %H:%M:%S") if reloj else None,
+                "desfase_minutos": desfase}
     except Exception as exc:
         logger.warning("No se pudieron leer las pasadas de %s: %s",
                        dispositivo.get("ip"), exc)

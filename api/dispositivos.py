@@ -471,7 +471,12 @@ def registros(did: int, dias: int = 7,
                         # otra cosa: el parseo está corrido y lo que se muestra
                         # no sirve. Hay que poder distinguirlo desde la pantalla.
                         "ilegibles": lectura.get("ilegibles", 0),
-                        "tamano_registro": lectura.get("tamano_registro", 0)}}
+                        "tamano_registro": lectura.get("tamano_registro", 0)},
+            # Las horas que se muestran son las que el equipo creyó que eran. Si
+            # su reloj está corrido, todas están corridas lo mismo, y eso hay
+            # que decirlo al lado de las horas y no en otro lado.
+            "reloj": lectura.get("reloj"),
+            "desfase_minutos": lectura.get("desfase_minutos")}
 
 
 def _leer(funcion):

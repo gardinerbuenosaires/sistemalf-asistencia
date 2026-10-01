@@ -3409,6 +3409,22 @@ async function verPasadas(id, dias) {
         : `${r.ilegibles} registro(s) del equipo tienen una fecha que no existe y se saltearon.
            Pasa en equipos viejos; con ${r.guardadas_en_el_equipo} legibles, el resto sirve.`}
     </div>` : ''}
+    ${(() => {
+      const m = data.desfase_minutos;
+      if (m === null || m === undefined) return '';
+      const abs = Math.abs(m);
+      if (abs <= 5) return `<div style="font-size:.76rem;color:#2e7d4f;margin-top:5px">
+        El reloj del equipo coincide con el del sistema (${_esc(data.reloj)}).</div>`;
+      const cuanto = abs >= 1440 ? `${Math.round(abs / 1440)} día(s)`
+                   : abs >= 60   ? `${Math.round(abs / 60)} hora(s)`
+                                 : `${abs} minuto(s)`;
+      return `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:7px 10px;
+                 font-size:.8rem;color:#6b5a26;margin-top:7px">
+        <b>El reloj de este equipo está ${m > 0 ? 'adelantado' : 'atrasado'} ${cuanto}.</b>
+        Marca ${_esc(data.reloj)}. Las horas de abajo son las que el equipo creyó que eran,
+        así que están corridas exactamente eso. Nadie le sincroniza la hora a las puertas:
+        el sistema solo se la pone al equipo de fichaje.</div>`;
+    })()}
     <input type="text" id="pasadas-buscar" oninput="filtrarPasadas()" autocomplete="off"
            placeholder="Buscar por número o nombre"
            style="margin-top:10px;width:100%;padding:7px 10px;font-size:.85rem;border:1px solid #ddd;border-radius:4px">

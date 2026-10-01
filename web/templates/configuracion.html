@@ -2365,8 +2365,7 @@ async function cargarDispositivos() {
       <td style="font-size:.8rem">${equipo}</td>
       <td>
         <button class="btn btn-sm btn-secondary" onclick="verPadron(${d.id})">Padrón</button>
-        <button class="btn btn-sm btn-secondary" data-perm="accesos:ver"
-                onclick="verPasadas(${d.id})">Pasadas</button>
+        ${canDo('accesos','ver') ? `<button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="verPasadas(${d.id})">Pasadas</button>` : ''}
         ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="probarDispositivo(${d.id}, this)">Probar</button>` : ''}
         ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-primary" style="margin-left:5px" onclick="editarDispositivo(${d.id})">Editar</button>` : ''}
         ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarDispositivo(${d.id})">Borrar</button>` : ''}

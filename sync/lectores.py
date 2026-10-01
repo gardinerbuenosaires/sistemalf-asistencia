@@ -189,6 +189,52 @@ def _hora_zk(crudo):
     return datetime(t + 2000, mes, dia, hora, minuto, segundo)
 
 
+def _plausible(fecha) -> bool:
+    """
+    Una fecha que podría ser de una pasada real: ni del futuro ni de hace veinte
+    años. Es el criterio con el que se elige cómo leer el registro, así que no
+    pretende ser exacto — solo distinguir una fecha de un número cualquiera.
+    """
+    from datetime import datetime, timedelta
+    return datetime(2015, 1, 1) <= fecha <= datetime.now() + timedelta(days=2)
+
+
+def _formato_de_8(datos: bytes):
+    """
+    Dónde está el tiempo dentro de un registro de 8 bytes: lo decide la evidencia.
+
+    pyzk asume uid(2) estado(1) tiempo(4) punch(1). En los equipos de este local
+    el tiempo arranca un byte más adelante, y leído corrido da fechas del siglo
+    XXII: se reconoce porque el byte bajo sale siempre 00 y el alto 0xFF, que es
+    relleno y no tiempo. No es que el equipo esté roto.
+
+    Como las dos variantes existen según el firmware, se prueban las dos sobre
+    una muestra y gana la que produce más fechas que podrían ser reales. Elegir
+    por evidencia en vez de clavar una constante es lo que va a hacer que esto
+    siga andando el día que aparezca un lector distinto.
+    """
+    from struct import unpack
+
+    candidatos = [
+        ("<HBB4s", lambda c: (c[0], c[3])),    # uid, estado, punch, tiempo
+        ("<HB4sB", lambda c: (c[0], c[2])),    # uid, estado, tiempo, punch (pyzk)
+    ]
+    mejor, puntaje_mejor = candidatos[0], -1
+    for patron, extraer in candidatos:
+        puntaje, muestra = 0, datos[:8 * 60]
+        while len(muestra) >= 8:
+            _uid, hora = extraer(unpack(patron, muestra[:8]))
+            muestra = muestra[8:]
+            try:
+                if _plausible(_hora_zk(hora)):
+                    puntaje += 1
+            except Exception:
+                pass
+        if puntaje > puntaje_mejor:
+            mejor, puntaje_mejor = (patron, extraer), puntaje
+    return mejor
+
+
 def _registros_crudos(conexion) -> tuple:
     """
     Las pasadas del equipo, salteando las que no se pueden leer.
@@ -217,15 +263,22 @@ def _registros_crudos(conexion) -> tuple:
     datos = datos[4:]
     tam = total // conexion.records if conexion.records else 0
 
-    # Los tres formatos que maneja pyzk. El de 8 identifica por indice interno;
-    # los otros traen el numero de legajo.
-    formatos = {8: ("HB4sB", lambda c: (usuarios.get(c[0], str(c[0])), c[2])),
-                16: ("<I4sBB2sI", lambda c: (str(c[0]), c[1])),
+    # Los tres tamaños que maneja pyzk. El de 8 identifica por índice interno;
+    # los otros traen el número de legajo.
+    formatos = {16: ("<I4sBB2sI", lambda c: (str(c[0]), c[1])),
                 40: ("<H24sB4sB8s",
                      lambda c: (c[1].split(b"\x00")[0].decode(errors="ignore"), c[3]))}
-    if tam not in formatos:
+    if tam != 8 and tam not in formatos:
         tam = 40
-    patron, extraer = formatos[tam]
+    if tam == 8:
+        # Dónde cae el tiempo adentro del registro no es fijo, así que se
+        # averigua. El índice interno se resuelve contra el padrón acá.
+        patron, bruto = _formato_de_8(datos)
+        def extraer(c, _b=bruto):
+            uid, hora = _b(c)
+            return usuarios.get(uid, str(uid)), hora
+    else:
+        patron, extraer = formatos[tam]
 
     registros, ilegibles = [], 0
     while len(datos) >= tam:

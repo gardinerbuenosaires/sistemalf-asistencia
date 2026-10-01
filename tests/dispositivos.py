@@ -2034,5 +2034,49 @@ chequear("el numero se resuelve por indice interno",
          all(n == "42" for n, _ in _regs), _regs)
 chequear("detecta el tamano de registro", _tam == 8, _tam)
 
+
+print("\n=== DONDE CAE EL TIEMPO EN UN REGISTRO DE 8 BYTES ===")
+# pyzk asume uid(2) estado(1) tiempo(4) punch(1). En los equipos de este local el
+# tiempo arranca un byte mas adelante, y leido corrido da fechas del siglo XXII:
+# se reconoce porque el byte bajo sale 00 y el alto 0xFF, que es relleno.
+from struct import pack, unpack
+from datetime import datetime, timedelta
+from sync.lectores import _formato_de_8, _hora_zk, _plausible
+
+def _cod(d):
+    t = (d.year-2000)*12 + (d.month-1); t = t*31 + (d.day-1); t = t*24 + d.hour
+    t = t*60 + d.minute; return t*60 + d.second
+
+_base = datetime.now() - timedelta(days=3)
+def _reg(patron, uid, cuando):
+    t = pack("<I", _cod(cuando))
+    return pack("<HBB", uid, 0, 0) + t if patron == "nuevo" else pack("<HB", uid, 0) + t + pack("B", 0)
+
+# Un equipo con el tiempo en el byte 4.
+_datos_nuevo = b"".join(_reg("nuevo", 7, _base + timedelta(hours=i)) for i in range(20))
+_pat, _ = _formato_de_8(_datos_nuevo)
+chequear("con el tiempo en el byte 4 elige ese formato", _pat == "<HBB4s", _pat)
+
+# Y uno con el formato que pyzk supone.
+_datos_pyzk = b"".join(_reg("pyzk", 7, _base + timedelta(hours=i)) for i in range(20))
+_pat2, _ = _formato_de_8(_datos_pyzk)
+chequear("con el formato de pyzk elige el de pyzk", _pat2 == "<HB4sB", _pat2)
+
+# Lo que paso de verdad: leido corrido, el byte bajo sale 00 y el alto 0xFF.
+_crudo = unpack("<HB4sB", _datos_nuevo[:8])[2]
+chequear("leido corrido, el byte bajo es 00", _crudo[0] == 0, _crudo)
+_mal = None
+try:
+    _mal = _hora_zk(_crudo)
+except Exception:
+    pass
+chequear("y da una fecha que no puede ser real",
+         _mal is None or not _plausible(_mal), _mal)
+
+# El criterio de plausible: ni del futuro lejano ni de hace veinte anios.
+chequear("hoy es plausible", _plausible(datetime.now()))
+chequear("el siglo XXII no", not _plausible(datetime(2133, 7, 22)))
+chequear("ni el ano 2000", not _plausible(datetime(2000, 1, 1)))
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

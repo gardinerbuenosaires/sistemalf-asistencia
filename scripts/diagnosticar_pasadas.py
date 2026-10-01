@@ -125,6 +125,7 @@ def main():
         # eran el mismo usuario y el par alto bajaba del primero al último, así
         # que esto no es una lista ordenada por tiempo y mirar ocho registros de
         # cada lado no alcanza.
+        referencia = reloj or datetime.now()
         print("\n  FORMA DEL BLOQUE")
         cuantos = len(datos) // 8
         uids, altos, orden_uids, campos23 = {}, {}, [], set()
@@ -142,9 +143,11 @@ def main():
               + ", ".join(f"0x{v:04X}" for v in sorted(campos23)[:6]))
         print(f"    dónde aparece cada usuario por primera vez (indice: uid):")
         print("      " + "  ".join(f"{i}:{u}" for i, u in orden_uids[:14]))
-        agrupado = all(orden_uids[k][0] < orden_uids[k + 1][0]
-                       for k in range(len(orden_uids) - 1)) and len(uids) > 3
-        print(f"      -> {'parecen agrupados por usuario' if agrupado else 'mezclados'}")
+        cambios = sum(1 for i in range(1, cuantos)
+                      if (datos[i * 8] | datos[i * 8 + 1] << 8)
+                      != (datos[(i - 1) * 8] | datos[(i - 1) * 8 + 1] << 8))
+        print(f"      el usuario cambia {cambios} veces en {cuantos} registros"
+              f" -> {'agrupados' if cambios < len(uids) * 3 else 'mezclados'}")
 
         en_orden = sorted(altos)
         print(f"\n    par alto (bytes 6-7 en BE): {len(altos)} valores distintos")

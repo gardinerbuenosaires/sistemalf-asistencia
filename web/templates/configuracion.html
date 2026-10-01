@@ -3547,6 +3547,13 @@ async function verPasadas(id, dias) {
       El equipo tiene ${r.guardadas_en_el_equipo} legibles en total. No se copian a la base:
       cuando el equipo se llene, las más viejas se pierden.
     </div>
+    ${r.con_reloj_viejo ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:7px 10px;
+        font-size:.8rem;color:#6b5a26;margin-top:7px">
+      <b>${r.con_reloj_viejo} pasada(s) quedaron fuera porque tienen una fecha imposible.</b>
+      Son pasadas que ocurrieron de verdad, pero el equipo las fechó cuando su reloj estaba
+      mal. No se puede saber cuándo fueron, así que no se muestran junto a las buenas: en una
+      tabla se leerían igual de ciertas. Las de acá abajo son posteriores a que se le pusiera
+      la hora.</div>` : ''}
     ${r.ilegibles ? `<div style="background:${r.ilegibles > r.guardadas_en_el_equipo ? '#fbe9e7' : '#f6f2e6'};
         border-left:3px solid ${r.ilegibles > r.guardadas_en_el_equipo ? '#b3261e' : '#c8a951'};
         padding:7px 10px;font-size:.8rem;margin-top:7px;

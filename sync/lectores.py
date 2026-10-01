@@ -328,7 +328,12 @@ def _formato_de_8(datos: bytes, reloj=None):
     ]
     mejor, puntaje_mejor, de_cuantos = None, -1, 0
     for patron, extraer in candidatos:
-        puntaje, leidos, muestra = 0, 0, datos[:8 * 60]
+        # Del FINAL del bloque, no del principio. Los registros viejos pueden
+        # estar fechados con un reloj que el equipo tenía mal antes de que se lo
+        # corrigieran, y esas fechas son inverosímiles aunque el formato sea el
+        # correcto. Los más nuevos son los únicos escritos con el reloj de
+        # ahora, así que son los que dicen si lo estamos leyendo bien.
+        puntaje, leidos, muestra = 0, 0, datos[-8 * 60:]
         while len(muestra) >= 8:
             _uid, hora = extraer(unpack(patron, muestra[:8]))
             muestra = muestra[8:]
@@ -347,7 +352,7 @@ def _formato_de_8(datos: bytes, reloj=None):
     # pantalla de fechas del siglo XXII, que es peor que no mostrar nada: una
     # fecha inventada se lee como un dato y una pantalla vacía con un motivo se
     # lee como lo que es.
-    if de_cuantos and puntaje_mejor < de_cuantos / 2:
+    if de_cuantos and puntaje_mejor < de_cuantos / 3:
         return None
     return mejor
 
@@ -450,8 +455,14 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
         # devuelve están desplazadas exactamente eso.
         reloj = leer_reloj(conexion)
         todos, ilegibles, tam, entendido = _registros_crudos(conexion, reloj)
-        registros = []
+        registros, con_reloj_viejo = [], 0
         for numero, ts in todos:
+            # Fechado con un reloj que el equipo tenía mal: la pasada ocurrió,
+            # pero no en esa fecha. Mezclarlas con las buenas es peor que
+            # contarlas aparte, porque en una tabla se leen igual de ciertas.
+            if not _plausible(ts, reloj):
+                con_reloj_viejo += 1
+                continue
             if (desde and ts < desde) or (hasta and ts > hasta):
                 continue
             registros.append({
@@ -481,6 +492,7 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
         desfase = round((reloj - datetime.now()).total_seconds() / 60) if reloj else None
         return {"ok": True, "transporte": transporte, "registros": registros,
                 "total": len(todos), "ilegibles": ilegibles,
+                "con_reloj_viejo": con_reloj_viejo,
                 "tamano_registro": tam, "error": None,
                 "reloj": reloj.strftime("%Y-%m-%d %H:%M:%S") if reloj else None,
                 "desfase_minutos": desfase}

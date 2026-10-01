@@ -3344,6 +3344,8 @@ async function revisarTodos() {
 // otros. Si están TODOS corridos lo mismo, el reloj sospechoso es el de esta
 // máquina, y ponerle esa hora a los equipos sería propagar el error.
 
+let _relojes = null;
+
 function _desfaseTexto(m) {
   const abs = Math.abs(m);
   if (abs <= 2) return { txt: 'en hora', color: '#2e7d4f' };
@@ -3382,6 +3384,17 @@ async function verRelojes() {
     return;
   }
   if (d.aviso) { cuerpo.innerHTML = `<div style="color:#888">${_esc(d.aviso)}</div>`; return; }
+  _relojes = d;
+  pintarRelojes();
+}
+
+// Dibuja con lo que ya está en memoria. Separado de la consulta a propósito:
+// después de poner un equipo en hora no hay por qué volver a preguntarle a los
+// otros cinco, y cada uno de esos es una conexión a un equipo viejo.
+function pintarRelojes() {
+  const cuerpo = document.getElementById('relojes-cuerpo');
+  const d = _relojes;
+  if (!cuerpo || !d) return;
 
   const vivos = d.equipos.filter(e => e.ok);
   const corridos = vivos.filter(e => Math.abs(e.desfase_minutos) > 2);
@@ -3403,7 +3416,7 @@ async function verRelojes() {
       <td style="padding:7px 10px;white-space:nowrap">
         ${e.puesto_en ? `<div style="font-size:.72rem;color:#bbb">puesto en hora<br>${_esc(e.puesto_en.slice(0,16))}</div>` : ''}
         ${canDo('dispositivos','editar') && Math.abs(e.desfase_minutos) > 2
-          ? `<button class="btn btn-sm btn-primary" onclick="ponerEnHora(${e.id})">Poner en hora</button>` : ''}
+          ? `<button class="btn btn-sm btn-primary" onclick="ponerEnHora(${e.id}, this)">Poner en hora</button>` : ''}
       </td></tr>`;
   }).join('');
 
@@ -3437,19 +3450,32 @@ async function verRelojes() {
     </div>`;
 }
 
-async function ponerEnHora(id) {
-  const d = _dispositivos.find(x => x.id === id);
-  if (!confirm(`Ponerle a «${d ? d.nombre : id}» la hora de esta máquina.`
+async function ponerEnHora(id, boton) {
+  const fila = (_relojes?.equipos || []).find(x => x.id === id);
+  const nombre = fila ? fila.nombre : id;
+  if (!confirm(`Ponerle a «${nombre}» la hora de esta máquina.`
     + `\n\nLas pasadas que ya tiene quedan con la hora vieja.\n\n¿Seguir?`)) return;
+
+  if (boton) { boton.disabled = true; boton.textContent = 'Poniendo…'; }
   const res = await fetch(`/api/dispositivos/${id}/hora`, { method: 'POST' });
   const r = await res.json();
-  if (!res.ok || !r.ok) return toast('Error: ' + (r.detail || r.error || 'no se pudo'));
-  // Que el equipo haya contestado que sí no alcanza: se vuelve a leer el reloj.
+  if (!res.ok || !r.ok) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Poner en hora'; }
+    return toast('Error: ' + (r.detail || r.error || 'no se pudo'));
+  }
+  // El servidor ya releyó el reloj de este equipo para verificar que quedara en
+  // hora, así que la respuesta trae el dato nuevo. Se actualiza esta fila y nada
+  // más: volver a preguntarle a los otros cinco no agrega nada, y cada uno es
+  // una conexión a un equipo viejo.
+  if (fila) {
+    fila.reloj = r.reloj;
+    fila.desfase_minutos = r.desfase_minutos;
+    fila.puesto_en = new Date().toLocaleString('sv').slice(0, 16);
+    pintarRelojes();
+  }
   toast(r.quedo_en_hora
     ? `En hora. Estaba corrido ${r.desfase_antes} min`
     : `Se le escribió, pero sigue corrido ${r.desfase_minutos} min: miralo`);
-  await verRelojes();
-  cargarDispositivos();
 }
 
 // ── Pasadas por un lector ─────────────────────────────────────────────────────

@@ -1889,5 +1889,49 @@ if len(_tres) >= 2:
     cli.put(f"/api/accesos/empleado/{_e1}/nivel-lector", json={"nivel_lector": 0})
     lectores.leer_padron = _real4
 
+
+print("\n=== NOMBRE QUE MUESTRA EL LECTOR ===")
+# Es el texto que el equipo muestra al apoyar el dedo. No es el nombre del
+# legajo: el de asistencia guarda 24 caracteres y las puertas 8, asi que un
+# nombre completo llega cortado y deja de identificar a nadie.
+if emp_id:
+    r = cli.get(f"/api/accesos/empleado/{emp_id}")
+    chequear("la ficha trae el nombre del lector y los largos",
+             "nombre_lector" in r.json()["empleado"]
+             and r.json()["largo_nombre"]["puertas"] == 8, list(r.json()))
+    chequear("arranca vacio", r.json()["empleado"]["nombre_lector"] is None,
+             r.json()["empleado"]["nombre_lector"])
+
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector",
+                json={"nombre_lector": "GOMEZ A"})
+    chequear("se puede poner", r.status_code == 200, r.text[:160])
+    chequear("y queda guardado",
+             cli.get(f"/api/accesos/empleado/{emp_id}").json()["empleado"]["nombre_lector"] == "GOMEZ A")
+
+    # Vacio no es un nombre vacio: significa "no opinamos", y al escribir se
+    # respeta el que el equipo ya tenga. Si guardara "" le borraria el nombre.
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector", json={"nombre_lector": "   "})
+    chequear("solo espacios se guarda como vacio, no como nombre",
+             r.status_code == 200
+             and cli.get(f"/api/accesos/empleado/{emp_id}").json()["empleado"]["nombre_lector"] is None,
+             r.text[:160])
+
+    # Mas largo de lo que el equipo guarda se rechaza en vez de recortarse solo:
+    # recortar en silencio deja un nombre que nadie eligio.
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector",
+                json={"nombre_lector": "X" * 25})
+    chequear("mas de 24 caracteres se rechaza", r.status_code == 422, r.status_code)
+    r = cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector",
+                json={"nombre_lector": "X" * 24})
+    chequear("exactamente 24 entra", r.status_code == 200, r.status_code)
+
+    chequear("necesita accesos:asignar",
+             _mirar.put(f"/api/accesos/empleado/{emp_id}/nombre-lector",
+                        json={"nombre_lector": "A"}).status_code == 403)
+    chequear("y con asignar alcanza",
+             _aplica.put(f"/api/accesos/empleado/{emp_id}/nombre-lector",
+                         json={"nombre_lector": "A"}).status_code == 200)
+    cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector", json={"nombre_lector": None})
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

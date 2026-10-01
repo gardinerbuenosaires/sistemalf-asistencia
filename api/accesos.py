@@ -45,6 +45,18 @@ class AsignacionIn(BaseModel):
     perfil_acceso_id: int | None = None
 
 
+class NombreLectorIn(BaseModel):
+    nombre_lector: str | None = None
+
+    @field_validator("nombre_lector")
+    @classmethod
+    def _nombre(cls, v):
+        v = (v or "").strip()
+        if len(v) > 24:
+            raise ValueError("El equipo de asistencia guarda hasta 24 caracteres")
+        return v or None
+
+
 class NivelLectorIn(BaseModel):
     nivel_lector: int
 
@@ -73,7 +85,7 @@ class ExcepcionIn(BaseModel):
 def _empleado(conn, eid):
     fila = conn.execute(
         """SELECT e.id, e.nombre, e.apellido, e.user_id, e.activo, e.perfil_acceso_id,
-                  e.nivel_lector, e.cargo_id, c.nombre AS cargo
+                  e.nivel_lector, e.nombre_lector, e.cargo_id, c.nombre AS cargo
              FROM empleados e
              LEFT JOIN cargos c ON c.id = e.cargo_id
             WHERE e.id = ?""",
@@ -142,6 +154,7 @@ def puertas_de(conn, eid) -> dict:
     return {
         "empleado": emp,
         "niveles_lector": NIVELES_LECTOR,
+        "largo_nombre": {"asistencia": 24, "puertas": 8},
         "perfil": perfil,
         "puertas_del_perfil": sorted(del_perfil),
         "excepciones": excepciones,
@@ -175,6 +188,27 @@ def nivel_lector(eid: int, data: NivelLectorIn,
         _empleado(conn, eid)     # 404 si no existe
         conn.execute("UPDATE empleados SET nivel_lector=? WHERE id=?",
                      (data.nivel_lector, eid))
+        return puertas_de(conn, eid)
+
+
+@router.put("/empleado/{eid}/nombre-lector")
+def nombre_lector(eid: int, data: NombreLectorIn,
+                  _user=Depends(require_permiso("accesos", "asignar"))):
+    """
+    Cómo se llama esta persona dentro de los equipos.
+
+    Es el texto que el lector muestra en pantalla al apoyar el dedo, y lo elige
+    alguien para que sea reconocible ahí. No es el nombre del legajo: el equipo
+    de asistencia guarda 24 caracteres y las puertas 8, así que un nombre
+    completo llega cortado y deja de identificar a nadie.
+
+    Vacío significa que no opinamos: al escribir se conserva el que el equipo ya
+    tenga. Así una columna vacía no le borra el nombre a nadie.
+    """
+    with db_session() as conn:
+        _empleado(conn, eid)
+        conn.execute("UPDATE empleados SET nombre_lector=? WHERE id=?",
+                     (data.nombre_lector, eid))
         return puertas_de(conn, eid)
 
 

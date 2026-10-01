@@ -139,6 +139,18 @@ def _migrar_perfiles(conn):
             "ALTER TABLE empleados ADD COLUMN nivel_lector INTEGER NOT NULL DEFAULT 0")
         logger.info("Migración: columna nivel_lector agregada a empleados")
 
+    # El nombre corto que el lector muestra en pantalla al apoyar el dedo. Lo
+    # elige una persona para que sea reconocible ahí, que no es lo mismo que el
+    # nombre del legajo: el equipo de asistencia lo corta a 24 caracteres y las
+    # puertas a 8, así que "Gómez Castro, Ana María" no sirve de nada.
+    #
+    # Vacío significa "no opinamos": al escribir se conserva el nombre que el
+    # equipo ya tenga. Eso evita tener que adoptar los nombres de todos antes de
+    # poder escribir, y evita que una columna vacía le borre el nombre a nadie.
+    if "nombre_lector" not in cols:
+        conn.execute("ALTER TABLE empleados ADD COLUMN nombre_lector TEXT")
+        logger.info("Migración: columna nombre_lector agregada a empleados")
+
     # El cargo llego a proponer un perfil, como comodidad para no elegirlo de a
     # uno en cada alta. Se saco: se usaba un par de veces por mes y su valor
     # dependia de que el acceso se dedujera limpio del puesto, que no es el

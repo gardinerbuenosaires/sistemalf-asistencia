@@ -1342,6 +1342,21 @@ async function cargarAccesos(id) {
         </div>
       </div>
 
+      <div style="margin-top:4px">
+        <div style="font-size:.78rem;color:#888;margin-bottom:5px">
+          Nombre que muestra el lector</div>
+        <input type="text" id="f-nombre-lector" maxlength="24" style="max-width:260px"
+               value="${(datos.empleado.nombre_lector || '').replace(/"/g, '&quot;')}"
+               placeholder="${_esc((datos.empleado.apellido || '').slice(0, 24))}"
+               ${puede ? '' : 'disabled'}
+               onchange="guardarNombreLector(${id}, this.value)">
+        <div id="nombre-lector-corte" style="font-size:.76rem;color:#999;margin-top:4px"></div>
+        <div style="font-size:.76rem;color:#999;margin-top:3px">
+          Es lo que aparece en pantalla al apoyar el dedo. Si lo dejás vacío, el sistema
+          respeta el que cada equipo ya tenga y no lo toca.
+        </div>
+      </div>
+
       <div style="margin-top:12px;padding-top:10px;border-top:1px solid #f0f0f0">
         <div style="font-size:.78rem;color:#888;margin-bottom:5px">
           Administración del equipo de fichaje</div>
@@ -1404,6 +1419,10 @@ async function cargarAccesos(id) {
           por qué esta persona tiene algo distinto al resto.</div>` : ''}
       </div>
     </div>`;
+
+  mostrarCorteNombre();
+  document.getElementById('f-nombre-lector')
+    ?.addEventListener('input', mostrarCorteNombre);
 }
 
 // Lo que los lectores realmente tienen. Va aparte y a pedido porque son varias
@@ -1515,6 +1534,40 @@ async function verificarEnLectores(id) {
       <div style="font-size:.74rem;color:#aaa;margin-top:6px">
         Leído recién de los equipos. No se cambió nada en ninguno.</div>
     </div>`;
+}
+
+// Cada equipo corta el nombre a un largo distinto —24 el de asistencia, 8 las
+// puertas— así que escribirlo entero y que llegue cortado es lo que hace que
+// deje de identificar a nadie. Mejor verlo antes de guardarlo.
+function mostrarCorteNombre() {
+  const campo = document.getElementById('f-nombre-lector');
+  const caja = document.getElementById('nombre-lector-corte');
+  if (!campo || !caja || !_accDatos) return;
+  const largos = _accDatos.largo_nombre || { asistencia: 24, puertas: 8 };
+  const texto = (campo.value || campo.placeholder || '').trim();
+  if (!texto) { caja.innerHTML = ''; return; }
+  const corte = (n) => texto.length > n
+    ? `<b>${_esc(texto.slice(0, n))}</b><span style="color:#c8a951">${_esc(texto.slice(n))}</span>`
+    : `<b>${_esc(texto)}</b>`;
+  caja.innerHTML = `Se va a ver así — fichaje: ${corte(largos.asistencia)}`
+    + ` · puertas: ${corte(largos.puertas)}`
+    + (texto.length > largos.puertas
+        ? ' <span style="color:#8a5d06">(lo amarillo no entra)</span>' : '');
+}
+
+async function guardarNombreLector(id, valor) {
+  const res = await fetch(`/api/accesos/empleado/${id}/nombre-lector`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nombre_lector: valor }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    toast('Error: ' + (e.detail || 'no se pudo guardar'));
+  } else {
+    toast(valor.trim() ? 'Nombre del lector guardado'
+                       : 'Sin nombre propio: se respeta el que tenga cada equipo');
+  }
+  cargarAccesos(id);
 }
 
 async function guardarNivelLector(id, valor) {

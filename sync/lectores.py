@@ -165,6 +165,68 @@ def leer_padron(dispositivo: dict, con_huellas: bool = False,
                 pass
 
 
+def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
+    """
+    Las pasadas guardadas en un lector: quién apoyó el dedo y a qué hora.
+
+    No se guardan en la base a propósito. El equipo conserva miles —con lo que
+    hay hoy cubre meses— y la pregunta real es siempre por unos días atrás. Una
+    copia nuestra sería trabajo y una fuente más de desincronización.
+
+    La contracara: si el equipo es la única copia, **ningún proceso nuestro
+    puede borrarle los registros a una puerta**. Al maestro se los limpia los
+    días 1 y 15 porque sus fichadas ya están en la base; las de las puertas no
+    están en ningún lado.
+
+    El equipo no sabe filtrar por fecha: manda todo y se recorta acá.
+
+    Solo lectura.
+    """
+    if dispositivo.get("protocolo") == "push":
+        return {"ok": False, "registros": [], "transporte": None, "total": 0,
+                "error": "Es un equipo push: no atiende llamadas."}
+    if not dispositivo.get("ip"):
+        return {"ok": False, "registros": [], "transporte": None, "total": 0,
+                "error": "El equipo no tiene IP cargada"}
+
+    conexion = None
+    try:
+        conexion, transporte = _conectar(
+            dispositivo["ip"], dispositivo.get("puerto", 4370),
+            dispositivo.get("password", 0), dispositivo.get("timeout", 30),
+        )
+        todos = conexion.get_attendance()
+        registros = []
+        for a in todos:
+            ts = a.timestamp
+            if (desde and ts < desde) or (hasta and ts > hasta):
+                continue
+            registros.append({
+                "user_id": str(a.user_id).strip(),
+                "fecha": ts.strftime("%Y-%m-%d"),
+                "hora": ts.strftime("%H:%M:%S"),
+                "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
+                # Se informan crudos y sin interpretar: en un lector de puerta
+                # no significan entrada ni salida, y ponerles esos nombres sería
+                # inventar un dato que el equipo no da.
+                "estado": a.status, "punch": a.punch,
+            })
+        registros.sort(key=lambda r: r["timestamp"], reverse=True)
+        return {"ok": True, "transporte": transporte, "registros": registros,
+                "total": len(todos), "error": None}
+    except Exception as exc:
+        logger.warning("No se pudieron leer las pasadas de %s: %s",
+                       dispositivo.get("ip"), exc)
+        return {"ok": False, "registros": [], "transporte": None, "total": 0,
+                "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
 def leer_padrones(dispositivos: list, con_huellas=False) -> dict:
     """
     Lee varios lectores a la vez. Devuelve {id_dispositivo: resultado}.

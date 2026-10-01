@@ -441,7 +441,7 @@
         <thead><tr>
           <th>Nombre</th><th>Dirección</th><th style="width:70px">Usa</th>
           <th style="width:90px">Asistencia</th><th style="width:70px">Acceso</th>
-          <th>Equipo</th><th style="width:290px">Acciones</th>
+          <th>Equipo</th><th style="width:370px">Acciones</th>
         </tr></thead>
         <tbody id="tabla-dispositivos">
           <tr><td colspan="7" style="color:#aaa">Cargando...</td></tr>
@@ -2365,6 +2365,8 @@ async function cargarDispositivos() {
       <td style="font-size:.8rem">${equipo}</td>
       <td>
         <button class="btn btn-sm btn-secondary" onclick="verPadron(${d.id})">Padrón</button>
+        <button class="btn btn-sm btn-secondary" data-perm="accesos:ver"
+                onclick="verPasadas(${d.id})">Pasadas</button>
         ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="probarDispositivo(${d.id}, this)">Probar</button>` : ''}
         ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-primary" style="margin-left:5px" onclick="editarDispositivo(${d.id})">Editar</button>` : ''}
         ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarDispositivo(${d.id})">Borrar</button>` : ''}
@@ -3331,6 +3333,113 @@ async function revisarTodos() {
     </div>
     <div style="overflow-y:auto;max-height:58vh;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>`;
   cargarDispositivos();
+}
+
+// ── Pasadas por un lector ─────────────────────────────────────────────────────
+// Quién apoyó el dedo y a qué hora. Se lee del equipo en el momento y no se
+// guarda nada: el lector conserva miles de pasadas, mucho más de lo que esta
+// pregunta necesita, y una copia nuestra sería una fuente más de desincronizar.
+//
+// Ojo con leerlo como asistencia: una pasada por una puerta NO es una fichada.
+// Por eso esto vive acá y no en la planilla.
+
+let _pasadas = [];
+
+async function verPasadas(id, dias) {
+  const d = _dispositivos.find(x => x.id === id);
+  dias = dias || 7;
+  let modal = document.getElementById('modal-pasadas');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-pasadas';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:white;border-radius:10px;padding:24px;width:760px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+        <div style="font-weight:bold;font-size:1rem">Pasadas por ${_esc(d ? d.nombre : id)}</div>
+        <div id="pasadas-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem"></div>
+        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+                onclick="document.getElementById('modal-pasadas').remove()">Cerrar</button>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  const cuerpo = document.getElementById('pasadas-cuerpo');
+  cuerpo.innerHTML = `<div style="background:#eef3f8;border-left:3px solid #4a7ba7;padding:8px 11px;font-size:.82rem;color:#2c4d6b">
+      Leyendo las pasadas del equipo. Trae todas las que tiene guardadas y recorta
+      acá, así que con muchos registros tarda unos segundos.</div>`;
+
+  let data = {};
+  try {
+    const res = await fetch(`/api/dispositivos/${id}/registros?dias=${dias}`);
+    data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'error');
+  } catch (e) {
+    cuerpo.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  if (!data.ok) {
+    cuerpo.innerHTML = `<div style="color:#c0392b">El equipo no contestó.</div>
+      <div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(data.error)}</div>`;
+    return;
+  }
+
+  _pasadas = data.registros;
+  const r = data.resumen;
+  const rango = [1, 3, 7, 15, 30].map(n =>
+    `<button class="btn btn-sm ${n === data.dias ? 'btn-primary' : 'btn-secondary'}"
+             onclick="verPasadas(${id}, ${n})">${n} día${n === 1 ? '' : 's'}</button>`).join(' ');
+
+  cuerpo.innerHTML = `
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${rango}</div>
+    <div style="font-size:.85rem;color:#333;margin-top:10px">
+      <b id="pasadas-contador">${r.pasadas} pasadas</b> de ${r.personas} persona(s)
+      en los últimos ${data.dias} día(s)
+      ${r.desconocidos ? `· <span style="color:#8a5d06">${r.desconocidos} número(s) que no están en el sistema</span>` : ''}
+    </div>
+    <div style="font-size:.76rem;color:#aaa;margin-top:3px">
+      El equipo tiene ${r.guardadas_en_el_equipo} guardadas en total. No se copian a la base:
+      cuando el equipo se llene, las más viejas se pierden.
+    </div>
+    <input type="text" id="pasadas-buscar" oninput="filtrarPasadas()" autocomplete="off"
+           placeholder="Buscar por número o nombre"
+           style="margin-top:10px;width:100%;padding:7px 10px;font-size:.85rem;border:1px solid #ddd;border-radius:4px">
+    <div style="overflow-y:auto;max-height:50vh;margin-top:8px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px;width:110px">Fecha</th>
+              <th style="text-align:left;padding:6px 10px;width:80px">Hora</th>
+              <th style="text-align:left;padding:6px 10px;width:70px">N°</th>
+              <th style="text-align:left;padding:6px 10px">Quién</th></tr>
+        </thead>
+        <tbody id="pasadas-tbody"></tbody>
+      </table>
+    </div>
+    <div style="font-size:.76rem;color:#999;margin-top:7px">
+      Una pasada por una puerta <b>no es una fichada</b>: no entra a la planilla ni la modifica.
+    </div>`;
+  filtrarPasadas();
+}
+
+function filtrarPasadas() {
+  const q = (document.getElementById('pasadas-buscar')?.value || '').trim().toLowerCase();
+  const filas = !q ? _pasadas : _pasadas.filter(p =>
+    String(p.user_id).toLowerCase().includes(q)
+    || (p.nombre || '').toLowerCase().includes(q));
+  const tb = document.getElementById('pasadas-tbody');
+  if (tb) tb.innerHTML = filas.length ? filas.map(p => `
+    <tr style="border-bottom:1px solid #f6f6f6">
+      <td style="padding:5px 10px;color:#666">${_esc(p.fecha)}</td>
+      <td style="padding:5px 10px;font-family:monospace">${_esc(p.hora)}</td>
+      <td style="padding:5px 10px;font-family:monospace;color:#888">${_esc(p.user_id)}</td>
+      <td style="padding:5px 10px">${p.nombre
+        ? _esc(p.nombre) + (p.activo === false
+            ? ' <span style="color:#b3261e;font-size:.75rem">(dado de baja)</span>' : '')
+        : '<span style="color:#8a5d06">no está en el sistema</span>'}</td>
+    </tr>`).join('')
+    : `<tr><td colspan="4" style="padding:14px;color:#999;text-align:center">
+         Nadie coincide con «${_esc(q)}».</td></tr>`;
+  const c = document.getElementById('pasadas-contador');
+  if (c) c.textContent = q ? `${filas.length} de ${_pasadas.length} pasadas`
+                           : `${_pasadas.length} pasadas`;
 }
 
 // ── Padrón de un lector ───────────────────────────────────────────────────────

@@ -413,6 +413,61 @@ def padron(did: int, _user=Depends(require_permiso("dispositivos", "ver"))):
             **comparar_con_empleados(lectura["usuarios"], empleados)}
 
 
+@router.get("/{did}/registros")
+def registros(did: int, dias: int = 7,
+              _user=Depends(require_permiso("accesos", "ver"))):
+    """
+    Quién pasó por este lector y a qué hora, los últimos `dias` días.
+
+    Pide permiso de accesos y no de dispositivos: es una consulta operativa
+    —"¿quién entró al depósito el martes?"— y la hace gente que no configura
+    equipos.
+
+    Se lee del equipo en el momento y no se guarda nada: el lector conserva
+    miles de pasadas, que es mucho más de lo que esta pregunta necesita.
+    """
+    from datetime import datetime, timedelta
+    from sync.lectores import leer_registros
+
+    dias = max(1, min(int(dias), 90))
+    desde = datetime.now() - timedelta(days=dias)
+
+    with db_session() as conn:
+        d = _traer(conn, did)
+        empleados = {
+            str(r["user_id"]).strip(): dict(r) for r in conn.execute(
+                """SELECT id, user_id, nombre, apellido, activo
+                     FROM empleados WHERE user_id IS NOT NULL""")
+        }
+
+    lectura = leer_registros(d, desde=desde)
+    if not lectura["ok"]:
+        return {"ok": False, "error": lectura["error"], "dispositivo": d}
+
+    # El nombre se resuelve acá y no en la pantalla: un número suelto no le dice
+    # nada a nadie, y es lo único que el equipo guarda.
+    gente, desconocidos = {}, set()
+    for r in lectura["registros"]:
+        emp = empleados.get(r["user_id"])
+        if emp is None:
+            r["nombre"] = None
+            r["empleado_id"] = None
+            desconocidos.add(r["user_id"])
+        else:
+            r["nombre"] = f"{emp['apellido']}, {emp['nombre']}".strip(", ")
+            r["empleado_id"] = emp["id"]
+            r["activo"] = bool(emp["activo"])
+        gente.setdefault(r["user_id"], 0)
+        gente[r["user_id"]] += 1
+
+    return {"ok": True, "dispositivo": d, "transporte": lectura["transporte"],
+            "dias": dias, "registros": lectura["registros"],
+            "resumen": {"pasadas": len(lectura["registros"]),
+                        "personas": len(gente),
+                        "desconocidos": len(desconocidos),
+                        "guardadas_en_el_equipo": lectura["total"]}}
+
+
 def _leer(funcion):
     """Un dato que el equipo no sepa contestar no tiene que tirar abajo la prueba."""
     try:

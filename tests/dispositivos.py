@@ -1933,5 +1933,58 @@ if emp_id:
                          json={"nombre_lector": "A"}).status_code == 200)
     cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector", json={"nombre_lector": None})
 
+
+print("\n=== PASADAS POR UN LECTOR ===")
+# Quien apoyo el dedo y a que hora. Se lee del equipo en el momento y no se
+# guarda nada: el lector conserva miles, mucho mas de lo que hace falta.
+from datetime import datetime, timedelta
+import sync.lectores as _lec_p
+
+_c14 = sqlite3.connect(DB)
+_fila_p = _c14.execute(
+    "SELECT user_id FROM empleados WHERE activo=1 AND user_id IS NOT NULL LIMIT 1").fetchone()
+_c14.close()
+_uid_p = str(_fila_p[0]).strip()
+
+_hoy = datetime.now()
+_falsos = {"ok": True, "transporte": "udp", "error": None, "total": 3, "registros": [
+    {"user_id": _uid_p, "fecha": _hoy.strftime("%Y-%m-%d"), "hora": "08:02:11",
+     "timestamp": _hoy.strftime("%Y-%m-%d 08:02:11"), "estado": 0, "punch": 0},
+    {"user_id": "555444", "fecha": _hoy.strftime("%Y-%m-%d"), "hora": "07:55:03",
+     "timestamp": _hoy.strftime("%Y-%m-%d 07:55:03"), "estado": 0, "punch": 0},
+]}
+_real5 = _lec_p.leer_registros
+_lec_p.leer_registros = lambda d, desde=None, hasta=None: _falsos
+
+r = cli.get(f"/api/dispositivos/{p_personal}/registros?dias=7")
+chequear("GET registros responde 200", r.status_code == 200, r.text[:200])
+_rg = r.json()
+chequear("resuelve el nombre de quien paso",
+         _rg["registros"][0]["nombre"] is not None, _rg["registros"][0])
+chequear("y marca al que no esta en el sistema",
+         _rg["registros"][1]["nombre"] is None, _rg["registros"][1])
+chequear("cuenta pasadas, personas y desconocidos",
+         _rg["resumen"]["pasadas"] == 2 and _rg["resumen"]["personas"] == 2
+         and _rg["resumen"]["desconocidos"] == 1, _rg["resumen"])
+chequear("dice cuantas tiene guardadas el equipo",
+         _rg["resumen"]["guardadas_en_el_equipo"] == 3, _rg["resumen"])
+
+# El rango se acota: pedir mil dias no tiene sentido y pedir cero tampoco.
+_pedidos = []
+_lec_p.leer_registros = lambda d, desde=None, hasta=None: (
+    _pedidos.append(desde), _falsos)[1]
+cli.get(f"/api/dispositivos/{p_personal}/registros?dias=9999")
+cli.get(f"/api/dispositivos/{p_personal}/registros?dias=0")
+chequear("un rango disparatado se acota a 90 dias",
+         (datetime.now() - _pedidos[0]).days in (89, 90), _pedidos[0])
+chequear("y cero se acota a 1",
+         (datetime.now() - _pedidos[1]).days in (0, 1), _pedidos[1])
+
+# Es una consulta operativa, asi que pide accesos:ver y no dispositivos:ver.
+chequear("necesita accesos:ver",
+         _rrhh.get(f"/api/dispositivos/{p_personal}/registros").status_code == 403)
+
+_lec_p.leer_registros = _real5
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

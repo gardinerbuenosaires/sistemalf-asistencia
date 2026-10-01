@@ -440,7 +440,9 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
                 continue
             registros.append({
                 "user_id": numero,
-                "fecha": ts.strftime("%Y-%m-%d"),
+                # dd-mm-aaaa, como en el resto del sistema. El timestamp va
+                # aparte y en ISO porque es el que ordena.
+                "fecha": ts.strftime("%d-%m-%Y"),
                 "hora": ts.strftime("%H:%M:%S"),
                 "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
             })

@@ -465,7 +465,13 @@ def registros(did: int, dias: int = 7,
             "resumen": {"pasadas": len(lectura["registros"]),
                         "personas": len(gente),
                         "desconocidos": len(desconocidos),
-                        "guardadas_en_el_equipo": lectura["total"]}}
+                        "guardadas_en_el_equipo": lectura["total"],
+                        # Unos pocos ilegibles son registros corruptos y
+                        # saltearlos es lo correcto. Casi todos ilegibles es
+                        # otra cosa: el parseo está corrido y lo que se muestra
+                        # no sirve. Hay que poder distinguirlo desde la pantalla.
+                        "ilegibles": lectura.get("ilegibles", 0),
+                        "tamano_registro": lectura.get("tamano_registro", 0)}}
 
 
 def _leer(funcion):

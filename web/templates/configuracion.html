@@ -3395,9 +3395,20 @@ async function verPasadas(id, dias) {
       ${r.desconocidos ? `· <span style="color:#8a5d06">${r.desconocidos} número(s) que no están en el sistema</span>` : ''}
     </div>
     <div style="font-size:.76rem;color:#aaa;margin-top:3px">
-      El equipo tiene ${r.guardadas_en_el_equipo} guardadas en total. No se copian a la base:
+      El equipo tiene ${r.guardadas_en_el_equipo} legibles en total. No se copian a la base:
       cuando el equipo se llene, las más viejas se pierden.
     </div>
+    ${r.ilegibles ? `<div style="background:${r.ilegibles > r.guardadas_en_el_equipo ? '#fbe9e7' : '#f6f2e6'};
+        border-left:3px solid ${r.ilegibles > r.guardadas_en_el_equipo ? '#b3261e' : '#c8a951'};
+        padding:7px 10px;font-size:.8rem;margin-top:7px;
+        color:${r.ilegibles > r.guardadas_en_el_equipo ? '#8c1d18' : '#6b5a26'}">
+      ${r.ilegibles > r.guardadas_en_el_equipo
+        ? `<b>${r.ilegibles} registros ilegibles contra ${r.guardadas_en_el_equipo} legibles.</b>
+           Siendo mayoría, no son registros sueltos corruptos: lo más probable es que se esté
+           leyendo con el formato equivocado, y entonces lo de abajo tampoco es confiable.`
+        : `${r.ilegibles} registro(s) del equipo tienen una fecha que no existe y se saltearon.
+           Pasa en equipos viejos; con ${r.guardadas_en_el_equipo} legibles, el resto sirve.`}
+    </div>` : ''}
     <input type="text" id="pasadas-buscar" oninput="filtrarPasadas()" autocomplete="off"
            placeholder="Buscar por número o nombre"
            style="margin-top:10px;width:100%;padding:7px 10px;font-size:.85rem;border:1px solid #ddd;border-radius:4px">

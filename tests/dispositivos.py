@@ -1986,5 +1986,53 @@ chequear("necesita accesos:ver",
 
 _lec_p.leer_registros = _real5
 
+
+print("\n=== HORAS IMPOSIBLES EN LOS REGISTROS ===")
+# ZK empaqueta el instante contando 31 dias por mes, asi que un registro basura
+# produce fechas que no existen. pyzk decodifica adentro del bucle y no atrapa
+# nada: UN registro con un 31 de septiembre tira abajo la lectura entera.
+from struct import pack
+from sync.lectores import _hora_zk
+
+def _empaquetar(anio, mes, dia, h, m, seg):
+    # La inversa de como lo guarda el equipo.
+    t = (((((anio - 2000) * 12 + (mes - 1)) * 31 + (dia - 1)) * 24 + h) * 60 + m) * 60 + seg
+    return pack("<I", t)
+
+_d = _hora_zk(_empaquetar(2026, 9, 30, 8, 2, 11))
+chequear("decodifica una fecha normal",
+         (_d.year, _d.month, _d.day, _d.hour, _d.minute, _d.second)
+         == (2026, 9, 30, 8, 2, 11), _d)
+
+# El 31 de septiembre se puede empaquetar —la cuenta no sabe de calendarios—
+# pero no existe. Tiene que fallar, no inventar una fecha cercana.
+_rompio = False
+try:
+    _hora_zk(_empaquetar(2031, 9, 31, 0, 0, 0))
+except ValueError:
+    _rompio = True
+chequear("una fecha que no existe levanta ValueError", _rompio)
+
+# Lo que importa: que un registro asi no se lleve puestos a los demas.
+class _ConexionFalsa:
+    records = 3
+    class _U:
+        def __init__(s, uid, nid): s.uid, s.user_id = uid, nid
+    def get_users(s): return [s._U(7, "42")]
+    def read_sizes(s): pass
+    def read_with_buffer(s, cmd):
+        buenos = [_empaquetar(2026, 9, 29, 7, 0, 0), _empaquetar(2026, 9, 30, 8, 0, 0)]
+        malo = _empaquetar(2031, 9, 31, 0, 0, 0)
+        cuerpo = b"".join(pack("HB", 7, 0) + t + pack("B", 0) for t in [buenos[0], malo, buenos[1]])
+        return pack("I", len(cuerpo)) + cuerpo, 0
+
+from sync.lectores import _registros_crudos
+_regs, _ileg, _tam = _registros_crudos(_ConexionFalsa())
+chequear("el registro imposible no tira abajo la lectura", len(_regs) == 2, _regs)
+chequear("y se cuenta aparte", _ileg == 1, _ileg)
+chequear("el numero se resuelve por indice interno",
+         all(n == "42" for n, _ in _regs), _regs)
+chequear("detecta el tamano de registro", _tam == 8, _tam)
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

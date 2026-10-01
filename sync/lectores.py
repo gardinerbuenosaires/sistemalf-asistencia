@@ -165,6 +165,80 @@ def leer_padron(dispositivo: dict, con_huellas: bool = False,
                 pass
 
 
+def _hora_zk(crudo):
+    """
+    Decodifica la hora tal como la empaqueta el equipo.
+
+    ZK guarda el instante como un solo entero, contando **31 días por mes**: no
+    es un calendario, es una cuenta. Por eso un registro basura —o un parseo
+    corrido— produce fechas que no existen, como un 31 de septiembre.
+
+    Levanta ValueError cuando la fecha no existe. Eso es a propósito: el que
+    llama decide si saltea ese registro, que es lo correcto, en vez de inventar
+    una fecha cercana.
+    """
+    from datetime import datetime
+    from struct import unpack
+
+    t = unpack("<I", crudo)[0]
+    segundo = t % 60;  t //= 60
+    minuto  = t % 60;  t //= 60
+    hora    = t % 24;  t //= 24
+    dia     = t % 31 + 1;  t //= 31
+    mes     = t % 12 + 1;  t //= 12
+    return datetime(t + 2000, mes, dia, hora, minuto, segundo)
+
+
+def _registros_crudos(conexion) -> tuple:
+    """
+    Las pasadas del equipo, salteando las que no se pueden leer.
+
+    Existe porque `get_attendance` de pyzk decodifica la hora adentro del bucle
+    y no atrapa nada: un solo registro con una fecha imposible tira abajo la
+    lectura entera y no queda ninguno. En equipos de quince años eso pasa.
+
+    Devuelve (registros, ilegibles, tamaño_de_registro). El conteo de ilegibles
+    no es un detalle: si son unos pocos, son registros corruptos y saltearlos es
+    lo correcto; si son casi todos, el parseo está corrido y lo que se muestre
+    no sirve. Son dos situaciones distintas y hay que poder distinguirlas.
+    """
+    from struct import unpack
+    from zk import const
+
+    usuarios = {u.uid: str(u.user_id).strip() for u in conexion.get_users()}
+    conexion.read_sizes()
+    if not getattr(conexion, "records", 0):
+        return [], 0, 0
+
+    datos, _ = conexion.read_with_buffer(const.CMD_ATTLOG_RRQ)
+    if len(datos) < 4:
+        return [], 0, 0
+    total = unpack("I", datos[:4])[0]
+    datos = datos[4:]
+    tam = total // conexion.records if conexion.records else 0
+
+    # Los tres formatos que maneja pyzk. El de 8 identifica por indice interno;
+    # los otros traen el numero de legajo.
+    formatos = {8: ("HB4sB", lambda c: (usuarios.get(c[0], str(c[0])), c[2])),
+                16: ("<I4sBB2sI", lambda c: (str(c[0]), c[1])),
+                40: ("<H24sB4sB8s",
+                     lambda c: (c[1].split(b"\x00")[0].decode(errors="ignore"), c[3]))}
+    if tam not in formatos:
+        tam = 40
+    patron, extraer = formatos[tam]
+
+    registros, ilegibles = [], 0
+    while len(datos) >= tam:
+        crudo = unpack(patron, datos[:tam].ljust(tam, b"\x00"))
+        datos = datos[tam:]
+        numero, hora_cruda = extraer(crudo)
+        try:
+            registros.append((numero, _hora_zk(hora_cruda)))
+        except Exception:
+            ilegibles += 1
+    return registros, ilegibles, tam
+
+
 def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
     """
     Las pasadas guardadas en un lector: quién apoyó el dedo y a qué hora.
@@ -195,29 +269,26 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
             dispositivo["ip"], dispositivo.get("puerto", 4370),
             dispositivo.get("password", 0), dispositivo.get("timeout", 30),
         )
-        todos = conexion.get_attendance()
+        todos, ilegibles, tam = _registros_crudos(conexion)
         registros = []
-        for a in todos:
-            ts = a.timestamp
+        for numero, ts in todos:
             if (desde and ts < desde) or (hasta and ts > hasta):
                 continue
             registros.append({
-                "user_id": str(a.user_id).strip(),
+                "user_id": numero,
                 "fecha": ts.strftime("%Y-%m-%d"),
                 "hora": ts.strftime("%H:%M:%S"),
                 "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
-                # Se informan crudos y sin interpretar: en un lector de puerta
-                # no significan entrada ni salida, y ponerles esos nombres sería
-                # inventar un dato que el equipo no da.
-                "estado": a.status, "punch": a.punch,
             })
         registros.sort(key=lambda r: r["timestamp"], reverse=True)
         return {"ok": True, "transporte": transporte, "registros": registros,
-                "total": len(todos), "error": None}
+                "total": len(todos), "ilegibles": ilegibles,
+                "tamano_registro": tam, "error": None}
     except Exception as exc:
         logger.warning("No se pudieron leer las pasadas de %s: %s",
                        dispositivo.get("ip"), exc)
         return {"ok": False, "registros": [], "transporte": None, "total": 0,
+                "ilegibles": 0, "tamano_registro": 0,
                 "error": f"{type(exc).__name__}: {exc}"}
     finally:
         if conexion:

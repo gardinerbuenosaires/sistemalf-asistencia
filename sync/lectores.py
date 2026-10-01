@@ -205,6 +205,91 @@ def leer_reloj(conexion):
         return None
 
 
+def ver_reloj(dispositivo: dict) -> dict:
+    """
+    Qué hora tiene este equipo y cuánto está corrido. SOLO LECTURA.
+
+    El desfase va en minutos y con signo: positivo si el equipo está adelantado.
+    """
+    from datetime import datetime
+
+    if dispositivo.get("protocolo") == "push" or not dispositivo.get("ip"):
+        return {"ok": False, "error": "No se puede consultar este equipo",
+                "reloj": None, "desfase_minutos": None}
+    conexion = None
+    try:
+        conexion, transporte = _conectar(
+            dispositivo["ip"], dispositivo.get("puerto", 4370),
+            dispositivo.get("password", 0), dispositivo.get("timeout", 10))
+        reloj = leer_reloj(conexion)
+        if reloj is None:
+            return {"ok": False, "error": "El equipo no dio la hora",
+                    "reloj": None, "desfase_minutos": None}
+        return {"ok": True, "transporte": transporte, "error": None,
+                "reloj": reloj.strftime("%Y-%m-%d %H:%M:%S"),
+                "desfase_minutos": round((reloj - datetime.now()).total_seconds() / 60)}
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}",
+                "reloj": None, "desfase_minutos": None}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
+def poner_en_hora(dispositivo: dict) -> dict:
+    """
+    Le pone al equipo la hora de esta máquina. ESCRIBE, pero no toca datos.
+
+    Es la única escritura de este módulo que no puede perder nada: no hay
+    usuarios ni huellas de por medio, y si sale mal se vuelve a intentar.
+
+    Mide antes y vuelve a medir después. Que el equipo conteste que sí no
+    alcanza: lo que importa es que el reloj haya quedado en hora, y eso solo se
+    sabe volviéndolo a leer.
+
+    Lo que sí cambia: los registros que el equipo ya tiene quedan fechados con
+    la hora vieja, así que al corregir un desfase grande conviven pasadas con
+    dos escalas de tiempo. Por eso el desfase medido se guarda — para saber,
+    mirando un registro viejo, cuánto había que corregirle.
+    """
+    from datetime import datetime
+
+    if dispositivo.get("protocolo") == "push" or not dispositivo.get("ip"):
+        return {"ok": False, "error": "No se le puede escribir a este equipo"}
+    conexion = None
+    try:
+        conexion, transporte = _conectar(
+            dispositivo["ip"], dispositivo.get("puerto", 4370),
+            dispositivo.get("password", 0), dispositivo.get("timeout", 10))
+        antes = leer_reloj(conexion)
+        desfase_antes = (round((antes - datetime.now()).total_seconds() / 60)
+                         if antes else None)
+        conexion.set_time(datetime.now())
+        despues = leer_reloj(conexion)
+        desfase = (round((despues - datetime.now()).total_seconds() / 60)
+                   if despues else None)
+        return {"ok": True, "transporte": transporte, "error": None,
+                "antes": antes.strftime("%Y-%m-%d %H:%M:%S") if antes else None,
+                "desfase_antes": desfase_antes,
+                "reloj": despues.strftime("%Y-%m-%d %H:%M:%S") if despues else None,
+                "desfase_minutos": desfase,
+                # Que haya quedado en hora es lo que se verifica, no que el
+                # equipo haya dicho que sí.
+                "quedo_en_hora": desfase is not None and abs(desfase) <= 2}
+    except Exception as exc:
+        logger.warning("No se pudo poner en hora %s: %s", dispositivo.get("ip"), exc)
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
 def _plausible(fecha, referencia=None) -> bool:
     """
     Una fecha que podría ser de una pasada real: ni del futuro ni de hace veinte

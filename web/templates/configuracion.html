@@ -423,6 +423,7 @@
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-left:16px">
           <button class="btn btn-secondary btn-sm" onclick="revisarTodos()">Revisar todos</button>
+          <button class="btn btn-secondary btn-sm" onclick="verRelojes()">Relojes</button>
           <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
                   onclick="verPlan()">Ver plan de cambios</button>
           <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
@@ -3331,6 +3332,123 @@ async function revisarTodos() {
       ${hayProblemas ? '' : '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo en orden</span>'}
     </div>
     <div style="overflow-y:auto;max-height:58vh;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>`;
+  cargarDispositivos();
+}
+
+// ── Los relojes de los equipos ────────────────────────────────────────────────
+// A las puertas nunca se les puso la hora: el sistema se la sincroniza solo al
+// equipo de fichaje. Un lector de quince años puede estar corrido meses, y
+// entonces todas sus pasadas están corridas lo mismo.
+//
+// Se miran todos juntos a propósito: un equipo corrido se entiende mirando los
+// otros. Si están TODOS corridos lo mismo, el reloj sospechoso es el de esta
+// máquina, y ponerle esa hora a los equipos sería propagar el error.
+
+function _desfaseTexto(m) {
+  const abs = Math.abs(m);
+  if (abs <= 2) return { txt: 'en hora', color: '#2e7d4f' };
+  const cuanto = abs >= 1440 ? `${Math.round(abs / 1440)} día(s)`
+               : abs >= 60   ? `${Math.round(abs / 60)} hora(s)`
+                             : `${abs} min`;
+  return { txt: `${m > 0 ? '+' : '−'}${cuanto}`,
+           color: abs >= 60 ? '#b3261e' : '#8a5d06' };
+}
+
+async function verRelojes() {
+  let modal = document.getElementById('modal-relojes');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-relojes';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:white;border-radius:10px;padding:24px;width:720px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+        <div style="font-weight:bold;font-size:1rem">Relojes de los equipos</div>
+        <div id="relojes-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem"></div>
+        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+                onclick="document.getElementById('modal-relojes').remove()">Cerrar</button>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  const cuerpo = document.getElementById('relojes-cuerpo');
+  cuerpo.innerHTML = 'Preguntándole la hora a cada equipo…';
+
+  let d;
+  try {
+    const res = await fetch('/api/dispositivos/relojes');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    cuerpo.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  if (d.aviso) { cuerpo.innerHTML = `<div style="color:#888">${_esc(d.aviso)}</div>`; return; }
+
+  const vivos = d.equipos.filter(e => e.ok);
+  const corridos = vivos.filter(e => Math.abs(e.desfase_minutos) > 2);
+  const todosIgual = corridos.length === vivos.length && vivos.length > 1
+    && Math.max(...vivos.map(e => e.desfase_minutos))
+       - Math.min(...vivos.map(e => e.desfase_minutos)) < 10;
+
+  const filas = d.equipos.map(e => {
+    if (!e.ok) return `<tr style="border-bottom:1px solid #f4f4f4">
+      <td style="padding:7px 10px">${_esc(e.nombre)}</td>
+      <td style="padding:7px 10px;color:#999" colspan="3">${_esc(e.error || 'no contestó')}</td></tr>`;
+    const f = _desfaseTexto(e.desfase_minutos);
+    return `<tr style="border-bottom:1px solid #f4f4f4">
+      <td style="padding:7px 10px">${_esc(e.nombre)}
+        ${e.es_asistencia ? '<span style="color:#aaa;font-size:.74rem">(fichaje)</span>' : ''}
+        <div style="font-size:.74rem;color:#bbb">${_esc(e.ip)}</div></td>
+      <td style="padding:7px 10px;font-family:monospace;color:#666">${_esc(e.reloj)}</td>
+      <td style="padding:7px 10px;color:${f.color};font-weight:600">${f.txt}</td>
+      <td style="padding:7px 10px;white-space:nowrap">
+        ${e.puesto_en ? `<div style="font-size:.72rem;color:#bbb">puesto en hora<br>${_esc(e.puesto_en.slice(0,16))}</div>` : ''}
+        ${canDo('dispositivos','editar') && Math.abs(e.desfase_minutos) > 2
+          ? `<button class="btn btn-sm btn-primary" onclick="ponerEnHora(${e.id})">Poner en hora</button>` : ''}
+      </td></tr>`;
+  }).join('');
+
+  cuerpo.innerHTML = `
+    <div style="font-size:.85rem;color:#444">
+      Esta máquina marca <b>${_esc(d.ahora)}</b>. Es la hora que se les pone a los equipos.
+    </div>
+    ${todosIgual ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:8px">
+      <b>Están todos corridos casi lo mismo.</b> Eso no suele ser que fallaron todos los
+      relojes a la vez: lo más probable es que el desfasado sea el de esta máquina. Revisá
+      la hora de la PC antes de ponérsela a los equipos, o vas a propagar el error.</div>`
+    : corridos.length ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:8px 11px;font-size:.8rem;color:#6b5a26;margin-top:8px">
+      ${corridos.length} equipo(s) con la hora corrida. Mientras tanto, sus pasadas están
+      fechadas con esa hora.</div>`
+    : `<div style="background:#dcede2;color:#2e7d4f;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:8px">
+      Todos en hora.</div>`}
+    <div style="overflow-y:auto;max-height:50vh;margin-top:10px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px">Equipo</th>
+              <th style="text-align:left;padding:6px 10px">Marca</th>
+              <th style="text-align:left;padding:6px 10px">Desfase</th>
+              <th style="padding:6px 10px;width:150px"></th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <div style="font-size:.76rem;color:#999;margin-top:8px">
+      Poner en hora no borra nada, pero las pasadas que el equipo ya tiene quedan fechadas
+      con la hora vieja: después de corregir un desfase grande conviven dos escalas de tiempo.
+    </div>`;
+}
+
+async function ponerEnHora(id) {
+  const d = _dispositivos.find(x => x.id === id);
+  if (!confirm(`Ponerle a «${d ? d.nombre : id}» la hora de esta máquina.`
+    + `\n\nLas pasadas que ya tiene quedan con la hora vieja.\n\n¿Seguir?`)) return;
+  const res = await fetch(`/api/dispositivos/${id}/hora`, { method: 'POST' });
+  const r = await res.json();
+  if (!res.ok || !r.ok) return toast('Error: ' + (r.detail || r.error || 'no se pudo'));
+  // Que el equipo haya contestado que sí no alcanza: se vuelve a leer el reloj.
+  toast(r.quedo_en_hora
+    ? `En hora. Estaba corrido ${r.desfase_antes} min`
+    : `Se le escribió, pero sigue corrido ${r.desfase_minutos} min: miralo`);
+  await verRelojes();
   cargarDispositivos();
 }
 

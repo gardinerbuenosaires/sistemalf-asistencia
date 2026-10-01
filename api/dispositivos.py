@@ -479,6 +479,77 @@ def registros(did: int, dias: int = 7,
             "desfase_minutos": lectura.get("desfase_minutos")}
 
 
+def _guardar_medicion(did, desfase, puesto=False):
+    """Deja constancia de lo medido. Lo que no se registra no se puede comparar."""
+    with db_session() as conn:
+        if puesto:
+            conn.execute(
+                """UPDATE dispositivos SET reloj_desfase_min=?,
+                       reloj_visto_en=datetime('now','localtime'),
+                       reloj_puesto_en=datetime('now','localtime') WHERE id=?""",
+                (desfase, did))
+        else:
+            conn.execute(
+                """UPDATE dispositivos SET reloj_desfase_min=?,
+                       reloj_visto_en=datetime('now','localtime') WHERE id=?""",
+                (desfase, did))
+
+
+@router.get("/relojes")
+def relojes(_user=Depends(require_permiso("dispositivos", "ver"))):
+    """
+    Qué hora tiene cada equipo. Solo lectura.
+
+    Se consultan todos de una porque la pregunta es comparativa: un equipo
+    corrido se entiende mirando los otros. Si están todos corridos lo mismo, el
+    reloj sospechoso es el de esta máquina.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from sync.lectores import ver_reloj
+
+    with db_session() as conn:
+        equipos = [dict(r) for r in conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
+                      cuenta_asistencia, es_acceso, reloj_puesto_en
+                 FROM dispositivos
+                WHERE activo=1 AND protocolo='pull' AND ip IS NOT NULL
+             ORDER BY orden, id""")]
+    if not equipos:
+        return {"equipos": [], "aviso": "No hay equipos que se puedan consultar."}
+
+    with ThreadPoolExecutor(max_workers=min(8, len(equipos))) as pool:
+        lecturas = list(pool.map(ver_reloj, equipos))
+
+    salida = []
+    for d, r in zip(equipos, lecturas):
+        if r["ok"]:
+            _guardar_medicion(d["id"], r["desfase_minutos"])
+        salida.append({
+            "id": d["id"], "nombre": d["nombre"], "ip": d["ip"],
+            "es_asistencia": bool(d["cuenta_asistencia"]),
+            "puesto_en": d["reloj_puesto_en"], **r})
+    return {"equipos": salida,
+            "ahora": __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+
+@router.post("/{did}/hora")
+def poner_hora(did: int, _user=Depends(require_permiso("dispositivos", "editar"))):
+    """
+    Le pone al equipo la hora de esta máquina, y verifica que haya quedado.
+
+    Pide permiso de editar equipos y no de accesos: es configuración técnica del
+    lector, no política de quién abre qué.
+    """
+    from sync.lectores import poner_en_hora
+
+    with db_session() as conn:
+        d = _traer(conn, did)
+    r = poner_en_hora(d)
+    if r["ok"]:
+        _guardar_medicion(did, r.get("desfase_antes"), puesto=True)
+    return {**r, "dispositivo": d}
+
+
 def _leer(funcion):
     """Un dato que el equipo no sepa contestar no tiene que tirar abajo la prueba."""
     try:

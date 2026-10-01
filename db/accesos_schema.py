@@ -151,6 +151,20 @@ def _migrar_perfiles(conn):
         conn.execute("ALTER TABLE empleados ADD COLUMN nombre_lector TEXT")
         logger.info("Migración: columna nombre_lector agregada a empleados")
 
+    # El reloj de cada equipo. A las puertas nunca se les puso la hora —el
+    # sistema se la sincroniza solo al de asistencia— y un lector de quince años
+    # puede estar corrido meses. Guardar el desfase MEDIDO, y no solo cuándo se
+    # corrigió, es lo que convierte esto en un diagnóstico: un equipo que se
+    # atrasa cinco minutos por semana tiene la pila del reloj agotándose, y eso
+    # no se ve corrigiéndolo en silencio todas las noches.
+    cols_disp = {r[1] for r in conn.execute("PRAGMA table_info(dispositivos)").fetchall()}
+    for columna, tipo in (("reloj_desfase_min", "INTEGER"),
+                          ("reloj_visto_en", "TEXT"),
+                          ("reloj_puesto_en", "TEXT")):
+        if columna not in cols_disp:
+            conn.execute(f"ALTER TABLE dispositivos ADD COLUMN {columna} {tipo}")
+            logger.info("Migración: columna %s agregada a dispositivos", columna)
+
     # El cargo llego a proponer un perfil, como comodidad para no elegirlo de a
     # uno en cada alta. Se saco: se usaba un par de veces por mes y su valor
     # dependia de que el acceso se dedujera limpio del puesto, que no es el

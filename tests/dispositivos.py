@@ -2115,5 +2115,46 @@ chequear("con un equipo adelantado, el formato se detecta igual",
          _formato_de_8(_datos_fut, _adelantado)[0] == "<HBB4s",
          _formato_de_8(_datos_fut, _adelantado)[0])
 
+
+print("\n=== PONER EN HORA LOS EQUIPOS ===")
+import sync.lectores as _lr
+
+_estado = {"hora": datetime(2026, 5, 1, 3, 0, 0)}   # equipo muy atrasado
+
+class _Equipo:
+    def get_time(s): return _estado["hora"]
+    def set_time(s, cuando): _estado["hora"] = cuando
+    def disconnect(s): pass
+
+_real6 = _lr._conectar
+_lr._conectar = lambda *a, **k: (_Equipo(), "udp")
+
+_v = _lr.ver_reloj({"ip": "127.0.0.9", "protocolo": "pull"})
+chequear("ver_reloj informa la hora y el desfase",
+         _v["ok"] and _v["desfase_minutos"] < -10000, _v)
+
+_p = _lr.poner_en_hora({"ip": "127.0.0.9", "protocolo": "pull"})
+chequear("poner_en_hora deja constancia de como estaba",
+         _p["desfase_antes"] < -10000, _p["desfase_antes"])
+chequear("y verifica releyendo que haya quedado",
+         _p["quedo_en_hora"] is True and abs(_p["desfase_minutos"]) <= 2, _p)
+
+# Que el equipo conteste que si no alcanza: lo que importa es que el reloj haya
+# quedado en hora, y eso solo se sabe volviendolo a leer.
+class _Mentiroso(_Equipo):
+    def set_time(s, cuando): pass          # dice que si y no hace nada
+_estado["hora"] = datetime(2026, 5, 1, 3, 0, 0)
+_lr._conectar = lambda *a, **k: (_Mentiroso(), "udp")
+_p2 = _lr.poner_en_hora({"ip": "127.0.0.9", "protocolo": "pull"})
+chequear("si el equipo dice que si y no cambia nada, se detecta",
+         _p2["ok"] is True and _p2["quedo_en_hora"] is False, _p2)
+
+# A un equipo push no se le escribe.
+chequear("a un equipo push no se le pone la hora",
+         _lr.poner_en_hora({"ip": "1.2.3.4", "protocolo": "push"})["ok"] is False)
+chequear("ni se le consulta", _lr.ver_reloj({"protocolo": "push"})["ok"] is False)
+
+_lr._conectar = _real6
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

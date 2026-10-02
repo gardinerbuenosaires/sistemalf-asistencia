@@ -255,7 +255,8 @@ def empleado_en_lectores(eid: int, _user=Depends(require_permiso("accesos", "ver
 
     lecturas = leer_padrones(equipos, con_huellas=True)
     return {"ficha": ficha,
-            **verificar(user_id, equipos, lecturas, set(ficha["puertas"]))}
+            **verificar(user_id, equipos, lecturas, set(ficha["puertas"]),
+                        ficha["empleado"].get("nombre_lector"))}
 
 
 @router.put("/empleado/{eid}/perfil")

@@ -40,7 +40,29 @@ DIAGNOSTICOS = {
 }
 
 
-def verificar(user_id, equipos: list, lecturas: dict, deseadas: set) -> dict:
+def _nombre_coincide(en_el_equipo: str, pedido: str) -> bool:
+    """
+    ¿El equipo tiene el nombre que se le pidió?
+
+    No alcanza con compararlos: cada equipo corta el nombre a un largo distinto
+    —24 el de fichaje, 8 las puertas— así que el que se pidió casi nunca entra
+    entero. Que el del equipo sea el COMIENZO del pedido es lo que significa que
+    está bien y solo quedó cortado.
+
+    Así no hace falta saber de antemano cuánto corta cada modelo, que es el tipo
+    de constante que se descubre estando mal.
+    """
+    a = (en_el_equipo or "").strip().upper()
+    b = (pedido or "").strip().upper()
+    if not b:
+        return True          # no se pidió nada: no hay nada que incumplir
+    if not a:
+        return False         # se pidió un nombre y el equipo no tiene ninguno
+    return b.startswith(a)
+
+
+def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
+              nombre_pedido: str = None) -> dict:
     """
     Cruza a una persona contra cada equipo leído.
 
@@ -56,7 +78,7 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set) -> dict:
     user_id = str(user_id).strip()
     filas = []
     resumen = {"abre": 0, "falta": 0, "sobra": 0, "sin_huella": 0, "sin_leer": 0,
-               "sin_huella_maestro": False}
+               "sin_huella_maestro": False, "nombre_distinto": 0}
 
     for d in equipos:
         lectura = lecturas.get(d["id"]) or {
@@ -71,7 +93,7 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set) -> dict:
             "deberia": debe if es_puerta else None,
             "ok": lectura["ok"], "error": lectura.get("error"),
             "cargado": None, "huellas": None, "nombre_en_equipo": None,
-            "grupo": None, "uid": None,
+            "grupo": None, "uid": None, "nombre_ok": None,
         }
 
         if not lectura["ok"]:
@@ -88,6 +110,13 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set) -> dict:
             fila["nombre_en_equipo"] = encontrado.get("nombre")
             fila["grupo"] = encontrado.get("grupo")
             fila["huellas"] = encontrado.get("huellas")
+            # El nombre solo se juzga si se pidió uno. Sin pedido, lo que tenga
+            # el equipo está bien por definición: eso es lo que significa dejar
+            # el campo vacío.
+            fila["nombre_ok"] = _nombre_coincide(
+                encontrado.get("nombre"), nombre_pedido) if nombre_pedido else None
+            if fila["nombre_ok"] is False:
+                resumen["nombre_distinto"] += 1
 
         # Sin huella no abre, así que pesa más que estar cargado. Pero "huellas"
         # puede venir en None porque no se pudieron leer los templates, y eso no

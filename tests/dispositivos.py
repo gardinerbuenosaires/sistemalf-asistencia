@@ -2211,5 +2211,28 @@ chequear("ni una de dentro de una hora",
 chequear("dos minutos adelante si, que es el tiempo de la propia lectura",
          _plausible(_reloj_equipo + timedelta(minutes=2), _reloj_equipo))
 
+
+print("\n=== EL NOMBRE QUE TIENE EL EQUIPO CONTRA EL QUE SE PIDIO ===")
+from sync.verificar_acceso import _nombre_coincide
+
+# Cada equipo corta a un largo distinto, asi que el pedido casi nunca entra
+# entero. Que el del equipo sea el COMIENZO del pedido es lo que significa que
+# esta bien y solo quedo cortado.
+chequear("igual coincide", _nombre_coincide("STEHLE F", "STEHLE F"))
+chequear("cortado por la puerta coincide", _nombre_coincide("STEHLE F", "STEHLE FEDERICO"))
+chequear("cortado a 8 coincide", _nombre_coincide("GOMEZ CA", "GOMEZ CASTRO ANA"))
+chequear("sin importar mayusculas", _nombre_coincide("stehle f", "STEHLE FEDERICO"))
+chequear("con espacios de sobra tambien", _nombre_coincide("  STEHLE F  ", "STEHLE FEDERICO"))
+
+chequear("otro nombre NO coincide", not _nombre_coincide("FEDERICO", "STEHLE F"))
+chequear("ni uno parecido al medio", not _nombre_coincide("TEHLE F", "STEHLE F"))
+chequear("el equipo sin nombre, habiendo pedido uno, no coincide",
+         not _nombre_coincide("", "STEHLE F"))
+
+# Sin pedido no hay nada que incumplir: eso es lo que significa dejar el campo
+# vacio, y marcarlo seria inventar un problema.
+chequear("sin pedir nada, cualquier nombre esta bien",
+         _nombre_coincide("LO QUE SEA", "") and _nombre_coincide("", None))
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

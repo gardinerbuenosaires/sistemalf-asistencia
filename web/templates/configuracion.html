@@ -421,33 +421,37 @@
             número de serie y algoritmo de huella — no le escribe nada.
           </div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-left:16px">
-          <button class="btn btn-secondary btn-sm" onclick="revisarTodos()">Revisar todos</button>
-          <button class="btn btn-secondary btn-sm" onclick="verRelojes()">Relojes</button>
-          <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
-                  onclick="verPlan()">Ver plan de cambios</button>
-          <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
-                  onclick="verPendientes()">Sin acceso asignado</button>
-          <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
-                  onclick="descubrirPerfiles()">Deducir perfiles</button>
-          <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
-                  onclick="asignarPorCargo()">Asignar por cargo</button>
-          <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
-                  onclick="adoptarNiveles()">Traer del fichaje</button>
-          <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
-                  onclick="nuevoDispositivo()">+ Nuevo equipo</button>
+        <!-- Dos grupos: lo que se le pregunta a los equipos y lo que define la
+             politica de quien abre que. Son ocho botones; si van a cortar en
+             dos lineas, que corten donde la division significa algo. -->
+        <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end;margin-left:16px">
+          <div style="display:flex;gap:6px;flex-wrap:nowrap" data-perm="accesos:ver">
+            <button class="btn btn-secondary btn-sm" onclick="verPlan()">Plan de cambios</button>
+            <button class="btn btn-secondary btn-sm" onclick="verPendientes()">Sin acceso</button>
+            <button class="btn btn-secondary btn-sm" onclick="descubrirPerfiles()">Deducir perfiles</button>
+            <button class="btn btn-secondary btn-sm" onclick="asignarPorCargo()">Asignar por cargo</button>
+            <button class="btn btn-secondary btn-sm" onclick="adoptarNiveles()">Traer del fichaje</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:nowrap">
+            <button class="btn btn-secondary btn-sm" onclick="revisarTodos()">Revisar todos</button>
+            <button class="btn btn-secondary btn-sm" onclick="verRelojes()">Relojes</button>
+            <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
+                    onclick="nuevoDispositivo()">+ Nuevo equipo</button>
+          </div>
         </div>
       </div>
-      <table style="margin-top:16px;font-size:.85rem">
+      <div style="overflow-x:auto;margin-top:16px">
+      <table style="font-size:.85rem;min-width:860px">
         <thead><tr>
           <th>Nombre</th><th>Dirección</th><th style="width:70px">Usa</th>
           <th style="width:90px">Asistencia</th><th style="width:70px">Acceso</th>
-          <th>Equipo</th><th style="width:370px">Acciones</th>
+          <th>Equipo</th><th style="width:400px">Acciones</th>
         </tr></thead>
         <tbody id="tabla-dispositivos">
           <tr><td colspan="7" style="color:#aaa">Cargando...</td></tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <div class="section">
@@ -2364,12 +2368,14 @@ async function cargarDispositivos() {
       <td>${d.cuenta_asistencia ? si : no}</td>
       <td>${d.es_acceso ? si : no}</td>
       <td style="font-size:.8rem">${equipo}</td>
-      <td>
-        <button class="btn btn-sm btn-secondary" onclick="verCargados(${d.id})">Cargados</button>
-        ${canDo('accesos','ver') ? `<button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="verPasadas(${d.id})">Pasadas</button>` : ''}
-        ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" style="margin-left:5px" onclick="probarDispositivo(${d.id}, this)">Probar</button>` : ''}
-        ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-primary" style="margin-left:5px" onclick="editarDispositivo(${d.id})">Editar</button>` : ''}
-        ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarDispositivo(${d.id})">Borrar</button>` : ''}
+      <td style="white-space:nowrap">
+        <div style="display:flex;gap:5px;flex-wrap:nowrap;justify-content:flex-end">
+          <button class="btn btn-sm btn-secondary" onclick="verCargados(${d.id})">Cargados</button>
+          ${canDo('accesos','ver') ? `<button class="btn btn-sm btn-secondary" onclick="verPasadas(${d.id})">Pasadas</button>` : ''}
+          ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" style="min-width:104px" onclick="probarDispositivo(${d.id}, this)">Probar</button>` : ''}
+          ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-primary" onclick="editarDispositivo(${d.id})">Editar</button>` : ''}
+          ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" onclick="eliminarDispositivo(${d.id})">Borrar</button>` : ''}
+        </div>
       </td></tr>`;
   }).join('');
 }
@@ -2504,7 +2510,7 @@ async function probarDispositivo(id, boton) {
     boton.disabled = true;
     let seg = 0;
     boton.textContent = 'Probando…';
-    contador = setInterval(() => { seg++; boton.textContent = `Probando… ${seg}s`; }, 1000);
+    contador = setInterval(() => { seg++; boton.textContent = `Probando ${seg}s`; }, 1000);
   }
   try {
     const res = await fetch(`/api/dispositivos/${id}/probar`, { method: 'POST' });

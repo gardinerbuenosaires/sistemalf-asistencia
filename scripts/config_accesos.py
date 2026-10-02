@@ -150,9 +150,10 @@ def importar(archivo):
     with open(archivo, encoding="utf-8") as f:
         datos = json.load(f)
 
-    print(f"\n  Archivo del {datos.get('exportado', '?')}")
+    print()
+    print("  Base: " + os.environ.get("DB_PATH", "(ninguna)"))
+    print("  Archivo del " + str(datos.get("exportado", "?")))
     print(f"  {len(datos['equipos'])} equipo(s), {len(datos['perfiles'])} perfil(es)")
-    print(f"  Hacia: {os.environ.get('DB_PATH', '')}")
 
     with db_session() as conn:
         if not _hay_tablas(conn):

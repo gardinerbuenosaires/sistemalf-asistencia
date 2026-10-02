@@ -243,7 +243,7 @@ def revision(_user=Depends(require_permiso("dispositivos", "ver"))):
     Solo entran los equipos activos a los que se les puede preguntar: un equipo
     push no atiende llamadas, así que no tiene sentido incluirlo acá.
     """
-    from sync.lectores import leer_padrones, comparar_con_empleados
+    from sync.lectores import leer_cargados_varios, comparar_con_empleados
 
     with db_session() as conn:
         equipos = [
@@ -261,7 +261,7 @@ def revision(_user=Depends(require_permiso("dispositivos", "ver"))):
             )
         }
 
-    lecturas = leer_padrones(equipos)
+    lecturas = leer_cargados_varios(equipos)
     salida, total = [], {"equipos": len(equipos), "sin_responder": 0,
                          "de_baja": 0, "desconocidos": 0, "nombre_distinto": 0}
 
@@ -373,8 +373,8 @@ def probar(did: int, _user=Depends(require_permiso("dispositivos", "editar"))):
         return {"ok": True, "transporte": transporte, **_traer(conn, did)}
 
 
-@router.get("/{did}/padron")
-def padron(did: int, _user=Depends(require_permiso("dispositivos", "ver"))):
+@router.get("/{did}/cargados")
+def lista(did: int, _user=Depends(require_permiso("dispositivos", "ver"))):
     """
     Qué tiene cargado este lector, cruzado contra los empleados del sistema.
 
@@ -382,7 +382,7 @@ def padron(did: int, _user=Depends(require_permiso("dispositivos", "ver"))):
     listas en pantallas distintas, el sistema marca solo a los que hay que
     mirar. Solo lectura: no toca el equipo.
     """
-    from sync.lectores import leer_padron, comparar_con_empleados
+    from sync.lectores import leer_cargados, comparar_con_empleados
 
     with db_session() as conn:
         d = _traer(conn, did)
@@ -390,7 +390,7 @@ def padron(did: int, _user=Depends(require_permiso("dispositivos", "ver"))):
     # Con las huellas: es la mirada en profundidad a UN equipo, y sin ellas la
     # lista dice quien esta cargado pero no quien puede abrir. "Revisar todos" no
     # las pide, porque son bastantes mas datos por equipo y ahi se leen todos.
-    lectura = leer_padron(d, con_huellas=True, con_franja=True)
+    lectura = leer_cargados(d, con_huellas=True, con_franja=True)
     if not lectura["ok"]:
         return {"ok": False, "error": lectura["error"], "dispositivo": d}
 

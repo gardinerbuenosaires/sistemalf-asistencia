@@ -18,7 +18,7 @@ Qué hace, por cada lector:
   - Algunas opciones de red y de servidor (DHCP, ADMS). Es de mejor esfuerzo:
     los nombres cambian según el firmware, y que no aparezca un valor NO
     significa que esté apagado. El menú del equipo es la fuente de verdad.
-  - El padrón completo y todas las huellas, a un archivo por lector.
+  - El lista completo y todas las huellas, a un archivo por lector.
 
 Prueba TCP y, si no contesta, UDP: los equipos viejos a veces solo hablan UDP,
 y probarlos solo por TCP los da por muertos sin serlo.
@@ -56,12 +56,12 @@ Uso:  python scripts/relevar_lectores.py IP [IP ...] [opciones]
       --salida DIR   dónde dejar el informe y los backups.
       --sin-backup   solo el inventario, sin bajar huellas.
       --solo-conexion  solo ver qué equipos responden y por qué transporte.
-                     Es lo primero que conviene correr: no baja padrones ni
+                     Es lo primero que conviene correr: no baja listas ni
                      huellas, así que tarda segundos.
 
 La base la encuentra sola: primero DB_PATH si está definida, si no la ruta de
 producción C:\\ProgramData\\SistemAlf\\fichajes.db. De ahí sale cuál es el maestro
-de ese local y contra qué empleados cruzar el padrón de las puertas. Si no
+de ese local y contra qué empleados cruzar el lista de las puertas. Si no
 aparece ninguna igual funciona, pasando --maestro, pero sin ese cruce.
 """
 import sys, os
@@ -473,13 +473,13 @@ def comparar(maestro, puerta, empleados):
     if (maestro["plataforma"], maestro["firmware"]) != (puerta["plataforma"], puerta["firmware"]):
         p(f"  Plataforma o firmware distintos al maestro.")
 
-    # Padrón
+    # Cargados
     m = {u["user_id"]: u for u in maestro["usuarios"]}
     q = {u["user_id"]: u for u in puerta["usuarios"]}
     solo_puerta = set(q) - set(m)
     solo_maestro = set(m) - set(q)
     en_ambos = set(q) & set(m)
-    p(f"  Padrón: {len(q)} en la puerta, {len(en_ambos)} también en el maestro.")
+    p(f"  Cargados: {len(q)} en la puerta, {len(en_ambos)} también en el maestro.")
     p(f"    Faltan en la puerta (están en el maestro): {len(solo_maestro)}")
     if solo_puerta:
         p(f"    Solo en la puerta, no en el maestro: {len(solo_puerta)}")

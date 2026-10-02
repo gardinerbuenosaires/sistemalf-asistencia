@@ -25,7 +25,7 @@ def agrupar_por_puertas(lecturas: dict, puertas: list, empleados: dict) -> dict:
     """
     Agrupa a la gente por el conjunto exacto de puertas donde está cargada.
 
-    `lecturas` es {dispositivo_id: resultado de leer_padron}, `puertas` las
+    `lecturas` es {dispositivo_id: resultado de leer_cargados}, `puertas` las
     filas de los equipos, y `empleados` {user_id: fila}.
 
     Devuelve {grupos, sin_leer, ignorados}. Cada grupo trae el conjunto de

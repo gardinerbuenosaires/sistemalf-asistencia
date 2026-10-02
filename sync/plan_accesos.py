@@ -18,7 +18,7 @@ Cuando se escriba, dos cosas que no se pueden olvidar:
   · La franja horaria. Grabar una huella reenvía el registro del usuario entero
     —el protocolo los manda en el mismo paquete— y pyzk la escribe en cero.
     Mientras estén todas en cero no se pierde nada, pero eso hay que
-    verificarlo, no suponerlo: `leer_padron(con_franja=True)` lo contesta. Si
+    verificarlo, no suponerlo: `leer_cargados(con_franja=True)` lo contesta. Si
     alguna no es cero, hay que preservarla antes de escribirle a ese equipo.
 
   · El grupo. Se lee y se vuelve a escribir tal cual, pero solo si se le pasa a
@@ -172,7 +172,7 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
     """
     Compara lo leído de cada puerta contra lo que debería tener.
 
-    `lecturas` es {dispositivo_id: resultado de leer_padron}.
+    `lecturas` es {dispositivo_id: resultado de leer_cargados}.
     `maestro` es el resultado de leer el equipo de asistencia, o None si no se
     pudo: de ahí sale la huella que habría que copiar, así que sin él no se
     puede saber a quién falta enrolar.
@@ -197,7 +197,7 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
     }
 
     # Dos preguntas distintas sobre el maestro, y antes estaban confundidas en
-    # una: `con_huella` miraba si la persona figuraba en su padrón, que no es lo
+    # una: `con_huella` miraba si la persona estaba cargada en él, que no es lo
     # mismo que tener la huella. Alguien cargado ahí sin huella quedaba informado
     # como que la tenía, y el plan proponía copiar algo que no existe.
     #

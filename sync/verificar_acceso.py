@@ -11,7 +11,7 @@ importa cuando alguien se queda afuera a las siete de la mañana.
 
 Y estar cargado tampoco alcanza: sin la huella en ese equipo, la persona figura
 en la lista y no abre igual. Ese caso es el peor de todos, porque mirando el
-padrón parece resuelto. Se distingue aparte.
+lista parece resuelto. Se distingue aparte.
 
 Solo lectura.
 """
@@ -67,7 +67,7 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
     Cruza a una persona contra cada equipo leído.
 
     `equipos` son filas de dispositivos (con `nombre`, `es_acceso`,
-    `cuenta_asistencia`), `lecturas` es {id: resultado de leer_padron} y
+    `cuenta_asistencia`), `lecturas` es {id: resultado de leer_cargados} y
     `deseadas` el conjunto de puertas que le tocan según perfil y excepciones.
 
     De los equipos que no son puerta —el de asistencia— no se opina si debería

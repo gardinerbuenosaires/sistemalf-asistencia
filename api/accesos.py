@@ -221,12 +221,12 @@ def empleado_en_lectores(eid: int, _user=Depends(require_permiso("accesos", "ver
     qué tiene el equipo. Cuando alguien se queda afuera, la pregunta es esta.
 
     Lee también la huella, no solo si figura en la lista: alguien cargado sin su
-    huella aparece en el padrón y no abre igual, y ese caso mirando el padrón
+    huella aparece en el lista y no abre igual, y ese caso mirando el lista
     parece resuelto.
 
     No escribe nada.
     """
-    from sync.lectores import leer_padrones
+    from sync.lectores import leer_cargados_varios
     from sync.verificar_acceso import verificar
 
     with db_session() as conn:
@@ -253,7 +253,7 @@ def empleado_en_lectores(eid: int, _user=Depends(require_permiso("accesos", "ver
         return {"ficha": ficha, "equipos": [], "resumen": None, "user_id": user_id,
                 "aviso": "No hay equipos que se puedan consultar."}
 
-    lecturas = leer_padrones(equipos, con_huellas=True)
+    lecturas = leer_cargados_varios(equipos, con_huellas=True)
     return {"ficha": ficha,
             **verificar(user_id, equipos, lecturas, set(ficha["puertas"]),
                         ficha["empleado"].get("nombre_lector"))}
@@ -395,7 +395,7 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
     que copiar: sin eso no se puede saber a quién falta enrolar, y cargar a
     alguien sin su huella lo deja sin poder abrir igual.
     """
-    from sync.lectores import leer_padrones
+    from sync.lectores import leer_cargados_varios
     from sync.plan_accesos import armar_plan
 
     with db_session() as conn:
@@ -449,7 +449,7 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
     # "le falta esta puerta" de "no hay nada que copiarle". A las puertas no
     # hacen falta para saber a quién agregar o sacar, y leerles los templates
     # multiplicaría el tiempo de una pantalla que ya consulta todos los equipos.
-    lecturas = leer_padrones(puertas + maestros,
+    lecturas = leer_cargados_varios(puertas + maestros,
                              con_huellas={m["id"] for m in maestros})
     maestro = lecturas.get(maestros[0]["id"]) if maestros else None
 
@@ -468,7 +468,7 @@ def descubrir(_user=Depends(require_permiso("accesos", "ver"))):
 
     Solo lectura. Lo que se elija se aplica con el endpoint de al lado.
     """
-    from sync.lectores import leer_padrones
+    from sync.lectores import leer_cargados_varios
     from sync.descubrir_perfiles import agrupar_por_puertas, emparejar_con_perfiles
 
     with db_session() as conn:
@@ -485,7 +485,7 @@ def descubrir(_user=Depends(require_permiso("accesos", "ver"))):
         return {"grupos": [], "sin_leer": [], "ignorados": [], "completo": False,
                 "aviso": "No hay ningún equipo marcado como «Abre una puerta»."}
 
-    lecturas = leer_padrones(puertas)
+    lecturas = leer_cargados_varios(puertas)
 
     with db_session() as conn:
         empleados = {
@@ -698,7 +698,7 @@ def _leer_niveles_del_maestro():
     24 caracteres y las puertas 8. Adoptar el de una puerta congelaría en el
     legajo un nombre que ya venía cortado.
     """
-    from sync.lectores import leer_padron
+    from sync.lectores import leer_cargados
 
     with db_session() as conn:
         maestro = conn.execute(
@@ -715,7 +715,7 @@ def _leer_niveles_del_maestro():
                           nombre_lector
                      FROM empleados WHERE user_id IS NOT NULL""")
         }
-    return dict(maestro), leer_padron(dict(maestro)), empleados
+    return dict(maestro), leer_cargados(dict(maestro)), empleados
 
 
 @router.get("/niveles-lector")

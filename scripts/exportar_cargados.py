@@ -16,7 +16,7 @@ números de usuario por sí solos no identifican a nadie fuera del sistema.
 
 No toca ningún equipo: trabaja sobre archivos que ya existen.
 
-Uso:  python scripts/exportar_padrones.py [CARPETA] [--salida ARCHIVO]
+Uso:  python scripts/exportar_listas.py [CARPETA] [--salida ARCHIVO]
 
       CARPETA   la del relevamiento, con los lector_*.json adentro. Si no se
                 indica, toma la más reciente de
@@ -101,7 +101,7 @@ def main():
         })
         print(f"  {ruta.name}: {len(usuarios)} números")
 
-    salida = Path(_argumento("--salida") or (carpeta / "padrones_para_compartir.json"))
+    salida = Path(_argumento("--salida") or (carpeta / "listas_para_compartir.json"))
     salida.write_text(json.dumps({
         "generado_en": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "origen": str(carpeta.resolve()),

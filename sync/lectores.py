@@ -1,4 +1,4 @@
-"""Lectura del padrón de un lector y comparación contra los empleados.
+"""Quiénes están cargados en un lector, cruzados contra los empleados.
 
 Para qué sirve. Verificar que lo cargado en un lector coincida con la realidad
 es la tarea más frecuente del control de accesos, y confirmar que una baja salió
@@ -49,7 +49,7 @@ def _contar_huellas(conexion) -> dict | None:
     """
     Cuántas huellas tiene cada usuario en este equipo, por uid interno.
 
-    Se lee aparte porque el padrón no la trae: el equipo devuelve los usuarios
+    Se lee aparte porque el lista no la trae: el equipo devuelve los usuarios
     en un paquete y las huellas en otro. Importa porque un usuario cargado sin
     huella figura en la lista y no abre igual — parece hecho y no lo está.
 
@@ -71,7 +71,7 @@ def _leer_franjas(conexion) -> dict | None:
     """
     La franja horaria de cada usuario, por uid interno. Solo lectura.
 
-    Hay que desempaquetar el padrón a mano porque pyzk sí lee este campo pero lo
+    Hay que desempaquetar el lista a mano porque pyzk sí lee este campo pero lo
     tira: lo desempaqueta en `get_users` y no lo pone en el objeto User, que ni
     siquiera tiene dónde guardarlo. Y al grabar lo escribe en cero, siempre.
 
@@ -104,7 +104,7 @@ def _leer_franjas(conexion) -> dict | None:
         return None
 
 
-def leer_padron(dispositivo: dict, con_huellas: bool = False,
+def leer_cargados(dispositivo: dict, con_huellas: bool = False,
                 con_franja: bool = False) -> dict:
     """
     Trae los usuarios cargados en un lector.
@@ -116,12 +116,12 @@ def leer_padron(dispositivo: dict, con_huellas: bool = False,
     Con `con_huellas` trae además cuántas huellas tiene cada uno. Es una lectura
     más y bastante más pesada —son todos los templates del equipo— así que no va
     por defecto: sirve cuando la pregunta es "¿esta persona realmente puede
-    abrir?", no cuando solo se comparan padrones.
+    abrir?", no cuando solo se comparan listas.
     """
     if dispositivo.get("protocolo") == "push":
         return {"ok": False, "usuarios": [], "transporte": None,
                 "error": "Es un equipo push: no atiende llamadas, es él quien "
-                         "llama al sistema. Su padrón no se puede consultar así."}
+                         "llama al sistema. Su lista no se puede consultar así."}
     if not dispositivo.get("ip"):
         return {"ok": False, "usuarios": [], "transporte": None,
                 "error": "El equipo no tiene IP cargada"}
@@ -154,7 +154,7 @@ def leer_padron(dispositivo: dict, con_huellas: bool = False,
         return {"ok": True, "transporte": transporte, "usuarios": usuarios,
                 "error": None, "huellas_leidas": None if not con_huellas else huellas is not None}
     except Exception as exc:
-        logger.warning("No se pudo leer el padrón de %s: %s", dispositivo.get("ip"), exc)
+        logger.warning("No se pudo leer el lista de %s: %s", dispositivo.get("ip"), exc)
         return {"ok": False, "usuarios": [], "transporte": None,
                 "error": f"{type(exc).__name__}: {exc}"}
     finally:
@@ -400,7 +400,7 @@ def _registros_crudos(conexion, reloj=None) -> tuple:
         tam = 40
     if tam == 8:
         # Dónde cae el tiempo adentro del registro no es fijo, así que se
-        # averigua. El índice interno se resuelve contra el padrón acá.
+        # averigua. El índice interno se resuelve contra el lista acá.
         elegido = _formato_de_8(datos, reloj)
         if elegido is None:
             # Ningún formato conocido sirve para este equipo. No se devuelve el
@@ -516,7 +516,7 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
                 pass
 
 
-def leer_padrones(dispositivos: list, con_huellas=False) -> dict:
+def leer_cargados_varios(dispositivos: list, con_huellas=False) -> dict:
     """
     Lee varios lectores a la vez. Devuelve {id_dispositivo: resultado}.
 
@@ -538,7 +538,7 @@ def leer_padrones(dispositivos: list, con_huellas=False) -> dict:
     pedir = ((lambda d: bool(con_huellas)) if isinstance(con_huellas, bool)
              else (lambda d: d["id"] in con_huellas))
     with ThreadPoolExecutor(max_workers=min(8, len(dispositivos))) as pool:
-        resultados = pool.map(lambda d: leer_padron(d, con_huellas=pedir(d)), dispositivos)
+        resultados = pool.map(lambda d: leer_cargados(d, con_huellas=pedir(d)), dispositivos)
     return {d["id"]: r for d, r in zip(dispositivos, list(resultados))}
 
 
@@ -588,7 +588,7 @@ NIVELES = {0: "usuario común", 2: "enrolador", 6: "administrador",
 
 def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
     """
-    Cruza el padrón del lector contra los empleados del sistema.
+    Cruza el lista del lector contra los empleados del sistema.
 
     `empleados` es {user_id: fila}. Clasifica cada persona cargada en el equipo:
 

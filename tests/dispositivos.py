@@ -165,7 +165,7 @@ chequear("sin sesion no se listan los equipos", r.status_code in (401, 403), r.s
 con.close()
 
 
-print("\n=== PADRON: comparacion contra los empleados ===")
+print("\n=== CARGADOS EN UN EQUIPO: comparacion contra los empleados ===")
 from sync.lectores import comparar_con_empleados
 
 EMPLEADOS = {
@@ -180,14 +180,14 @@ EMPLEADOS = {
 }
 # El lector corta los nombres a 8: "Gomez Ru" es Gomez Ruiz, no otra persona.
 # En el 13 hay cargado alguien distinto: numero reutilizado.
-PADRON = [
+CARGADOS = [
     {"uid": 1, "user_id": "10", "nombre": "Perez",    "privilegio": 0, "tarjeta": 0, "grupo": "1"},
     {"uid": 2, "user_id": "11", "nombre": "Gomez Ru", "privilegio": 0, "tarjeta": 0, "grupo": "1"},
     {"uid": 3, "user_id": "12", "nombre": "Torres",   "privilegio": 0, "tarjeta": 0, "grupo": "1"},
     {"uid": 4, "user_id": "99", "nombre": "Fantasma", "privilegio": 0, "tarjeta": 0, "grupo": "0"},
     {"uid": 5, "user_id": "13", "nombre": "VIEJO",    "privilegio": 0, "tarjeta": 0, "grupo": "1"},
 ]
-res = comparar_con_empleados(PADRON, EMPLEADOS)
+res = comparar_con_empleados(CARGADOS, EMPLEADOS)
 por_id = {f["user_id"]: f for f in res["filas"]}
 
 chequear("cuenta el total del lector", res["resumen"]["total"] == 5, res["resumen"])
@@ -205,17 +205,17 @@ chequear("resumen: una baja y un desconocido",
          (res["resumen"]["de_baja"], res["resumen"]["desconocidos"]) == (1, 1), res["resumen"])
 chequear("las bajas se muestran primero", res["filas"][0]["estado"] == "de_baja",
          [f["estado"] for f in res["filas"]])
-chequear("un padron vacio no rompe",
+chequear("un lista vacio no rompe",
          comparar_con_empleados([], EMPLEADOS)["resumen"]["total"] == 0)
 
-print("\n=== PADRON: endpoint ===")
+print("\n=== CARGADOS EN UN EQUIPO: endpoint ===")
 import sync.lectores as lectores
 
-_real = lectores.leer_padron
-lectores.leer_padron = lambda d, **kw: {"ok": True, "transporte": "udp",
-                                  "usuarios": PADRON, "error": None}
-r = cli.get(f"/api/dispositivos/{puerta['id']}/padron")
-chequear("GET padron responde 200", r.status_code == 200, r.text[:160])
+_real = lectores.leer_cargados
+lectores.leer_cargados = lambda d, **kw: {"ok": True, "transporte": "udp",
+                                  "usuarios": CARGADOS, "error": None}
+r = cli.get(f"/api/dispositivos/{puerta['id']}/cargados")
+chequear("GET lista responde 200", r.status_code == 200, r.text[:160])
 cuerpo = r.json() if r.status_code == 200 else {}
 chequear("informa por que transporte contesto", cuerpo.get("transporte") == "udp", cuerpo)
 chequear("devuelve resumen y filas", "resumen" in cuerpo and "filas" in cuerpo, list(cuerpo))
@@ -223,20 +223,20 @@ chequear("deja constancia de que el equipo contesto",
          any(x["visto_en"] for x in cli.get("/api/dispositivos").json()
              if x["id"] == puerta["id"]))
 
-lectores.leer_padron = lambda d, **kw: {"ok": False, "transporte": None, "usuarios": [],
+lectores.leer_cargados = lambda d, **kw: {"ok": False, "transporte": None, "usuarios": [],
                                   "error": "ZKNetworkError: timed out"}
-r = cli.get(f"/api/dispositivos/{puerta['id']}/padron")
+r = cli.get(f"/api/dispositivos/{puerta['id']}/cargados")
 chequear("un equipo que no contesta devuelve ok=false, no un error 500",
          r.status_code == 200 and r.json()["ok"] is False, r.text[:160])
-lectores.leer_padron = _real
+lectores.leer_cargados = _real
 
 if push_id:
-    r = cli.get(f"/api/dispositivos/{push_id}/padron")
+    r = cli.get(f"/api/dispositivos/{push_id}/cargados")
     chequear("a un push le avisa que no se puede consultar asi",
              r.status_code == 200 and r.json()["ok"] is False, r.text[:200])
 
-r = cli.get("/api/dispositivos/999999/padron")
-chequear("padron de un id inexistente da 404", r.status_code == 404, r.text[:120])
+r = cli.get("/api/dispositivos/999999/cargados")
+chequear("lista de un id inexistente da 404", r.status_code == 404, r.text[:120])
 
 
 
@@ -245,7 +245,7 @@ import sync.lectores as lectores
 
 # Un equipo contesta con problemas, el otro esta caido: el caido no tiene que
 # impedir que se vea lo del primero.
-_real2 = lectores.leer_padron
+_real2 = lectores.leer_cargados
 
 
 # El endpoint cruza contra los empleados REALES de la copia, no contra la lista
@@ -257,21 +257,21 @@ _real_emp = _con.execute(
         WHERE activo = 1 AND user_id IS NOT NULL AND apellido <> '' LIMIT 1"""
 ).fetchone()
 _con.close()
-PADRON_REV = list(PADRON)
+CARGADOS_REV = list(CARGADOS)
 if _real_emp:
-    PADRON_REV.append({"uid": 9, "user_id": str(_real_emp[0]).strip(),
+    CARGADOS_REV.append({"uid": 9, "user_id": str(_real_emp[0]).strip(),
                        "nombre": str(_real_emp[1]).strip()[:8],
                        "privilegio": 0, "tarjeta": 0, "grupo": "1"})
 
 
 def _falso(d, **kw):
     if d["ip"] == "127.0.0.2":   # la Puerta deposito que se creo mas arriba
-        return {"ok": True, "transporte": "udp", "usuarios": PADRON_REV, "error": None}
+        return {"ok": True, "transporte": "udp", "usuarios": CARGADOS_REV, "error": None}
     return {"ok": False, "transporte": None, "usuarios": [],
             "error": "ZKNetworkError: timed out"}
 
 
-lectores.leer_padron = _falso
+lectores.leer_cargados = _falso
 r = cli.get("/api/dispositivos/revision/todos")
 chequear("GET revision responde 200", r.status_code == 200, r.text[:160])
 rev = r.json() if r.status_code == 200 else {}
@@ -286,7 +286,7 @@ chequear("el equipo caido no impide ver el que si contesto", len(con_datos) >= 1
          [(e["nombre"], e["ok"]) for e in rev["equipos"]])
 
 eq = con_datos[0]
-chequear("solo devuelve lo que hay que mirar, no el padron entero",
+chequear("solo devuelve lo que hay que mirar, no el lista entero",
          not _real_emp or len(eq["problemas"]) < eq["resumen"]["total"],
          (len(eq["problemas"]), eq["resumen"]["total"]))
 chequear("ninguna fila sin novedad se cuela en problemas",
@@ -300,24 +300,24 @@ chequear("el equipo caido informa el motivo", caidos and caidos[0]["error"], cai
 ids_revisados = {e["id"] for e in rev["equipos"]}
 chequear("no intenta revisar equipos push", push_id not in ids_revisados, ids_revisados)
 
-lectores.leer_padron = _real2
+lectores.leer_cargados = _real2
 
 print("\n=== LECTURA EN PARALELO ===")
 import time
-from sync.lectores import leer_padrones
+from sync.lectores import leer_cargados_varios
 
 _lento = lambda d, **kw: (time.sleep(0.4), {"ok": True, "transporte": "tcp",
                                       "usuarios": [], "error": None})[1]
-lectores.leer_padron = _lento
+lectores.leer_cargados = _lento
 equipos = [{"id": i, "ip": f"127.0.0.{i}", "protocolo": "pull"} for i in range(1, 6)]
 arranque = time.time()
-res_par = leer_padrones(equipos)
+res_par = leer_cargados_varios(equipos)
 tardanza = time.time() - arranque
 chequear("devuelve un resultado por equipo", len(res_par) == 5, len(res_par))
 chequear("los lee en paralelo y no de a uno",
          tardanza < 1.2, f"tardo {tardanza:.2f}s; de a uno serian 2s")
-chequear("una lista vacia no rompe", leer_padrones([]) == {})
-lectores.leer_padron = _real2
+chequear("una lista vacia no rompe", leer_cargados_varios([]) == {})
+lectores.leer_cargados = _real2
 
 
 
@@ -719,14 +719,14 @@ if emp_id:
 
 print("\n=== PLAN: endpoint ===")
 import sync.lectores as _lec
-_guardado = _lec.leer_padrones
-_lec.leer_padrones = lambda ds, **kw: {d["id"]: {"ok": True, "transporte": "udp",
+_guardado = _lec.leer_cargados_varios
+_lec.leer_cargados_varios = lambda ds, **kw: {d["id"]: {"ok": True, "transporte": "udp",
                                            "usuarios": [], "error": None} for d in ds}
 r = cli.get("/api/accesos/plan")
 chequear("GET plan responde 200", r.status_code == 200, r.text[:200])
 cuerpo = r.json() if r.status_code == 200 else {}
 chequear("trae total y puertas", "total" in cuerpo and "puertas" in cuerpo, list(cuerpo))
-_lec.leer_padrones = _guardado
+_lec.leer_cargados_varios = _guardado
 
 _sin3 = TestClient(main.app)
 chequear("sin sesion no se ve el plan",
@@ -1032,11 +1032,11 @@ r = cli.put(f"/api/dispositivos/{p_oficina}", json={**_base, "es_acceso": True, 
 chequear("desactivar una puerta si se permite", r.status_code == 200, r.text[:200])
 
 import sync.lectores as _lec2
-_g = _lec2.leer_padrones
-_lec2.leer_padrones = lambda ds, **kw: {x["id"]: {"ok": True, "transporte": "udp",
+_g = _lec2.leer_cargados_varios
+_lec2.leer_cargados_varios = lambda ds, **kw: {x["id"]: {"ok": True, "transporte": "udp",
                                             "usuarios": [], "error": None} for x in ds}
 plan = cli.get("/api/accesos/plan").json()
-_lec2.leer_padrones = _g
+_lec2.leer_cargados_varios = _g
 
 _fuera = {f["id"] for f in plan.get("fuera_de_plan", [])}
 chequear("el plan avisa que esa puerta quedo sin administrar",
@@ -1049,10 +1049,10 @@ chequear("mientras tanto no aparece entre las puertas del plan",
 
 # Al reactivarla, vuelve a administrarse sola.
 cli.put(f"/api/dispositivos/{p_oficina}", json={**_base, "es_acceso": True, "activo": True})
-_lec2.leer_padrones = lambda ds, **kw: {x["id"]: {"ok": True, "transporte": "udp",
+_lec2.leer_cargados_varios = lambda ds, **kw: {x["id"]: {"ok": True, "transporte": "udp",
                                             "usuarios": [], "error": None} for x in ds}
 plan2 = cli.get("/api/accesos/plan").json()
-_lec2.leer_padrones = _g
+_lec2.leer_cargados_varios = _g
 chequear("al reactivarla vuelve al plan",
          any(x["id"] == p_oficina for x in plan2["puertas"]),
          [x["nombre"] for x in plan2["puertas"]])
@@ -1146,14 +1146,14 @@ chequear("un perfil que incluye de mas NO se propone",
 
 print("\n=== APLICAR UN GRUPO ===")
 import sync.lectores as _lec3
-_g3 = _lec3.leer_padrones
-_lec3.leer_padrones = lambda ds, **kw: {d["id"]: {"ok": True, "transporte": "udp",
+_g3 = _lec3.leer_cargados_varios
+_lec3.leer_cargados_varios = lambda ds, **kw: {d["id"]: {"ok": True, "transporte": "udp",
                                             "usuarios": [], "error": None} for d in ds}
 r = cli.get("/api/accesos/descubrir")
 chequear("GET descubrir responde 200", r.status_code == 200, r.text[:160])
 chequear("trae grupos, ignorados y si quedo completo",
          all(k in r.json() for k in ("grupos", "ignorados", "completo")), list(r.json()))
-_lec3.leer_padrones = _g3
+_lec3.leer_cargados_varios = _g3
 
 _c6 = sqlite3.connect(DB)
 _libres = [x[0] for x in _c6.execute(
@@ -1339,7 +1339,7 @@ chequear("los problemas se muestran antes que lo que esta bien",
 chequear("una puerta que le toca y el equipo no lo tiene: falta",
          {e["id"]: e["estado"] for e in _v4["equipos"]}[3] == "falta", _v4["equipos"])
 
-# El padron de un equipo: la consulta de siempre, ahora con las huellas. Es lo
+# El lista de un equipo: la consulta de siempre, ahora con las huellas. Es lo
 # que se usaba en Enterprise —"quien esta cargado en esta terminal"— y sin la
 # huella dice quien esta cargado, no quien puede abrir.
 from sync.lectores import comparar_con_empleados
@@ -1353,7 +1353,7 @@ _pad = [{"uid": 1, "user_id": "10", "nombre": "GOMEZ", "privilegio": 0, "tarjeta
         {"uid": 2, "user_id": "11", "nombre": "DIAZ", "privilegio": 0, "tarjeta": 0,
          "grupo": "1", "huellas": 0}]
 _cmp = comparar_con_empleados(_pad, _emps)
-chequear("el padron cuenta a los cargados sin huella",
+chequear("el lista cuenta a los cargados sin huella",
          _cmp["resumen"]["sin_huella"] == 1, _cmp["resumen"])
 chequear("y avisa que las huellas se leyeron",
          _cmp["huellas_leidas"] is True, _cmp)
@@ -1375,8 +1375,8 @@ _fila = _c7.execute(
 _c7.close()
 _eid, _uid = _fila[0], str(_fila[1]).strip()
 
-_real3 = lectores.leer_padrones
-lectores.leer_padrones = lambda ds, **kw: {
+_real3 = lectores.leer_cargados_varios
+lectores.leer_cargados_varios = lambda ds, **kw: {
     d["id"]: _lec({"uid": 1, "user_id": _uid, "nombre": "X", "grupo": "0",
                    "huellas": 1 if kw.get("con_huellas") else None})
     for d in ds}
@@ -1385,7 +1385,7 @@ chequear("el endpoint responde 200", r.status_code == 200, r.text[:200])
 _d = r.json()
 chequear("devuelve la ficha junto con lo leido",
          all(k in _d for k in ("ficha", "equipos", "resumen")), list(_d))
-chequear("pide las huellas y no solo el padron",
+chequear("pide las huellas y no solo el lista",
          all(e["huellas"] == 1 for e in _d["equipos"] if e["cargado"]),
          [(e["nombre"], e["huellas"]) for e in _d["equipos"]])
 
@@ -1402,12 +1402,12 @@ def _no_deberia(ds, **kw):
     return {}
 
 
-lectores.leer_padrones = _no_deberia
+lectores.leer_cargados_varios = _no_deberia
 r = cli.get(f"/api/accesos/empleado/{_eid}/en-lectores")
 chequear("sin numero de dispositivo avisa en vez de fallar",
          r.status_code == 200 and r.json().get("aviso"), r.text[:200])
 chequear("y no sale a la red al vicio", _salio["red"] is False)
-lectores.leer_padrones = _real3
+lectores.leer_cargados_varios = _real3
 
 
 
@@ -1500,15 +1500,15 @@ chequear("sin leer las huellas del maestro no se afirma que falten",
 
 # Leer varios equipos pidiendo las huellas solo a algunos, en una sola tanda.
 _reg = []
-lectores.leer_padron = lambda d, **kw: (
+lectores.leer_cargados = lambda d, **kw: (
     _reg.append((d["id"], bool(kw.get("con_huellas")))),
     {"ok": True, "transporte": "udp", "usuarios": [], "error": None})[1]
-leer_padrones([{"id": 1, "ip": "127.0.0.1", "protocolo": "pull"},
+leer_cargados_varios([{"id": 1, "ip": "127.0.0.1", "protocolo": "pull"},
                {"id": 2, "ip": "127.0.0.2", "protocolo": "pull"}],
               con_huellas={2})
 chequear("las huellas se piden solo a los equipos indicados",
          sorted(_reg) == [(1, False), (2, True)], _reg)
-lectores.leer_padron = _real2
+lectores.leer_cargados = _real2
 
 
 
@@ -1735,7 +1735,7 @@ _cmp_f3 = comparar_con_empleados(
 chequear("franja que no se pudo leer no cuenta como cero",
          _cmp_f3["resumen"]["con_franja"] is None, _cmp_f3["resumen"])
 
-# El desempaquetado usa el mismo formato con el que pyzk lee el padron, asi que
+# El desempaquetado usa el mismo formato con el que pyzk lee el lista, asi que
 # tiene que devolver lo mismo que el propio pyzk saca del paquete.
 from struct import pack, unpack
 _crudo = pack("<HB5s8sIxBhI", 7, 0, b"", b"PEREZ", 0, 1, 5, 42)
@@ -1833,7 +1833,7 @@ _c13.close()
 if len(_tres) >= 2:
     (_e1, _u1), (_e2, _u2) = (_tres[0][0], str(_tres[0][1]).strip()), \
                              (_tres[1][0], str(_tres[1][1]).strip())
-    _padron_maestro = {"ok": True, "transporte": "tcp", "error": None, "usuarios": [
+    _cargados_maestro = {"ok": True, "transporte": "tcp", "error": None, "usuarios": [
         {"uid": 1, "user_id": _u1, "nombre": "UNO", "privilegio": 6,
          "tarjeta": 0, "grupo": "1"},
         {"uid": 2, "user_id": _u2, "nombre": "DOS", "privilegio": 0,
@@ -1841,8 +1841,8 @@ if len(_tres) >= 2:
         {"uid": 3, "user_id": "777777", "nombre": "AJENO", "privilegio": 2,
          "tarjeta": 0, "grupo": "1"},
     ]}
-    _real4 = lectores.leer_padron
-    lectores.leer_padron = lambda d, **kw: _padron_maestro
+    _real4 = lectores.leer_cargados
+    lectores.leer_cargados = lambda d, **kw: _cargados_maestro
 
     r = cli.get("/api/accesos/niveles-lector")
     chequear("GET niveles-lector responde 200", r.status_code == 200, r.text[:200])
@@ -1872,7 +1872,7 @@ if len(_tres) >= 2:
 
     # Un nivel que no esta entre los que se usan no entra al legajo: seria un
     # valor que despues nadie puede elegir ni corregir desde la pantalla.
-    _padron_maestro["usuarios"][1]["privilegio"] = 14
+    _cargados_maestro["usuarios"][1]["privilegio"] = 14
     r = cli.post("/api/accesos/niveles-lector/importar", json={"empleados": [_e2]})
     chequear("un nivel que no se usa no se importa",
              r.json()["importados"] == 0 and r.json()["sin_tocar"] == 1, r.json())
@@ -1887,7 +1887,7 @@ if len(_tres) >= 2:
     chequear("sin empleados se rechaza", r.status_code == 400, r.status_code)
 
     cli.put(f"/api/accesos/empleado/{_e1}/nivel-lector", json={"nivel_lector": 0})
-    lectores.leer_padron = _real4
+    lectores.leer_cargados = _real4
 
 
 print("\n=== NOMBRE QUE MUESTRA EL LECTOR ===")
@@ -2240,9 +2240,9 @@ print("\n=== TRAER DEL EQUIPO EL NOMBRE QUE MUESTRA ===")
 # nombre que muestra en pantalla. Las dos se adoptan una vez, pero por separado:
 # un nivel es un permiso y un nombre no.
 if len(_tres) >= 2:
-    _padron_maestro["usuarios"][0]["nombre"] = "STEHLE F"
-    _padron_maestro["usuarios"][1]["nombre"] = "DIAZ L"
-    lectores.leer_padron = lambda d, **kw: _padron_maestro
+    _cargados_maestro["usuarios"][0]["nombre"] = "STEHLE F"
+    _cargados_maestro["usuarios"][1]["nombre"] = "DIAZ L"
+    lectores.leer_cargados = lambda d, **kw: _cargados_maestro
 
     _nl3 = cli.get("/api/accesos/niveles-lector").json()
     _d3 = {f["empleado_id"]: f for f in _nl3["diferencias"]}
@@ -2265,7 +2265,7 @@ if len(_tres) >= 2:
 
     # Un nombre vacio en el equipo no se copia: dejaria el legajo igual pero
     # pareciendo una decision tomada.
-    _padron_maestro["usuarios"][0]["nombre"] = "   "
+    _cargados_maestro["usuarios"][0]["nombre"] = "   "
     r = cli.post("/api/accesos/nombres-lector/importar", json={"empleados": [_e1]})
     chequear("un nombre vacio en el equipo no se copia",
              r.json()["importados"] == 0 and r.json()["sin_tocar"] == 1, r.json())
@@ -2281,7 +2281,7 @@ if len(_tres) >= 2:
     chequear("sin empleados se rechaza", r.status_code == 400, r.status_code)
 
     cli.put(f"/api/accesos/empleado/{_e2}/nombre-lector", json={"nombre_lector": None})
-    lectores.leer_padron = _real4
+    lectores.leer_cargados = _real4
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

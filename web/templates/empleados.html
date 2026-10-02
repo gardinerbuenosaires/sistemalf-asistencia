@@ -1227,6 +1227,15 @@ async function editarEmpleado(id) {
     .forEach(id => document.getElementById(id)?.addEventListener("input", actualizarManzanaLabels));
 }
 
+// Texto de la base metido dentro de HTML. Existía en configuración y no acá, y
+// al usarla sin definirla toda la sección de accesos quedaba en blanco: el error
+// se lanza mientras se arma la plantilla, así que no se dibuja nada y no hay
+// nada en pantalla que lo diga.
+function _esc(t) {
+  return String(t ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 // ── Pestañas del legajo ───────────────────────────────────────────────────────
 // Los accesos son otro tipo de dato que el resto del legajo: no se guardan con
 // el formulario sino solos, y tienen sus propios permisos. Tenerlos en medio de

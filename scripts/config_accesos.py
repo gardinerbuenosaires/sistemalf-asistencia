@@ -35,11 +35,19 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
 os.chdir(RAIZ)
 
+# Qué base usar, en orden. A diferencia de los scripts que escriben en los
+# equipos, acá el default NO es producción: esto trata de la configuración DE
+# ESTA INSTALACIÓN, así que la suya es la que corresponde. En producción esa
+# carpeta no existe y cae en la de producción, que ahí sí es la propia.
 BASE_PRODUCCION = r"C:\ProgramData\SistemAlf\fichajes.db"
+BASE_LOCAL = os.path.join(RAIZ, "data", "pruebas.db")
 if "--base" in sys.argv:
     os.environ["DB_PATH"] = sys.argv[sys.argv.index("--base") + 1]
-elif not os.getenv("DB_PATH") and os.path.exists(BASE_PRODUCCION):
-    os.environ["DB_PATH"] = BASE_PRODUCCION
+elif not os.getenv("DB_PATH"):
+    if os.path.exists(BASE_LOCAL):
+        os.environ["DB_PATH"] = BASE_LOCAL
+    elif os.path.exists(BASE_PRODUCCION):
+        os.environ["DB_PATH"] = BASE_PRODUCCION
 
 CAMPOS = ("nombre", "ubicacion", "protocolo", "ip", "puerto", "password",
           "timeout", "cuenta_asistencia", "es_acceso", "activo", "orden")
@@ -58,6 +66,23 @@ def argumento(nombre, defecto=None):
     return defecto
 
 
+def _sin_tablas():
+    """
+    El mensaje cuando falta la tabla. Dice qué base se miró y cuál sería la
+    otra: la primera vez que esto pasó, la pregunta fue justamente "¿no estará
+    leyendo otra base?", y el mensaje no daba manera de saberlo.
+    """
+    usada = os.environ.get("DB_PATH", "")
+    hay_prod = (os.path.exists(BASE_PRODUCCION)
+                and os.path.abspath(BASE_PRODUCCION) != os.path.abspath(usada or ""))
+    otra = BASE_PRODUCCION if hay_prod else BASE_LOCAL
+    texto = (f"La base {usada} todavia no tiene la tabla de equipos. "
+             f"Se crea al arrancar el sistema con la version nueva.")
+    if os.path.exists(otra) and os.path.abspath(otra) != os.path.abspath(usada or ""):
+        texto += f"  Si la que buscabas es otra: --base {otra}"
+    return texto
+
+
 def _hay_tablas(conn):
     return bool(conn.execute(
         """SELECT 1 FROM sqlite_master
@@ -70,9 +95,10 @@ def exportar():
     destino = argumento("--salida") or os.path.join(
         RAIZ, f"accesos-{datetime.now():%Y%m%d-%H%M%S}.json")
 
+    print("  Base: " + os.environ.get("DB_PATH", "(ninguna)"))
     with db_session() as conn:
         if not _hay_tablas(conn):
-            salir("Esta base todavía no tiene la tabla de equipos.")
+            salir(_sin_tablas())
         equipos = [dict(r) for r in conn.execute(
             f"SELECT {', '.join(CAMPOS)} FROM dispositivos ORDER BY orden, id")]
         perfiles = []
@@ -130,8 +156,7 @@ def importar(archivo):
 
     with db_session() as conn:
         if not _hay_tablas(conn):
-            salir("Esta base todavía no tiene la tabla de equipos. Arrancá el "
-                  "sistema una vez con la versión nueva y volvé a intentar.")
+            salir(_sin_tablas())
 
         existentes = {r["ip"]: r["nombre"] for r in conn.execute(
             "SELECT ip, nombre FROM dispositivos WHERE ip IS NOT NULL")}

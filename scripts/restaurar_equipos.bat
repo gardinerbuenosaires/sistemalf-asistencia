@@ -7,6 +7,8 @@
 :: Los equipos se reconocen por IP y los perfiles por nombre, asi que correrlo
 :: dos veces no duplica nada.
 ::
+:: Por defecto escribe en la base de ESTA instalacion. Con --base RUTA, en otra.
+::
 :: Uso:
 ::    scripts\restaurar_equipos.bat accesos-20261002-194400.json
 ::

@@ -19,8 +19,12 @@
 ::    scripts\borrar_desconocidos.bat 192.168.1.202       solo ese equipo
 ::    scripts\borrar_desconocidos.bat --incluir-fichaje   tambien el de fichaje
 ::
-:: Conviene mirar antes quienes son, sin riesgo: Configuracion, Dispositivos,
-:: Cargados. Los que dicen "No esta en el sistema" son los que esto borra.
+:: Para ver la lista sin borrar nada:
+::    scripts\borrar_desconocidos.bat --solo-ver
+:: Deja la lista completa en un archivo, al lado de los respaldos.
+::
+:: Tambien se puede mirar sin riesgo desde el sistema: Configuracion,
+:: Dispositivos, Cargados. Los que dicen "No esta en el sistema" son estos.
 
 setlocal
 cd /d "%~dp0.."

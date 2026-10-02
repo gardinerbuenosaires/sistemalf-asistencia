@@ -80,6 +80,9 @@ Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
       --incluir-fichaje  también limpia el equipo de asistencia. Aparte porque
                   sacar a alguien de ahí le quita la posibilidad de fichar.
 
+      --solo-ver  lista quiénes se borrarían y sale sin tocar nada. La lista
+                  queda en un archivo para poder mirarla con calma.
+
       --base RUTA  qué base consultar. Por defecto la de producción, que es
                   donde está la lista real de empleados. Sirve cuando producción
                   todavía no tiene las tablas nuevas: ahí va una copia reciente.
@@ -1022,12 +1025,39 @@ def modo_desconocidos(solo_ip=None):
               f"  {huellas} huella(s) en total")
         print(f"               en: " + ", ".join(d["nombre"] for d, _ in donde))
 
+    # La lista queda en un archivo. Revisar veintitantas personas con el cursor
+    # esperando una respuesta no es revisar; y despues de borrar, ese archivo es
+    # el unico registro de a quien se saco y de donde.
+    from datetime import datetime
+    ruta_lista = carpeta_respaldos() / f"desconocidos-{datetime.now():%Y%m%d-%H%M%S}.txt"
+    with open(ruta_lista, "w", encoding="utf-8") as arch:
+        arch.write(f"Desconocidos al {datetime.now():%d-%m-%Y %H:%M}" + chr(10))
+        arch.write(f"Base: {ruta_base}  ({len(del_sistema)} numeros conocidos)" + chr(10) * 2)
+        for numero in sorted(fantasmas, key=lambda x: (len(x), x)):
+            donde = fantasmas[numero]
+            nombres = {d["nombre"] for _e, d in donde if d["nombre"]}
+            arch.write(f"{numero:>8}  {' / '.join(sorted(nombres)) or 'sin nombre'}" + chr(10))
+            for equipo, datos in donde:
+                arch.write(f"          {equipo['nombre']} ({equipo['ip']})"
+                           f"  {datos['huellas'] or 0} huella(s)"
+                           f"  nivel {datos['privilegio']}" + chr(10))
+        for equipo, por_que in sin_responder:
+            arch.write(chr(10) + f"SIN LEER: {equipo['nombre']} ({equipo['ip']}): {por_que}"
+                       + chr(10))
+
     print(f"\n  Son {total_borrados} borrado(s) en {len(lecturas)} equipo(s).")
+    print(f"  La lista completa quedó en:")
+    print(f"     {ruta_lista}")
     if sin_responder:
         print(f"\n  OJO: {len(sin_responder)} equipo(s) no se pudieron leer, así que la")
         print(f"  limpieza va a quedar incompleta. Hay que volver cuando estén:")
         for d, por_que in sin_responder:
             print(f"     {d['nombre']} ({d['ip']}): {por_que}")
+
+    if "--solo-ver" in sys.argv:
+        print()
+        print("  Solo se miró: no se borró nada. Para aplicarlo, lo mismo sin --solo-ver.")
+        return
 
     if "--si" not in sys.argv:
         escrito = input(f"\n  Escribí cuántos borrados vas a hacer ({total_borrados})"

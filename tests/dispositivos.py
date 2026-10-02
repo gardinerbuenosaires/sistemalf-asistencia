@@ -2283,5 +2283,45 @@ if len(_tres) >= 2:
     cli.put(f"/api/accesos/empleado/{_e2}/nombre-lector", json={"nombre_lector": None})
     lectores.leer_cargados = _real4
 
+
+print("\n=== CONTRA QUE SE COMPARA EL NOMBRE DEL EQUIPO ===")
+# El equipo guarda un nombre corto que eligio alguien, no uno derivado del
+# legajo. Comparar contra el legajo era comparar contra algo que nunca fue la
+# referencia: "FEDE" para Federico es correcto y no se parece en nada.
+_emps_r = {"10": {"id": 1, "nombre": "Federico", "apellido": "Stehle", "activo": 1,
+                  "tipo": "mensual", "fecha_egreso": None, "nombre_lector": "FEDE"},
+           "11": {"id": 2, "nombre": "Ana", "apellido": "Gomez", "activo": 1,
+                  "tipo": "mensual", "fecha_egreso": None, "nombre_lector": None}}
+
+# Con nombre configurado, la referencia es ese y nada mas.
+_c1 = comparar_con_empleados(
+    [{"uid": 1, "user_id": "10", "nombre": "FEDE", "grupo": "1"}], _emps_r)
+chequear("con nombre configurado y el equipo igual, no marca nada",
+         _c1["resumen"]["nombre_distinto"] == 0, _c1["filas"][0])
+chequear("y dice que comparo contra lo configurado",
+         _c1["filas"][0]["referencia_nombre"] == "configurado", _c1["filas"][0])
+
+# Y "FEDE" no se parece al legajo "Stehle, Federico": antes esto se marcaba.
+_c2 = comparar_con_empleados(
+    [{"uid": 1, "user_id": "10", "nombre": "OTRO", "grupo": "1"}], _emps_r)
+chequear("si el equipo no tiene el configurado, si marca",
+         _c2["resumen"]["nombre_distinto"] == 1, _c2["filas"][0])
+chequear("y lo cuenta como diferencia real, no como pista",
+         _c2["resumen"]["nombre_no_configurado"] == 1, _c2["resumen"])
+
+# Sin nombre configurado se compara contra el legajo, pero solo como pista.
+_c3 = comparar_con_empleados(
+    [{"uid": 2, "user_id": "11", "nombre": "PEREZ", "grupo": "1"}], _emps_r)
+chequear("sin configurar, compara contra el legajo",
+         _c3["filas"][0]["referencia_nombre"] == "legajo", _c3["filas"][0])
+chequear("y lo marca", _c3["resumen"]["nombre_distinto"] == 1, _c3["resumen"])
+chequear("pero NO como diferencia real",
+         _c3["resumen"]["nombre_no_configurado"] == 0, _c3["resumen"])
+
+_c4 = comparar_con_empleados(
+    [{"uid": 2, "user_id": "11", "nombre": "GOMEZ", "grupo": "1"}], _emps_r)
+chequear("sin configurar y pareciendose al legajo, no marca",
+         _c4["resumen"]["nombre_distinto"] == 0, _c4["filas"][0])
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

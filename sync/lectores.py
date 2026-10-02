@@ -598,9 +598,18 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
                       el equipo, o el legajo se borró y el lector no se enteró.
       · `ok`          todo en orden.
 
-    Además marca `nombre_distinto` cuando el nombre del equipo no coincide con el
-    del legajo y no es un simple corte por largo: eso suele ser un número
-    reutilizado, con el empleado anterior todavía cargado.
+    Y marca `nombre_distinto` cuando el nombre del equipo no es el que
+    corresponde. Qué es "el que corresponde" depende:
+
+      · si la persona tiene un nombre configurado para el lector, ese. Es una
+        decisión explícita y el equipo tiene que reflejarla.
+      · si no, el del legajo, y solo como pista. El equipo guarda un nombre
+        corto que eligió alguien, no uno derivado del legajo: "FEDE" para
+        Federico es correcto y no se parece en nada. Por eso ahí el marcador no
+        afirma un error, señala algo para mirar.
+
+    Lo que se busca en los dos casos es el número reutilizado: el equipo todavía
+    tiene el nombre del empleado anterior.
     """
     # El nombre más largo que hay en este equipo. Es informativo —da una idea de
     # a cuántos caracteres corta— y nada depende de él: la comparación de nombres
@@ -612,13 +621,15 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
     huellas_leidas = any("huellas" in u for u in usuarios)
     franjas_leidas = any(u.get("franja") is not None for u in usuarios)
     filas, resumen = [], {"total": len(usuarios), "de_baja": 0, "desconocidos": 0,
-                          "nombre_distinto": 0, "ok": 0, "administran": 0,
+                          "nombre_distinto": 0, "nombre_no_configurado": 0,
+                          "ok": 0, "administran": 0,
                           "sin_huella": 0 if huellas_leidas else None,
                           "con_franja": 0 if franjas_leidas else None}
 
     for u in usuarios:
         emp = empleados.get(u["user_id"])
-        fila = dict(u, estado="ok", empleado=None, nombre_distinto=False)
+        fila = dict(u, estado="ok", empleado=None, nombre_distinto=False,
+                    referencia_nombre=None)
 
         if emp is None:
             fila["estado"] = "desconocido"
@@ -636,9 +647,16 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
             else:
                 resumen["ok"] += 1
 
-            if not _mismo_nombre(u["nombre"], nombre_sistema):
+            # Contra lo configurado si existe, y si no contra el legajo. Son dos
+            # cosas distintas y la pantalla las dice distinto: una es "el equipo
+            # no tiene lo que pediste" y la otra es "fijate".
+            configurado = (emp.get("nombre_lector") or "").strip()
+            fila["referencia_nombre"] = "configurado" if configurado else "legajo"
+            if not _mismo_nombre(u["nombre"], configurado or nombre_sistema):
                 fila["nombre_distinto"] = True
                 resumen["nombre_distinto"] += 1
+                if configurado:
+                    resumen["nombre_no_configurado"] += 1
 
         # Cargado sin huella: figura en la lista y no abre igual. Se cuenta
         # aparte de los estados porque no es un problema de identidad —la

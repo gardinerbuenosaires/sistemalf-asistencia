@@ -256,7 +256,8 @@ def revision(_user=Depends(require_permiso("dispositivos", "ver"))):
         empleados = {
             str(r["user_id"]).strip(): dict(r)
             for r in conn.execute(
-                """SELECT id, user_id, nombre, apellido, activo, tipo, fecha_egreso
+                """SELECT id, user_id, nombre, apellido, activo, tipo, fecha_egreso,
+                          nombre_lector
                      FROM empleados WHERE user_id IS NOT NULL"""
             )
         }
@@ -398,7 +399,8 @@ def lista(did: int, _user=Depends(require_permiso("dispositivos", "ver"))):
         empleados = {
             str(r["user_id"]).strip(): dict(r)
             for r in conn.execute(
-                """SELECT id, user_id, nombre, apellido, activo, tipo, fecha_egreso
+                """SELECT id, user_id, nombre, apellido, activo, tipo, fecha_egreso,
+                          nombre_lector
                      FROM empleados WHERE user_id IS NOT NULL"""
             )
         }

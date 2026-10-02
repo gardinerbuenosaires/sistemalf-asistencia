@@ -533,7 +533,7 @@ def relojes(_user=Depends(require_permiso("dispositivos", "ver"))):
             "es_asistencia": bool(d["cuenta_asistencia"]),
             "puesto_en": d["reloj_puesto_en"], **r})
     return {"equipos": salida,
-            "ahora": __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+            "ahora": __import__("datetime").datetime.now().strftime("%d-%m-%Y %H:%M:%S")}
 
 
 @router.post("/{did}/hora")

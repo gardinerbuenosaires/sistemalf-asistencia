@@ -226,7 +226,7 @@ def ver_reloj(dispositivo: dict) -> dict:
             return {"ok": False, "error": "El equipo no dio la hora",
                     "reloj": None, "desfase_minutos": None}
         return {"ok": True, "transporte": transporte, "error": None,
-                "reloj": reloj.strftime("%Y-%m-%d %H:%M:%S"),
+                "reloj": reloj.strftime("%d-%m-%Y %H:%M:%S"),
                 "desfase_minutos": round((reloj - datetime.now()).total_seconds() / 60)}
     except Exception as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}",
@@ -272,9 +272,9 @@ def poner_en_hora(dispositivo: dict) -> dict:
         desfase = (round((despues - datetime.now()).total_seconds() / 60)
                    if despues else None)
         return {"ok": True, "transporte": transporte, "error": None,
-                "antes": antes.strftime("%Y-%m-%d %H:%M:%S") if antes else None,
+                "antes": antes.strftime("%d-%m-%Y %H:%M:%S") if antes else None,
                 "desfase_antes": desfase_antes,
-                "reloj": despues.strftime("%Y-%m-%d %H:%M:%S") if despues else None,
+                "reloj": despues.strftime("%d-%m-%Y %H:%M:%S") if despues else None,
                 "desfase_minutos": desfase,
                 # Que haya quedado en hora es lo que se verifica, no que el
                 # equipo haya dicho que sí.
@@ -484,7 +484,7 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
             # se lee como un dato, y un motivo se lee como lo que es.
             return {"ok": False, "registros": [], "transporte": transporte,
                     "total": 0, "ilegibles": 0, "tamano_registro": tam,
-                    "reloj": reloj.strftime("%Y-%m-%d %H:%M:%S") if reloj else None,
+                    "reloj": reloj.strftime("%d-%m-%Y %H:%M:%S") if reloj else None,
                     "desfase_minutos": None, "formato_desconocido": True,
                     "error": "Este equipo guarda las pasadas en un formato que el "
                              "sistema todavía no sabe leer. Las fechas saldrían "
@@ -500,7 +500,7 @@ def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
                 "total": len(todos), "ilegibles": ilegibles,
                 "con_reloj_viejo": con_reloj_viejo,
                 "tamano_registro": tam, "error": None,
-                "reloj": reloj.strftime("%Y-%m-%d %H:%M:%S") if reloj else None,
+                "reloj": reloj.strftime("%d-%m-%Y %H:%M:%S") if reloj else None,
                 "desfase_minutos": desfase}
     except Exception as exc:
         logger.warning("No se pudieron leer las pasadas de %s: %s",

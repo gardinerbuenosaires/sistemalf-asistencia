@@ -3346,6 +3346,14 @@ async function revisarTodos() {
 
 let _relojes = null;
 
+// Lo que guarda la base viene en ISO, que es como tiene que guardarse para
+// poder ordenarlo. Darlo vuelta es cosa de la pantalla.
+function _fechaHora(iso) {
+  if (!iso) return '';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}` : String(iso);
+}
+
 function _desfaseTexto(m) {
   const abs = Math.abs(m);
   if (abs <= 2) return { txt: 'en hora', color: '#2e7d4f' };
@@ -3414,7 +3422,7 @@ function pintarRelojes() {
       <td style="padding:7px 10px;font-family:monospace;color:#666">${_esc(e.reloj)}</td>
       <td style="padding:7px 10px;color:${f.color};font-weight:600">${f.txt}</td>
       <td style="padding:7px 10px;white-space:nowrap">
-        ${e.puesto_en ? `<div style="font-size:.72rem;color:#bbb">puesto en hora<br>${_esc(e.puesto_en.slice(0,16))}</div>` : ''}
+        ${e.puesto_en ? `<div style="font-size:.72rem;color:#bbb">puesto en hora<br>${_esc(_fechaHora(e.puesto_en))}</div>` : ''}
         ${canDo('dispositivos','editar') && Math.abs(e.desfase_minutos) > 2
           ? `<button class="btn btn-sm btn-primary" onclick="ponerEnHora(${e.id}, this)">Poner en hora</button>` : ''}
       </td></tr>`;
@@ -3470,7 +3478,7 @@ async function ponerEnHora(id, boton) {
   if (fila) {
     fila.reloj = r.reloj;
     fila.desfase_minutos = r.desfase_minutos;
-    fila.puesto_en = new Date().toLocaleString('sv').slice(0, 16);
+    fila.puesto_en = new Date().toLocaleString('sv').slice(0, 16);  // ISO, como la base
     pintarRelojes();
   }
   toast(r.quedo_en_hora

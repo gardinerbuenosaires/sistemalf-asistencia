@@ -34,6 +34,7 @@ Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
       python scripts/probar_escritura.py borrado IP NUMERO [--nombre X]
       python scripts/probar_escritura.py restaurar IP NUMERO
       python scripts/probar_escritura.py limpiar IP
+      python scripts/probar_escritura.py desconocidos IP
 
       IP          la puerta donde probar. NUNCA el maestro.
       NUMERO      el número descartable (por ejemplo 9990)
@@ -68,6 +69,11 @@ Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
                   cero con el reloj ya en hora. No toca usuarios ni huellas, y
                   se niega contra el equipo de asistencia: sus registros son los
                   fichajes de la planilla.
+
+      desconocidos  borra de una puerta todos los números que no existen en el
+                  sistema. Guarda el registro completo de cada uno antes de
+                  tocarlo: son los únicos cuya huella puede no estar en ningún
+                  otro lado.
 
       --si        no preguntar antes de escribir (para no tipear dos veces)
 """
@@ -854,6 +860,144 @@ def modo_limpiar(ip):
             pass
 
 
+def _quienes_estan_en_el_maestro(ip, clave):
+    """Los números cargados en el equipo de asistencia. Solo lectura."""
+    conexion = None
+    try:
+        conexion, _ = conectar(ip, clave)
+        return {str(u.user_id).strip() for u in conexion.get_users()}
+    except Exception as exc:
+        logger_aviso = f"no se pudo leer el equipo de asistencia: {exc}"
+        print(f"  OJO: {logger_aviso}")
+        return None
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
+def modo_desconocidos(ip):
+    """
+    Borra de una puerta los números que no existen en el sistema.
+
+    Son los que quedaron de bajas viejas: alguien los sacó del legajo —o nunca
+    los cargó— y en el lector siguen abriendo. La política es del usuario: lo
+    que no está en la base no va en la terminal, aunque haya sido un error de
+    carga.
+
+    Lo que hace distinto a esto de borrar uno por uno: antes de tocar nada
+    guarda el registro completo de CADA uno, con sus huellas. Son justamente los
+    únicos cuya huella no está en ningún otro lado —no existen en el sistema, y
+    si tampoco están en el equipo de asistencia, el respaldo es la única copia
+    del mundo.
+
+    Y pide escribir cuántos se van a borrar. Un «¿estás seguro?» se contesta que
+    sí sin leer; escribir el número obliga a haber mirado la lista.
+    """
+    from datetime import datetime
+
+    maestro_ip, clave, puerta = datos_del_sistema(ip, "", False)
+    cabecera("borrar los que no existen en el sistema", ip, "—", puerta, maestro_ip)
+
+    from db.database import db_session
+    with db_session() as conn:
+        del_sistema = {str(r[0]).strip() for r in conn.execute(
+            "SELECT user_id FROM empleados WHERE user_id IS NOT NULL")}
+    print(f"  El sistema conoce {len(del_sistema)} números")
+
+    conexion = abrir(ip, clave)
+    try:
+        antes = foto(conexion)
+        ok, detalle = lectura_confiable(antes)
+        print(f"  Lectura previa: {detalle}")
+        if not ok:
+            salir("Lectura no confiable. NO se borra nada.")
+
+        sobran = {n: d for n, d in antes["usuarios"].items() if n not in del_sistema}
+        if not sobran:
+            salir("No hay ningún número desconocido en esta puerta.")
+
+        # Quién tampoco está en el equipo de asistencia. Esos son los que no
+        # tienen copia en ningún lado, y conviene saberlo antes y no después.
+        print(f"\n  Preguntándole al equipo de asistencia quiénes siguen ahí…")
+        en_maestro = _quienes_estan_en_el_maestro(maestro_ip, clave)
+
+        print(f"\n  {len(sobran)} número(s) que no existen en el sistema:")
+        sin_copia = 0
+        for numero in sorted(sobran, key=lambda x: (len(x), x)):
+            d = sobran[numero]
+            if en_maestro is None:
+                marca = ""
+            elif numero in en_maestro:
+                marca = "   (sigue en el equipo de asistencia)"
+            else:
+                marca = "   (tampoco está en asistencia: el respaldo es la única copia)"
+                sin_copia += 1
+            print(f"     {numero:>8}  «{d['nombre']}»  {d['huellas'] or 0} huella(s)"
+                  f"  nivel {d['privilegio']}{marca}")
+
+        if en_maestro is None:
+            print(f"\n  No se pudo leer el equipo de asistencia, así que no se sabe")
+            print(f"  cuáles tienen copia ahí. El respaldo se guarda igual.")
+        elif sin_copia:
+            print(f"\n  De esos, {sin_copia} no están en ningún otro equipo.")
+
+        print(f"\n  Quedan {len(antes['usuarios']) - len(sobran)} usuarios, que tienen")
+        print(f"  que seguir igual.")
+
+        if "--si" not in sys.argv:
+            escrito = input(f"\n  Escribí cuántos vas a borrar ({len(sobran)}) o Enter para salir: ")
+            if escrito.strip() != str(len(sobran)):
+                salir("Cancelado. No se borró nada.")
+
+        carpeta = carpeta_respaldos()
+        print(f"\n  Respaldos en {carpeta}")
+        borrados, fallaron = 0, []
+        for numero in sorted(sobran, key=lambda x: (len(x), x)):
+            d = sobran[numero]
+            guardar_respaldo(ip, numero, d, antes["huellas_crudas"].get(d["uid"], []))
+            try:
+                conexion.delete_user(uid=d["uid"])
+                borrados += 1
+                print(f"     borrado {numero}  «{d['nombre']}»")
+            except Exception as exc:
+                fallaron.append((numero, str(exc)))
+                print(f"     FALLO   {numero}: {exc}")
+
+        print("\n  Volviendo a leer para verificar…")
+        despues = foto(conexion)
+        ok2, detalle2 = lectura_confiable(despues)
+        quedaron = set(despues["usuarios"]) & set(sobran)
+        # Lo que importa no es que los borrados no estén: es que los demás sí.
+        problemas = [p for p in comparar(antes, despues)
+                     if not any(n in p for n in sobran)]
+
+        print(f"\n  {'OK   ' if not quedaron else 'FALLA'} {borrados} borrado(s), "
+              f"{len(quedaron)} siguen en el equipo")
+        print(f"  {'OK   ' if not problemas else 'FALLA'} los otros "
+              f"{len(antes['usuarios']) - len(sobran)} usuarios "
+              f"{'quedaron intactos, con sus huellas' if not problemas else 'NO quedaron intactos'}")
+        for p in problemas:
+            print(f"        {p}")
+        if not ok2:
+            print(f"  OJO   la lectura posterior no es confiable: {detalle2}")
+        for numero, exc in fallaron:
+            print(f"  OJO   el {numero} no se pudo borrar: {exc}")
+
+        if not quedaron and not problemas and ok2 and not fallaron:
+            print(f"\n  Esta puerta ya no tiene a nadie que el sistema no conozca.")
+        else:
+            print(f"\n  Algo no salió como se esperaba. Los respaldos están en")
+            print(f"  {carpeta} — contámelo antes de seguir con otra puerta.")
+    finally:
+        try:
+            conexion.disconnect()
+        except Exception:
+            pass
+
+
 def main():
     modo = sys.argv[1] if len(sys.argv) > 1 else ""
     if modo == "alta" and len(sys.argv) >= 4:
@@ -866,6 +1010,8 @@ def main():
         modo_restaurar(sys.argv[2], str(sys.argv[3]).strip())
     elif modo == "limpiar" and len(sys.argv) >= 3:
         modo_limpiar(sys.argv[2])
+    elif modo == "desconocidos" and len(sys.argv) >= 3:
+        modo_desconocidos(sys.argv[2])
     else:
         print(__doc__)
         raise SystemExit(1)

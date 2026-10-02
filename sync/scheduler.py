@@ -308,20 +308,42 @@ def _sincronizar_hora_puertas():
                     WHERE activo=1 AND es_acceso=1 AND protocolo='pull'
                       AND ip IS NOT NULL ORDER BY orden, id""")]
 
-        corregidos = sin_responder = 0
+        # Primero se mide todo y recién después se corrige. Un equipo corrido se
+        # entiende mirando los otros, y esa comparación solo existe si antes se
+        # miraron todos.
+        medidos, sin_responder = [], 0
         for d in equipos:
             medido = ver_reloj(d)
             if not medido["ok"]:
                 sin_responder += 1
                 continue
             desfase = medido["desfase_minutos"]
+            medidos.append((d, desfase))
             with db_session() as conn:
                 conn.execute(
                     """UPDATE dispositivos SET reloj_desfase_min=?,
                            reloj_visto_en=datetime('now','localtime') WHERE id=?""",
                     (desfase, d["id"]))
-            if abs(desfase) <= 2:
-                continue
+
+        # Si TODOS están corridos y casi lo mismo, lo más probable no es que
+        # fallaran todos los relojes a la vez: es que el desfasado sea el de esta
+        # máquina. Escribirles esa hora propagaría el error a cada equipo, todas
+        # las noches y sin que nadie lo vea. La pantalla ya avisa de esto; acá no
+        # hay nadie mirando, así que directamente no se toca nada.
+        corridos = [x for x in medidos if abs(x[1]) > 2]
+        if len(medidos) > 1 and len(corridos) == len(medidos):
+            desfases = [x[1] for x in medidos]
+            if max(desfases) - min(desfases) < 10:
+                logger.warning(
+                    "Relojes de puertas: los %s equipos estan corridos casi lo mismo "
+                    "(entre %s y %s minutos). Lo mas probable es que el desfasado sea "
+                    "el reloj de esta maquina, asi que NO se corrige ninguno.",
+                    len(medidos), min(desfases), max(desfases))
+                _fecha_ultimo_sync_puertas = hoy
+                return
+
+        corregidos = 0
+        for d, desfase in corridos:
             r = poner_en_hora(d)
             if r["ok"] and r.get("quedo_en_hora"):
                 corregidos += 1

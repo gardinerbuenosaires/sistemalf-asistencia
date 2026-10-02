@@ -690,7 +690,14 @@ class ImportarNivelesIn(BaseModel):
 
 
 def _leer_niveles_del_maestro():
-    """Lee el equipo de asistencia y cruza su nivel por usuario con los legajos."""
+    """
+    Lee el equipo de asistencia y cruza con los legajos lo que él sabe y el
+    sistema no: el nivel de administración y el nombre que muestra en pantalla.
+
+    Del equipo de asistencia y no de las puertas, a propósito: el maestro guarda
+    24 caracteres y las puertas 8. Adoptar el de una puerta congelaría en el
+    legajo un nombre que ya venía cortado.
+    """
     from sync.lectores import leer_padron
 
     with db_session() as conn:
@@ -704,7 +711,8 @@ def _leer_niveles_del_maestro():
             return None, None, {}
         empleados = {
             str(r["user_id"]).strip(): dict(r) for r in conn.execute(
-                """SELECT id, user_id, nombre, apellido, activo, nivel_lector
+                """SELECT id, user_id, nombre, apellido, activo, nivel_lector,
+                          nombre_lector
                      FROM empleados WHERE user_id IS NOT NULL""")
         }
     return dict(maestro), leer_padron(dict(maestro)), empleados
@@ -738,7 +746,13 @@ def niveles_lector(_user=Depends(require_permiso("accesos", "ver"))):
                 ajenos.append({"user_id": u["user_id"], "nombre": u["nombre"],
                                "nivel": nivel})
             continue
-        if nivel == emp["nivel_lector"]:
+        nombre_equipo = (u.get("nombre") or "").strip()
+        nombre_legajo = (emp["nombre_lector"] or "").strip()
+        difiere_nivel = nivel != emp["nivel_lector"]
+        # Vacío en el legajo significa "no opinamos", así que traer el del equipo
+        # es exactamente lo que esta pantalla sirve para hacer.
+        difiere_nombre = bool(nombre_equipo) and nombre_equipo != nombre_legajo
+        if not difiere_nivel and not difiere_nombre:
             continue
         filas.append({
             "empleado_id": emp["id"], "user_id": u["user_id"],
@@ -746,10 +760,13 @@ def niveles_lector(_user=Depends(require_permiso("accesos", "ver"))):
             "activo": bool(emp["activo"]),
             "en_el_equipo": nivel, "en_el_legajo": emp["nivel_lector"],
             "conocido": nivel in NIVELES_LECTOR,
+            "difiere_nivel": difiere_nivel,
+            "nombre_equipo": nombre_equipo, "nombre_legajo": nombre_legajo,
+            "difiere_nombre": difiere_nombre,
         })
     filas.sort(key=lambda f: (-f["en_el_equipo"], f["nombre"]))
     return {"ok": True, "equipo": maestro["nombre"], "diferencias": filas,
-            "ajenos": ajenos,
+            "ajenos": ajenos, "largo_nombre": 24,
             "iguales": len(lectura["usuarios"]) - len(filas) - len(ajenos)}
 
 
@@ -783,6 +800,46 @@ def importar_niveles(data: ImportarNivelesIn,
             if nivel is None or nivel not in NIVELES_LECTOR:
                 continue
             conn.execute("UPDATE empleados SET nivel_lector=? WHERE id=?", (nivel, eid))
+            cambiados += 1
+    return {"ok": True, "importados": cambiados,
+            "sin_tocar": len(data.empleados) - cambiados}
+
+
+@router.post("/nombres-lector/importar")
+def importar_nombres(data: ImportarNivelesIn,
+                     _user=Depends(require_permiso("accesos", "asignar"))):
+    """
+    Copia al legajo el nombre que el equipo de asistencia muestra en pantalla.
+
+    Va aparte de importar los niveles aunque salga de la misma lectura, y no por
+    comodidad: un nivel es un permiso. Traer nombres es inofensivo y uno lo
+    quiere para todos; traer niveles le da a alguien la posibilidad de enrolar
+    gente. Juntarlos en un botón haría que la decisión fácil arrastre la otra.
+
+    Pide `asignar`, el mismo permiso que escribir ese nombre a mano.
+    """
+    if not data.empleados:
+        raise HTTPException(400, "No viene ningún empleado")
+    maestro, lectura, empleados = _leer_niveles_del_maestro()
+    if maestro is None or not lectura["ok"]:
+        raise HTTPException(400, "No se pudo leer el equipo de asistencia")
+
+    por_id = {e["id"]: e for e in empleados.values()}
+    nombres = {u["user_id"]: (u.get("nombre") or "").strip()
+               for u in lectura["usuarios"]}
+    cambiados = 0
+    with db_session() as conn:
+        for eid in data.empleados:
+            emp = por_id.get(eid)
+            if emp is None:
+                continue
+            nombre = nombres.get(str(emp["user_id"]).strip())
+            # Un nombre vacío en el equipo no se copia: dejaría el legajo igual
+            # que antes pero pareciendo una decisión tomada.
+            if not nombre:
+                continue
+            conn.execute("UPDATE empleados SET nombre_lector=? WHERE id=?",
+                         (nombre[:24], eid))
             cambiados += 1
     return {"ok": True, "importados": cambiados,
             "sin_tocar": len(data.empleados) - cambiados}

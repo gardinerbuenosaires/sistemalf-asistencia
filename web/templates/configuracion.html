@@ -433,7 +433,7 @@
           <button class="btn btn-secondary btn-sm" data-perm="accesos:asignar"
                   onclick="asignarPorCargo()">Asignar por cargo</button>
           <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
-                  onclick="adoptarNiveles()">Quién administra</button>
+                  onclick="adoptarNiveles()">Traer del fichaje</button>
           <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
                   onclick="nuevoDispositivo()">+ Nuevo equipo</button>
         </div>
@@ -2551,7 +2551,7 @@ async function adoptarNiveles() {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
   modal.innerHTML = `
     <div style="background:white;border-radius:10px;padding:24px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
-      <div style="font-weight:bold;font-size:1rem">Quién administra el equipo de fichaje</div>
+      <div style="font-weight:bold;font-size:1rem">Traer lo que el equipo de fichaje ya sabe</div>
       <div id="niveles-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
         Leyendo el equipo… puede tardar unos segundos.</div>
       <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
@@ -2585,21 +2585,29 @@ async function pintarNiveles() {
 
   if (!d.diferencias.length && !d.ajenos.length) {
     caja.innerHTML = `<div style="background:#dcede2;color:#2e7d4f;padding:9px 12px;border-radius:5px;font-size:.85rem">
-      El equipo <b>${_esc(d.equipo)}</b> y los legajos dicen lo mismo para los ${d.iguales} usuarios.
-      No hay nada que adoptar.</div>`;
+      El equipo <b>${_esc(d.equipo)}</b> y los legajos dicen lo mismo para los ${d.iguales} usuarios:
+      mismo nombre en pantalla y mismo nivel de administración. No hay nada que traer.</div>`;
     return;
   }
 
   const filas = d.diferencias.map(f => `
     <tr style="border-bottom:1px solid #f4f4f4">
-      <td style="padding:6px 10px"><input type="checkbox" class="nivel-chk" value="${f.empleado_id}"
-          ${f.conocido ? 'checked' : 'disabled'}></td>
+      <td style="padding:6px 10px"><input type="checkbox" class="nivel-chk" value="${f.empleado_id}" checked></td>
       <td style="padding:6px 10px;font-family:monospace;color:#888">${_esc(f.user_id)}</td>
       <td style="padding:6px 10px">${_esc(f.nombre)}
         ${f.activo ? '' : '<span style="color:#b3261e;font-size:.75rem"> (dado de baja)</span>'}</td>
-      <td style="padding:6px 10px;color:#2c4d6b;font-weight:600">${nombre(f.en_el_equipo)}
-        ${f.conocido ? '' : '<div style="font-size:.72rem;color:#8a5d06">no se puede adoptar: no está entre los que se usan</div>'}</td>
-      <td style="padding:6px 10px;color:#999">${nombre(f.en_el_legajo)}</td>
+      <td style="padding:6px 10px">
+        ${f.difiere_nombre
+          ? `<b>${_esc(f.nombre_equipo)}</b>${f.nombre_legajo
+               ? `<div style="font-size:.72rem;color:#999">en el legajo: ${_esc(f.nombre_legajo)}</div>`
+               : '<div style="font-size:.72rem;color:#999">el legajo no tiene ninguno</div>'}`
+          : '<span style="color:#bbb">—</span>'}</td>
+      <td style="padding:6px 10px">
+        ${f.difiere_nivel
+          ? `<b style="color:#2c4d6b">${nombre(f.en_el_equipo)}</b>
+             <div style="font-size:.72rem;color:#999">en el legajo: ${nombre(f.en_el_legajo)}</div>
+             ${f.conocido ? '' : '<div style="font-size:.72rem;color:#8a5d06">no se puede adoptar</div>'}`
+          : '<span style="color:#bbb">—</span>'}</td>
     </tr>`).join('');
 
   caja.innerHTML = `
@@ -2607,9 +2615,11 @@ async function pintarNiveles() {
       Equipo <b>${_esc(d.equipo)}</b> · ${d.iguales} usuarios ya coinciden con su legajo.
     </div>
     <div style="background:#eef3f8;border-left:3px solid #4a7ba7;padding:8px 11px;font-size:.8rem;color:#2c4d6b;margin-top:8px">
-      Esta es la única vez que el equipo le gana al sistema. Lo que adoptes acá queda en el
-      legajo, y de ahí en más manda el legajo. Mirá la lista antes de aceptarla: es una lista
-      de permisos que puede tener años.
+      Esta es la única vez que el equipo le gana al sistema. Lo que traigas queda en el legajo
+      y de ahí en más manda el legajo.
+      <b>Los nombres son dos botones distintos que los niveles a propósito:</b> traer nombres
+      no le da permisos a nadie y conviene para todos; un nivel de administración sí, y esa
+      lista puede tener años.
     </div>
     ${d.ajenos.length ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:7px">
       <b>${d.ajenos.length} usuario(s) administran el equipo y no existen en el sistema:</b>
@@ -2622,8 +2632,8 @@ async function pintarNiveles() {
           <tr><th style="padding:6px 10px;width:34px"></th>
               <th style="text-align:left;padding:6px 10px">N°</th>
               <th style="text-align:left;padding:6px 10px">Empleado</th>
-              <th style="text-align:left;padding:6px 10px">En el equipo</th>
-              <th style="text-align:left;padding:6px 10px">En el legajo</th></tr>
+              <th style="text-align:left;padding:6px 10px">Nombre en pantalla</th>
+              <th style="text-align:left;padding:6px 10px">Administración</th></tr>
         </thead>
         <tbody>${filas}</tbody>
       </table>
@@ -2631,7 +2641,8 @@ async function pintarNiveles() {
     <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
       <button class="btn btn-sm btn-secondary" onclick="marcarNiveles(true)">Marcar todos</button>
       <button class="btn btn-sm btn-secondary" onclick="marcarNiveles(false)">Ninguno</button>
-      <button class="btn btn-sm btn-primary" onclick="importarNiveles()">Adoptar los marcados</button>
+      <button class="btn btn-sm btn-primary" onclick="importarNombres()">Traer los nombres</button>
+      <button class="btn btn-sm btn-secondary" onclick="importarNiveles()">Traer los niveles de administración</button>
     </div>` : ''}`;
 }
 
@@ -2639,9 +2650,36 @@ function marcarNiveles(valor) {
   document.querySelectorAll('.nivel-chk:not([disabled])').forEach(c => c.checked = valor);
 }
 
-async function importarNiveles() {
+async function importarNombres() {
   const ids = [...document.querySelectorAll('.nivel-chk:checked')].map(c => Number(c.value));
-  if (!ids.length) return toast('No marcaste a nadie');
+  const conNombre = _nivelesDif.filter(f => ids.includes(f.empleado_id) && f.difiere_nombre);
+  if (!conNombre.length) return toast('Ninguno de los marcados tiene un nombre que traer');
+  if (!confirm(`Traer al legajo el nombre que el equipo muestra, para ${conNombre.length} persona(s).`
+      + `
+
+No cambia permisos ni accesos: es el texto que aparece al apoyar el dedo.`
+      + `
+
+¿Seguir?`)) return;
+  const res = await fetch('/api/accesos/nombres-lector/importar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ empleados: conNombre.map(f => f.empleado_id) }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo traer'));
+  }
+  const d = await res.json();
+  toast(`${d.importados} nombre(s) traído(s)`);
+  await pintarNiveles();
+}
+
+async function importarNiveles() {
+  const marcados = [...document.querySelectorAll('.nivel-chk:checked')].map(c => Number(c.value));
+  const ids = _nivelesDif
+    .filter(f => marcados.includes(f.empleado_id) && f.difiere_nivel && f.conocido)
+    .map(f => f.empleado_id);
+  if (!ids.length) return toast('Ninguno de los marcados tiene un nivel que traer');
   const suben = _nivelesDif.filter(f => ids.includes(f.empleado_id) && f.en_el_equipo > 0).length;
   if (!confirm(`Adoptar el nivel del equipo para ${ids.length} persona(s).`
       + (suben ? `\n\n${suben} van a quedar pudiendo administrar el equipo de fichaje.` : '')

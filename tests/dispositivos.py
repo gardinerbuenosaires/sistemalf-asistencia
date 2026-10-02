@@ -1851,8 +1851,8 @@ if len(_tres) >= 2:
     chequear("muestra al que el equipo tiene con nivel y el legajo no",
              _e1 in _dif and _dif[_e1]["en_el_equipo"] == 6
              and _dif[_e1]["en_el_legajo"] == 0, _nl["diferencias"])
-    chequear("el que ya coincide no aparece como diferencia",
-             _e2 not in _dif, _nl["diferencias"])
+    chequear("al que ya coincide no se le propone cambiar el nivel",
+             _e2 not in _dif or _dif[_e2]["difiere_nivel"] is False, _nl["diferencias"])
     chequear("los que no estan en el sistema van aparte",
              any(a["user_id"] == "777777" for a in _nl["ajenos"]), _nl["ajenos"])
 
@@ -1866,9 +1866,9 @@ if len(_tres) >= 2:
 
     # Ya importado, deja de ser una diferencia: el sistema y el equipo coinciden.
     _nl2 = cli.get("/api/accesos/niveles-lector").json()
-    chequear("ya no figura como diferencia",
-             all(f["empleado_id"] != _e1 for f in _nl2["diferencias"]),
-             _nl2["diferencias"])
+    _d2 = {f["empleado_id"]: f for f in _nl2["diferencias"]}
+    chequear("ya no se le propone cambiar el nivel",
+             _e1 not in _d2 or _d2[_e1]["difiere_nivel"] is False, _nl2["diferencias"])
 
     # Un nivel que no esta entre los que se usan no entra al legajo: seria un
     # valor que despues nadie puede elegir ni corregir desde la pantalla.
@@ -2233,6 +2233,55 @@ chequear("el equipo sin nombre, habiendo pedido uno, no coincide",
 # vacio, y marcarlo seria inventar un problema.
 chequear("sin pedir nada, cualquier nombre esta bien",
          _nombre_coincide("LO QUE SEA", "") and _nombre_coincide("", None))
+
+
+print("\n=== TRAER DEL EQUIPO EL NOMBRE QUE MUESTRA ===")
+# El equipo sabe dos cosas que el legajo no: el nivel de administracion y el
+# nombre que muestra en pantalla. Las dos se adoptan una vez, pero por separado:
+# un nivel es un permiso y un nombre no.
+if len(_tres) >= 2:
+    _padron_maestro["usuarios"][0]["nombre"] = "STEHLE F"
+    _padron_maestro["usuarios"][1]["nombre"] = "DIAZ L"
+    lectores.leer_padron = lambda d, **kw: _padron_maestro
+
+    _nl3 = cli.get("/api/accesos/niveles-lector").json()
+    _d3 = {f["empleado_id"]: f for f in _nl3["diferencias"]}
+    chequear("muestra el nombre que tiene el equipo",
+             _e2 in _d3 and _d3[_e2]["nombre_equipo"] == "DIAZ L", _nl3["diferencias"])
+    chequear("y marca que difiere del legajo, que esta vacio",
+             _d3[_e2]["difiere_nombre"] is True, _d3[_e2])
+    chequear("y lo dice aparte de lo del nivel",
+             "difiere_nivel" in _d3[_e2] and "difiere_nombre" in _d3[_e2], _d3[_e2])
+
+    r = cli.post("/api/accesos/nombres-lector/importar", json={"empleados": [_e2]})
+    chequear("traer el nombre responde 200", r.status_code == 200, r.text[:200])
+    chequear("y lo copia al legajo",
+             cli.get(f"/api/accesos/empleado/{_e2}").json()["empleado"]["nombre_lector"] == "DIAZ L")
+
+    # Traer el nombre NO toca el nivel: son dos decisiones distintas y el boton
+    # facil no puede arrastrar al que da permisos.
+    chequear("y no le cambio el nivel de administracion",
+             cli.get(f"/api/accesos/empleado/{_e2}").json()["empleado"]["nivel_lector"] == 0)
+
+    # Un nombre vacio en el equipo no se copia: dejaria el legajo igual pero
+    # pareciendo una decision tomada.
+    _padron_maestro["usuarios"][0]["nombre"] = "   "
+    r = cli.post("/api/accesos/nombres-lector/importar", json={"empleados": [_e1]})
+    chequear("un nombre vacio en el equipo no se copia",
+             r.json()["importados"] == 0 and r.json()["sin_tocar"] == 1, r.json())
+
+    chequear("traer nombres necesita accesos:asignar",
+             _mirar.post("/api/accesos/nombres-lector/importar",
+                         json={"empleados": [_e2]}).status_code == 403)
+    chequear("y con asignar alcanza, sin necesitar editar",
+             _aplica.post("/api/accesos/nombres-lector/importar",
+                          json={"empleados": [_e2]}).status_code == 200)
+
+    r = cli.post("/api/accesos/nombres-lector/importar", json={"empleados": []})
+    chequear("sin empleados se rechaza", r.status_code == 400, r.status_code)
+
+    cli.put(f"/api/accesos/empleado/{_e2}/nombre-lector", json={"nombre_lector": None})
+    lectores.leer_padron = _real4
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

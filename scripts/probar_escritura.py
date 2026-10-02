@@ -914,13 +914,40 @@ def _equipos_a_limpiar(solo_ip=None, incluir_fichaje=False):
         del_sistema = {str(r[0]).strip() for r in conn.execute(
             "SELECT user_id FROM empleados WHERE user_id IS NOT NULL")}
 
+    # Los empleados salen de PRODUCCIÓN aunque los equipos salgan de otra base.
+    # Son dos preguntas distintas y cada fuente es autoridad de una sola: la
+    # copia sabe qué equipo es puerta —producción todavía no tiene esa tabla— y
+    # producción sabe quién trabaja acá.
+    #
+    # Mirar la fecha del archivo para saber si la copia está al día no sirve:
+    # el servidor de pruebas le escribe todo el tiempo, así que una copia de la
+    # semana pasada parece de hace un minuto. Y equivocarse en esto es borrar de
+    # las puertas a alguien que entró después de la copia.
+    fuente = os.environ.get("DB_PATH", "")
+    if os.path.exists(BASE_PRODUCCION) and os.path.abspath(
+            BASE_PRODUCCION) != os.path.abspath(fuente or ""):
+        import sqlite3
+        try:
+            cn = sqlite3.connect(f"file:{BASE_PRODUCCION}?mode=ro", uri=True)
+            del_prod = {str(r[0]).strip() for r in cn.execute(
+                "SELECT user_id FROM empleados WHERE user_id IS NOT NULL")}
+            cn.close()
+            nuevos = del_prod - del_sistema
+            del_sistema = del_prod
+            fuente = BASE_PRODUCCION + (
+                f"  ({len(nuevos)} número(s) que la copia no tenía)" if nuevos else "")
+        except Exception as exc:
+            fuente = (f"{fuente}  (no se pudo leer producción: {exc}; "
+                      f"si la copia está vieja, alguien que entró después "
+                      f"figuraría como desconocido)")
+
     puertas = [d for d in filas if d["es_acceso"]]
     fichaje = [d for d in filas if d["cuenta_asistencia"] and not d["es_acceso"]]
     if solo_ip:
         puertas = [d for d in puertas if d["ip"] == solo_ip]
         fichaje = [d for d in fichaje if d["ip"] == solo_ip]
     return (puertas + (fichaje if incluir_fichaje or solo_ip else []),
-            fichaje, del_sistema)
+            fichaje, del_sistema, fuente)
 
 
 def modo_desconocidos(solo_ip=None):
@@ -942,7 +969,7 @@ def modo_desconocidos(solo_ip=None):
     queda incompleta y hay que volver cuando ese equipo esté.
     """
     incluir_fichaje = "--incluir-fichaje" in sys.argv
-    equipos, fichaje, del_sistema = _equipos_a_limpiar(solo_ip, incluir_fichaje)
+    equipos, fichaje, del_sistema, fuente = _equipos_a_limpiar(solo_ip, incluir_fichaje)
     if not equipos:
         salir("No hay equipos para revisar." if not solo_ip
               else f"{solo_ip} no está cargado como equipo activo.")
@@ -950,24 +977,12 @@ def modo_desconocidos(solo_ip=None):
     print(f"\n  Borrar a los que no existen en el sistema")
     print(f"  -----------------------------------------")
     ruta_base = os.environ.get("DB_PATH", "")
-    print(f"  Base    : {ruta_base or '(la que resuelva config)'}")
-    linea = f"            conoce {len(del_sistema)} números"
-    horas = None
-    if ruta_base and os.path.exists(ruta_base):
-        from datetime import datetime
-        horas = (datetime.now()
-                 - datetime.fromtimestamp(os.path.getmtime(ruta_base))).total_seconds() / 3600
-        linea += (f", y se escribió hace {int(horas)} h" if horas < 48
-                  else f", y se escribió hace {int(horas / 24)} días")
-    print(linea)
-    # Una base vieja no es un detalle de prolijidad: alguien que entró después
-    # de la copia figura como desconocido y se iría con el resto.
-    if horas is not None and horas > 24:
-        print()
-        print("  OJO: esta base tiene más de un día. Si es una copia, el que haya")
-        print(f"  entrado desde entonces figura como desconocido y se borraría con")
-        print(f"  los demás. Conviene copiarla de nuevo antes de seguir.")
-    print(f"  Equipos : " + ", ".join(f"{d['nombre']} ({d['ip']})" for d in equipos))
+    ruta_base = os.environ.get("DB_PATH", "")
+    print(f"  Tabla de equipos: {ruta_base}")
+    print(f"  Lista de empleados: {fuente}")
+    print("  " + chr(32) * 18 + "{} números conocidos".format(len(del_sistema)))
+    print("  A revisar: " + ", ".join(
+        "{} ({})".format(d["nombre"], d["ip"]) for d in equipos))
     if fichaje and not incluir_fichaje and not solo_ip:
         print(f"  El equipo de fichaje NO se toca. Para incluirlo: --incluir-fichaje")
 

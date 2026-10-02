@@ -80,6 +80,10 @@ Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
       --incluir-fichaje  también limpia el equipo de asistencia. Aparte porque
                   sacar a alguien de ahí le quita la posibilidad de fichar.
 
+      --base RUTA  qué base consultar. Por defecto la de producción, que es
+                  donde está la lista real de empleados. Sirve cuando producción
+                  todavía no tiene las tablas nuevas: ahí va una copia reciente.
+
       --si        no preguntar antes de escribir (para no tipear dos veces)
 """
 import os
@@ -93,7 +97,9 @@ sys.path.insert(0, RAIZ)
 os.chdir(RAIZ)
 
 BASE_PRODUCCION = r"C:\ProgramData\SistemAlf\fichajes.db"
-if not os.getenv("DB_PATH") and os.path.exists(BASE_PRODUCCION):
+if "--base" in sys.argv:
+    os.environ["DB_PATH"] = sys.argv[sys.argv.index("--base") + 1]
+elif not os.getenv("DB_PATH") and os.path.exists(BASE_PRODUCCION):
     os.environ["DB_PATH"] = BASE_PRODUCCION
 
 
@@ -883,9 +889,19 @@ def _equipos_a_limpiar(solo_ip=None, incluir_fichaje=False):
         if not conn.execute(
             """SELECT 1 FROM sqlite_master
                 WHERE type='table' AND name='dispositivos'""").fetchone():
-            salir("Esta base todavía no tiene la tabla de equipos. Se crea "
-                  "al arrancar el sistema con la versión nueva; hasta "
-                  "entonces no hay forma de saber qué equipo es qué.")
+            otra = os.path.join(RAIZ, "data", "pruebas.db")
+            sugerencia = ""
+            if (os.path.exists(otra) and os.path.abspath(otra)
+                    != os.path.abspath(os.environ.get("DB_PATH", ""))):
+                sugerencia = (
+                    "  Esta instalación tiene una base propia que sí la tiene. "
+                    "Si es una copia reciente de producción, sirve: "
+                    f'desconocidos --base "{otra}"')
+            if sugerencia:
+                print(sugerencia)
+            salir("Esta base todavía no tiene la tabla de equipos. Se crea al "
+                  "arrancar el sistema con la versión nueva; hasta entonces no "
+                  "hay forma de saber qué equipo es qué.")
         filas = [dict(r) for r in conn.execute(
             """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
                       es_acceso, cuenta_asistencia
@@ -930,8 +946,24 @@ def modo_desconocidos(solo_ip=None):
 
     print(f"\n  Borrar a los que no existen en el sistema")
     print(f"  -----------------------------------------")
-    print(f"  Base    : {os.environ.get('DB_PATH', '(la que resuelva config)')}")
-    print(f"            conoce {len(del_sistema)} números")
+    ruta_base = os.environ.get("DB_PATH", "")
+    print(f"  Base    : {ruta_base or '(la que resuelva config)'}")
+    linea = f"            conoce {len(del_sistema)} números"
+    horas = None
+    if ruta_base and os.path.exists(ruta_base):
+        from datetime import datetime
+        horas = (datetime.now()
+                 - datetime.fromtimestamp(os.path.getmtime(ruta_base))).total_seconds() / 3600
+        linea += (f", y se escribió hace {int(horas)} h" if horas < 48
+                  else f", y se escribió hace {int(horas / 24)} días")
+    print(linea)
+    # Una base vieja no es un detalle de prolijidad: alguien que entró después
+    # de la copia figura como desconocido y se iría con el resto.
+    if horas is not None and horas > 24:
+        print()
+        print("  OJO: esta base tiene más de un día. Si es una copia, el que haya")
+        print(f"  entrado desde entonces figura como desconocido y se borraría con")
+        print(f"  los demás. Conviene copiarla de nuevo antes de seguir.")
     print(f"  Equipos : " + ", ".join(f"{d['nombre']} ({d['ip']})" for d in equipos))
     if fichaje and not incluir_fichaje and not solo_ip:
         print(f"  El equipo de fichaje NO se toca. Para incluirlo: --incluir-fichaje")

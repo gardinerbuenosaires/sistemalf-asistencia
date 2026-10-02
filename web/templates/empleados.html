@@ -1356,13 +1356,15 @@ async function cargarAccesos(id) {
           Nombre que muestra el lector</div>
         <input type="text" id="f-nombre-lector" maxlength="24" style="max-width:260px"
                value="${(datos.empleado.nombre_lector || '').replace(/"/g, '&quot;')}"
-               placeholder="${_esc((datos.empleado.apellido || '').slice(0, 24))}"
+               placeholder="— se respeta el del equipo —"
                ${puede ? '' : 'disabled'}
                onchange="guardarNombreLector(${id}, this.value)">
         <div id="nombre-lector-corte" style="font-size:.76rem;color:#999;margin-top:4px"></div>
         <div style="font-size:.76rem;color:#999;margin-top:3px">
-          Es lo que aparece en pantalla al apoyar el dedo. Si lo dejás vacío, el sistema
-          respeta el que cada equipo ya tenga y no lo toca.
+          Es lo que aparece en pantalla al apoyar el dedo. Hasta 24 caracteres, que es lo
+          que guarda el equipo de fichaje; las puertas guardan 8 y cortan el resto.
+          Vacío no borra nada: el sistema deja el nombre que cada equipo ya tenga.
+          Para ver cuál es, «Ver qué tienen los lectores» más abajo.
         </div>
       </div>
 
@@ -1553,7 +1555,7 @@ function mostrarCorteNombre() {
   const caja = document.getElementById('nombre-lector-corte');
   if (!campo || !caja || !_accDatos) return;
   const largos = _accDatos.largo_nombre || { asistencia: 24, puertas: 8 };
-  const texto = (campo.value || campo.placeholder || '').trim();
+  const texto = (campo.value || '').trim();
   if (!texto) { caja.innerHTML = ''; return; }
   const corte = (n) => texto.length > n
     ? `<b>${_esc(texto.slice(0, n))}</b><span style="color:#c8a951">${_esc(texto.slice(n))}</span>`

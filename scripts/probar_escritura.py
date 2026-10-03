@@ -80,6 +80,10 @@ Uso:  python scripts/probar_escritura.py alta    IP NUMERO [--grupo N]
       --incluir-fichaje  también limpia el equipo de asistencia. Aparte porque
                   sacar a alguien de ahí le quita la posibilidad de fichar.
 
+      --numero N  solo ese número, de todas las puertas donde esté. Es el caso
+                  de todos los días: se detecta a una persona y hay que sacarla
+                  de todos lados, sin tocar al resto de la lista.
+
       --solo-ver  lista quiénes se borrarían y sale sin tocar nada. La lista
                   queda en un archivo para poder mirarla con calma.
 
@@ -1046,6 +1050,19 @@ def modo_desconocidos(solo_ip=None):
             if numero in del_sistema:
                 continue
             fantasmas.setdefault(numero, []).append((d, datos))
+
+    # Un número puntual, para el caso de todos los días: se detecta a alguien y
+    # se lo quiere sacar de todas las puertas sin tocar al resto de la lista.
+    uno = argumento("--numero")
+    if uno:
+        uno = str(uno).strip()
+        if uno in del_sistema:
+            salir(f"El {uno} SI existe en el sistema, asi que esto no lo borra."
+                  f"  Para sacarlo de una puerta igual:"
+                  f"  borrado IP {uno} --nombre NOMBRE")
+        if uno not in fantasmas:
+            salir(f"El {uno} no está cargado en ninguno de los equipos leídos.")
+        fantasmas = {uno: fantasmas[uno]}
 
     if not fantasmas:
         salir("No hay ningún número que el sistema no conozca. Nada que borrar.")

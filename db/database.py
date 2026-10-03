@@ -15,6 +15,27 @@ def get_connection() -> sqlite3.Connection:
 
 
 @contextmanager
+def db_solo_lectura(ruta=None):
+    """
+    Abre la base en modo SOLO LECTURA de verdad, no por convención.
+
+    `db_session` abre para escritura aunque no se escriba, así que "este script
+    solo lee" depende de que nadie agregue un UPDATE más adelante. Con esto, un
+    UPDATE falla en el momento en vez de pasar inadvertido.
+
+    Es para los scripts que consultan la base de producción mientras se prueba
+    contra los equipos: ahí la garantía tiene que estar en el código, no en la
+    revisión.
+    """
+    conn = sqlite3.connect(f"file:{ruta or DB_PATH}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
 def db_session():
     conn = get_connection()
     try:

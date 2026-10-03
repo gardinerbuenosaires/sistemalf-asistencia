@@ -302,8 +302,8 @@ def datos_del_sistema(ip, numero, numero_debe_estar_libre):
     """
     maestro_ip = clave = puerta = None
     try:
-        from db.database import db_session
-        with db_session() as conn:
+        from db.database import db_solo_lectura
+        with db_solo_lectura() as conn:
             hay_tabla = conn.execute(
                 """SELECT 1 FROM sqlite_master
                     WHERE type='table' AND name='dispositivos'""").fetchone()
@@ -929,9 +929,9 @@ def _equipos_a_limpiar(solo_ip=None, incluir_fichaje=False):
     número resultara ser de una persona real con el legajo mal borrado, el error
     se descubre el lunes a las siete de la mañana.
     """
-    from db.database import db_session
+    from db.database import db_solo_lectura
 
-    with db_session() as conn:
+    with db_solo_lectura() as conn:
         # Sin esa tabla no hay forma de saber cuál equipo es puerta y cuál es el
         # de fichaje, y esa distinción es la que evita borrarle a alguien la
         # posibilidad de fichar. Mejor decirlo que tirar un error de SQL.

@@ -22,6 +22,10 @@ Al importar no se duplica nada: los equipos se reconocen por IP y los perfiles
 por nombre. Un equipo que ya existe se deja como está y se informa, en vez de
 pisarle una configuración que alguien pudo haber ajustado.
 
+Al importar se niega a escribir en la base de producción salvo que se pase
+--si-es-produccion: mientras se prueba contra los equipos, producción tiene que
+quedar afuera por accidente imposible y no por cuidado.
+
 Uso:  python scripts/config_accesos.py exportar [--salida ARCHIVO]
       python scripts/config_accesos.py importar ARCHIVO
 """
@@ -154,6 +158,20 @@ def importar(archivo):
     print("  Base: " + os.environ.get("DB_PATH", "(ninguna)"))
     print("  Archivo del " + str(datos.get("exportado", "?")))
     print(f"  {len(datos['equipos'])} equipo(s), {len(datos['perfiles'])} perfil(es)")
+
+    # Este es el unico script que ESCRIBE en la base, y escribe donde apunte
+    # DB_PATH. Mientras se prueba contra los equipos, producción tiene que
+    # quedar afuera por accidente imposible, no por cuidado: un comando sin
+    # --base en la maquina equivocada le metería equipos a la base real.
+    destino = os.environ.get("DB_PATH", "")
+    if (os.path.exists(BASE_PRODUCCION)
+            and os.path.abspath(destino or "") == os.path.abspath(BASE_PRODUCCION)
+            and "--si-es-produccion" not in sys.argv):
+        salir("Esto escribiría en la base de PRODUCCIÓN:"
+              f"  {destino}  "
+              "Si es lo que querés —configurar producción de cero— agregá "
+              "--si-es-produccion. Si estabas probando, pasá la base de pruebas "
+              "con --base.")
 
     with db_session() as conn:
         if not _hay_tablas(conn):

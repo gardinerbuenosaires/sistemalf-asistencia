@@ -3162,6 +3162,8 @@ async function verPlan() {
         <span style="color:#999;margin-left:6px">· ${_esc(s.motivo_texto)}</span>
         ${s.fecha_egreso ? `<span style="color:#b3261e;font-size:.75rem"> (egreso ${_esc(s.fecha_egreso)})</span>` : ''}
         ${s.en_maestro === false ? '<span style="background:#f6dedc;color:#b3261e;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px" title="La baja se sincronizó con el equipo de asistencia pero en esta puerta quedó">tampoco está en asistencia</span>' : ''}
+        ${s.era_de ? `<div style="font-size:.75rem;color:#5b3a8a;margin-left:72px">
+          este número era de ${_esc(s.era_de)}, liberado el ${_esc(_fechaHora(s.liberado_en))}</div>` : ''}
       </div>`),
     ].join('');
     // Una puerta que ningun perfil incluye no es un problema de accesos de la

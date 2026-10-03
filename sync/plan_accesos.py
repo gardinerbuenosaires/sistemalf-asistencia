@@ -195,6 +195,17 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
                  FROM empleados WHERE user_id IS NOT NULL"""
         )
     }
+    # De quién era cada número que se liberó. Un desconocido en una puerta casi
+    # siempre es esto: alguien a quien se le soltó el número y cuya huella quedó
+    # cargada. Decir quién era convierte un misterio en una baja sin terminar.
+    liberados = {
+        str(r["user_id_anterior"]).strip(): dict(r)
+        for r in conn.execute(
+            """SELECT id, user_id_anterior, user_id_liberado_en, nombre, apellido
+                 FROM empleados
+                WHERE user_id_anterior IS NOT NULL AND TRIM(user_id_anterior) <> ''"""
+        )
+    }
 
     # Dos preguntas distintas sobre el maestro, y antes estaban confundidas en
     # una: `con_huella` miraba si la persona estaba cargada en él, que no es lo
@@ -259,10 +270,16 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
             esta_en_maestro = None if en_maestro is None else (user_id in en_maestro)
             if esta_en_maestro is False:
                 total["no_en_maestro"] += 1
+            # Si no existe hoy pero el número fue de alguien, se dice de quién:
+            # es la diferencia entre "desconocido" y "baja sin terminar".
+            antes_de = liberados.get(user_id) if emp is None else None
             fila["sacar"].append({
                 "user_id": user_id,
                 "nombre": (f"{emp['apellido']}, {emp['nombre']}".strip(", ")
                            if emp else None),
+                "era_de": (f"{antes_de['apellido']}, {antes_de['nombre']}".strip(", ")
+                           if antes_de else None),
+                "liberado_en": antes_de["user_id_liberado_en"] if antes_de else None,
                 "empleado_id": emp["id"] if emp else None,
                 "fecha_egreso": emp["fecha_egreso"] if emp else None,
                 "motivo": motivo,

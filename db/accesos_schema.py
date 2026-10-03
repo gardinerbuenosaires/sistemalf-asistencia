@@ -187,6 +187,22 @@ def _migrar_perfiles(conn):
         conn.execute("ALTER TABLE empleados ADD COLUMN nombre_lector TEXT")
         logger.info("Migración: columna nombre_lector agregada a empleados")
 
+    # De quién era un número antes de liberarlo.
+    #
+    # Liberar el ID pone `user_id` en NULL para que el lector pueda volver a
+    # usarlo. El legajo queda, pero el vínculo con ese número se corta, y la
+    # huella sigue cargada en las puertas hasta que alguien la saque. A partir
+    # de ahí el 42 de una puerta es un misterio: no se sabe si es basura de hace
+    # años o alguien que se libero el mes pasado.
+    #
+    # Guardarlo cuesta una columna y es la diferencia entre «desconocido 42» y
+    # «el 42 era de GONZALEZ, liberado el 18-09». Sin esto, cada liberación suma
+    # un misterio más a la próxima auditoría.
+    for columna in ("user_id_anterior", "user_id_liberado_en"):
+        if columna not in cols:
+            conn.execute(f"ALTER TABLE empleados ADD COLUMN {columna} TEXT")
+            logger.info("Migración: columna %s agregada a empleados", columna)
+
     # El reloj de cada equipo. A las puertas nunca se les puso la hora —el
     # sistema se la sincroniza solo al de asistencia— y un lector de quince años
     # puede estar corrido meses. Guardar el desfase MEDIDO, y no solo cuándo se

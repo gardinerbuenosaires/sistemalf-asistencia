@@ -99,8 +99,16 @@ def liberar_id_dispositivo(eid: int, _user=Depends(require_permiso("empleados", 
             raise HTTPException(400, "Solo se puede liberar el ID de un empleado inactivo")
         if not emp["user_id"]:
             raise HTTPException(400, "Este empleado no tiene ID de dispositivo asignado")
-        conn.execute("UPDATE empleados SET user_id=NULL WHERE id=?", (eid,))
-    return {"ok": True}
+        # Se anota de quién era antes de soltarlo. Después de esto, ese número
+        # puede aparecer cargado en una puerta sin dueño, y esto es lo único que
+        # va a explicar quién era.
+        conn.execute(
+            """UPDATE empleados
+                  SET user_id_anterior = user_id,
+                      user_id_liberado_en = datetime('now','localtime'),
+                      user_id = NULL
+                WHERE id = ?""", (eid,))
+    return {"ok": True, "user_id_anterior": emp["user_id"]}
 
 
 @router.get("/fotos-pendientes")

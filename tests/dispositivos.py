@@ -2407,5 +2407,53 @@ chequear("y mirar el registro alcanza con accesos:ver",
 _lr15.leer_cargados = _real15
 _lr15._conectar = _conec15
 
+
+print("\n=== DE QUIEN ERA UN NUMERO LIBERADO ===")
+# Liberar el ID suelta el numero para que el lector lo reuse, pero la huella
+# sigue cargada en las puertas. Sin guardar de quien era, ese numero pasa a ser
+# un misterio en la proxima auditoria.
+_c16 = sqlite3.connect(DB)
+_f16 = _c16.execute(
+    """SELECT id, user_id FROM empleados
+        WHERE activo=0 AND user_id IS NOT NULL LIMIT 1""").fetchone()
+_c16.close()
+
+if _f16:
+    _eid16, _uid16 = _f16[0], str(_f16[1]).strip()
+    r = cli.post(f"/api/empleados/conflictos/liberar/{_eid16}")
+    chequear("liberar el id responde 200", r.status_code == 200, r.text[:160])
+    chequear("y devuelve cual era", r.json().get("user_id_anterior") == _uid16, r.json())
+
+    _c16 = sqlite3.connect(DB)
+    _fila = _c16.execute(
+        """SELECT user_id, user_id_anterior, user_id_liberado_en
+             FROM empleados WHERE id=?""", (_eid16,)).fetchone()
+    _c16.close()
+    chequear("el numero quedo suelto", _fila[0] is None, _fila[0])
+    chequear("pero se guardo de quien era", _fila[1] == _uid16, _fila[1])
+    chequear("y cuando se libero", bool(_fila[2]), _fila[2])
+
+    # El pago: el plan deja de decir "desconocido" a secas.
+    _pu16 = [{"id": p_personal, "nombre": "Personal", "ubicacion": None}]
+    _lec16 = {p_personal: {"ok": True, "transporte": "udp", "error": None,
+                           "usuarios": [{"user_id": _uid16}]}}
+    with db_session() as _cn:
+        _plan16 = armar_plan(_cn, _pu16, _lec16, {"ok": True, "usuarios": []})
+    _s16 = next((x for x in _plan16["puertas"][0]["sacar"] if x["user_id"] == _uid16), None)
+    chequear("el numero figura para sacar", _s16 is not None, _plan16["puertas"][0]["sacar"][:3])
+    chequear("como desconocido, porque ya no es de nadie",
+             _s16 and _s16["motivo"] == "desconocido", _s16)
+    chequear("pero dice de quien era", _s16 and _s16["era_de"], _s16)
+    chequear("y cuando se libero", _s16 and _s16["liberado_en"], _s16)
+
+    # Un desconocido que nunca fue de nadie no inventa un dueno.
+    _lec17 = {p_personal: {"ok": True, "transporte": "udp", "error": None,
+                           "usuarios": [{"user_id": "777333"}]}}
+    with db_session() as _cn:
+        _plan17 = armar_plan(_cn, _pu16, _lec17, {"ok": True, "usuarios": []})
+    _s17 = next((x for x in _plan17["puertas"][0]["sacar"] if x["user_id"] == "777333"), None)
+    chequear("uno que nunca fue de nadie no inventa dueno",
+             _s17 and _s17["era_de"] is None, _s17)
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

@@ -538,9 +538,9 @@ if emp_id:
 
 print("\n=== PERMISOS DEL MODULO ACCESOS ===")
 me2 = cli.get("/api/auth/me").json()
-chequear("sistema tiene las cinco acciones de accesos",
+chequear("sistema tiene las seis acciones de accesos",
          sorted(p["accion"] for p in me2["permisos"] if p["modulo"] == "accesos")
-         == ["asignar", "editar", "eliminar", "excepcion", "ver"],
+         == ["aplicar", "asignar", "editar", "eliminar", "excepcion", "ver"],
          sorted(p["accion"] for p in me2["permisos"] if p["modulo"] == "accesos"))
 
 _sin2 = TestClient(main.app)
@@ -954,9 +954,9 @@ if emp_id:
 
 # Sistema sigue teniendo las cinco acciones.
 me3 = cli.get("/api/auth/me").json()
-chequear("sistema tiene las cinco acciones de accesos",
+chequear("sistema tiene las seis acciones de accesos",
          sorted(p["accion"] for p in me3["permisos"] if p["modulo"] == "accesos")
-         == ["asignar", "editar", "eliminar", "excepcion", "ver"],
+         == ["aplicar", "asignar", "editar", "eliminar", "excepcion", "ver"],
          sorted(p["accion"] for p in me3["permisos"] if p["modulo"] == "accesos"))
 
 
@@ -2322,6 +2322,90 @@ _c4 = comparar_con_empleados(
     [{"uid": 2, "user_id": "11", "nombre": "GOMEZ", "grupo": "1"}], _emps_r)
 chequear("sin configurar y pareciendose al legajo, no marca",
          _c4["resumen"]["nombre_distinto"] == 0, _c4["filas"][0])
+
+
+print("\n=== SACAR A ALGUIEN DE UN EQUIPO, FUERA DE LA POLITICA ===")
+# La salida de emergencia: una auditoria encuentra que alguien quedo cargado por
+# un error que nadie previo, y hay que sacarlo ahora de ese equipo. Lo normal es
+# corregir el perfil y aplicar el plan; esto es para cuando eso no alcanza.
+_c15 = sqlite3.connect(DB)
+_f15 = _c15.execute(
+    "SELECT id, user_id FROM empleados WHERE activo=1 AND user_id IS NOT NULL LIMIT 1").fetchone()
+_c15.close()
+_eid15, _uid15 = _f15[0], str(_f15[1]).strip()
+
+_estado15 = {"usuarios": [{"uid": 5, "user_id": _uid15, "nombre": "QUIEN SEA",
+                           "grupo": "1", "privilegio": 0, "huellas": 1}],
+             "borrados": []}
+
+class _EquipoFalso:
+    class _H:
+        uid, fid, valid = 5, 0, 1
+        def json_pack(s): return {"uid": 5, "fid": 0, "valid": 1, "template": "00"}
+    def get_templates(s): return [s._H()]
+    def delete_user(s, uid=None, user_id=""):
+        _estado15["borrados"].append(uid)
+        _estado15["usuarios"] = [u for u in _estado15["usuarios"] if u["uid"] != uid]
+    def disconnect(s): pass
+
+import sync.lectores as _lr15
+_real15 = _lr15.leer_cargados
+_conec15 = _lr15._conectar
+_lr15.leer_cargados = lambda d, **kw: {"ok": True, "transporte": "udp", "error": None,
+                                       "usuarios": list(_estado15["usuarios"])}
+_lr15._conectar = lambda *a, **k: (_EquipoFalso(), "udp")
+
+# Sin motivo no se puede: es lo unico que va a explicar esto dentro de un anio.
+r = cli.post(f"/api/dispositivos/{p_personal}/cargados/{_uid15}/sacar", json={"motivo": ""})
+chequear("sin motivo se rechaza", r.status_code == 422, r.status_code)
+r = cli.post(f"/api/dispositivos/{p_personal}/cargados/{_uid15}/sacar", json={"motivo": "ok"})
+chequear("un motivo de dos letras tampoco", r.status_code == 422, r.status_code)
+
+r = cli.post(f"/api/dispositivos/{p_personal}/cargados/{_uid15}/sacar",
+             json={"motivo": "quedo cargado por un error de sincronizacion"})
+chequear("con motivo, saca a la persona", r.status_code == 200, r.text[:200])
+chequear("y se lo pidio al equipo", _estado15["borrados"] == [5], _estado15["borrados"])
+chequear("guarda el respaldo con las huellas",
+         r.json().get("respaldo") and os.path.exists(r.json()["respaldo"]),
+         r.json().get("respaldo"))
+
+# El registro es el punto: sin el, la auditoria siguiente es el mismo misterio.
+_ops = cli.get("/api/dispositivos/operaciones").json()["operaciones"]
+chequear("queda registrado", len(_ops) == 1, _ops)
+chequear("con el motivo", "sincronizacion" in _ops[0]["motivo"], _ops[0])
+chequear("con quien lo hizo", _ops[0]["usuario_id"] is not None, _ops[0])
+chequear("y con lo que se verifico, no lo que contesto el equipo",
+         _ops[0]["resultado"] == "sacado", _ops[0])
+
+# Si el equipo acepta y no hace nada, se registra como pendiente y se avisa.
+_estado15["usuarios"] = [{"uid": 6, "user_id": _uid15, "nombre": "TERCO",
+                          "grupo": "1", "privilegio": 0, "huellas": 1}]
+class _Terco(_EquipoFalso):
+    def delete_user(s, uid=None, user_id=""): pass
+_lr15._conectar = lambda *a, **k: (_Terco(), "udp")
+r = cli.post(f"/api/dispositivos/{p_personal}/cargados/{_uid15}/sacar",
+             json={"motivo": "prueba de un equipo que no obedece"})
+chequear("si el equipo no obedece, se rechaza", r.status_code == 400, r.status_code)
+_ops2 = cli.get("/api/dispositivos/operaciones").json()["operaciones"]
+chequear("y queda registrado igual, como pendiente",
+         _ops2[0]["resultado"] == "pendiente", _ops2[0])
+chequear("diciendo que sigue cargado",
+         "sigue cargado" in (_ops2[0]["detalle"] or ""), _ops2[0])
+
+# Alguien que no esta en el equipo no se puede sacar.
+r = cli.post(f"/api/dispositivos/{p_personal}/cargados/888111/sacar",
+             json={"motivo": "no deberia encontrarlo"})
+chequear("un numero que no esta en el equipo da 404", r.status_code == 404, r.status_code)
+
+# Permisos: escribir en los equipos es su propia accion.
+chequear("con accesos:asignar NO se puede sacar de un equipo",
+         _aplica.post(f"/api/dispositivos/{p_personal}/cargados/{_uid15}/sacar",
+                      json={"motivo": "no deberia poder"}).status_code == 403)
+chequear("y mirar el registro alcanza con accesos:ver",
+         _mirar.get("/api/dispositivos/operaciones").status_code == 200)
+
+_lr15.leer_cargados = _real15
+_lr15._conectar = _conec15
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

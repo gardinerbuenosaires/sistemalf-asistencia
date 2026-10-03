@@ -9,6 +9,7 @@ completa los datos de identidad del equipo. No escribe nada en el lector. Eso
 evita el error más molesto de cargar equipos a mano, que es tipear mal la IP y
 enterarse tres días después porque no llegan fichajes.
 """
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -554,6 +555,156 @@ def poner_hora(did: int, _user=Depends(require_permiso("dispositivos", "editar")
     if r["ok"]:
         _guardar_medicion(did, r.get("desfase_antes"), puesto=True)
     return {**r, "dispositivo": d}
+
+
+class SacarDelEquipoIn(BaseModel):
+    motivo: str
+
+    @field_validator("motivo")
+    @classmethod
+    def _motivo(cls, v):
+        v = (v or "").strip()
+        if len(v) < 5:
+            raise ValueError("Hace falta un motivo: esta acción se sale de la "
+                             "política y es lo único que va a explicarla después")
+        return v
+
+
+def _respaldar_usuario(conexion, dispositivo, usuario, huellas):
+    """
+    Guarda el registro completo antes de borrarlo, con sus huellas.
+
+    Al lado de la base, como los respaldos del relevamiento. Tiene huellas
+    adentro: no sale de esta máquina.
+
+    Sin esto, sacar a alguien de un lector es irreversible. Y el caso que más
+    necesita esta herramienta —alguien que quedó por un error— es justamente
+    aquel en el que no se sabe de antemano si la decisión está bien.
+    """
+    import json
+    from pathlib import Path
+
+    base = os.environ.get("DB_PATH")
+    destino = (Path(base).resolve().parent if base else Path(".")) / "borrados"
+    destino.mkdir(parents=True, exist_ok=True)
+    ruta = destino / (f"{dispositivo['ip'].replace('.', '-')}"
+                      f"-{usuario['user_id']}-{datetime.now():%Y%m%d-%H%M%S}.json")
+    ruta.write_text(json.dumps({
+        "equipo": dispositivo["nombre"], "ip": dispositivo["ip"],
+        "cuando": datetime.now().strftime("%d-%m-%Y %H:%M:%S"),
+        "uid": usuario["uid"], "user_id": usuario["user_id"],
+        "nombre": usuario["nombre"], "grupo": usuario["grupo"],
+        "privilegio": usuario["privilegio"],
+        "huellas": [h.json_pack() for h in huellas],
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    return str(ruta)
+
+
+@router.post("/{did}/cargados/{numero}/sacar")
+def sacar_del_equipo(did: int, numero: str, data: SacarDelEquipoIn,
+                     usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Saca a una persona de UN equipo, a mano, fuera de la política.
+
+    Para qué existe. Lo normal es que el acceso salga del perfil y que el plan
+    lo lleve a los lectores; si alguien sobra en una puerta, se le corrige el
+    perfil y se aplica. Esto es para cuando eso no alcanza: una auditoría
+    encuentra que alguien quedó cargado por un error que nadie previó, y hay
+    que sacarlo ahora, de ese equipo, sin esperar a entender por qué pasó.
+
+    Por eso pide motivo y deja registro. Una acción fuera de la política que no
+    deja rastro convierte la auditoría siguiente en el mismo misterio: dentro de
+    seis meses nadie va a saber por qué esa persona no está más en esa puerta.
+
+    Antes de borrar guarda el registro completo con sus huellas, y después
+    relee el equipo para verificar. Que el lector conteste que sí no alcanza:
+    puede aceptar el comando y no hacer nada.
+    """
+    from sync.lectores import leer_cargados, _conectar
+
+    with db_session() as conn:
+        d = _traer(conn, did)
+        emp = conn.execute(
+            """SELECT id, nombre, apellido, activo FROM empleados
+                WHERE TRIM(user_id) = ?""", (str(numero).strip(),)).fetchone()
+        emp = dict(emp) if emp else None
+
+    numero = str(numero).strip()
+    antes = leer_cargados(d, con_huellas=True)
+    if not antes["ok"]:
+        raise HTTPException(400, f"El equipo no contestó: {antes['error']}")
+
+    objetivo = next((u for u in antes["usuarios"] if u["user_id"] == numero), None)
+    if objetivo is None:
+        raise HTTPException(404, f"El {numero} no está cargado en {d['nombre']}.")
+
+    conexion = None
+    try:
+        conexion, _t = _conectar(d["ip"], d.get("puerto", 4370),
+                                 d.get("password", 0), d.get("timeout", 10))
+        huellas = [h for h in conexion.get_templates()
+                   if h.uid == objetivo["uid"] and getattr(h, "valid", 1)]
+        respaldo = _respaldar_usuario(conexion, d, objetivo, huellas)
+        conexion.delete_user(uid=objetivo["uid"])
+
+        # Se relee: lo que se registra es lo que se verificó, no lo que el
+        # equipo contestó.
+        despues = leer_cargados(d)
+        sigue = (not despues["ok"]
+                 or any(u["user_id"] == numero for u in despues["usuarios"]))
+        resultado = "pendiente" if sigue else "sacado"
+        detalle = (None if not sigue else
+                   ("no se pudo releer el equipo para verificar"
+                    if not despues["ok"] else "sigue cargado después de borrarlo"))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        resultado, detalle, respaldo = "falló", f"{type(exc).__name__}: {exc}", None
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+    with db_session() as conn:
+        conn.execute(
+            """INSERT INTO accesos_operaciones
+                 (dispositivo_id, equipo, user_id, empleado_id, nombre_equipo,
+                  accion, motivo, resultado, detalle, respaldo, usuario_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (did, d["nombre"], numero, emp["id"] if emp else None,
+             objetivo["nombre"], "sacar", data.motivo, resultado, detalle,
+             respaldo, int(usuario.get("sub") or 0) or None))
+
+    if resultado != "sacado":
+        raise HTTPException(400, f"No se pudo sacar al {numero} de {d['nombre']}: "
+                                 f"{detalle}. Quedó registrado igual.")
+    return {"ok": True, "equipo": d["nombre"], "user_id": numero,
+            "nombre_equipo": objetivo["nombre"], "respaldo": respaldo,
+            "empleado": (f"{emp['apellido']}, {emp['nombre']}".strip(", ")
+                         if emp else None)}
+
+
+@router.get("/operaciones")
+def operaciones(limite: int = 100,
+                _user=Depends(require_permiso("accesos", "ver"))):
+    """
+    Lo que el sistema le escribió a los equipos, lo más reciente primero.
+
+    Mirarlo pide solo `ver`: el registro existe para que alguien que no puede
+    tocar nada pueda auditar lo que se hizo, que es justamente el punto.
+    """
+    with db_session() as conn:
+        filas = [dict(r) for r in conn.execute(
+            """SELECT o.*, u.nombre AS quien,
+                      e.apellido || ', ' || e.nombre AS empleado
+                 FROM accesos_operaciones o
+                 LEFT JOIN usuarios u  ON u.id = o.usuario_id
+                 LEFT JOIN empleados e ON e.id = o.empleado_id
+             ORDER BY o.creado_en DESC, o.id DESC LIMIT ?""",
+            (max(1, min(int(limite), 500)),))]
+    return {"operaciones": filas}
 
 
 def _leer(funcion):

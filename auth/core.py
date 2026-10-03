@@ -29,7 +29,7 @@ MODULOS = [
     "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
     "actualizacion", "dispositivos", "accesos",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio", "asignar", "excepcion"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio", "asignar", "excepcion", "aplicar"]
 # corregir       → asistencia:corregir (novedades en planilla)
 # fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
 #                  individuales o por fuerza mayor). Separado de "editar" porque
@@ -88,7 +88,12 @@ MODULO_ACCIONES = {
     #               la politica, y es lo mas dificil de auditar: un perfil se ve
     #               en la matriz, una excepcion solo abriendo esa ficha. Por eso
     #               va aparte de asignar.
-    "accesos":        ["ver", "editar", "eliminar", "asignar", "excepcion"],
+    #   aplicar   → escribirle a los equipos: llevar la politica a los lectores
+    #               y sacar a mano lo que quedo por un error. Va aparte de las
+    #               demas porque las otras deciden y esta ejecuta: una politica
+    #               equivocada se corrige antes de aplicarla, un borrado en un
+    #               lector deja a alguien afuera a las siete de la maniana.
+    "accesos":        ["ver", "editar", "eliminar", "asignar", "excepcion", "aplicar"],
 }
 
 # Cómo se agrupan los módulos en la pantalla de Roles. Un módulo que no figure

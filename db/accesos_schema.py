@@ -125,6 +125,42 @@ def _migrar_perfiles(conn):
         )
         logger.info("Migración: columna perfil_acceso_id agregada a empleados")
 
+    # Lo que el sistema le escribió a un equipo, y por qué.
+    #
+    # Existe porque auditar sin registro no es auditar. El caso que lo pide es
+    # el que se sale de lo previsto: alguien quedó cargado en una puerta por un
+    # error que nadie anticipó, un operador lo saca a mano, y seis meses después
+    # hay que poder contestar quién lo sacó, cuándo y con qué motivo.
+    #
+    # `motivo` no es opcional para las acciones fuera de la política. Una
+    # excepción sin explicación, dos años después, nadie se anima a tocarla ni
+    # sabe por qué está; una baja manual sin explicación es peor, porque ni
+    # siquiera queda la persona para preguntarle.
+    #
+    # `resultado` guarda lo que se verificó releyendo el equipo, no lo que el
+    # equipo contestó: un lector puede aceptar el comando y no hacer nada.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS accesos_operaciones (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            dispositivo_id INTEGER REFERENCES dispositivos(id),
+            equipo         TEXT,
+            user_id        TEXT,
+            empleado_id    INTEGER REFERENCES empleados(id),
+            nombre_equipo  TEXT,
+            accion         TEXT NOT NULL,
+            motivo         TEXT,
+            resultado      TEXT NOT NULL,
+            detalle        TEXT,
+            respaldo       TEXT,
+            usuario_id     INTEGER REFERENCES usuarios(id),
+            creado_en      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        )
+    """)
+    conn.execute("""CREATE INDEX IF NOT EXISTS idx_accesos_op_fecha
+                      ON accesos_operaciones (creado_en DESC)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS idx_accesos_op_user
+                      ON accesos_operaciones (user_id)""")
+
     # Quién puede administrar el lector desde el lector: dar de alta gente y
     # tomarle la huella parado frente al equipo. Es UNA sola propiedad de la
     # persona y no una por equipo, aunque el campo exista en todos: las puertas

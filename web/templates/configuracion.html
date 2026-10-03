@@ -434,6 +434,8 @@
           <div style="display:flex;gap:6px;flex-wrap:nowrap">
             <button class="btn btn-secondary btn-sm" onclick="revisarTodos()">Revisar todos</button>
             <button class="btn btn-secondary btn-sm" onclick="verRelojes()">Relojes</button>
+            <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                    onclick="verOperaciones()">Operaciones</button>
             <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
                     onclick="nuevoDispositivo()">+ Nuevo equipo</button>
           </div>
@@ -1327,7 +1329,7 @@ const ACCION_LABELS = {
   corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir", carga_inicial:"Carga inicial",
   ver_todos:"Ver todos", confirmar:"Confirmar", jubilacion:"Jubilación",
   fichaje_manual:"Fichaje manual", propia:"Propia", fichaje_propio:"Fichaje propio",
-  asignar:"Asignar", excepcion:"Excepciones"
+  asignar:"Asignar", excepcion:"Excepciones", aplicar:"Aplicar en los equipos"
 };
 
 // Algunas acciones necesitan decir sobre QUE actuan: "Editar" no aclara si se
@@ -1335,7 +1337,8 @@ const ACCION_LABELS = {
 // la que separa los dos permisos. La etiqueta del modulo le gana a la general.
 const ACCION_LABELS_POR_MODULO = {
   accesos: { editar:"Definir perfiles", asignar:"Asignar a personas",
-             eliminar:"Borrar perfiles", excepcion:"Excepciones" },
+             eliminar:"Borrar perfiles", excepcion:"Excepciones",
+             aplicar:"Escribir en los equipos" },
   dispositivos: { editar:"Editar equipos", eliminar:"Borrar equipos" },
 };
 
@@ -1348,6 +1351,7 @@ const ACCION_AYUDA = {
     asignar:   "Ponerle un perfil a una persona. Afecta solo a esa persona.",
     excepcion: "Sacarle o darle una puerta suelta a una persona, apartandola de su perfil.",
     eliminar:  "Borrar un perfil. Solo se puede si no lo usa nadie.",
+    aplicar:   "Llevar la politica a los lectores y sacar a mano lo que quedo por un error. Las otras deciden; esta ejecuta.",
   },
   dispositivos: {
     ver:      "Ver los lectores, quien esta cargado en ellos y probar la conexion.",
@@ -3536,6 +3540,94 @@ async function ponerEnHora(id, boton) {
     : `Se le escribió, pero sigue corrido ${r.desfase_minutos} min: miralo`);
 }
 
+// ── Operaciones sobre los equipos ─────────────────────────────────────────────
+// Lo que el sistema les escribió, y por qué. Mirarlo pide solo «ver»: el
+// registro existe para que alguien que no puede tocar nada pueda auditar lo que
+// se hizo, que es justamente el punto.
+
+async function verOperaciones() {
+  let modal = document.getElementById('modal-operaciones');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-operaciones';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:white;border-radius:10px;padding:24px;width:900px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+        <div style="font-weight:bold;font-size:1rem">Lo que se escribió en los equipos</div>
+        <div id="operaciones-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">Cargando…</div>
+        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+                onclick="document.getElementById('modal-operaciones').remove()">Cerrar</button>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  const cuerpo = document.getElementById('operaciones-cuerpo');
+  let d;
+  try {
+    const res = await fetch('/api/dispositivos/operaciones');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    cuerpo.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  if (!d.operaciones.length) {
+    cuerpo.innerHTML = `<div style="color:#888">Todavía no se le escribió nada a ningún equipo.</div>`;
+    return;
+  }
+
+  const color = { sacado: '#2e7d4f', pendiente: '#8a5d06', 'falló': '#b3261e' };
+  cuerpo.innerHTML = `
+    <div style="overflow-y:auto;max-height:62vh;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px;width:130px">Cuándo</th>
+              <th style="text-align:left;padding:6px 10px">Qué</th>
+              <th style="text-align:left;padding:6px 10px">Motivo</th>
+              <th style="text-align:left;padding:6px 10px;width:120px">Quién</th></tr>
+        </thead>
+        <tbody>${d.operaciones.map(o => `
+          <tr style="border-bottom:1px solid #f4f4f4">
+            <td style="padding:6px 10px;color:#666">${_esc(_fechaHora(o.creado_en))}</td>
+            <td style="padding:6px 10px">
+              <b style="color:${color[o.resultado] || '#666'}">${_esc(o.resultado)}</b>
+              el <span style="font-family:monospace">${_esc(o.user_id)}</span>
+              ${o.empleado ? `(${_esc(o.empleado)})` : `«${_esc(o.nombre_equipo || '')}»`}
+              de ${_esc(o.equipo)}
+              ${o.detalle ? `<div style="font-size:.75rem;color:#b3261e">${_esc(o.detalle)}</div>` : ''}
+              ${o.respaldo ? `<div style="font-size:.72rem;color:#bbb">respaldo guardado</div>` : ''}
+            </td>
+            <td style="padding:6px 10px;color:#555">${_esc(o.motivo || '')}</td>
+            <td style="padding:6px 10px;color:#888">${_esc(o.quien || '—')}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+// Sacar a una persona de UN equipo, fuera de la política. Es la salida de
+// emergencia: lo normal es corregir el perfil y aplicar el plan. Esto es para
+// cuando una auditoría encuentra que alguien quedó cargado por un error que
+// nadie previó y hay que sacarlo ahora.
+async function sacarDelEquipo(numero, nombreEnEquipo) {
+  const d = _dispositivos.find(x => x.id === _cargadosEquipo);
+  const motivo = prompt(
+    `Sacar al ${numero} «${nombreEnEquipo || 'sin nombre'}» de ${d ? d.nombre : 'este equipo'}.`
+    + `\n\nEsto se sale de la política: lo normal es corregirle el perfil y aplicar el plan.`
+    + `\nQueda registrado con tu nombre, y se guarda su huella por si hubo un error.`
+    + `\n\n¿Por qué lo estás sacando?`, '');
+  if (motivo === null) return;
+  if (motivo.trim().length < 5) return toast('Hace falta un motivo');
+
+  const res = await fetch(
+    `/api/dispositivos/${_cargadosEquipo}/cargados/${encodeURIComponent(numero)}/sacar`,
+    { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ motivo }) });
+  let r = {};
+  try { r = await res.json(); } catch {}
+  if (!res.ok) return toast('Error: ' + (r.detail || 'no se pudo sacar'));
+  toast(`${numero} sacado de ${r.equipo}`);
+  verCargados(_cargadosEquipo);
+}
+
 // ── Pasadas por un lector ─────────────────────────────────────────────────────
 // Quién apoyó el dedo y a qué hora. Se lee del equipo en el momento y no se
 // guarda nada: el lector conserva miles de pasadas, mucho más de lo que esta
@@ -3746,6 +3838,7 @@ async function verCargados(id) {
   // segundos y buscar a alguien no puede costar otra consulta al lector.
   _cargadosFilas = data.filas;
   _cargadosHuellas = data.huellas_leidas;
+  _cargadosEquipo = id;
 
   const esPuerta = d && d.es_acceso;
   cuerpo.innerHTML = `
@@ -3787,7 +3880,8 @@ async function verCargados(id) {
               <th style="text-align:left;padding:6px 10px">En el sistema</th>
               <th style="text-align:left;padding:6px 10px">Estado</th>
               ${_cargadosHuellas ? '<th style="padding:6px 10px">Huellas</th>' : ''}
-              <th style="padding:6px 10px">Grupo</th></tr>
+              <th style="padding:6px 10px">Grupo</th>
+              ${canDo('accesos','aplicar') ? '<th style="padding:6px 10px;width:70px"></th>' : ''}</tr>
         </thead>
         <tbody id="cargados-tbody"></tbody>
       </table>
@@ -3799,7 +3893,7 @@ async function verCargados(id) {
   cargarDispositivos();
 }
 
-let _cargadosFilas = [], _cargadosHuellas = false;
+let _cargadosFilas = [], _cargadosHuellas = false, _cargadosEquipo = null;
 
 function _cargadosFilaHtml(f) {
   const e = _ESTADOS[f.estado];
@@ -3826,7 +3920,12 @@ function _cargadosFilaHtml(f) {
         ? '<div style="color:#8a5d06;font-size:.75rem">no es el nombre que le configuraste</div>'
         : '<div style="color:#5b3a8a;font-size:.75rem">no se parece al legajo</div>') : ''}</td>
     ${huella}
-    <td style="text-align:center;color:#888">${f.grupo ?? '—'}</td></tr>`;
+    <td style="text-align:center;color:#888">${f.grupo ?? '—'}</td>
+    ${canDo('accesos','aplicar') ? `<td style="text-align:right;white-space:nowrap">
+      <button class="btn btn-sm btn-secondary" style="color:#b3261e"
+              onclick="sacarDelEquipo('${_esc(f.user_id)}', '${_esc((f.nombre || '').replace(/'/g, ''))}')"
+              title="Sacar a esta persona de este equipo, fuera de la política">Sacar</button>
+    </td>` : ''}</tr>`;
 }
 
 // Buscar por número o por nombre, del lector o del legajo: cuando alguien

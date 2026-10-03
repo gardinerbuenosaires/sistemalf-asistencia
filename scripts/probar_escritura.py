@@ -99,11 +99,25 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
 os.chdir(RAIZ)
 
+# Dos bases, cada una autoridad de una cosa.
+#
+# La tabla de equipos es de ESTA instalación: produccion todavia no la
+# tiene, y es la que dice cual lector es puerta y cual es el de fichaje.
+# La lista de empleados sale de produccion, en vivo, porque equivocarse ahi
+# es borrar de las puertas a alguien que entro despues de la ultima copia.
+#
+# Por eso el default de aca no es produccion como en los otros scripts: si
+# se apuntara a produccion no encontraria la tabla de equipos y haria falta
+# pasar --base a mano cada vez.
 BASE_PRODUCCION = r"C:\ProgramData\SistemAlf\fichajes.db"
+BASE_LOCAL = os.path.join(RAIZ, "data", "pruebas.db")
 if "--base" in sys.argv:
     os.environ["DB_PATH"] = sys.argv[sys.argv.index("--base") + 1]
-elif not os.getenv("DB_PATH") and os.path.exists(BASE_PRODUCCION):
-    os.environ["DB_PATH"] = BASE_PRODUCCION
+elif not os.getenv("DB_PATH"):
+    if os.path.exists(BASE_LOCAL):
+        os.environ["DB_PATH"] = BASE_LOCAL
+    elif os.path.exists(BASE_PRODUCCION):
+        os.environ["DB_PATH"] = BASE_PRODUCCION
 
 
 def salir(mensaje):
@@ -241,6 +255,38 @@ def leer_huellas_del_maestro(ip, clave, numero):
                 pass
 
 
+def empleados_del_sistema(conn):
+    """
+    Los números de legajo, de PRODUCCIÓN si se puede leer.
+
+    La tabla de equipos es de esta instalación —producción todavía no la tiene—
+    pero la lista de empleados no: equivocarse ahí es borrar de una puerta a
+    alguien que entró después de la última copia, o dejar crear un usuario de
+    prueba con un número que ya es de una persona.
+
+    Devuelve (números, de dónde salieron). Si producción no se puede leer se usa
+    la base en curso y se dice, porque la consecuencia no es la misma.
+    """
+    import sqlite3
+
+    en_curso = os.environ.get("DB_PATH", "")
+    locales = {str(r[0]).strip() for r in conn.execute(
+        "SELECT user_id FROM empleados WHERE user_id IS NOT NULL")}
+    if (not os.path.exists(BASE_PRODUCCION)
+            or os.path.abspath(BASE_PRODUCCION) == os.path.abspath(en_curso or "")):
+        return locales, en_curso
+    try:
+        cn = sqlite3.connect(f"file:{BASE_PRODUCCION}?mode=ro", uri=True)
+        de_prod = {str(r[0]).strip() for r in cn.execute(
+            "SELECT user_id FROM empleados WHERE user_id IS NOT NULL")}
+        cn.close()
+        faltaban = de_prod - locales
+        return de_prod, BASE_PRODUCCION + (
+            f"  ({len(faltaban)} que la copia no tenía)" if faltaban else "")
+    except Exception as exc:
+        return locales, (f"{en_curso}  (no se pudo leer producción: {exc})")
+
+
 def datos_del_sistema(ip, numero, numero_debe_estar_libre):
     """
     Lo que hace falta saber antes de escribirle a un equipo. SOLO SELECT.
@@ -278,14 +324,14 @@ def datos_del_sistema(ip, numero, numero_debe_estar_libre):
                 maestro_ip = (cfg.get("device_ip") or "").strip() or None
                 clave = cfg.get("device_password") or 0
 
-            ocupado = conn.execute(
-                """SELECT apellido, nombre, activo FROM empleados
-                    WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
             # Para sugerir uno libre si el pedido está tomado. Pasa más de lo
             # que uno espera: los números redondos ya se usaron alguna vez, y
             # la importación desde el lector crea legajos con ese nombre.
-            tomados = {str(r[0]).strip() for r in conn.execute(
-                "SELECT user_id FROM empleados WHERE user_id IS NOT NULL")}
+            tomados, _de_donde = empleados_del_sistema(conn)
+            ocupado = (conn.execute(
+                """SELECT apellido, nombre, activo FROM empleados
+                    WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
+                if numero in tomados else None)
     except Exception as exc:
         salir(f"No se pudo leer la base del sistema: {exc}\n"
               f"  Sin eso no puedo verificar que la IP no sea el maestro.")
@@ -911,35 +957,10 @@ def _equipos_a_limpiar(solo_ip=None, incluir_fichaje=False):
                  FROM dispositivos
                 WHERE activo=1 AND protocolo='pull' AND ip IS NOT NULL
              ORDER BY orden, id""")]
-        del_sistema = {str(r[0]).strip() for r in conn.execute(
-            "SELECT user_id FROM empleados WHERE user_id IS NOT NULL")}
+        del_sistema, fuente = empleados_del_sistema(conn)
 
-    # Los empleados salen de PRODUCCIÓN aunque los equipos salgan de otra base.
-    # Son dos preguntas distintas y cada fuente es autoridad de una sola: la
-    # copia sabe qué equipo es puerta —producción todavía no tiene esa tabla— y
-    # producción sabe quién trabaja acá.
-    #
-    # Mirar la fecha del archivo para saber si la copia está al día no sirve:
-    # el servidor de pruebas le escribe todo el tiempo, así que una copia de la
-    # semana pasada parece de hace un minuto. Y equivocarse en esto es borrar de
-    # las puertas a alguien que entró después de la copia.
-    fuente = os.environ.get("DB_PATH", "")
-    if os.path.exists(BASE_PRODUCCION) and os.path.abspath(
-            BASE_PRODUCCION) != os.path.abspath(fuente or ""):
-        import sqlite3
-        try:
-            cn = sqlite3.connect(f"file:{BASE_PRODUCCION}?mode=ro", uri=True)
-            del_prod = {str(r[0]).strip() for r in cn.execute(
-                "SELECT user_id FROM empleados WHERE user_id IS NOT NULL")}
-            cn.close()
-            nuevos = del_prod - del_sistema
-            del_sistema = del_prod
-            fuente = BASE_PRODUCCION + (
-                f"  ({len(nuevos)} número(s) que la copia no tenía)" if nuevos else "")
-        except Exception as exc:
-            fuente = (f"{fuente}  (no se pudo leer producción: {exc}; "
-                      f"si la copia está vieja, alguien que entró después "
-                      f"figuraría como desconocido)")
+    # La lista de empleados sale de producción y la de equipos de esta base:
+    # son dos preguntas y cada fuente es autoridad de una sola.
 
     puertas = [d for d in filas if d["es_acceso"]]
     fichaje = [d for d in filas if d["cuenta_asistencia"] and not d["es_acceso"]]

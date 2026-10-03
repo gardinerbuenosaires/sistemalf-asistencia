@@ -876,6 +876,38 @@ async function _loadPerms() {
 }
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }
 
+// ── Cerrar las ventanas flotantes ────────────────────────────────────────────
+// Esc y clic afuera. Es la red para cuando el boton Cerrar no se ve: paso por
+// un error de layout, pero quedarse encerrado en una ventana no deberia
+// depender de que el layout este bien.
+//
+// Se cierra la de mas arriba, no todas: si una abrio a otra, Esc devuelve un
+// paso en vez de tirar abajo las dos.
+function _ventanasFlotantes() {
+  // Por la firma del estilo y no por el id: solo cinco de las doce ventanas
+  // tienen id, y pedirle un id a cada una para esto seria arreglar el problema
+  // en doce lugares en vez de uno.
+  return [...document.body.children].filter(
+    el => el.style && el.style.position === 'fixed' && el.style.zIndex === '9999');
+}
+
+function cerrarVentanaFlotante() {
+  const abiertas = _ventanasFlotantes();
+  if (abiertas.length) { abiertas[abiertas.length - 1].remove(); return true; }
+  return false;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') cerrarVentanaFlotante();
+});
+
+document.addEventListener('click', e => {
+  // Solo el fondo: un clic adentro de la ventana no la cierra, que es lo que
+  // uno espera cuando esta seleccionando texto de una tabla.
+  const v = _ventanasFlotantes();
+  if (v.length && e.target === v[v.length - 1]) v[v.length - 1].remove();
+});
+
 // ── Toast ──────────────────────────────────────────────────────────────────────
 function toast(msg, ms=3000) {
   const el = document.getElementById("toast");
@@ -2562,9 +2594,9 @@ async function adoptarNiveles() {
   modal.innerHTML = `
     <div style="background:white;border-radius:10px;padding:24px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
       <div style="font-weight:bold;font-size:1rem">Traer lo que el equipo de fichaje ya sabe</div>
-      <div id="niveles-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+      <div id="niveles-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
         Leyendo el equipo… puede tardar unos segundos.</div>
-      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
               onclick="document.getElementById('modal-niveles').remove()">Cerrar</button>
     </div>`;
   document.body.appendChild(modal);
@@ -2636,7 +2668,7 @@ async function pintarNiveles() {
       ${d.ajenos.map(a => `${_esc(a.user_id)} «${_esc(a.nombre)}» (${nombre(a.nivel)})`).join(' · ')}.
       No se pueden adoptar porque no tienen legajo. Mirá quiénes son.</div>` : ''}
     ${d.diferencias.length ? `
-    <div style="overflow-y:auto;max-height:50vh;margin-top:10px;border:1px solid #eee;border-radius:4px">
+    <div style="overflow-y:auto;margin-top:10px;border:1px solid #eee;border-radius:4px">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem">
         <thead style="position:sticky;top:0;background:#fafafa">
           <tr><th style="padding:6px 10px;width:34px"></th>
@@ -2727,8 +2759,8 @@ async function asignarPorCargo() {
   modal.innerHTML = `
     <div style="background:white;border-radius:10px;padding:24px;width:880px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
       <div style="font-weight:bold;font-size:1rem">Asignar perfiles por cargo</div>
-      <div id="cargo-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">Cargando...</div>
-      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+      <div id="cargo-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">Cargando...</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
               onclick="document.getElementById('modal-por-cargo').remove()">Cerrar</button>
     </div>`;
   document.body.appendChild(modal);
@@ -2799,7 +2831,7 @@ async function pintarPorCargo() {
       Reemplazar también el perfil de los que ya tienen uno
     </label>
     <div id="cargo-aviso-pisar"></div>
-    <div style="overflow-y:auto;max-height:50vh;margin-top:10px;border:1px solid #eee;border-radius:4px">
+    <div style="overflow-y:auto;margin-top:10px;border:1px solid #eee;border-radius:4px">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem">
         <thead style="position:sticky;top:0;background:#fafafa">
           <tr><th style="text-align:left;padding:6px 10px">Cargo</th>
@@ -2875,9 +2907,9 @@ async function descubrirPerfiles() {
       <div style="font-size:.8rem;color:#888;margin-top:2px">
         Agrupa a la gente por el conjunto exacto de puertas donde está cargada hoy.
         Cada grupo es un perfil que ya existe, aunque nadie lo haya escrito.</div>
-      <div id="desc-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+      <div id="desc-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
         Leyendo los equipos…</div>
-      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
               onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
     </div>`;
   document.body.appendChild(modal);
@@ -2962,7 +2994,7 @@ async function _cargarDescubrimiento() {
       <b>${_grupos.length} grupo(s)</b> — los más grandes primero, que son los perfiles de verdad.
       Los de una o dos personas suelen ser un error de carga o una excepción que nadie anotó.</div>
     ${ignorados}
-    <div style="overflow-y:auto;max-height:56vh;border:1px solid #eee;border-radius:4px">${bloques}</div>
+    <div style="overflow-y:auto;border:1px solid #eee;border-radius:4px">${bloques}</div>
     <div style="font-size:.78rem;color:#999;margin-top:10px">
       Asignar acá solo guarda el perfil en el sistema. No se escribe nada en los lectores.</div>`;
 }
@@ -3001,8 +3033,8 @@ async function verPendientes() {
       <div style="font-size:.8rem;color:#888;margin-top:2px">
         Activos que hoy no abren ninguna puerta. Puede estar bien, o puede ser alguien
         a quien nadie le asignó el acceso todavía.</div>
-      <div id="pend-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">Cargando…</div>
-      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+      <div id="pend-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">Cargando…</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
               onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
     </div>`;
   document.body.appendChild(modal);
@@ -3037,7 +3069,7 @@ async function verPendientes() {
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="background:#f6e9ce;color:#8a5d06;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${gente.length} sin acceso</span>
     </div>
-    <div style="overflow-y:auto;max-height:56vh;margin-top:12px;border:1px solid #eee;border-radius:4px">
+    <div style="overflow-y:auto;margin-top:12px;border:1px solid #eee;border-radius:4px">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem">
         <thead style="position:sticky;top:0;background:#fafafa"><tr>
           <th style="text-align:left;padding:6px 10px">Empleado</th>
@@ -3063,9 +3095,9 @@ async function verPlan() {
       <div style="font-weight:bold;font-size:1rem">Plan de cambios</div>
       <div style="font-size:.8rem;color:#888;margin-top:2px">
         Lo que habría que cambiar en cada lector para que coincida con los perfiles. No se aplica nada.</div>
-      <div id="plan-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+      <div id="plan-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
         Leyendo los equipos… se leen todos a la vez, pero puede tardar.</div>
-      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
               onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
     </div>`;
   document.body.appendChild(modal);
@@ -3170,7 +3202,7 @@ async function verPlan() {
       Eso suele ser una baja que no se propagó: la dieron de baja, se sincronizó con el equipo
       de asistencia, y en las puertas quedó. No pueden fichar y siguen abriendo, que es
       exactamente al revés de lo que corresponde. Es lo primero para mirar de esta lista.</div>` : ''}
-    <div style="overflow-y:auto;max-height:52vh;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>
+    <div style="overflow-y:auto;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>
     <div style="font-size:.78rem;color:#999;margin-top:10px">
       Esto es solo el plan. Aplicarlo va a estar disponible cuando la escritura en los equipos
       esté probada contra los lectores reales.</div>`;
@@ -3322,9 +3354,9 @@ async function revisarTodos() {
         <b>equipo de fichaje</b> — el plan de cambios administra solo las puertas.
         No lee huellas, por eso es rápida.
       </div>
-      <div id="rev-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+      <div id="rev-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
         Consultando los equipos… se leen todos a la vez, pero si alguno está apagado puede tardar.</div>
-      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
               onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
     </div>`;
   document.body.appendChild(modal);
@@ -3385,7 +3417,7 @@ async function revisarTodos() {
       ${chip(t.nombre_distinto, 'con otro nombre', '#e8e0f0', '#5b3a8a')}
       ${hayProblemas ? '' : '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo en orden</span>'}
     </div>
-    <div style="overflow-y:auto;max-height:58vh;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>`;
+    <div style="overflow-y:auto;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>`;
   cargarDispositivos();
 }
 
@@ -3427,8 +3459,8 @@ async function verRelojes() {
     modal.innerHTML = `
       <div style="background:white;border-radius:10px;padding:24px;width:720px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
         <div style="font-weight:bold;font-size:1rem">Relojes de los equipos</div>
-        <div id="relojes-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem"></div>
-        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+        <div id="relojes-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto"></div>
+        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
                 onclick="document.getElementById('modal-relojes').remove()">Cerrar</button>
       </div>`;
     document.body.appendChild(modal);
@@ -3495,7 +3527,7 @@ function pintarRelojes() {
       fechadas con esa hora.</div>`
     : `<div style="background:#dcede2;color:#2e7d4f;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:8px">
       Todos en hora.</div>`}
-    <div style="overflow-y:auto;max-height:50vh;margin-top:10px;border:1px solid #eee;border-radius:4px">
+    <div style="overflow-y:auto;margin-top:10px;border:1px solid #eee;border-radius:4px">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem">
         <thead style="position:sticky;top:0;background:#fafafa">
           <tr><th style="text-align:left;padding:6px 10px">Equipo</th>
@@ -3554,8 +3586,8 @@ async function verOperaciones() {
     modal.innerHTML = `
       <div style="background:white;border-radius:10px;padding:24px;width:900px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
         <div style="font-weight:bold;font-size:1rem">Lo que se escribió en los equipos</div>
-        <div id="operaciones-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">Cargando…</div>
-        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+        <div id="operaciones-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">Cargando…</div>
+        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
                 onclick="document.getElementById('modal-operaciones').remove()">Cerrar</button>
       </div>`;
     document.body.appendChild(modal);
@@ -3577,7 +3609,7 @@ async function verOperaciones() {
 
   const color = { sacado: '#2e7d4f', pendiente: '#8a5d06', 'falló': '#b3261e' };
   cuerpo.innerHTML = `
-    <div style="overflow-y:auto;max-height:62vh;border:1px solid #eee;border-radius:4px">
+    <div style="overflow-y:auto;border:1px solid #eee;border-radius:4px">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem">
         <thead style="position:sticky;top:0;background:#fafafa">
           <tr><th style="text-align:left;padding:6px 10px;width:130px">Cuándo</th>
@@ -3649,8 +3681,8 @@ async function verPasadas(id, dias) {
     modal.innerHTML = `
       <div style="background:white;border-radius:10px;padding:24px;width:760px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
         <div style="font-weight:bold;font-size:1rem">Pasadas por ${_esc(d ? d.nombre : id)}</div>
-        <div id="pasadas-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem"></div>
-        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+        <div id="pasadas-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto"></div>
+        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
                 onclick="document.getElementById('modal-pasadas').remove()">Cerrar</button>
       </div>`;
     document.body.appendChild(modal);
@@ -3734,7 +3766,7 @@ async function verPasadas(id, dias) {
     <input type="text" id="pasadas-buscar" oninput="filtrarPasadas()" autocomplete="off"
            placeholder="Buscar por número o nombre"
            style="margin-top:10px;width:100%;padding:7px 10px;font-size:.85rem;border:1px solid #ddd;border-radius:4px">
-    <div style="overflow-y:auto;max-height:50vh;margin-top:8px;border:1px solid #eee;border-radius:4px">
+    <div style="overflow-y:auto;margin-top:8px;border:1px solid #eee;border-radius:4px">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem">
         <thead style="position:sticky;top:0;background:#fafafa">
           <tr><th style="text-align:left;padding:6px 10px;width:110px">Fecha</th>
@@ -3791,9 +3823,9 @@ async function verCargados(id) {
   modal.innerHTML = `
     <div style="background:white;border-radius:10px;padding:24px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
       <div style="font-weight:bold;font-size:1rem">Quiénes están cargados en ${_esc(d ? d.nombre : id)}</div>
-      <div id="cargados-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem">
+      <div id="cargados-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
         Leyendo el equipo… puede tardar unos segundos.</div>
-      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px"
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
               onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
     </div>`;
   document.body.appendChild(modal);
@@ -3872,7 +3904,7 @@ async function verCargados(id) {
     <input type="text" id="cargados-buscar" oninput="filtrarCargados()" autocomplete="off"
            placeholder="Buscar por número o nombre"
            style="margin-top:10px;width:100%;padding:7px 10px;font-size:.85rem;border:1px solid #ddd;border-radius:4px">
-    <div style="overflow-y:auto;max-height:52vh;margin-top:8px;border:1px solid #eee;border-radius:4px">
+    <div style="overflow-y:auto;margin-top:8px;border:1px solid #eee;border-radius:4px">
       <table style="width:100%;border-collapse:collapse;font-size:.85rem">
         <thead style="position:sticky;top:0;background:#fafafa">
           <tr><th style="text-align:left;padding:6px 10px">N°</th>

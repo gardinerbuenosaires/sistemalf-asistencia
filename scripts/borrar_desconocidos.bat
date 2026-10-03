@@ -18,6 +18,8 @@
 ::    scripts\borrar_desconocidos.bat                     todas las puertas
 ::    scripts\borrar_desconocidos.bat 192.168.1.202       solo ese equipo
 ::    scripts\borrar_desconocidos.bat --incluir-fichaje   tambien el de fichaje
+::    scripts\borrar_desconocidos.bat --numero 42         solo esa persona,
+::                                                        de todas las puertas
 ::
 :: Para ver la lista sin borrar nada:
 ::    scripts\borrar_desconocidos.bat --solo-ver

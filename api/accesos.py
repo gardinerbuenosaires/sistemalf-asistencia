@@ -943,6 +943,10 @@ def cargar_en_puerta(data: CargarEnPuertaIn,
     return {"ok": True, "equipo": puerta["nombre"],
             "empleado": f"{emp['apellido']}, {emp['nombre']}".strip(", "),
             "huellas": r["huellas"], "grupo": r["grupo"],
+            # Si en esa puerta hay gente repartida entre grupos, el elegido fue
+            # una decision y no una copia. Quien mira tiene que saberlo.
+            "grupo_ambiguo": r.get("grupo_ambiguo", False),
+            "reparto_grupos": r.get("reparto_grupos", {}),
             "nombre_escrito": r["nombre_escrito"], "otros_intactos": r["otros"]}
 
 

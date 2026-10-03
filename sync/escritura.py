@@ -170,6 +170,11 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
     El grupo, si no se indica, es el más frecuente de ese equipo. Si todos los
     que abren están en el grupo 1, crear a este en el 1 reproduce lo que ya
     funciona; elegir otro sería probar algo distinto sin querer.
+
+    Pero si en esa puerta la gente está repartida entre varios grupos, "el más
+    frecuente" deja de ser obvio y pasa a ser una elección — y no sabemos qué
+    separa a un grupo del otro. Se informa con `grupo_ambiguo` para que quien
+    mira lo sepa, en vez de que el sistema decida callado.
     """
     from collections import Counter
 
@@ -193,9 +198,19 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
 
         usados = {u["uid"] for u in antes["usuarios"].values()}
         uid = (max(usados) + 1) if usados else 1
+
+        # El grupo del equipo, que es de donde el lector saca sus propias reglas
+        # —franjas, modo de verificación, combinaciones de apertura— y puede
+        # decidir si alguien abre al margen de estar cargado.
+        #
+        # Cuando todos los de esa puerta están en el mismo grupo, copiarlo no es
+        # una decisión. Cuando están repartidos, sí lo es, y no sabemos qué
+        # separa a un grupo del otro: eso se averigua en el menú del equipo.
+        # Elegir en silencio sería tomar esa decisión sin que nadie se entere.
+        reparto = Counter(u["grupo"] for u in antes["usuarios"].values() if u["grupo"])
+        ambiguo = len(reparto) > 1
         if grupo is None:
-            cuenta = Counter(u["grupo"] for u in antes["usuarios"].values() if u["grupo"])
-            grupo = cuenta.most_common(1)[0][0] if cuenta else "1"
+            grupo = reparto.most_common(1)[0][0] if reparto else "1"
         # El nombre que se eligió para los lectores; si no hay, el del maestro,
         # que es lo que esa persona ya muestra en el otro equipo.
         texto = (nombre or "").strip() or (quien.name or "").strip() or numero
@@ -214,6 +229,8 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
         bien = quedo and quedo["huellas"] == len(suyas) and not problemas
         return {"ok": bool(bien), "transporte": transporte,
                 "uid": uid, "grupo": grupo, "nombre_escrito": texto,
+                "grupo_ambiguo": ambiguo,
+                "reparto_grupos": dict(reparto),
                 "huellas": quedo["huellas"] if quedo else 0,
                 "huellas_esperadas": len(suyas),
                 "otros": len(antes["usuarios"]), "problemas": problemas,

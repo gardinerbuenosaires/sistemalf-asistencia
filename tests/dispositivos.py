@@ -2540,5 +2540,61 @@ if _f18:
                                 "user_id": _uid18}).status_code == 403)
     _esc_mod.cargar_en_puerta = _real18
 
+
+print("\n=== EL GRUPO DEL EQUIPO, CUANDO ELEGIRLO ES UNA DECISION ===")
+# El grupo es de donde el lector saca sus propias reglas y puede decidir si
+# alguien abre al margen de estar cargado. Copiar el mas frecuente no es una
+# decision si todos estan en el mismo; si estan repartidos, si lo es.
+from sync.escritura import cargar_en_puerta as _cargar_real
+
+class _Puerta:
+    user_packet_size = 28
+    encoding = "latin-1"
+    def __init__(s, grupos):
+        s.users = len(grupos)
+        s._u = [type("U", (), {"uid": i + 1, "user_id": str(100 + i), "name": "X",
+                               "group_id": g, "privilege": 0})()
+                for i, g in enumerate(grupos)]
+        s.escrito = None
+    def get_users(s): return list(s._u)
+    def get_templates(s): return []
+    def refresh_data(s): pass
+    def save_user_template(s, u, f): pass
+    def disconnect(s): pass
+
+import sync.escritura as _em
+_conectar_real = _em._conectar
+_huellas_real = _em.huellas_de
+_escribir_real = _em._escribir_usuario
+
+def _probar(grupos):
+    equipo = _Puerta(grupos)
+    _em._conectar = lambda d: (equipo, "udp")
+    _em.huellas_de = lambda d, n: ((type("Q", (), {"name": "ALGUIEN"})(), ["h"]), None)
+    def _fake_escribir(conexion, uid, nombre, privilegio, grupo, numero, franja=0):
+        conexion.escrito = grupo
+        conexion.users += 1
+        conexion._u.append(type("U", (), {"uid": uid, "user_id": str(numero),
+                                          "name": nombre, "group_id": grupo,
+                                          "privilege": privilegio})())
+    _em._escribir_usuario = _fake_escribir
+    return _cargar_real({"nombre": "P", "ip": "1.1.1.1"}, {"nombre": "M", "ip": "2"}, "9988")
+
+_r1 = _probar(["1", "1", "1"])
+chequear("con todos en el mismo grupo, no es ambiguo",
+         _r1["grupo_ambiguo"] is False, _r1)
+chequear("y copia ese grupo", _r1["grupo"] == "1", _r1)
+
+_r2 = _probar(["1", "1", "0"])
+chequear("con la gente repartida, se marca como ambiguo",
+         _r2["grupo_ambiguo"] is True, _r2)
+chequear("elige el mas frecuente igual", _r2["grupo"] == "1", _r2)
+chequear("y dice como esta repartida la puerta",
+         _r2["reparto_grupos"] == {"1": 2, "0": 1}, _r2["reparto_grupos"])
+
+_em._conectar = _conectar_real
+_em.huellas_de = _huellas_real
+_em._escribir_usuario = _escribir_real
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

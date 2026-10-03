@@ -3236,7 +3236,14 @@ async function cargarEnPuerta(dispositivoId, userId, boton) {
     fila.innerHTML = `<span style="color:#2e7d4f;font-weight:600;min-width:62px;display:inline-block">cargado</span>`
       + `<span style="font-family:monospace;color:#888">${_esc(userId)}</span> ${_esc(r.empleado)}`
       + `<span style="color:#888;margin-left:6px">· ${r.huellas} huella(s), grupo ${_esc(r.grupo)},`
-      + ` los otros ${r.otros_intactos} intactos</span>`;
+      + ` los otros ${r.otros_intactos} intactos</span>`
+      // Si en esa puerta hay gente repartida entre grupos, el grupo elegido fue
+      // una decisión y no una copia. Y todavía no sabemos qué los separa.
+      + (r.grupo_ambiguo ? `<div style="color:#8a5d06;font-size:.76rem;margin-left:72px">
+           esta puerta tiene gente en ${Object.keys(r.reparto_grupos).length} grupos
+           (${Object.entries(r.reparto_grupos).map(([g, n]) => `${g}: ${n}`).join(', ')}).
+           Se usó el más frecuente, pero todavía no sabemos qué los separa — si no abre,
+           mirá esto primero.</div>` : '');
   }
   toast(`${r.empleado} cargado en ${r.equipo}`);
 }

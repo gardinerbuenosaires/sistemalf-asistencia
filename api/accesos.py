@@ -845,6 +845,107 @@ def importar_nombres(data: ImportarNivelesIn,
             "sin_tocar": len(data.empleados) - cambiados}
 
 
+class CargarEnPuertaIn(BaseModel):
+    dispositivo_id: int
+    user_id: str
+
+
+def _registrar_operacion(conn, **datos):
+    """Deja constancia de lo que se le escribió a un equipo. Lo que no se registra
+    no se puede auditar, y auditar es la mitad del sentido de este módulo."""
+    conn.execute(
+        """INSERT INTO accesos_operaciones
+             (dispositivo_id, equipo, user_id, empleado_id, nombre_equipo,
+              accion, motivo, resultado, detalle, respaldo, usuario_id)
+           VALUES (:dispositivo_id, :equipo, :user_id, :empleado_id, :nombre_equipo,
+                   :accion, :motivo, :resultado, :detalle, :respaldo, :usuario_id)""",
+        {"dispositivo_id": None, "equipo": None, "user_id": None, "empleado_id": None,
+         "nombre_equipo": None, "accion": None, "motivo": None, "resultado": None,
+         "detalle": None, "respaldo": None, "usuario_id": None, **datos})
+
+
+@router.post("/cargar")
+def cargar_en_puerta(data: CargarEnPuertaIn,
+                     usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Carga a una persona en una puerta, copiándole la huella del equipo de fichaje.
+
+    Es la mitad que faltaba: hasta ahora el plan decía a quién había que cargar y
+    no había forma de hacerlo desde el sistema.
+
+    Solo carga a quien le corresponde esa puerta según su perfil. No es una
+    restricción técnica —el equipo aceptaría a cualquiera— sino la que mantiene
+    el sentido de todo esto: si se pudiera cargar a alguien salteando la
+    política, el plan dejaría de describir la realidad y volveríamos a tener dos
+    fuentes de verdad, que es el problema que vinimos a resolver.
+
+    Sin huella en el maestro no se carga, y se dice por qué. Cargar a alguien sin
+    huella lo deja figurando en la lista del equipo sin poder abrir: parece
+    hecho y no lo está, y nadie vuelve a mirar algo que ya figura resuelto.
+    """
+    from sync.escritura import cargar_en_puerta as escribir
+
+    numero = str(data.user_id).strip()
+    with db_session() as conn:
+        puerta = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
+                      es_acceso, cuenta_asistencia
+                 FROM dispositivos WHERE id = ? AND activo = 1""",
+            (data.dispositivo_id,)).fetchone()
+        if not puerta:
+            raise HTTPException(404, "Esa puerta no existe o está desactivada")
+        if not puerta["es_acceso"]:
+            raise HTTPException(400, f"{puerta['nombre']} no es una puerta.")
+        if puerta["protocolo"] != "pull":
+            raise HTTPException(400, f"{puerta['nombre']} es un equipo push: no "
+                                     f"atiende llamadas.")
+        maestro = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo
+                 FROM dispositivos
+                WHERE activo=1 AND cuenta_asistencia=1 AND protocolo='pull'
+                  AND ip IS NOT NULL ORDER BY orden, id LIMIT 1""").fetchone()
+        if not maestro:
+            raise HTTPException(400, "No hay equipo de fichaje cargado: de ahí "
+                                     "sale la huella que se copia.")
+
+        emp = conn.execute(
+            """SELECT id, nombre, apellido, activo, nombre_lector
+                 FROM empleados WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
+        if not emp:
+            raise HTTPException(404, f"El {numero} no existe en el sistema.")
+        if not emp["activo"]:
+            raise HTTPException(400, f"{emp['apellido']}, {emp['nombre']} está dado "
+                                     f"de baja. El sistema no carga egresados.")
+        # Que le corresponda esa puerta: es lo que mantiene al plan describiendo
+        # la realidad en vez de ser una sugerencia.
+        if data.dispositivo_id not in set(puertas_de(conn, emp["id"])["puertas"]):
+            raise HTTPException(
+                400, f"A {emp['apellido']}, {emp['nombre']} no le corresponde "
+                     f"{puerta['nombre']} según su perfil. Cambiale el perfil o "
+                     f"ponele una excepción, y después aplicá.")
+        puerta, maestro, emp = dict(puerta), dict(maestro), dict(emp)
+
+    r = escribir(puerta, maestro, numero, nombre=emp["nombre_lector"])
+
+    with db_session() as conn:
+        _registrar_operacion(
+            conn, dispositivo_id=puerta["id"], equipo=puerta["nombre"],
+            user_id=numero, empleado_id=emp["id"],
+            nombre_equipo=r.get("nombre_escrito"), accion="cargar",
+            motivo=None, resultado="cargado" if r["ok"] else "falló",
+            detalle=r.get("error"), respaldo=None,
+            usuario_id=int(usuario.get("sub") or 0) or None)
+
+    if not r["ok"]:
+        raise HTTPException(400, f"No se pudo cargar a {emp['apellido']}, "
+                                 f"{emp['nombre']} en {puerta['nombre']}: "
+                                 f"{r['error']}")
+    return {"ok": True, "equipo": puerta["nombre"],
+            "empleado": f"{emp['apellido']}, {emp['nombre']}".strip(", "),
+            "huellas": r["huellas"], "grupo": r["grupo"],
+            "nombre_escrito": r["nombre_escrito"], "otros_intactos": r["otros"]}
+
+
 @router.get("/sin-perfil")
 def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     """

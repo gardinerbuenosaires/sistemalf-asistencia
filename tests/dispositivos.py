@@ -2455,5 +2455,90 @@ if _f16:
     chequear("uno que nunca fue de nadie no inventa dueno",
              _s17 and _s17["era_de"] is None, _s17)
 
+
+print("\n=== CARGAR A UNA PERSONA EN UNA PUERTA ===")
+# La mitad que faltaba: el plan decia a quien cargar y no habia forma de hacerlo
+# desde el sistema.
+import sync.escritura as _esc_mod
+
+_c18 = sqlite3.connect(DB)
+_f18 = _c18.execute(
+    """SELECT id, user_id FROM empleados
+        WHERE activo=1 AND user_id IS NOT NULL AND perfil_acceso_id IS NOT NULL
+        LIMIT 1""").fetchone()
+_c18.close()
+
+if _f18:
+    _eid18, _uid18 = _f18[0], str(_f18[1]).strip()
+    # Se le da un perfil que incluya la puerta, para que le corresponda.
+    _r18 = cli.get("/api/perfiles-acceso").json()["perfiles"]
+    _p18 = next(x for x in _r18 if x["id"] == todas["id"])
+    cli.put(f"/api/perfiles-acceso/{todas['id']}",
+            json={"nombre": _p18["nombre"], "activo": True, "orden": 0,
+                  "dispositivos": sorted(set(_p18["dispositivos"]) | {p_personal})})
+    cli.put(f"/api/accesos/empleado/{_eid18}/perfil", json={"perfil_acceso_id": todas["id"]})
+
+    _escrito = {}
+    _real18 = _esc_mod.cargar_en_puerta
+    _esc_mod.cargar_en_puerta = lambda puerta, maestro, numero, nombre=None, grupo=None: (
+        _escrito.update({"puerta": puerta["id"], "numero": numero, "nombre": nombre}),
+        {"ok": True, "uid": 50, "grupo": "1", "nombre_escrito": nombre or "X",
+         "huellas": 2, "huellas_esperadas": 2, "otros": 26, "problemas": [],
+         "error": None})[1]
+
+    r = cli.post("/api/accesos/cargar",
+                 json={"dispositivo_id": p_personal, "user_id": _uid18})
+    chequear("carga a quien le corresponde esa puerta", r.status_code == 200, r.text[:200])
+    chequear("y le pasa el numero a la escritura",
+             _escrito.get("numero") == _uid18, _escrito)
+    _ops18 = cli.get("/api/dispositivos/operaciones").json()["operaciones"]
+    chequear("queda registrado como cargado",
+             _ops18[0]["accion"] == "cargar" and _ops18[0]["resultado"] == "cargado",
+             _ops18[0])
+
+    # Lo que NO deja hacer, que es lo que mantiene al plan describiendo la
+    # realidad en vez de ser una sugerencia. El perfil se acota a una sola
+    # puerta: con "todas" no habria ninguna que no le corresponda.
+    cli.put(f"/api/perfiles-acceso/{todas['id']}",
+            json={"nombre": _p18["nombre"], "activo": True, "orden": 0,
+                  "dispositivos": [p_personal]})
+    r = cli.post("/api/accesos/cargar",
+                 json={"dispositivo_id": p_oficina, "user_id": _uid18})
+    chequear("no carga en una puerta que su perfil no incluye",
+             r.status_code == 400 and "no le corresponde" in r.json()["detail"],
+             r.text[:200])
+
+    r = cli.post("/api/accesos/cargar",
+                 json={"dispositivo_id": p_personal, "user_id": "888222"})
+    chequear("ni a alguien que no existe en el sistema", r.status_code == 404, r.status_code)
+
+    _c18 = sqlite3.connect(DB)
+    _baja = _c18.execute(
+        "SELECT user_id FROM empleados WHERE activo=0 AND user_id IS NOT NULL LIMIT 1").fetchone()
+    _c18.close()
+    if _baja:
+        r = cli.post("/api/accesos/cargar",
+                     json={"dispositivo_id": p_personal, "user_id": str(_baja[0]).strip()})
+        chequear("ni a un egresado", r.status_code == 400 and "baja" in r.json()["detail"],
+                 r.text[:160])
+
+    # Si la escritura falla, se registra igual: el registro no puede depender de
+    # que las cosas salgan bien.
+    _esc_mod.cargar_en_puerta = lambda *a, **k: {
+        "ok": False, "error": "el equipo no contesto", "problemas": []}
+    r = cli.post("/api/accesos/cargar",
+                 json={"dispositivo_id": p_personal, "user_id": _uid18})
+    chequear("una escritura fallida se rechaza", r.status_code == 400, r.status_code)
+    _ops19 = cli.get("/api/dispositivos/operaciones").json()["operaciones"]
+    chequear("y queda registrada como fallida",
+             _ops19[0]["resultado"] == "falló" and "no contesto" in (_ops19[0]["detalle"] or ""),
+             _ops19[0])
+
+    chequear("cargar necesita accesos:aplicar",
+             _aplica.post("/api/accesos/cargar",
+                          json={"dispositivo_id": p_personal,
+                                "user_id": _uid18}).status_code == 403)
+    _esc_mod.cargar_en_puerta = _real18
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

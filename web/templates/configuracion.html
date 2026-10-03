@@ -3147,7 +3147,7 @@ async function verPlan() {
         ${cab} <span style="color:#2e7d4f">· ya coincide, sin cambios</span></div>`;
     }
     const filas = [
-      ...p.agregar.map(a => `<div style="padding:4px 0 4px 14px;font-size:.83rem">
+      ...p.agregar.map(a => `<div style="padding:4px 0 4px 14px;font-size:.83rem" id="cargar-${p.id}-${a.user_id}">
         <span style="color:#2e7d4f;font-weight:600;min-width:62px;display:inline-block">+ cargar</span>
         <span style="font-family:monospace;color:#888">${_esc(a.user_id)}</span> ${_esc(a.nombre)}
         ${a.sin_huella ? `<span style="background:#f6e9ce;color:#8a5d06;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px"
@@ -3155,6 +3155,9 @@ async function verPlan() {
                ? 'No está cargado en el equipo de asistencia, así que no existe ninguna huella suya para copiar'
                : 'Está cargado en el equipo de asistencia pero sin ninguna huella enrolada'}">${
              a.motivo_huella === 'no_en_maestro' ? 'no está en asistencia' : 'sin huella enrolada'}</span>` : ''}
+        ${canDo('accesos','aplicar') && !a.sin_huella
+          ? `<button class="btn btn-sm btn-secondary" style="margin-left:8px"
+                     onclick="cargarEnPuerta(${p.id}, '${_esc(a.user_id)}', this)">Cargar</button>` : ''}
       </div>`),
       ...p.sacar.map(s => `<div style="padding:4px 0 4px 14px;font-size:.83rem">
         <span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">− sacar</span>
@@ -3208,6 +3211,34 @@ async function verPlan() {
     <div style="font-size:.78rem;color:#999;margin-top:10px">
       Esto es solo el plan. Aplicarlo va a estar disponible cuando la escritura en los equipos
       esté probada contra los lectores reales.</div>`;
+}
+
+// Cargar a una persona en una puerta, con su huella copiada del equipo de
+// fichaje. Es la mitad que faltaba: hasta ahora el plan decía a quién había que
+// cargar y no había forma de hacerlo desde el sistema.
+async function cargarEnPuerta(dispositivoId, userId, boton) {
+  if (boton) { boton.disabled = true; boton.textContent = 'Cargando…'; }
+  const res = await fetch('/api/accesos/cargar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ dispositivo_id: dispositivoId, user_id: userId }),
+  });
+  let r = {};
+  try { r = await res.json(); } catch {}
+  if (!res.ok) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error: ' + (r.detail || 'no se pudo cargar'));
+  }
+  // La fila se tacha en vez de desaparecer: ver lo que se hizo recién, y en qué
+  // orden, es lo que permite darse cuenta si algo salió distinto.
+  const fila = document.getElementById(`cargar-${dispositivoId}-${userId}`);
+  if (fila) {
+    fila.style.opacity = '.55';
+    fila.innerHTML = `<span style="color:#2e7d4f;font-weight:600;min-width:62px;display:inline-block">cargado</span>`
+      + `<span style="font-family:monospace;color:#888">${_esc(userId)}</span> ${_esc(r.empleado)}`
+      + `<span style="color:#888;margin-left:6px">· ${r.huellas} huella(s), grupo ${_esc(r.grupo)},`
+      + ` los otros ${r.otros_intactos} intactos</span>`;
+  }
+  toast(`${r.empleado} cargado en ${r.equipo}`);
 }
 
 // ── Perfiles de acceso ────────────────────────────────────────────────────────

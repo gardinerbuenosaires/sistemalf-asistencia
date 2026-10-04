@@ -708,9 +708,13 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
     <div id="mpanel-bloqueado-aliviada" style="display:none;margin-top:10px;font-size:.82rem;color:#555">
       Excepción: este bloque tiene fichaje pero el empleado fue aliviado.
     </div>
+    <div id="mpanel-bloqueado-vac" style="display:none;margin-top:10px;font-size:.82rem;color:#555">
+      Excepción: este bloque tiene fichaje pero se lo toma como vacaciones.
+    </div>
     <div class="modal-actions">
       <button id="btn-bloqueado-franco"   style="display:none" class="btn-guardar" onclick="abrirPanelFranco()">Asignar franco al bloque</button>
       <button id="btn-bloqueado-aliviada" style="display:none;background:#e67e22" class="btn-guardar" onclick="abrirPanelAliviada()">Aplicar aliviada</button>
+      <button id="btn-bloqueado-vac"      style="display:none;background:#2980b9" class="btn-guardar" onclick="abrirPanelVacExcepcion()">Asignar vacaciones al bloque</button>
       <button class="btn-cancelar" onclick="cerrarModal()">Cerrar</button>
     </div>
   </div>
@@ -724,6 +728,19 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
     </div>
     <div class="modal-actions">
       <button class="btn-guardar" onclick="confirmarAliviada()">Confirmar aliviada</button>
+      <button class="btn-cancelar" onclick="modalTabPlani('bloqueado')">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Panel confirmación vacaciones con fichaje -->
+  <div id="mpanel-vac-excepcion" style="display:none">
+    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:12px;font-size:.85rem;color:#7d5a00;margin-bottom:14px">
+      ⚠ Este bloque ya tiene fichaje registrado.<br>
+      Asignar vacaciones va a sobreescribir la presencia y descuenta medio día del saldo.<br>
+      El fichaje no se elimina — quedará registrado pero no afectará el resultado.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-guardar" onclick="confirmarVacExcepcion()">Confirmar vacaciones</button>
       <button class="btn-cancelar" onclick="modalTabPlani('bloqueado')">Cancelar</button>
     </div>
   </div>
@@ -1961,6 +1978,7 @@ function modalTabPlani(tab) {
   document.getElementById('mpanel-franco').style.display     = tab === 'franco'     ? 'block' : 'none';
   document.getElementById('mpanel-bloqueado').style.display  = tab === 'bloqueado'  ? 'block' : 'none';
   document.getElementById('mpanel-aliviada').style.display   = tab === 'aliviada'   ? 'block' : 'none';
+  document.getElementById('mpanel-vac-excepcion').style.display = tab === 'vac-excepcion' ? 'block' : 'none';
   document.getElementById('mpanel-ausente-sc').style.display = tab === 'ausente-sc' ? 'block' : 'none';
   document.getElementById('mpanel-quitar-franco').style.display = tab === 'quitar-franco' ? 'block' : 'none';
   document.getElementById('mtab-nov').className    = 'modal-tab-btn' + (tab === 'nov'    ? ' activo' : '');
@@ -2036,6 +2054,11 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
       && canDo('asistencia','corregir') && letraActual === 'I';
     document.getElementById('mpanel-bloqueado-aliviada').style.display = puedeExcepcionAliviada ? '' : 'none';
     document.getElementById('btn-bloqueado-aliviada').style.display    = puedeExcepcionAliviada ? '' : 'none';
+    // Cortado + bloque específico: permitir asignar vacaciones como excepción
+    const puedeExcepcionVac = esCortado && bloqueInicial > 0 && !periodoCerrado
+      && canDo('vacaciones','asignar') && letraActual === 'I';
+    document.getElementById('mpanel-bloqueado-vac').style.display = puedeExcepcionVac ? '' : 'none';
+    document.getElementById('btn-bloqueado-vac').style.display    = puedeExcepcionVac ? '' : 'none';
   } else if (letraActual === 'A!!!') {
     document.getElementById('asc-comentario').value = '';
     document.getElementById('asc-aviso-turno').style.display = fecha === _localDateStr() ? 'block' : 'none';
@@ -2586,6 +2609,29 @@ async function confirmarAliviada() {
   }
   await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, {method:'POST'}).catch(()=>{});
   toast('Aliviada aplicada');
+  cerrarModal();
+  cargar();
+}
+
+// ── Vacaciones sobre bloque con presencia ────────────────────────────────────
+function abrirPanelVacExcepcion() {
+  modalTabPlani('vac-excepcion');
+}
+
+async function confirmarVacExcepcion() {
+  const { eid, fecha, bloqueActivo } = modalCtx;
+  const res = await fetch('/api/asistencia/novedades', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({empleado_id: eid, fecha, bloque: bloqueActivo, tipo: 'V'}),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(()=>({}));
+    toast('Error: ' + (e.detail || res.status));
+    return;
+  }
+  await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, {method:'POST'}).catch(()=>{});
+  toast('Vacaciones asignadas');
   cerrarModal();
   cargar();
 }

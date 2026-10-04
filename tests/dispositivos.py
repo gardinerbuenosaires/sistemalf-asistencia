@@ -2592,6 +2592,56 @@ chequear("elige el mas frecuente igual", _r2["grupo"] == "1", _r2)
 chequear("y dice como esta repartida la puerta",
          _r2["reparto_grupos"] == {"1": 2, "0": 1}, _r2["reparto_grupos"])
 
+# --- Los horarios que guarda el lector --------------------------------------
+# Un grupo apunta a franjas, y una franja trae los horarios de los siete dias.
+# La cuenta es lo unico que puede estar mal sin que se note: la primera version
+# leia cada dia como un entero de dos bytes, que los da vuelta, y una franja
+# abierta de 00:00 a 23:59 aparecia como "?3B17" -- parecia que el equipo
+# contestaba basura. Estos son los bytes que contesto la .203 de verdad.
+from sync import franjas as _fr
+
+_FRANJA_203 = bytes.fromhex("00 00 17 3b" * 7)
+_GRUPO_0 = bytes.fromhex("00 00 00 00")
+_GRUPO_1 = bytes.fromhex("03 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00")
+
+_semana = _fr.semana(_FRANJA_203)
+chequear("un dia son cuatro bytes: hora y minuto de inicio y de fin",
+         _fr.dia(bytes([8, 30, 17, 45])) == (8, 30, 17, 45))
+chequear("00 00 17 3b es de 00:00 a 23:59, no un entero dado vuelta",
+         _semana[0] == (0, 0, 23, 59), _semana[0])
+chequear("y los siete dias se leen igual", len(set(_semana)) == 1, _semana)
+chequear("la franja de la .203 esta abierta", _fr.abierta(_semana) is True)
+chequear("no esta vacia, que es otra cosa", _fr.vacia(_semana) is False)
+chequear("una franja en cero si esta vacia",
+         _fr.vacia(_fr.semana(bytes(28))) is True)
+chequear("una franja en cero no cuenta como abierta",
+         _fr.abierta(_fr.semana(bytes(28))) is False)
+chequear("una hora imposible devuelve None en vez de inventar",
+         _fr.dia(bytes([25, 0, 10, 0])) is None)
+chequear("un minuto imposible tambien", _fr.dia(bytes([10, 61, 11, 0])) is None)
+chequear("un bloque cortado tampoco se adivina",
+         _fr.dia(bytes([1, 2])) is None)
+chequear("un horario se muestra legible",
+         _fr.texto_dia((8, 5, 23, 59)) == "08:05 a 23:59",
+         _fr.texto_dia((8, 5, 23, 59)))
+chequear("y un dia ilegible lo dice", _fr.texto_dia(None) == "ilegible")
+
+_suyas_1, _otro_1 = _fr.franjas_del_grupo(_GRUPO_1)
+chequear("el grupo 1 de la .203 usa la franja 1", _suyas_1 == [1, 1, 1], _suyas_1)
+chequear("y el primer campo se devuelve aparte, sin nombre inventado",
+         _otro_1 == 3, _otro_1)
+_suyas_0, _otro_0 = _fr.franjas_del_grupo(_GRUPO_0)
+chequear("el grupo 0 no tiene franja asignada", _suyas_0 == [], _suyas_0)
+chequear("sin respuesta no revienta", _fr.franjas_del_grupo(b"") == ([], None))
+
+chequear("ocho franjas iguales se nombran como un rango",
+         _fr.rango([1, 2, 3, 4, 5, 6, 7, 8]) == "franjas 1 a 8",
+         _fr.rango([1, 2, 3, 4, 5, 6, 7, 8]))
+chequear("una sola se nombra en singular", _fr.rango([3]) == "franja 3")
+chequear("y las salteadas se listan",
+         _fr.rango([1, 4, 9]) == "franjas 1, 4, 9", _fr.rango([1, 4, 9]))
+chequear("ninguna tambien tiene nombre", _fr.rango([]) == "ninguna franja")
+
 _em._conectar = _conectar_real
 _em.huellas_de = _huellas_real
 _em._escribir_usuario = _escribir_real

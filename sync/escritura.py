@@ -172,9 +172,13 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
     funciona; elegir otro sería probar algo distinto sin querer.
 
     Pero si en esa puerta la gente está repartida entre varios grupos, "el más
-    frecuente" deja de ser obvio y pasa a ser una elección — y no sabemos qué
-    separa a un grupo del otro. Se informa con `grupo_ambiguo` para que quien
-    mira lo sepa, en vez de que el sistema decida callado.
+    frecuente" deja de ser obvio y pasa a ser una elección. Lo que define el
+    grupo es el horario en que abre quien está en él: cada grupo apunta a hasta
+    tres franjas, y cada franja tiene los horarios de los siete días. En la .203
+    se midió que las franjas en uso están abiertas de 00:00 a 23:59 todos los
+    días, así que ahí el grupo no filtra nada; en las otras puertas eso no está
+    comprobado. Se informa con `grupo_ambiguo` para que quien mira lo sepa, en
+    vez de que el sistema decida callado.
     """
     from collections import Counter
 
@@ -199,14 +203,14 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
         usados = {u["uid"] for u in antes["usuarios"].values()}
         uid = (max(usados) + 1) if usados else 1
 
-        # El grupo del equipo, que es de donde el lector saca sus propias reglas
-        # —franjas, modo de verificación, combinaciones de apertura— y puede
-        # decidir si alguien abre al margen de estar cargado.
+        # El grupo del equipo, que es de donde el lector saca el horario en que
+        # abre quien está en él: cada grupo apunta a franjas, y cada franja trae
+        # los horarios de los siete días. Puede decidir que alguien no abra aun
+        # estando cargado, por eso no es un dato de adorno.
         #
         # Cuando todos los de esa puerta están en el mismo grupo, copiarlo no es
-        # una decisión. Cuando están repartidos, sí lo es, y no sabemos qué
-        # separa a un grupo del otro: eso se averigua en el menú del equipo.
-        # Elegir en silencio sería tomar esa decisión sin que nadie se entere.
+        # una decisión. Cuando están repartidos, sí lo es, y se avisa: elegir en
+        # silencio sería decidir el horario de alguien sin que nadie se entere.
         reparto = Counter(u["grupo"] for u in antes["usuarios"].values() if u["grupo"])
         ambiguo = len(reparto) > 1
         if grupo is None:

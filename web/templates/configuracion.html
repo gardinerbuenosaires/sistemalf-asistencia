@@ -3238,12 +3238,15 @@ async function cargarEnPuerta(dispositivoId, userId, boton) {
       + `<span style="color:#888;margin-left:6px">· ${r.huellas} huella(s), grupo ${_esc(r.grupo)},`
       + ` los otros ${r.otros_intactos} intactos</span>`
       // Si en esa puerta hay gente repartida entre grupos, el grupo elegido fue
-      // una decisión y no una copia. Y todavía no sabemos qué los separa.
+      // una decisión y no una copia. Ya sabemos qué define el grupo —el horario
+      // en que abre quien está en él—, y en la .203 están todos abiertos de
+      // 00:00 a 23:59. En las demás puertas eso no se midió todavía.
       + (r.grupo_ambiguo ? `<div style="color:#8a5d06;font-size:.76rem;margin-left:72px">
            esta puerta tiene gente en ${Object.keys(r.reparto_grupos).length} grupos
            (${Object.entries(r.reparto_grupos).map(([g, n]) => `${g}: ${n}`).join(', ')}).
-           Se usó el más frecuente, pero todavía no sabemos qué los separa — si no abre,
-           mirá esto primero.</div>` : '');
+           Se usó el más frecuente. El grupo define el horario en que abre cada uno:
+           si esta persona no abre, o abre a horas raras, correr
+           diagnosticar_grupos con esta IP muestra qué horarios tiene el equipo.</div>` : '');
   }
   toast(`${r.empleado} cargado en ${r.equipo}`);
 }

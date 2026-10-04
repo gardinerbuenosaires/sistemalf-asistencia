@@ -4,9 +4,13 @@
 :: SOLO LECTURA. Le pregunta al equipo que franjas horarias tiene definidas y
 :: que franjas usa cada grupo. Son comandos de lectura y no modifican nada.
 ::
-:: Para que: veniamos copiando el grupo de cada usuario sin saber que significa,
-:: y en dos puertas la gente esta repartida entre el 0 y el 1. Elegir uno ahi es
-:: decidir sobre algo que nadie entiende.
+:: Para que: el grupo define el horario en que abre quien esta en el, y en dos
+:: puertas la gente esta repartida entre el 0 y el 1. Esto muestra que horarios
+:: tiene cargado el equipo y quien esta en cada grupo, asi se ve si el grupo
+:: filtra algo o es solo una etiqueta heredada.
+::
+:: En la .203 salio que todas las franjas estan abiertas de 00:00 a 23:59 los
+:: siete dias. Conviene correrlo en cada puerta antes de darlo por cierto.
 ::
 :: Es la primera vez que le mandamos estos comandos a estos equipos, asi que
 :: conviene correrlo cuando el local este tranquilo.

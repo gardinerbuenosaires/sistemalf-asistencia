@@ -7,19 +7,29 @@ equipo, en pantallas distintas. Acá se hacen de una.
 
 Es SOLO LECTURA. No escribe nada en ningún equipo.
 
-Sobre el grupo. Cada usuario pertenece a un grupo dentro del lector, y de ahí
-salen las reglas de acceso que el equipo aplica solo. Se lee y se informa, pero
-no se toca: el día que el sistema escriba usuarios va a tener que respetarlo,
-porque cambiarlo sin querer le cambia a alguien por dónde y cuándo entra.
+Sobre el grupo. Cada usuario pertenece a un grupo dentro del lector, y el grupo
+apunta a hasta tres franjas horarias: de ahí sale a qué hora abre esa persona.
+Se lee y se informa, pero no se toca. En el .209 hay dos franjas cargadas de
+verdad —08:00 a 19:30 y 17:00 a 03:00, en los grupos 2 y 3— sin nadie adentro
+todavía. O sea que el mecanismo funciona y está usado a medias: cambiarle el
+grupo a alguien sin querer le cambia el horario, y eso no da error, simplemente
+un día a cierta hora no abre.
 
-Sobre la franja horaria por usuario. Se lee (ver `_leer_franjas`), y hubo que
-desempaquetarla a mano porque pyzk la descarta al parsear. Importa porque pyzk
-la pisa con cero al grabar, y grabar una huella reenvía el registro del usuario
-entero: agregarle un dedo a alguien le borraría su horario.
+Ojo que hay DOS cosas distintas que se llaman franja:
 
-Hoy en los equipos de este local están todas en cero, así que no hay nada que
-perder. Si algún día dejan de estarlo, el camino de escritura tiene que
-resolverlo ANTES de tocar ese equipo; está anotado en `plan_accesos`.
+  · la del equipo, que es la definición de horarios (ver `ventana_del_grupo`),
+    y a la que apunta el grupo;
+
+  · la de cada usuario, un número suelto en su propio registro (ver
+    `_leer_franjas`), que hubo que desempaquetar a mano porque pyzk sí la lee y
+    la descarta.
+
+La segunda importa antes de escribir: pyzk la pisa con cero al grabar, y grabar
+una huella reenvía el registro del usuario entero, así que agregarle un dedo a
+alguien le borraría su horario propio. Hasta ahora se leyeron en cero en todos
+los equipos, y en cero significa "la que diga mi grupo". Si en algún equipo
+dejan de estarlo, el camino de escritura tiene que resolverlo ANTES de tocarlo;
+está anotado en `plan_accesos`.
 """
 import logging
 
@@ -102,6 +112,78 @@ def _leer_franjas(conexion) -> dict | None:
     except Exception as exc:
         logger.warning("No se pudieron leer las franjas horarias: %s", exc)
         return None
+
+
+def _franjas_asignadas(conexion, grupo) -> list | None:
+    """
+    Qué franjas tiene asignadas un grupo del equipo. Solo lectura.
+
+    None si no se pudo leer, y lista vacía si el grupo no tiene ninguna. La
+    diferencia importa: devolver vacío cuando falló la lectura haría decir «abre
+    a cualquier hora» sobre algo que nadie leyó, y eso es peor que no contestar.
+    """
+    from zk import const
+
+    from sync.franjas import franjas_del_grupo
+
+    try:
+        respuesta = getattr(conexion, "_ZK__send_command")(
+            const.CMD_GRPTZ_RRQ, bytes([int(grupo), 0, 0, 0]), 1032)
+        crudo = getattr(conexion, "_ZK__data", b"")
+        if not respuesta.get("status") or not crudo:
+            return None
+        suyas, _sin_identificar = franjas_del_grupo(crudo)
+        return suyas
+    except Exception as exc:
+        logger.warning("No se pudieron leer las franjas del grupo %s: %s", grupo, exc)
+        return None
+
+
+def _definiciones_de_franjas(conexion, cuales) -> dict:
+    """Los horarios de las franjas pedidas, por número. Solo lectura."""
+    from zk import const
+
+    from sync.franjas import semana
+
+    definiciones = {}
+    for n in sorted({int(x) for x in cuales if x}):
+        try:
+            respuesta = getattr(conexion, "_ZK__send_command")(
+                const.CMD_TZ_RRQ, bytes([n, 0, 0, 0]), 1032)
+            crudo = getattr(conexion, "_ZK__data", b"")
+            definiciones[n] = semana(crudo) if respuesta.get("status") and crudo else None
+        except Exception as exc:
+            logger.warning("No se pudo leer la franja %s: %s", n, exc)
+            definiciones[n] = None
+    return definiciones
+
+
+def ventana_del_grupo(conexion, grupo) -> dict:
+    """
+    En qué horario abre quien está en este grupo del equipo. Solo lectura.
+
+    Hace falta antes de meter a alguien en un grupo. El grupo no decide por
+    cuál puerta entra —eso lo decide el perfil— pero sí a qué hora, y en el
+    .209 hay dos franjas cargadas de verdad: una de 08:00 a 19:30 y otra de
+    17:00 a 03:00. Hoy no hay nadie en esos grupos, pero el mecanismo funciona.
+
+    Meter a alguien en el grupo equivocado le da un horario que no le
+    corresponde, y es una falla que no se ve: no hay error, no hay aviso, un
+    día a cierta hora no abre y nadie sabe por qué. Por eso se lee y se informa
+    en vez de escribir a ciegas.
+
+    Devuelve siempre un dict. Si no se pudo leer lo dice, y `restringe` queda en
+    None: no saber no es lo mismo que no tener horario, y decir «abre a
+    cualquier hora» sobre algo que nadie leyó es peor que no decir nada.
+    """
+    from sync.franjas import describir_grupo
+
+    suyas = _franjas_asignadas(conexion, grupo)
+    definiciones = _definiciones_de_franjas(conexion, suyas or [])
+    texto, restringe = describir_grupo(suyas, definiciones)
+    return {"grupo": str(grupo),
+            "franjas": sorted({n for n in suyas if n}) if suyas else [],
+            "texto": texto, "restringe": restringe}
 
 
 def leer_cargados(dispositivo: dict, con_huellas: bool = False,

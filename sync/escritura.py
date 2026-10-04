@@ -172,13 +172,16 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
     funciona; elegir otro sería probar algo distinto sin querer.
 
     Pero si en esa puerta la gente está repartida entre varios grupos, "el más
-    frecuente" deja de ser obvio y pasa a ser una elección. Lo que define el
-    grupo es el horario en que abre quien está en él: cada grupo apunta a hasta
-    tres franjas, y cada franja tiene los horarios de los siete días. En la .203
-    se midió que las franjas en uso están abiertas de 00:00 a 23:59 todos los
-    días, así que ahí el grupo no filtra nada; en las otras puertas eso no está
-    comprobado. Se informa con `grupo_ambiguo` para que quien mira lo sepa, en
-    vez de que el sistema decida callado.
+    frecuente" deja de ser obvio y pasa a ser una elección — y lo que el grupo
+    define es el horario en que abre esa persona. En el .209 hay dos franjas
+    cargadas de verdad: 08:00 a 19:30 y 17:00 a 03:00. Hoy sin nadie adentro,
+    pero el mecanismo anda.
+
+    Por eso se lee en qué horario deja el grupo elegido y se devuelve en
+    `horario`, con `horario_restringe` en True si no es todo el día. Un número
+    de grupo nadie lo revisa; "abre de 08:00 a 19:30" sí. Y es la única forma de
+    enterarse, porque meter a alguien en el grupo equivocado no da ningún error:
+    simplemente un día a cierta hora no abre.
     """
     from collections import Counter
 
@@ -215,6 +218,12 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
         ambiguo = len(reparto) > 1
         if grupo is None:
             grupo = reparto.most_common(1)[0][0] if reparto else "1"
+
+        # Y en qué horario lo deja ese grupo. Se pregunta antes de escribir
+        # porque es lo único que convierte «grupo 2» en algo que alguien puede
+        # revisar: un número no se mira, «abre de 08:00 a 19:30» sí.
+        from sync.lectores import ventana_del_grupo
+        ventana = ventana_del_grupo(conexion, grupo)
         # El nombre que se eligió para los lectores; si no hay, el del maestro,
         # que es lo que esa persona ya muestra en el otro equipo.
         texto = (nombre or "").strip() or (quien.name or "").strip() or numero
@@ -235,6 +244,8 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
                 "uid": uid, "grupo": grupo, "nombre_escrito": texto,
                 "grupo_ambiguo": ambiguo,
                 "reparto_grupos": dict(reparto),
+                "horario": ventana["texto"],
+                "horario_restringe": ventana["restringe"],
                 "huellas": quedo["huellas"] if quedo else 0,
                 "huellas_esperadas": len(suyas),
                 "otros": len(antes["usuarios"]), "problemas": problemas,

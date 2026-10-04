@@ -52,8 +52,8 @@ if len(sys.argv) < 2 or sys.argv[1].startswith("--"):
     raise SystemExit(1)
 IP = sys.argv[1]
 
-from sync.franjas import (DIAS, abierta, franjas_del_grupo, rango, semana,
-                          texto_dia, vacia)
+from sync.franjas import (DIAS, abierta, describir_grupo, franjas_del_grupo,
+                          rango, semana, texto_dia, vacia)
 
 # Las 50 que guarda el equipo, no una muestra: una franja cargada a mano puede
 # estar en cualquier posición, y preguntar solo las primeras es justo la forma
@@ -166,7 +166,7 @@ def mostrar_franjas(enviar, datos_de, const):
     return franjas
 
 
-def mostrar_grupos(enviar, datos_de, const, gente):
+def mostrar_grupos(enviar, datos_de, const, gente, franjas):
     """
     Qué franja usa cada grupo.
 
@@ -205,11 +205,9 @@ def mostrar_grupos(enviar, datos_de, const, gente):
         cuantos = (f"{len(gente[g])} persona(s)" if g in con_gente
                    else "sin gente hoy")
         print(f"     grupo {g} ({cuantos}): {crudo[:16].hex(' ')}")
-        if suyas:
-            cuales = ", ".join(str(n) for n in sorted(set(suyas)))
-            print(f"        usa la franja {cuales}")
-        else:
-            print("        sin franja asignada")
+        definiciones = {n: f["semana"] for n, f in franjas.items() if f}
+        texto, _restringe = describir_grupo(suyas, definiciones)
+        print(f"        {texto}")
         if sin_identificar is not None:
             print(f"        (primer campo: {sin_identificar}, sin identificar)")
     if not vacios:
@@ -278,7 +276,7 @@ def main():
     try:
         gente = quien_en_cada_grupo(conexion)
         franjas = mostrar_franjas(enviar, datos_de, const)
-        usa, vacios = mostrar_grupos(enviar, datos_de, const, gente)
+        usa, vacios = mostrar_grupos(enviar, datos_de, const, gente, franjas)
         conclusion(franjas, usa, vacios, gente)
     finally:
         try:

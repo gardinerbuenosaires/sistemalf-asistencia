@@ -15,6 +15,7 @@ basura. Por eso esto se prueba sin equipo.
 """
 
 DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+ABREV = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
 TODO_EL_DIA = (0, 0, 23, 59)
 CERRADA = (0, 0, 0, 0)
 
@@ -78,6 +79,75 @@ def franjas_del_grupo(crudo):
     if not enteros:
         return [], None
     return [n for n in enteros[1:4] if n], enteros[0]
+
+
+def describir(semana_leida):
+    """
+    Una franja en una línea, para mostrarle a alguien.
+
+    Los días iguales se agrupan: «lun a vie 08:00 a 18:00, sáb 09:00 a 13:00,
+    dom cerrado» se entiende, y siete renglones repetidos no.
+
+    Un horario que termina antes de empezar —17:00 a 03:00— no es un error: es
+    un turno que cruza la medianoche, y el equipo los guarda así. No se corrige
+    ni se avisa, se muestra como está.
+    """
+    if any(d is None for d in semana_leida):
+        return "ilegible"
+    if abierta(semana_leida):
+        return "todo el día, los siete días"
+    if vacia(semana_leida):
+        return "sin horarios cargados"
+    if len(set(semana_leida)) == 1:
+        return f"todos los días de {texto_dia(semana_leida[0])}"
+
+    tramos = []
+    for i, d in enumerate(semana_leida):
+        if tramos and tramos[-1][1] == d:
+            tramos[-1][0].append(i)
+        else:
+            tramos.append(([i], d))
+    partes = []
+    for dias, d in tramos:
+        etiqueta = (ABREV[dias[0]] if len(dias) == 1
+                    else f"{ABREV[dias[0]]} a {ABREV[dias[-1]]}")
+        partes.append(f"{etiqueta} {texto_dia(d)}")
+    return ", ".join(partes)
+
+
+def describir_grupo(suyas, definiciones):
+    """
+    Qué horario le da un grupo a quien está en él.
+
+    `suyas` son los números de franja que el grupo tiene asignados; cada grupo
+    tiene tres lugares y suele repetir la misma. `definiciones` es lo que el
+    equipo contestó por cada franja.
+
+    Devuelve (texto, restringe). `restringe` es lo que importa al cargar gente:
+    si es True, el grupo elegido le está poniendo un horario a alguien, y eso
+    tiene que decirse en voz alta.
+
+    Y queda en None cuando no se pudo leer —`suyas` en None—, que no es lo mismo
+    que no tener horario: afirmar «abre a cualquier hora» sobre algo que nadie
+    leyó es el error que deja a alguien afuera sin que nada lo haya avisado.
+    """
+    if suyas is None:
+        return "no se pudo leer el horario de este grupo", None
+
+    numeros = sorted({n for n in suyas if n})
+    if not numeros:
+        return "sin franja asignada: abre a cualquier hora", False
+
+    textos, restringe = [], False
+    for n in numeros:
+        semana_leida = definiciones.get(n)
+        if semana_leida is None:
+            textos.append(f"franja {n} (no se pudo leer)")
+            continue
+        textos.append(f"franja {n}: {describir(semana_leida)}")
+        if not abierta(semana_leida) and not vacia(semana_leida):
+            restringe = True
+    return "; ".join(textos), restringe
 
 
 def rango(numeros):

@@ -947,6 +947,11 @@ def cargar_en_puerta(data: CargarEnPuertaIn,
             # una decision y no una copia. Quien mira tiene que saberlo.
             "grupo_ambiguo": r.get("grupo_ambiguo", False),
             "reparto_grupos": r.get("reparto_grupos", {}),
+            # En que horario lo deja ese grupo. Un numero de grupo nadie lo
+            # revisa; "abre de 08:00 a 19:30" si. Y si el grupo elegido tiene
+            # horario, esa persona no abre fuera de el y nada avisa.
+            "horario": r.get("horario"),
+            "horario_restringe": r.get("horario_restringe", False),
             "nombre_escrito": r["nombre_escrito"], "otros_intactos": r["otros"]}
 
 

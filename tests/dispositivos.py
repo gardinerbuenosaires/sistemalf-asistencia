@@ -2644,6 +2644,93 @@ chequear("y las salteadas se listan",
          _fr.rango([1, 4, 9]) == "franjas 1, 4, 9", _fr.rango([1, 4, 9]))
 chequear("ninguna tambien tiene nombre", _fr.rango([]) == "ninguna franja")
 
+# --- El horario que le da un grupo ------------------------------------------
+# Los bytes son los que contesto el .209: la franja 2 de 08:00 a 19:30 y la 3 de
+# 17:00 a 03:00, que cruza la medianoche. Una franja abierta puede salir bien de
+# casualidad; estas no.
+import sync.lectores as _lecf
+
+_F209_DIA = bytes.fromhex("08 00 13 1e" * 7)
+_F209_NOCHE = bytes.fromhex("11 00 03 00" * 7)
+_F_ABIERTA = bytes.fromhex("00 00 17 3b" * 7)
+_F_MIXTA = bytes.fromhex("08 00 12 00" * 5 + "09 00 0d 00" + "00 00 00 00")
+
+chequear("la franja de dia del .209 es de 08:00 a 19:30",
+         _fr.describir(_fr.semana(_F209_DIA)) == "todos los días de 08:00 a 19:30",
+         _fr.describir(_fr.semana(_F209_DIA)))
+chequear("la de noche cruza la medianoche y se muestra tal cual",
+         _fr.describir(_fr.semana(_F209_NOCHE)) == "todos los días de 17:00 a 03:00",
+         _fr.describir(_fr.semana(_F209_NOCHE)))
+chequear("una abierta se dice en palabras, no con horarios",
+         _fr.describir(_fr.semana(_F_ABIERTA)) == "todo el día, los siete días",
+         _fr.describir(_fr.semana(_F_ABIERTA)))
+chequear("una en cero no es un horario",
+         _fr.describir(_fr.semana(bytes(28))) == "sin horarios cargados")
+chequear("los dias iguales se agrupan y el cerrado se nombra",
+         _fr.describir(_fr.semana(_F_MIXTA))
+         == "lun a vie 08:00 a 18:00, sáb 09:00 a 13:00, dom cerrado",
+         _fr.describir(_fr.semana(_F_MIXTA)))
+
+_DEFS = {1: _fr.semana(_F_ABIERTA), 2: _fr.semana(_F209_DIA),
+         3: _fr.semana(_F209_NOCHE)}
+
+_t, _r = _fr.describir_grupo([], _DEFS)
+chequear("un grupo sin franja no restringe", _r is False, (_t, _r))
+_t, _r = _fr.describir_grupo([1, 1, 1], _DEFS)
+chequear("un grupo con franja abierta tampoco", _r is False, (_t, _r))
+_t, _r = _fr.describir_grupo([2, 2, 2], _DEFS)
+chequear("un grupo con horario si restringe", _r is True, (_t, _r))
+chequear("y lo dice una vez, no tres veces", _t.count("franja 2") == 1, _t)
+_t, _r = _fr.describir_grupo([2, 3, 0], _DEFS)
+chequear("con dos franjas distintas se describen las dos",
+         "franja 2" in _t and "franja 3" in _t, _t)
+_t, _r = _fr.describir_grupo([9, 0, 0], _DEFS)
+chequear("una franja que no se pudo leer se dice", "no se pudo leer" in _t, _t)
+
+# Lo importante: no se pudo leer NO es lo mismo que no tener horario. Decir
+# "abre a cualquier hora" sobre algo que nadie leyo es lo que deja a alguien
+# afuera sin que nada lo avise.
+_t, _r = _fr.describir_grupo(None, _DEFS)
+chequear("si no se pudo leer el grupo, restringe queda sin saber",
+         _r is None, (_t, _r))
+chequear("y el texto lo dice en vez de tranquilizar",
+         "no se pudo leer" in _t, _t)
+
+
+class _EquipoConFranjas:
+    """Contesta como el .209: grupo 1 con la franja 2, grupo 0 sin ninguna."""
+
+    def __init__(self, contesta=True):
+        self.contesta = contesta
+        self._ZK__data = b""
+
+    def _ZK__send_command(self, comando, datos, respuesta):
+        from zk import const
+        if not self.contesta:
+            self._ZK__data = b""
+            return {"status": False}
+        n = datos[0]
+        if comando == const.CMD_GRPTZ_RRQ:
+            self._ZK__data = (
+                bytes.fromhex("03 00 00 00 02 00 00 00 02 00 00 00 02 00 00 00")
+                if n == 1 else bytes.fromhex("00 00 00 00"))
+        elif comando == const.CMD_TZ_RRQ:
+            self._ZK__data = _F209_DIA if n == 2 else _F_ABIERTA
+        return {"status": True}
+
+
+_v = _lecf.ventana_del_grupo(_EquipoConFranjas(), "1")
+chequear("se lee el horario del grupo desde el equipo",
+         _v["restringe"] is True and _v["franjas"] == [2], _v)
+chequear("y viene en palabras para mostrar", "08:00 a 19:30" in _v["texto"], _v)
+_v0 = _lecf.ventana_del_grupo(_EquipoConFranjas(), "0")
+chequear("un grupo sin franja se informa como sin horario",
+         _v0["restringe"] is False and _v0["franjas"] == [], _v0)
+_vm = _lecf.ventana_del_grupo(_EquipoConFranjas(contesta=False), "1")
+chequear("si el equipo no contesta, no se afirma que abra siempre",
+         _vm["restringe"] is None, _vm)
+
+
 _em._conectar = _conectar_real
 _em.huellas_de = _huellas_real
 _em._escribir_usuario = _escribir_real

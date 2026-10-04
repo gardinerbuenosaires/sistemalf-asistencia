@@ -2625,6 +2625,8 @@ chequear("un horario se muestra legible",
          _fr.texto_dia((8, 5, 23, 59)) == "08:05 a 23:59",
          _fr.texto_dia((8, 5, 23, 59)))
 chequear("y un dia ilegible lo dice", _fr.texto_dia(None) == "ilegible")
+chequear("un dia todo en cero es un dia cerrado, no de 00:00 a 00:00",
+         _fr.texto_dia((0, 0, 0, 0)) == "cerrado", _fr.texto_dia((0, 0, 0, 0)))
 
 _suyas_1, _otro_1 = _fr.franjas_del_grupo(_GRUPO_1)
 chequear("el grupo 1 de la .203 usa la franja 1", _suyas_1 == [1, 1, 1], _suyas_1)

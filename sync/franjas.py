@@ -39,8 +39,16 @@ def semana(crudo):
 
 
 def texto_dia(valores):
+    """
+    Un día, en palabras.
+
+    Todo en cero no es «de 00:00 a 00:00»: es un día en el que no abre. Son la
+    misma cosa para el equipo y dos cosas muy distintas para quien lee.
+    """
     if valores is None:
         return "ilegible"
+    if valores == CERRADA:
+        return "cerrado"
     h1, m1, h2, m2 = valores
     return f"{h1:02d}:{m1:02d} a {h2:02d}:{m2:02d}"
 

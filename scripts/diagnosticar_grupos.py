@@ -55,7 +55,15 @@ IP = sys.argv[1]
 from sync.franjas import (DIAS, abierta, franjas_del_grupo, rango, semana,
                           texto_dia, vacia)
 
-CUANTAS_FRANJAS = 8
+# Las 50 que guarda el equipo, no una muestra: una franja cargada a mano puede
+# estar en cualquier posición, y preguntar solo las primeras es justo la forma
+# de no encontrarla. La salida no se alarga porque las iguales se agrupan.
+CUANTAS_FRANJAS = 50
+
+# Los grupos se preguntan más allá de los que tienen gente: una franja con
+# horario asignada a un grupo vacío explica para qué se cargó, y si mañana
+# alguien queda en ese grupo, importa.
+HASTA_GRUPO = 15
 
 
 def clave_del_equipo():
@@ -106,9 +114,14 @@ def quien_en_cada_grupo(conexion):
 
 
 def mostrar_franjas(enviar, datos_de, const):
-    """Las primeras franjas, agrupadas por definición: casi siempre son iguales."""
+    """
+    Las franjas del equipo, agrupadas por definición.
+
+    Se agrupan porque en general son todas iguales: mostrar cincuenta veces
+    «abierta» esconde justo a la que no lo está, que es la única que interesa.
+    """
     print("\n  FRANJAS DEFINIDAS EN EL EQUIPO")
-    print(f"  (el equipo guarda hasta 50; se preguntan las primeras {CUANTAS_FRANJAS})")
+    print(f"  (se preguntan las {CUANTAS_FRANJAS}; las iguales se agrupan)")
 
     franjas, iguales = {}, {}
     for n in range(1, CUANTAS_FRANJAS + 1):
@@ -126,8 +139,17 @@ def mostrar_franjas(enviar, datos_de, const):
         franjas[n] = {"semana": leida, "hex": crudo[:28].hex(" ")}
         iguales.setdefault(leida, []).append(n)
 
-    for leida, numeros in iguales.items():
-        print(f"\n     {rango(numeros)}:")
+    # Primero las que tienen horario de verdad. Son las que cambian algo, y si
+    # van al final quedan abajo de cuarenta líneas que dicen lo mismo.
+    def interesa(par):
+        leida = par[0]
+        return (abierta(leida) or vacia(leida), par[1][0])
+
+    for leida, numeros in sorted(iguales.items(), key=interesa):
+        # En ASCII a propósito: una flecha linda se convierte en «?» si la
+        # consola no está en UTF-8, y justo en la línea que hay que ver.
+        marca = "" if abierta(leida) or vacia(leida) else "   *** CON HORARIO ***"
+        print(f"\n     {rango(numeros)}:{marca}")
         if abierta(leida):
             print("        los siete días de 00:00 a 23:59 — no restringe nada")
         elif vacia(leida):
@@ -145,24 +167,44 @@ def mostrar_franjas(enviar, datos_de, const):
 
 
 def mostrar_grupos(enviar, datos_de, const, gente):
+    """
+    Qué franja usa cada grupo.
+
+    Se preguntan los grupos con gente y además los primeros vacíos: una franja
+    con horario asignada a un grupo donde hoy no hay nadie explica para qué se
+    cargó, y queda escrito antes de que alguien caiga ahí sin saberlo.
+
+    Los grupos con gente se muestran siempre; los vacíos, solo si tienen algo
+    asignado. Un listado de quince «sin franja» no informa.
+    """
     print("\n  QUÉ FRANJAS USA CADA GRUPO")
-    usa = {}
-    for g in sorted(gente, key=lambda x: (not x.isdigit(), x)):
-        if not g.isdigit():
-            continue
+    con_gente = {g for g in gente if g.isdigit()}
+    a_preguntar = sorted(con_gente | {str(n) for n in range(HASTA_GRUPO + 1)},
+                         key=int)
+    usa, vacios = {}, {}
+    for g in a_preguntar:
         try:
             respuesta = enviar(const.CMD_GRPTZ_RRQ, bytes([int(g), 0, 0, 0]), 1032)
             crudo = datos_de()
             if not respuesta.get("status") or not crudo:
-                print(f"     grupo {g}: sin respuesta")
-                usa[g] = []
+                if g in con_gente:
+                    print(f"     grupo {g}: sin respuesta")
+                    usa[g] = []
                 continue
         except Exception as exc:
-            print(f"     grupo {g}: {type(exc).__name__}: {exc}")
+            if g in con_gente:
+                print(f"     grupo {g}: {type(exc).__name__}: {exc}")
             continue
         suyas, sin_identificar = franjas_del_grupo(crudo)
-        usa[g] = suyas
-        print(f"     grupo {g}: {crudo[:16].hex(' ')}")
+        if g in con_gente:
+            usa[g] = suyas
+        elif suyas:
+            vacios[g] = suyas
+        else:
+            continue
+        cuantos = (f"{len(gente[g])} persona(s)" if g in con_gente
+                   else "sin gente hoy")
+        print(f"     grupo {g} ({cuantos}): {crudo[:16].hex(' ')}")
         if suyas:
             cuales = ", ".join(str(n) for n in sorted(set(suyas)))
             print(f"        usa la franja {cuales}")
@@ -170,33 +212,61 @@ def mostrar_grupos(enviar, datos_de, const, gente):
             print("        sin franja asignada")
         if sin_identificar is not None:
             print(f"        (primer campo: {sin_identificar}, sin identificar)")
-    return usa
+    if not vacios:
+        print(f"     (los grupos del 0 al {HASTA_GRUPO} sin gente no tienen "
+              f"franja asignada)")
+    return usa, vacios
 
 
-def conclusion(franjas, usa):
+def conclusion(franjas, usa, vacios, gente):
     """Lo que sale de lo leído, no de lo que suponíamos antes de leer."""
     print("\n  QUÉ SIGNIFICA ESTO")
-    restringe = [(g, n) for g, suyas in usa.items() for n in suyas
-                 if franjas.get(n) and not abierta(franjas[n]["semana"])]
+
+    def con_horario(suyas):
+        # Sin repetir: un grupo tiene tres lugares para franjas y suele poner
+        # la misma en los tres, así que la lista cruda la nombra tres veces.
+        return sorted({n for n in suyas
+                       if franjas.get(n) and not abierta(franjas[n]["semana"])
+                       and not vacia(franjas[n]["semana"])})
+
+    restringe = [(g, n) for g, suyas in usa.items() for n in con_horario(suyas)]
+    guardadas = [(g, n) for g, suyas in vacios.items() for n in con_horario(suyas)]
+
     if not usa:
         print("     El equipo no contestó por los grupos. Si tampoco contestó")
         print("     por las franjas, lo más probable es que este modelo no las")
         print("     guarde y el grupo sea solo una etiqueta.")
     elif restringe:
         cuales = ", ".join(f"grupo {g} por la franja {n}" for g, n in restringe)
-        print(f"     Hay grupos con horario: {cuales}")
-        print("     Acá el grupo SÍ decide cuándo abre cada uno, así que elegirlo")
-        print("     al cargar gente importa, y conviene que salga del perfil.")
+        print(f"     Este equipo SÍ tiene horarios en uso: {cuales}.")
+        print("     La gente de esos grupos abre solo dentro de ese horario, aunque")
+        print("     esté cargada. Dos cosas que salen de acá:")
+        print("       · cargar a alguien en el grupo equivocado le da un horario que")
+        print("         no le corresponde, y eso no se ve: simplemente no abre un día")
+        print("         a una hora y nadie sabe por qué")
+        print("       · el grupo deja de ser algo que se copia de la puerta y pasa a")
+        print("         ser algo que tiene que salir del perfil, como las puertas")
+        for g in sorted({g for g, _n in restringe}, key=int):
+            cuantos = len(gente.get(g, []))
+            print(f"     El grupo {g} tiene {cuantos} persona(s) hoy.")
     else:
-        print("     Todas las franjas en juego están abiertas de 00:00 a 23:59 los")
+        print("     Todas las franjas en uso están abiertas de 00:00 a 23:59 los")
         print("     siete días, y los grupos sin franja asignada no restringen nada.")
         print("     O sea que HOY el grupo no cambia quién abre esta puerta: es una")
         print("     etiqueta heredada de cómo se fue cargando la gente.")
         print("     Sigue siendo un botón que alguien puede apretar desde el menú")
         print("     del equipo, y por eso se copia el que ya está en uso ahí.")
-    print("\n     Para confirmarlo sin creerle a los bytes: mirá los grupos de")
-    print("     arriba. Si en los dos hay gente que abre esta puerta todos los")
-    print("     días, el grupo no está filtrando nada.")
+
+    if guardadas:
+        cuales = ", ".join(f"grupo {g} con la franja {n}" for g, n in guardadas)
+        print(f"\n     Ojo: hay horario cargado en grupos donde hoy no hay nadie")
+        print(f"     ({cuales}). No afecta a nadie ahora, pero si alguien cae ahí")
+        print(f"     empieza a tener horario. Conviene saber para qué se cargó.")
+
+    if len(usa) > 1:
+        print("\n     Para confirmarlo sin creerle a los bytes: mirá los grupos de")
+        print("     arriba. Si en los dos hay gente que abre esta puerta todos los")
+        print("     días, el grupo no está filtrando nada.")
 
 
 def main():
@@ -208,8 +278,8 @@ def main():
     try:
         gente = quien_en_cada_grupo(conexion)
         franjas = mostrar_franjas(enviar, datos_de, const)
-        usa = mostrar_grupos(enviar, datos_de, const, gente)
-        conclusion(franjas, usa)
+        usa, vacios = mostrar_grupos(enviar, datos_de, const, gente)
+        conclusion(franjas, usa, vacios, gente)
     finally:
         try:
             conexion.disconnect()

@@ -726,9 +726,11 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
     # es decir que todos pueden abrir sin haberlo verificado.
     huellas_leidas = any("huellas" in u for u in usuarios)
     franjas_leidas = any(u.get("franja") is not None for u in usuarios)
+    from datetime import datetime
+
     filas, resumen = [], {"total": len(usuarios), "de_baja": 0, "desconocidos": 0,
                           "nombre_distinto": 0, "nombre_no_configurado": 0,
-                          "ok": 0, "administran": 0,
+                          "ok": 0, "administran": 0, "egresan_pronto": 0,
                           "sin_huella": 0 if huellas_leidas else None,
                           "con_franja": 0 if franjas_leidas else None}
 
@@ -747,10 +749,22 @@ def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
                 "activo": emp["activo"], "fecha_egreso": emp["fecha_egreso"],
                 "tipo": emp["tipo"],
             }
-            if not emp["activo"]:
+            # Una baja puede estar adelantada: se la carga hoy con fecha del 10
+            # y la persona trabaja hasta el 9. Marcarla como «desvinculada»
+            # mientras sigue entrando sería informar mal justo en la pantalla
+            # cuyo trabajo es decir qué está mal. `fecha_egreso` es el primer
+            # día NO trabajado, igual que en todo el resto del sistema.
+            hoy = datetime.now().strftime("%Y-%m-%d")
+            egreso = (emp["fecha_egreso"] or "")[:10]
+            if not emp["activo"] and (not egreso or egreso <= hoy):
                 fila["estado"] = "de_baja"
                 resumen["de_baja"] += 1
             else:
+                # Si se va pronto se dice, pero sin contarlo como un problema:
+                # hoy esta persona tiene que estar cargada.
+                if not emp["activo"]:
+                    fila["egresa_el"] = egreso
+                    resumen["egresan_pronto"] += 1
                 resumen["ok"] += 1
 
             # Contra lo configurado si existe, y si no contra el legajo. Son dos

@@ -396,7 +396,7 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
     alguien sin su huella lo deja sin poder abrir igual.
     """
     from sync.lectores import leer_cargados_varios
-    from sync.plan_accesos import armar_plan, plan_fichaje
+    from sync.plan_accesos import armar_plan, plan_fichaje, trabaja_hoy
 
     with db_session() as conn:
         puertas = [
@@ -890,6 +890,7 @@ def cargar_en_puerta(data: CargarEnPuertaIn,
     hecho y no lo está, y nadie vuelve a mirar algo que ya figura resuelto.
     """
     from sync.escritura import cargar_en_puerta as escribir
+    from sync.plan_accesos import trabaja_hoy
 
     numero = str(data.user_id).strip()
     with db_session() as conn:
@@ -915,11 +916,12 @@ def cargar_en_puerta(data: CargarEnPuertaIn,
                                      "sale la huella que se copia.")
 
         emp = conn.execute(
-            """SELECT id, nombre, apellido, activo, nombre_lector
-                 FROM empleados WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
+            f"""SELECT id, nombre, apellido, activo, nombre_lector,
+                        {trabaja_hoy()} AS trabaja
+                   FROM empleados WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
         if not emp:
             raise HTTPException(404, f"El {numero} no existe en el sistema.")
-        if not emp["activo"]:
+        if not emp["trabaja"]:
             raise HTTPException(400, f"{emp['apellido']}, {emp['nombre']} está dado "
                                      f"de baja. El sistema no carga egresados.")
         # Que le corresponda esa puerta: es lo que mantiene al plan describiendo
@@ -1047,7 +1049,7 @@ def sacar_por_plan(data: CargarEnPuertaIn,
     boton de la pantalla de cargados, que pide motivo y queda registrado.
     """
     from sync.escritura import resultado_de_sacar, sacar_de_puerta
-    from sync.plan_accesos import MOTIVOS_SACAR, estado_deseado
+    from sync.plan_accesos import MOTIVOS_SACAR, estado_deseado, trabaja_hoy
 
     numero = str(data.user_id).strip()
     with db_session() as conn:
@@ -1067,8 +1069,9 @@ def sacar_por_plan(data: CargarEnPuertaIn,
         puerta = dict(puerta)
 
         emp = conn.execute(
-            """SELECT id, nombre, apellido, activo
-                 FROM empleados WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
+            f"""SELECT id, nombre, apellido, activo, fecha_egreso,
+                        {trabaja_hoy()} AS trabaja
+                   FROM empleados WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
         emp = dict(emp) if emp else None
 
         quien = (f"{emp['apellido']}, {emp['nombre']}".strip(", ") if emp
@@ -1077,7 +1080,7 @@ def sacar_por_plan(data: CargarEnPuertaIn,
         # trabaja. Entonces la pregunta es otra, y la condición también.
         es_fichaje = bool(puerta["cuenta_asistencia"]) and not puerta["es_acceso"]
         if es_fichaje:
-            if emp and emp["activo"]:
+            if emp and emp["trabaja"]:
                 raise HTTPException(
                     400, f"{quien} está activo, así que tiene que poder fichar. "
                          f"El sistema no lo saca del equipo de fichaje.")
@@ -1100,7 +1103,7 @@ def sacar_por_plan(data: CargarEnPuertaIn,
                 "SELECT DISTINCT dispositivo_id FROM perfiles_dispositivos")}
             if emp is None:
                 motivo = "desconocido"
-            elif not emp["activo"]:
+            elif not emp["trabaja"]:
                 motivo = "egresado"
             elif puerta["id"] not in con_perfil:
                 motivo = "sin_politica"
@@ -1161,7 +1164,7 @@ def aplicar_puerta(did: int, usuario=Depends(require_permiso("accesos", "aplicar
     """
     from sync.escritura import aplicar_en_puerta
     from sync.lectores import leer_cargados
-    from sync.plan_accesos import MOTIVOS_SACAR, estado_deseado
+    from sync.plan_accesos import MOTIVOS_SACAR, estado_deseado, trabaja_hoy
 
     with db_session() as conn:
         puerta = conn.execute(
@@ -1187,9 +1190,10 @@ def aplicar_puerta(did: int, usuario=Depends(require_permiso("accesos", "aplicar
 
         deseado = estado_deseado(conn).get(did, {})
         empleados = {str(e["user_id"]).strip(): dict(e) for e in conn.execute(
-            """SELECT id, user_id, nombre, apellido, activo, nombre_lector
-                 FROM empleados
-                WHERE user_id IS NOT NULL AND TRIM(user_id) <> ''""")}
+            f"""SELECT id, user_id, nombre, apellido, activo, nombre_lector,
+                        {trabaja_hoy()} AS trabaja
+                   FROM empleados
+                  WHERE user_id IS NOT NULL AND TRIM(user_id) <> ''""")}
         con_perfil = {r["dispositivo_id"] for r in conn.execute(
             "SELECT DISTINCT dispositivo_id FROM perfiles_dispositivos")}
 
@@ -1206,7 +1210,7 @@ def aplicar_puerta(did: int, usuario=Depends(require_permiso("accesos", "aplicar
         emp = empleados.get(n)
         if emp is None:
             motivo = "desconocido"
-        elif not emp["activo"]:
+        elif not emp["trabaja"]:
             motivo = "egresado"
         elif did not in con_perfil:
             motivo = "sin_politica"

@@ -88,6 +88,24 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Quién tiene que poder fichar y abrir puertas HOY.
+#
+# No alcanza con `activo`. Una baja puede cargarse adelantada: alguien avisa que
+# renuncia, se lo da de baja hoy con fecha del 10 para adelantarle la
+# liquidación final, y sigue trabajando hasta el 9. Mirar solo `activo` lo
+# dejaría sin fichar y sin abrir desde hoy — y como sacarlo del equipo de
+# fichaje le borra la huella, volver atrás no es deshacer: tiene que venir a
+# enrolarse de nuevo para trabajar sus últimos días.
+#
+# `fecha_egreso` es el primer día NO trabajado, que es la convención que ya usa
+# todo el resto del sistema. Y trae algo gratis: el día que llega esa fecha, el
+# plan propone sacarlo solo, sin que nadie tenga que acordarse.
+def trabaja_hoy(alias=None):
+    """El mismo criterio para todas las consultas, con el alias de cada una."""
+    p = f"{alias}." if alias else ""
+    return f"({p}activo = 1 OR {p}fecha_egreso > date('now','localtime'))"
+
+
 # Por qué alguien sobra en un lector. El orden importa: es el que se usa para
 # mostrar primero lo que más urge.
 MOTIVOS_SACAR = {
@@ -122,10 +140,11 @@ def estado_deseado(conn) -> dict:
     # hacer quien edita empleados aunque no tenga permiso de accesos.
     deseado: dict[int, dict] = {}
     for e in conn.execute(
-        """SELECT e.id, e.user_id, e.nombre, e.apellido,
-                  e.perfil_acceso_id AS perfil_id
-             FROM empleados e
-            WHERE e.activo = 1 AND e.user_id IS NOT NULL AND TRIM(e.user_id) <> ''"""
+        f"""SELECT e.id, e.user_id, e.nombre, e.apellido,
+                   e.perfil_acceso_id AS perfil_id
+              FROM empleados e
+             WHERE {trabaja_hoy('e')}
+               AND e.user_id IS NOT NULL AND TRIM(e.user_id) <> ''"""
     ):
         puertas = set(puertas_de_perfil.get(e["perfil_id"], ())) if e["perfil_id"] else set()
         for x in excepciones.get(e["id"], ()):
@@ -191,8 +210,9 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
     empleados = {
         str(r["user_id"]).strip(): dict(r)
         for r in conn.execute(
-            """SELECT id, user_id, nombre, apellido, activo, fecha_egreso
-                 FROM empleados WHERE user_id IS NOT NULL"""
+            f"""SELECT id, user_id, nombre, apellido, activo, fecha_egreso,
+                       {trabaja_hoy()} AS trabaja
+                  FROM empleados WHERE user_id IS NOT NULL"""
         )
     }
     # De quién era cada número que se liberó. Un desconocido en una puerta casi
@@ -257,7 +277,7 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
             emp = empleados.get(user_id)
             if emp is None:
                 motivo = "desconocido"
-            elif not emp["activo"]:
+            elif not emp["trabaja"]:
                 motivo = "egresado"
             elif d["id"] not in con_perfil:
                 motivo = "sin_politica"
@@ -334,9 +354,10 @@ def plan_fichaje(conn, equipo: dict, lectura: dict, lecturas: dict,
     empleados = {
         str(r["user_id"]).strip(): dict(r)
         for r in conn.execute(
-            """SELECT id, user_id, nombre, apellido, activo, fecha_egreso
-                 FROM empleados WHERE user_id IS NOT NULL
-                   AND TRIM(user_id) <> ''"""
+            f"""SELECT id, user_id, nombre, apellido, activo, fecha_egreso,
+                       {trabaja_hoy()} AS trabaja
+                  FROM empleados WHERE user_id IS NOT NULL
+                    AND TRIM(user_id) <> ''"""
         )
     }
     liberados = {
@@ -368,7 +389,7 @@ def plan_fichaje(conn, equipo: dict, lectura: dict, lecturas: dict,
             en_puertas.setdefault(u["user_id"], []).append(d["nombre"])
 
     actual = {u["user_id"] for u in lectura["usuarios"]}
-    activos = {n for n, e in empleados.items() if e["activo"]}
+    activos = {n for n, e in empleados.items() if e["trabaja"]}
 
     for user_id in sorted(actual - activos, key=lambda x: (len(x), x)):
         emp = empleados.get(user_id)

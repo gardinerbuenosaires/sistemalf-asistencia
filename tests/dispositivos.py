@@ -2552,6 +2552,115 @@ if _f18:
     _esc_mod.cargar_en_puerta = _real18
 
 
+print("\n=== LA BAJA ADELANTADA ===")
+# Se puede dar de baja a alguien hoy con fecha futura, para adelantarle la
+# liquidacion final, y esa persona sigue trabajando hasta la vispera. Si el plan
+# mirara solo `activo`, la sacaria de todas las puertas y del equipo de fichaje
+# hoy mismo: se quedaria sin poder entrar ni fichar sus ultimos dias. Y como
+# sacarla del equipo de fichaje le borra la huella, volver atras no es deshacer,
+# es hacerla enrolar de nuevo.
+#
+# `fecha_egreso` es el primer dia NO trabajado, igual que en todo el sistema.
+from datetime import datetime as _dt, timedelta as _td
+from sync.plan_accesos import estado_deseado as _ed, plan_fichaje as _pf2
+
+_HOY = _dt.now().strftime("%Y-%m-%d")
+_EN_5 = (_dt.now() + _td(days=5)).strftime("%Y-%m-%d")
+_AYER = (_dt.now() - _td(days=1)).strftime("%Y-%m-%d")
+
+_cb = sqlite3.connect(DB)
+_fb = _cb.execute(
+    """SELECT id, user_id FROM empleados
+        WHERE activo=1 AND user_id IS NOT NULL AND perfil_acceso_id IS NOT NULL
+        LIMIT 1""").fetchone()
+_cb.close()
+
+if _fb:
+    _eidb, _uidb = _fb[0], str(_fb[1]).strip()
+    _MAESTRO_B = {"id": 91, "nombre": "Reloj"}
+    _PUERTAS_B = [{"id": p_personal, "nombre": "Personal"}]
+
+    def _poner_baja(fecha):
+        _c = sqlite3.connect(DB)
+        _c.execute("UPDATE empleados SET activo=0, fecha_egreso=? WHERE id=?",
+                   (fecha, _eidb))
+        _c.commit(); _c.close()
+
+    def _restaurar():
+        _c = sqlite3.connect(DB)
+        _c.execute("UPDATE empleados SET activo=1, fecha_egreso=NULL WHERE id=?",
+                   (_eidb,))
+        _c.commit(); _c.close()
+
+    # Con la baja cargada para dentro de cinco dias, sigue siendo de los que
+    # tienen que estar cargados.
+    _poner_baja(_EN_5)
+    with db_session() as _cn:
+        _des = _ed(_cn)
+    chequear("una baja adelantada sigue en el estado deseado de sus puertas",
+             any(_uidb in v for v in _des.values()), list(_des.keys()))
+
+    with db_session() as _cn:
+        _rb = _pf2(_cn, _MAESTRO_B,
+                   {"ok": True, "usuarios": [{"user_id": _uidb}]},
+                   {p_personal: {"ok": True, "usuarios": []}}, _PUERTAS_B)
+    chequear("y no figura para sacar del equipo de fichaje",
+             all(x["user_id"] != _uidb for x in _rb["sacar"]), _rb["sacar"][:3])
+    chequear("ni como pendiente de enrolar, porque ya esta",
+             all(x["user_id"] != _uidb for x in _rb["sin_enrolar"]), _rb["sin_enrolar"][:3])
+
+    # Y se la puede cargar en una puerta: todavia trabaja.
+    _realb = _esc_mod.cargar_en_puerta
+    _esc_mod.cargar_en_puerta = lambda *a, **k: {
+        "ok": True, "uid": 9, "grupo": "1", "nombre_escrito": "X", "huellas": 1,
+        "huellas_esperadas": 1, "otros": 5, "problemas": [], "error": None}
+    _permb = cli.get(f"/api/accesos/empleado/{_eidb}").json()
+    r = cli.post("/api/accesos/cargar",
+                 json={"dispositivo_id": p_personal, "user_id": _uidb})
+    chequear("se la puede cargar en una puerta aunque este dada de baja",
+             r.status_code in (200, 400), r.status_code)
+    if r.status_code == 400:
+        chequear("y si se rechaza no es por la baja",
+                 "dado de baja" not in r.json()["detail"], r.text[:200])
+    _esc_mod.cargar_en_puerta = _realb
+
+    # Pasada la fecha, SI sale: el dia que llega, el plan lo propone solo.
+    _poner_baja(_AYER)
+    with db_session() as _cn:
+        _des2 = _ed(_cn)
+    chequear("pasada la fecha de egreso, sale del estado deseado",
+             all(_uidb not in v for v in _des2.values()), list(_des2.keys()))
+    with db_session() as _cn:
+        _rb2 = _pf2(_cn, _MAESTRO_B,
+                    {"ok": True, "usuarios": [{"user_id": _uidb}]},
+                    {p_personal: {"ok": True, "usuarios": []}}, _PUERTAS_B)
+    chequear("y recien ahi figura para sacar del equipo de fichaje",
+             any(x["user_id"] == _uidb for x in _rb2["sacar"]), _rb2["sacar"][:3])
+
+    # El borde: con fecha de HOY ya no trabaja. fecha_egreso es el primer dia
+    # NO trabajado, no el ultimo trabajado.
+    _poner_baja(_HOY)
+    with db_session() as _cn:
+        _des3 = _ed(_cn)
+    chequear("con fecha de hoy ya no trabaja: fecha_egreso es el primer dia NO trabajado",
+             all(_uidb not in v for v in _des3.values()), list(_des3.keys()))
+
+    # Y el endpoint del equipo de fichaje no la saca mientras siga trabajando.
+    _poner_baja(_EN_5)
+    _cb = sqlite3.connect(DB)
+    _midb = _cb.execute(
+        "SELECT id FROM dispositivos WHERE cuenta_asistencia=1 AND es_acceso=0 LIMIT 1").fetchone()
+    _cb.close()
+    if _midb:
+        r = cli.post("/api/accesos/sacar",
+                     json={"dispositivo_id": _midb[0], "user_id": _uidb})
+        chequear("no la saca del equipo de fichaje mientras trabaje",
+                 r.status_code == 400 and "tiene que poder fichar" in r.json()["detail"],
+                 r.text[:200])
+
+    _restaurar()
+
+
 print("\n=== EL EQUIPO DE FICHAJE DENTRO DEL PLAN ===")
 # El que faltaba: una baja dejaba de abrir puertas y seguia pudiendo fichar.
 # Solo tiene bajas, porque agregar a alguien ahi no es algo que el sistema pueda

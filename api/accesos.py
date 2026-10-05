@@ -1076,6 +1076,128 @@ def sacar_por_plan(data: CargarEnPuertaIn,
             "respaldo": r.get("respaldo"), "otros_intactos": r.get("otros")}
 
 
+@router.post("/aplicar/{did}")
+def aplicar_puerta(did: int, usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Aplica de una vez todo lo que el plan pide para una puerta.
+
+    Una puerta por llamada y no todas juntas. Cada puerta es una conexion a un
+    equipo viejo que puede no contestar; de a una, lo que falla es una puerta y
+    no la pasada entera, y la pantalla puede ir mostrando cual va. Todas juntas
+    serian varios minutos de un pedido que nadie sabe si sigue vivo.
+
+    Quien entra y quien sale se decide aca, con la misma fuente que arma el
+    plan, y no se recibe de la pantalla: lo que llega es "aplica esta puerta".
+
+    Las bajas con motivo `sin_politica` quedan afuera, igual que de a una.
+    Ninguna de esas filas es una baja: son una puerta que ningun perfil
+    contempla, y aplicarlas la vaciaria.
+    """
+    from sync.escritura import aplicar_en_puerta
+    from sync.lectores import leer_cargados
+    from sync.plan_accesos import MOTIVOS_SACAR, estado_deseado
+
+    with db_session() as conn:
+        puerta = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
+                      es_acceso, cuenta_asistencia
+                 FROM dispositivos WHERE id = ? AND activo = 1""", (did,)).fetchone()
+        if not puerta:
+            raise HTTPException(404, "Esa puerta no existe o está desactivada")
+        if not puerta["es_acceso"]:
+            raise HTTPException(400, f"{puerta['nombre']} no es una puerta.")
+        if puerta["protocolo"] != "pull":
+            raise HTTPException(400, f"{puerta['nombre']} es un equipo push: no "
+                                     f"atiende llamadas.")
+        maestro = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo
+                 FROM dispositivos
+                WHERE activo=1 AND cuenta_asistencia=1 AND protocolo='pull'
+                  AND ip IS NOT NULL ORDER BY orden, id LIMIT 1""").fetchone()
+        if not maestro:
+            raise HTTPException(400, "No hay equipo de fichaje cargado: de ahí "
+                                     "sale la huella que se copia.")
+        puerta, maestro = dict(puerta), dict(maestro)
+
+        deseado = estado_deseado(conn).get(did, {})
+        empleados = {str(e["user_id"]).strip(): dict(e) for e in conn.execute(
+            """SELECT id, user_id, nombre, apellido, activo, nombre_lector
+                 FROM empleados
+                WHERE user_id IS NOT NULL AND TRIM(user_id) <> ''""")}
+        con_perfil = {r["dispositivo_id"] for r in conn.execute(
+            "SELECT DISTINCT dispositivo_id FROM perfiles_dispositivos")}
+
+    actual = leer_cargados(puerta)
+    if not actual["ok"]:
+        raise HTTPException(400, f"{puerta['nombre']} no contestó: {actual['error']}")
+    cargados = {u["user_id"] for u in actual["usuarios"]}
+
+    altas = [{"user_id": n, "nombre": (empleados.get(n) or {}).get("nombre_lector")}
+             for n in sorted(set(deseado) - cargados, key=lambda x: (len(x), x))]
+
+    bajas, omitidas = [], []
+    for n in sorted(cargados - set(deseado), key=lambda x: (len(x), x)):
+        emp = empleados.get(n)
+        if emp is None:
+            motivo = "desconocido"
+        elif not emp["activo"]:
+            motivo = "egresado"
+        elif did not in con_perfil:
+            motivo = "sin_politica"
+        else:
+            motivo = "sin_derecho"
+        if MOTIVOS_QUE_SE_APLICAN.get(motivo):
+            bajas.append({"user_id": n, "motivo": MOTIVOS_SACAR[motivo]})
+        else:
+            omitidas.append({"user_id": n, "motivo": MOTIVOS_SACAR[motivo]})
+
+    if not altas and not bajas:
+        return {"ok": True, "equipo": puerta["nombre"], "sin_cambios": True,
+                "resultados": [], "omitidas": omitidas}
+
+    r = aplicar_en_puerta(puerta, maestro, altas, bajas)
+
+    # Cada persona queda registrada por separado, aunque la pasada haya sido una
+    # sola: dentro de seis meses lo que se busca es una persona, no una tanda.
+    with db_session() as conn:
+        for x in r["resultados"]:
+            emp = empleados.get(x["user_id"])
+            _registrar_operacion(
+                conn, dispositivo_id=did, equipo=puerta["nombre"],
+                user_id=x["user_id"], empleado_id=emp["id"] if emp else None,
+                nombre_equipo=x.get("nombre_escrito") or x.get("nombre_equipo"),
+                accion=x["accion"], motivo=x.get("motivo"),
+                resultado=_resultado(x), detalle=x.get("error"),
+                respaldo=x.get("respaldo"),
+                usuario_id=int(usuario.get("sub") or 0) or None)
+        if r["resultados"] == [] and r.get("error"):
+            _registrar_operacion(
+                conn, dispositivo_id=did, equipo=puerta["nombre"],
+                accion="aplicar", resultado="falló", detalle=r["error"],
+                usuario_id=int(usuario.get("sub") or 0) or None)
+
+    for x in r["resultados"]:
+        emp = empleados.get(x["user_id"])
+        x["empleado"] = (f"{emp['apellido']}, {emp['nombre']}".strip(", ")
+                         if emp else None)
+    return {"ok": r["ok"], "equipo": puerta["nombre"], "error": r.get("error"),
+            "resultados": r["resultados"], "problemas": r.get("problemas", []),
+            "omitidas": omitidas, "grupo": r.get("grupo"),
+            "horario": r.get("horario"),
+            "horario_restringe": r.get("horario_restringe"),
+            "aviso_grupo": r.get("aviso_grupo"),
+            "otros_intactos": r.get("otros")}
+
+
+def _resultado(x: dict) -> str:
+    """Como se registra cada linea de una pasada: igual que de a una."""
+    if x["ok"]:
+        return "cargado" if x["accion"] == "cargar" else "sacado"
+    if x["accion"] == "sacar" and x.get("sigue"):
+        return "pendiente"
+    return "falló"
+
+
 @router.get("/sin-perfil")
 def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     """

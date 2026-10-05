@@ -3181,8 +3181,18 @@ async function verPlan() {
            Si esta puerta tiene que seguir funcionando, agregala a los perfiles que correspondan
            antes de aplicar nada. Suele pasar cuando la puerta estaba caída al armar los perfiles.</div>`
       : '';
-    return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0">
+    // Aplicar toda la puerta de una. Es una conexión al equipo en vez de una
+    // por persona: con ochenta cargados, fila por fila se hace tan largo que
+    // nadie lo usa. Las filas que el sistema no ejecuta no cuentan para el botón.
+    const aplicables = p.agregar.filter(a => !a.sin_huella).length
+                     + p.sacar.filter(s => s.motivo !== 'sin_politica').length;
+    const botonTodo = canDo('accesos','aplicar') && aplicables
+      ? `<button class="btn btn-sm" style="margin-left:10px" id="aplicar-${p.id}"
+                 onclick="aplicarPuerta(${p.id}, this)">Aplicar las ${aplicables}</button>`
+      : '';
+    return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0" id="puerta-plan-${p.id}">
       ${cab} <span style="color:#888;font-size:.8rem">· ${p.agregar.length} a cargar, ${p.sacar.length} a sacar</span>
+      ${botonTodo}
       ${aviso}
       <div style="margin-top:6px">${filas}</div></div>`;
   }).join('');
@@ -3296,6 +3306,77 @@ async function sacarPorPlan(dispositivoId, userId, boton) {
       + `<div style="font-size:.72rem;color:#bbb;margin-left:72px">respaldo guardado en la PC</div>`;
   }
   toast(`${r.empleado || userId} sacado de ${r.equipo}`);
+}
+
+// Aplicar todo el plan de una puerta. Va por puerta y no por todas juntas: cada
+// una es una conexión a un equipo viejo que puede no contestar, y así lo que
+// falla es una puerta y no la pasada entera.
+async function aplicarPuerta(dispositivoId, boton) {
+  const bloque = document.getElementById(`puerta-plan-${dispositivoId}`);
+  const nombre = bloque ? (bloque.querySelector('b') || {}).textContent : 'esta puerta';
+  const cuantas = boton ? boton.textContent.replace(/\D+/g, '') : '';
+  if (!confirm(`Aplicar ${cuantas} cambio(s) en ${nombre}.\n\n`
+      + `Se cargan y se sacan personas del lector en una sola pasada. De los que `
+      + `se sacan se guarda un respaldo con sus huellas en la PC antes de borrar.`
+      + `\n\n¿Aplico?`)) return;
+
+  if (boton) { boton.disabled = true; boton.textContent = 'Aplicando…'; }
+  let r = {};
+  try {
+    const res = await fetch(`/api/accesos/aplicar/${dispositivoId}`, { method: 'POST' });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo aplicar');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error: ' + e.message);
+  }
+
+  // Cada línea se tacha con lo que realmente pasó, no con lo que se pidió.
+  (r.resultados || []).forEach(x => {
+    const fila = document.getElementById(
+      `${x.accion === 'cargar' ? 'cargar' : 'sacar'}-${dispositivoId}-${x.user_id}`);
+    if (!fila) return;
+    fila.style.opacity = '.55';
+    const quien = _esc(x.empleado) || `«${_esc(x.nombre_escrito || x.nombre_equipo || '')}»`;
+    if (x.ok) {
+      const hecho = x.accion === 'cargar' ? 'cargado' : 'sacado';
+      const color = x.accion === 'cargar' ? '#2e7d4f' : '#b3261e';
+      fila.innerHTML = `<span style="color:${color};font-weight:600;min-width:62px;display:inline-block">${hecho}</span>`
+        + `<span style="font-family:monospace;color:#888">${_esc(x.user_id)}</span> ${quien}`
+        + (x.accion === 'cargar'
+            ? `<span style="color:#888;margin-left:6px">· ${x.huellas} huella(s)</span>`
+            : `<span style="color:#888;margin-left:6px">· respaldo guardado</span>`);
+    } else {
+      fila.innerHTML = `<span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">no se pudo</span>`
+        + `<span style="font-family:monospace;color:#888">${_esc(x.user_id)}</span> ${quien}`
+        + `<div style="font-size:.76rem;color:#b3261e;margin-left:72px">${_esc(x.error || '')}</div>`;
+    }
+  });
+
+  // Lo que le pasó al resto del equipo va arriba de todo y en rojo: es lo único
+  // que puede haber roto algo que nadie pidió tocar.
+  if (bloque && (r.problemas || []).length) {
+    const alerta = document.createElement('div');
+    alerta.style.cssText = 'background:#f6dedc;color:#8c1d18;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:8px';
+    alerta.innerHTML = `<b>Ojo: al aplicar cambió gente que no estaba en el plan.</b>`
+      + r.problemas.map(p => `<div style="margin-top:3px">· ${_esc(p)}</div>`).join('');
+    bloque.appendChild(alerta);
+  }
+  if (bloque && r.horario_restringe) {
+    const nota = document.createElement('div');
+    nota.style.cssText = 'color:#b3261e;font-size:.78rem;margin-top:6px';
+    nota.textContent = `Los que se cargaron quedaron en el grupo ${r.grupo}, `
+      + `que tiene horario: ${r.horario}. Fuera de ese horario no abren.`;
+    bloque.appendChild(nota);
+  }
+
+  const hechos = (r.resultados || []).filter(x => x.ok).length;
+  const fallados = (r.resultados || []).length - hechos;
+  if (boton) {
+    boton.disabled = fallados === 0;
+    boton.textContent = fallados ? `Reintentar ${fallados}` : 'Listo';
+  }
+  toast(`${nombre}: ${hechos} aplicado(s)${fallados ? `, ${fallados} sin poder` : ''}`);
 }
 
 // ── Perfiles de acceso ────────────────────────────────────────────────────────

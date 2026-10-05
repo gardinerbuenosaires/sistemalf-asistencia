@@ -2746,6 +2746,155 @@ chequear("y las salteadas se listan",
          _fr.rango([1, 4, 9]) == "franjas 1, 4, 9", _fr.rango([1, 4, 9]))
 chequear("ninguna tambien tiene nombre", _fr.rango([]) == "ninguna franja")
 
+# --- Aplicar todo el plan de una puerta, en una sola pasada ------------------
+# Fila por fila serian treinta lecturas completas del mismo equipo. Aca se lee
+# una vez, se hacen todos los cambios y se lee una vez. La verificacion no se
+# afloja por eso: al final se comprueba cada linea Y que nadie mas haya cambiado.
+
+
+class _PuertaPasada:
+    """Un equipo que acepta altas y bajas. `rompe` simula lo que puede salir mal."""
+
+    user_packet_size = 28
+    encoding = "latin-1"
+
+    def __init__(s, cargados=("100", "101", "102"), rompe=None):
+        s.rompe = rompe        # None | "pisa_a_otro" | "no_borra" | "sin_huellas"
+        s._u = [type("U", (), {"uid": i + 1, "user_id": n, "name": f"N{n}",
+                               "group_id": "1", "privilege": 0})()
+                for i, n in enumerate(cargados)]
+        s._h = {u.uid: 1 for u in s._u}
+        s.borrados, s.escritos = [], []
+
+    @property
+    def users(s): return len(s._u)
+    def get_users(s): return list(s._u)
+    def get_templates(s):
+        return [type("H", (), {"uid": uid, "valid": 1,
+                               "json_pack": lambda s2: {"t": "x"}})()
+                for uid, n in s._h.items() for _ in range(n)]
+    def refresh_data(s): pass
+    def delete_user(s, uid=None, user_id=""):
+        s.borrados.append(uid)
+        if s.rompe == "no_borra":
+            return
+        s._u = [u for u in s._u if u.uid != uid]
+        s._h.pop(uid, None)
+        if s.rompe == "pisa_a_otro" and s._u:
+            s._u[0].name = "PISADO"
+    def save_user_template(s, u, huellas):
+        s._h[u.uid] = 0 if s.rompe == "sin_huellas" else len(huellas)
+    def disconnect(s): pass
+
+
+def _preparar_pasada(equipo):
+    _em._conectar = lambda d: (equipo, "udp")
+    _em._respaldar = lambda conexion, puerta, usuario, huellas: "C:/x/r.json"
+    _em.huellas_de_varios = lambda disp, numeros: (
+        {str(n): (type("Q", (), {"name": f"MAESTRO{n}"})(), ["h1", "h2"])
+         for n in numeros if str(n) != "sinhuella"},
+        {"sinhuella": "está en el equipo de asistencia pero sin ninguna huella"})
+    def _esc_fake(conexion, uid, nombre, privilegio, grupo, numero, franja=0):
+        conexion.escritos.append((uid, numero, nombre, grupo))
+        conexion._u.append(type("U", (), {"uid": uid, "user_id": str(numero),
+                                          "name": nombre, "group_id": grupo,
+                                          "privilege": privilegio})())
+        conexion._h[uid] = 0
+    _em._escribir_usuario = _esc_fake
+
+_real_huellas_varias = _em.huellas_de_varios
+_real_respaldar = _em._respaldar
+_PUERTA_P = {"nombre": "Puerta P", "ip": "10.0.0.8"}
+_MAESTRO_P = {"nombre": "Reloj", "ip": "10.0.0.1"}
+
+_eq = _PuertaPasada()
+_preparar_pasada(_eq)
+_rp = _em.aplicar_en_puerta(_PUERTA_P, _MAESTRO_P,
+                            [{"user_id": "500", "nombre": "NUEVO"}],
+                            [{"user_id": "100", "motivo": "Dado de baja"}])
+chequear("la pasada sale bien", _rp["ok"] is True, _rp.get("error"))
+chequear("carga y saca en la misma conexion", len(_rp["resultados"]) == 2, _rp)
+_alta = next(x for x in _rp["resultados"] if x["accion"] == "cargar")
+_baja = next(x for x in _rp["resultados"] if x["accion"] == "sacar")
+chequear("el alta quedo con sus dos huellas",
+         _alta["ok"] and _alta["huellas"] == 2, _alta)
+chequear("y con el nombre que se le paso", _alta["nombre_escrito"] == "NUEVO", _alta)
+chequear("la baja se hizo", _baja["ok"] is True, _baja)
+chequear("y guardo respaldo antes de borrar", _baja["respaldo"], _baja)
+chequear("las bajas van primero, para que una alta que falle no las postergue",
+         _eq.borrados and _eq.escritos and True, (_eq.borrados, _eq.escritos))
+chequear("informa cuantos no se tocaron", _rp["otros"] == 2, _rp)
+
+# Una sin huella no se carga, y no detiene a las demas.
+_eq = _PuertaPasada()
+_preparar_pasada(_eq)
+_rp = _em.aplicar_en_puerta(_PUERTA_P, _MAESTRO_P,
+                            [{"user_id": "sinhuella"}, {"user_id": "501"}], [])
+_sin = next(x for x in _rp["resultados"] if x["user_id"] == "sinhuella")
+_ok2 = next(x for x in _rp["resultados"] if x["user_id"] == "501")
+chequear("sin huella no se carga", _sin["ok"] is False, _sin)
+chequear("y se dice por que", "sin ninguna huella" in _sin["error"], _sin)
+chequear("pero la siguiente se carga igual", _ok2["ok"] is True, _ok2)
+chequear("la pasada se marca como no del todo bien", _rp["ok"] is False, _rp)
+
+# Lo que esta verificacion existe para encontrar: alguien que nadie pidio tocar.
+_eq = _PuertaPasada(rompe="pisa_a_otro")
+_preparar_pasada(_eq)
+_rp = _em.aplicar_en_puerta(_PUERTA_P, _MAESTRO_P, [],
+                            [{"user_id": "100", "motivo": "Dado de baja"}])
+chequear("si la pasada le cambio algo a otro, no esta ok", _rp["ok"] is False, _rp)
+chequear("y se dice a quien y que le cambio",
+         _rp["problemas"] and "101" in _rp["problemas"][0]
+         and "PISADO" in _rp["problemas"][0], _rp["problemas"])
+
+# Un equipo que acepta el borrado y no borra: queda pendiente, no fallado.
+_eq = _PuertaPasada(rompe="no_borra")
+_preparar_pasada(_eq)
+_rp = _em.aplicar_en_puerta(_PUERTA_P, _MAESTRO_P, [],
+                            [{"user_id": "100", "motivo": "Dado de baja"}])
+_b = _rp["resultados"][0]
+chequear("si el equipo no borra, no se da por hecho", _b["ok"] is False, _b)
+chequear("y se marca como que sigue cargado", _b.get("sigue") is True, _b)
+
+# Una huella que no quedo: el alta figura hecha y la persona no abre.
+_eq = _PuertaPasada(rompe="sin_huellas")
+_preparar_pasada(_eq)
+_rp = _em.aplicar_en_puerta(_PUERTA_P, _MAESTRO_P, [{"user_id": "502"}], [])
+_a = _rp["resultados"][0]
+chequear("un alta sin huellas no se da por buena", _a["ok"] is False, _a)
+chequear("diciendo cuantas quedaron de cuantas",
+         "0 de 2" in (_a["error"] or ""), _a)
+
+# Lo que ya estaba no se vuelve a hacer, y se dice.
+_eq = _PuertaPasada()
+_preparar_pasada(_eq)
+_rp = _em.aplicar_en_puerta(_PUERTA_P, _MAESTRO_P,
+                            [{"user_id": "101"}], [{"user_id": "999"}])
+chequear("no recarga a quien ya estaba",
+         any(x.get("ya_estaba") for x in _rp["resultados"]), _rp["resultados"])
+chequear("ni saca a quien ya no estaba",
+         any(x.get("no_estaba") for x in _rp["resultados"]), _rp["resultados"])
+chequear("y no le pidio nada al equipo",
+         _eq.borrados == [] and _eq.escritos == [], (_eq.borrados, _eq.escritos))
+
+# Con la lista incompleta no se toca nada: el indice sale de esa lista.
+class _PuertaCorta(_PuertaPasada):
+    @property
+    def users(s): return len(s._u) + 1
+_eq = _PuertaCorta()
+_preparar_pasada(_eq)
+_rp = _em.aplicar_en_puerta(_PUERTA_P, _MAESTRO_P, [{"user_id": "503"}],
+                            [{"user_id": "100", "motivo": "x"}])
+chequear("con la lectura incompleta no se aplica nada", _rp["ok"] is False, _rp)
+chequear("y no se escribio ni se borro",
+         _eq.borrados == [] and _eq.escritos == [], (_eq.borrados, _eq.escritos))
+
+_em.huellas_de_varios = _real_huellas_varias
+_em._respaldar = _real_respaldar
+_em._conectar = _conectar_real
+_em._escribir_usuario = _escribir_real
+
+
 # --- Sacar a alguien, y verificar que los demas quedaron enteros -------------
 # Que la persona ya no este es la parte facil. Lo que hay que probar es que el
 # borrado no se llevo puesto a nadie mas: estos equipos borran por indice, y un

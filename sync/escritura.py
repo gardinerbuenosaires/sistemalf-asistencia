@@ -78,15 +78,17 @@ def _lectura_cierra(f):
 
 def _intactos(antes, despues, excepto):
     """
-    Qué le pasó a los demás. `excepto` es el número que sí tenía que cambiar.
+    Qué le pasó a los demás. `excepto` son los números que sí tenían que cambiar:
+    uno solo, o todos los que tocó una pasada entera.
 
     Compara índice, nombre, grupo, privilegio y cantidad de huellas: un borrado
     que corre índices o una escritura que pisa a alguien se ven acá y en ningún
     otro lado.
     """
+    tocados = {excepto} if isinstance(excepto, str) else set(excepto or ())
     problemas = []
     for numero, a in antes["usuarios"].items():
-        if numero == excepto:
+        if numero in tocados:
             continue
         d = despues["usuarios"].get(numero)
         if d is None:
@@ -96,7 +98,7 @@ def _intactos(antes, despues, excepto):
             if a[campo] != d[campo]:
                 problemas.append(f"al {numero} ({a['nombre']}) le cambió "
                                  f"{campo}: {a[campo]} → {d[campo]}")
-    for numero in set(despues["usuarios"]) - set(antes["usuarios"]) - {excepto}:
+    for numero in set(despues["usuarios"]) - set(antes["usuarios"]) - tocados:
         problemas.append(f"apareció un {numero} que nadie creó")
     return problemas
 
@@ -318,6 +320,55 @@ def huellas_de(dispositivo, numero):
                 pass
 
 
+def huellas_de_varios(dispositivo, numeros):
+    """
+    Las huellas de varias personas en un equipo, de una sola conexión. SOLO LECTURA.
+
+    Una por una sería una conexión por persona contra el equipo de fichaje, que
+    es el de producción y el que está tomando asistencia mientras tanto. Leer el
+    lista y las huellas una vez y repartirlas acá es la diferencia entre
+    molestarlo una vez y molestarlo treinta.
+
+    Devuelve {numero: (usuario, [huellas])} con los que tienen, y
+    {numero: motivo} con los que no, para poder decir por qué en cada caso.
+    """
+    pedidos = {str(n).strip() for n in numeros}
+    if not pedidos:
+        return {}, {}
+
+    conexion = None
+    try:
+        conexion, _t = _conectar(dispositivo)
+        gente = {str(u.user_id).strip(): u for u in conexion.get_users()}
+        por_uid = {}
+        for h in conexion.get_templates():
+            if getattr(h, "valid", 1):
+                por_uid.setdefault(h.uid, []).append(h)
+
+        traidas, faltan = {}, {}
+        for numero in pedidos:
+            quien = gente.get(numero)
+            if quien is None:
+                faltan[numero] = "no está cargado en el equipo de asistencia"
+                continue
+            suyas = por_uid.get(quien.uid, [])
+            if not suyas:
+                faltan[numero] = "está en el equipo de asistencia pero sin ninguna huella"
+                continue
+            traidas[numero] = (quien, suyas)
+        return traidas, faltan
+    except Exception as exc:
+        logger.warning("No se pudieron leer las huellas de %s: %s",
+                       dispositivo.get("ip"), exc)
+        return {}, {n: f"{type(exc).__name__}: {exc}" for n in pedidos}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
 def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
                      nombre: str = None, grupo: str = None) -> dict:
     """
@@ -408,6 +459,154 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
     except Exception as exc:
         logger.warning("No se pudo cargar %s en %s: %s", numero, puerta.get("ip"), exc)
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
+def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list) -> dict:
+    """
+    Aplica de una vez todo lo que el plan pide para una puerta.
+
+    Por qué junto y no fila por fila. Cada fila suelta es conectarse, leer los
+    usuarios y las huellas del equipo entero, escribir, y volver a leer todo
+    para verificar. Con ochenta personas cargadas eso tarda, y treinta filas son
+    treinta lecturas completas del mismo equipo: el proceso se hace tan largo
+    que nadie lo usa. Acá se lee una vez al principio, se hacen todos los
+    cambios, y se lee una vez al final.
+
+    La verificación no se afloja por eso, al contrario: al final se comprueba
+    cada alta y cada baja, y además que **nadie más haya cambiado**, con la foto
+    completa de antes contra la de después. Eso es más fuerte que verificar de a
+    uno, porque ve el efecto acumulado de toda la pasada.
+
+    Un fallo no detiene al resto. Si una persona no se puede cargar, las demás
+    siguen: lo contrario deja la puerta a medio aplicar en un punto que depende
+    de en qué orden estaban las filas.
+
+    `altas` son {"user_id", "nombre"} y `bajas` {"user_id", "motivo"}. Quién
+    tiene que estar y quién no lo decidió el que llama, mirando la política;
+    acá se ejecuta y se verifica.
+    """
+    numeros_altas = [str(a["user_id"]).strip() for a in altas]
+    traidas, faltan = (huellas_de_varios(maestro, numeros_altas)
+                       if numeros_altas else ({}, {}))
+
+    conexion, resultados = None, []
+    try:
+        conexion, transporte = _conectar(puerta)
+        antes = _foto(conexion)
+        cierra, detalle = _lectura_cierra(antes)
+        if not cierra:
+            return {"ok": False, "resultados": [],
+                    "error": f"Lectura no confiable: {detalle}. No se tocó nada."}
+
+        # El grupo se decide una sola vez para toda la pasada: es el mismo para
+        # todos los que entran a esta puerta, y preguntarlo por persona serían
+        # dos comandos más contra el equipo por cada uno.
+        from collections import Counter
+        reparto = Counter(u["grupo"] for u in antes["usuarios"].values() if u["grupo"])
+        grupo, ventana, aviso_grupo = _elegir_grupo(conexion, reparto)
+
+        tocados, usados = set(), {u["uid"] for u in antes["usuarios"].values()}
+
+        # Las bajas primero: son las urgentes —un egresado que sigue abriendo— y
+        # así una alta que falle no las deja para otro día.
+        for baja in bajas:
+            numero = str(baja["user_id"]).strip()
+            objetivo = antes["usuarios"].get(numero)
+            if objetivo is None:
+                resultados.append({"user_id": numero, "accion": "sacar", "ok": False,
+                                   "no_estaba": True,
+                                   "error": "ya no estaba cargado"})
+                continue
+            try:
+                huellas = antes["huellas_crudas"].get(objetivo["uid"], [])
+                respaldo = _respaldar(conexion, puerta,
+                                      {**objetivo, "user_id": numero}, huellas)
+                conexion.delete_user(uid=objetivo["uid"])
+                tocados.add(numero)
+                resultados.append({"user_id": numero, "accion": "sacar", "ok": True,
+                                   "nombre_equipo": objetivo["nombre"],
+                                   "motivo": baja.get("motivo"), "respaldo": respaldo,
+                                   "error": None})
+            except Exception as exc:
+                resultados.append({"user_id": numero, "accion": "sacar", "ok": False,
+                                   "error": f"{type(exc).__name__}: {exc}"})
+
+        for alta in altas:
+            numero = str(alta["user_id"]).strip()
+            if numero in antes["usuarios"]:
+                resultados.append({"user_id": numero, "accion": "cargar", "ok": False,
+                                   "ya_estaba": True, "error": "ya estaba cargado"})
+                continue
+            if numero not in traidas:
+                resultados.append({"user_id": numero, "accion": "cargar", "ok": False,
+                                   "error": f"No hay huella para copiar: "
+                                            f"{faltan.get(numero, 'no se pudo leer')}"})
+                continue
+            quien, suyas = traidas[numero]
+            texto = ((alta.get("nombre") or "").strip()
+                     or (quien.name or "").strip() or numero)
+            try:
+                uid = max(usados) + 1 if usados else 1
+                _escribir_usuario(conexion, uid, texto, 0, grupo, numero)
+                recien = next((u for u in conexion.get_users()
+                               if str(u.user_id).strip() == numero), None)
+                if recien is None:
+                    resultados.append({"user_id": numero, "accion": "cargar",
+                                       "ok": False,
+                                       "error": "se escribió pero no aparece al releer"})
+                    continue
+                conexion.save_user_template(recien, suyas)
+                usados.add(uid)
+                tocados.add(numero)
+                resultados.append({"user_id": numero, "accion": "cargar", "ok": True,
+                                   "nombre_escrito": texto, "grupo": grupo,
+                                   "huellas_esperadas": len(suyas), "error": None})
+            except Exception as exc:
+                resultados.append({"user_id": numero, "accion": "cargar", "ok": False,
+                                   "error": f"{type(exc).__name__}: {exc}"})
+
+        # Una sola relectura para verificar toda la pasada. Lo que se informa es
+        # lo que se comprobó, no lo que el equipo contestó mientras se escribía.
+        despues = _foto(conexion)
+        for r in resultados:
+            if not r["ok"]:
+                continue
+            quedo = despues["usuarios"].get(r["user_id"])
+            if r["accion"] == "sacar" and quedo is not None:
+                r["ok"], r["sigue"] = False, True
+                r["error"] = "sigue cargado después de borrarlo"
+            elif r["accion"] == "cargar":
+                if quedo is None:
+                    r["ok"] = False
+                    r["error"] = "no quedó cargado"
+                else:
+                    r["huellas"] = quedo["huellas"]
+                    if quedo["huellas"] != r["huellas_esperadas"]:
+                        r["ok"] = False
+                        r["error"] = (f"quedó con {quedo['huellas']} de "
+                                      f"{r['huellas_esperadas']} huella(s)")
+
+        problemas = _intactos(antes, despues, tocados)
+        return {"ok": not problemas and all(r["ok"] for r in resultados),
+                "transporte": transporte, "resultados": resultados,
+                "problemas": problemas, "grupo": grupo,
+                "horario": ventana["texto"] if ventana else None,
+                "horario_restringe": ventana["restringe"] if ventana else None,
+                "aviso_grupo": aviso_grupo,
+                # Los que ya estaban y nadie tocó. Restar los tocados a secas
+                # contaría de menos: los que se cargaron no estaban antes.
+                "otros": len(set(antes["usuarios"]) - tocados),
+                "error": "; ".join(problemas) if problemas else None}
+    except Exception as exc:
+        logger.warning("No se pudo aplicar el plan en %s: %s", puerta.get("ip"), exc)
+        return {"ok": False, "resultados": resultados,
+                "error": f"{type(exc).__name__}: {exc}"}
     finally:
         if conexion:
             try:

@@ -3184,11 +3184,17 @@ async function verPlan() {
     // Aplicar toda la puerta de una. Es una conexión al equipo en vez de una
     // por persona: con ochenta cargados, fila por fila se hace tan largo que
     // nadie lo usa. Las filas que el sistema no ejecuta no cuentan para el botón.
-    const aplicables = p.agregar.filter(a => !a.sin_huella).length
-                     + p.sacar.filter(s => s.motivo !== 'sin_politica').length;
+    const vanACargar = p.agregar.filter(a => !a.sin_huella).length;
+    const vanASacar = p.sacar.filter(s => s.motivo !== 'sin_politica').length;
+    const aplicables = vanACargar + vanASacar;
+    // El botón dice cuántas entran y cuántas salen, no un total. "Aplicar las
+    // 70" esconde que las 70 son bajas, y es un número lo que se mira antes de
+    // aceptar.
+    const queHace = [vanACargar ? `cargar ${vanACargar}` : '',
+                     vanASacar ? `sacar ${vanASacar}` : ''].filter(Boolean).join(' y ');
     const botonTodo = canDo('accesos','aplicar') && aplicables
       ? `<button class="btn btn-sm" style="margin-left:10px" id="aplicar-${p.id}"
-                 onclick="aplicarPuerta(${p.id}, this)">Aplicar las ${aplicables}</button>`
+                 onclick="aplicarPuerta(${p.id}, this, ${vanACargar}, ${vanASacar})">${queHace}</button>`
       : '';
     return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0" id="puerta-plan-${p.id}">
       ${cab} <span style="color:#888;font-size:.8rem">· ${p.agregar.length} a cargar, ${p.sacar.length} a sacar</span>
@@ -3311,14 +3317,24 @@ async function sacarPorPlan(dispositivoId, userId, boton) {
 // Aplicar todo el plan de una puerta. Va por puerta y no por todas juntas: cada
 // una es una conexión a un equipo viejo que puede no contestar, y así lo que
 // falla es una puerta y no la pasada entera.
-async function aplicarPuerta(dispositivoId, boton) {
+async function aplicarPuerta(dispositivoId, boton, vanACargar, vanASacar) {
   const bloque = document.getElementById(`puerta-plan-${dispositivoId}`);
   const nombre = bloque ? (bloque.querySelector('b') || {}).textContent : 'esta puerta';
-  const cuantas = boton ? boton.textContent.replace(/\D+/g, '') : '';
-  if (!confirm(`Aplicar ${cuantas} cambio(s) en ${nombre}.\n\n`
-      + `Se cargan y se sacan personas del lector en una sola pasada. De los que `
-      + `se sacan se guarda un respaldo con sus huellas en la PC antes de borrar.`
-      + `\n\n¿Aplico?`)) return;
+  // Se nombra lo que va a pasar, no un total: "70 cambios" y "70 personas
+  // pierden el acceso" son el mismo número y no son la misma frase.
+  const que = [vanACargar ? `${vanACargar} persona(s) van a quedar cargadas` : '',
+               vanASacar ? `${vanASacar} persona(s) van a perder el acceso` : '']
+              .filter(Boolean).join('\n');
+  // Una tanda grande de bajas casi nunca es la política poniéndose al día: es
+  // una lista que alguien no esperaba. Vale la pena frenar y mirarla.
+  const mucho = vanASacar >= 10
+    ? `\n\nSon muchas bajas de una sola puerta. Si esta lista no es la que `
+      + `esperabas, mirala antes: puede ser un perfil mal asignado y no `
+      + `${vanASacar} bajas de verdad.`
+    : '';
+  if (!confirm(`${nombre}\n\n${que}${mucho}\n\n`
+      + `De los que se sacan se guarda un respaldo con sus huellas en la PC `
+      + `antes de borrar, pero volver atrás no es un botón.\n\n¿Aplico?`)) return;
 
   if (boton) { boton.disabled = true; boton.textContent = 'Aplicando…'; }
   let r = {};

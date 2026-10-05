@@ -637,6 +637,7 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
     <button class="bloque-btn"          data-b="0" onclick="selBloque(0)">Ambos</button>
   </div>
 
+  <div id="modal-aviso-propio"></div>
   <div class="modal-tab-bar" id="modal-tab-bar">
     <button class="modal-tab-btn activo" id="mtab-nov"    onclick="modalTabPlani('nov')">Novedad</button>
     <button class="modal-tab-btn"        id="mtab-fm"     data-perm="asistencia:fichaje_manual" onclick="modalTabPlani('fm')">Fichaje manual</button>
@@ -826,6 +827,7 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
 <div id="toast"></div>
 
 <script src="/static/js/session.js"></script>
+<script src="/static/js/legajo-propio.js"></script>
 <script src="/static/js/user-menu.js"></script>
 <script>
 // ── Paleta de colores por letra ───────────────────────────────────────────────
@@ -1238,6 +1240,7 @@ async function agregarFichajeParking() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ empleado_id: eid, timestamp, motivo_manual: motivo || null }),
     });
+    if (await LegajoPropio.siNoPermitido(r)) return;
     if (!r.ok) { const err = await r.json(); alert(err.detail || 'Error al agregar fichaje'); return; }
     document.getElementById('pk-input-turno').value = '';
     document.getElementById('pk-input-motivo').value = '';
@@ -1249,6 +1252,7 @@ async function eliminarFichajeParking(fid) {
   if (!confirm('¿Eliminar este fichaje?')) return;
   try {
     const r = await fetch(`/api/fichajes/${fid}`, { method: 'DELETE' });
+    if (await LegajoPropio.siNoPermitido(r)) return;
     if (!r.ok) { const err = await r.json(); alert(err.detail || 'Error al eliminar'); return; }
     await Promise.all([cargarFichajesParking(), cargarParking()]);
   } catch(e) { alert('Error al eliminar'); }
@@ -2011,6 +2015,22 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   modalCtx = { eid, nombre: `${emp.apellido}, ${emp.nombre}`, fecha, esCortado,
                bloqueActivo: bloqueInicial };
 
+  // Propio legajo: sin el permiso no se ofrece cambiar el horario ni cargar
+  // fichadas, y se avisa de entrada (el servidor igual lo rechazaría).
+  const propio = LegajoPropio.esPropio(eid);
+  const sinPlanifPropia = propio && !LegajoPropio.puedePlanificacion;
+  const sinFichPropia   = propio && !LegajoPropio.puedeFichadas;
+  const sinCorrPropia   = propio && !LegajoPropio.puedeCorreccion;
+  const avisos = [];
+  if (sinPlanifPropia) avisos.push(LegajoPropio.MSG.planificacion);
+  if (sinFichPropia && canDo('asistencia', 'fichaje_manual')) avisos.push(LegajoPropio.MSG.fichadas);
+  if (sinCorrPropia) avisos.push(LegajoPropio.MSG.correccion);
+  document.getElementById('modal-aviso-propio').innerHTML =
+    avisos.length ? LegajoPropio.avisoHtml(avisos.join(' ')) : '';
+  document.getElementById('mtab-fm').style.display = sinFichPropia ? 'none' : '';
+  // Sin corrección propia solo queda la observación, que no cambia la asistencia.
+  document.getElementById('mtab-nov').style.display = sinCorrPropia ? 'none' : '';
+
   // Mostrar pestañas según permiso y estado de la celda
   const tabBar = document.getElementById('modal-tab-bar');
   const esJerarquico = emp?.tipo === 'jerarquico';
@@ -2024,9 +2044,10 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   const ftPendienteActual = esCortado
     ? (bloqueInicial === 2 ? celda?.b2?.ft_pendiente : celda?.b1?.ft_pendiente)
     : celda?.ft_pendiente;
-  const esFT      = !bloqueado && letraActual === 'FT' && canDo('planificacion','editar');
-  const canHorario = !bloqueado && canDo('planificacion','editar') && letraActual !== 'F';
-  const canFranco = !bloqueado && !periodoCerrado && canDo('planificacion','editar')
+  const puedePlanif = canDo('planificacion','editar') && !sinPlanifPropia;
+  const esFT      = !bloqueado && letraActual === 'FT' && puedePlanif;
+  const canHorario = !bloqueado && puedePlanif && letraActual !== 'F';
+  const canFranco = !bloqueado && !periodoCerrado && puedePlanif
     && letraActual !== 'F' && letraActual !== 'FT' && letraActual !== 'FD';
   // Quitar franco: en un día planificado como franco (aunque haya venido a trabajar → FT).
   // En cortado, solo si el día completo es franco (ambos bloques F/FT), no un franco de un bloque.
@@ -2034,7 +2055,7 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   const francoDiaCompleto = esCortado
     ? (_esFrancoPlan(celda?.b1?.letra) && _esFrancoPlan(celda?.b2?.letra))
     : _esFrancoPlan(letraActual);
-  const canQuitarFranco = !bloqueado && !periodoCerrado && canDo('planificacion','editar')
+  const canQuitarFranco = !bloqueado && !periodoCerrado && puedePlanif
     && francoDiaCompleto;
   document.getElementById('mtab-ft').style.display     = canHorario ? 'inline-block' : 'none';
   document.getElementById('mtab-franco').style.display = canFranco ? 'inline-block' : 'none';
@@ -2046,20 +2067,20 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
     if (lnk) lnk.href = `/asistencia?tab=fichajes&empleado=${eid}&fecha=${fecha}`;
     // Cortado + bloque específico: permitir asignar franco como excepción
     const puedeExcepcionFranco = esCortado && bloqueInicial > 0 && !periodoCerrado
-      && canDo('planificacion','editar') && letraActual !== 'F';
+      && puedePlanif && letraActual !== 'F';
     document.getElementById('mpanel-bloqueado-franco').style.display = puedeExcepcionFranco ? '' : 'none';
     document.getElementById('btn-bloqueado-franco').style.display    = puedeExcepcionFranco ? '' : 'none';
     // Cortado + bloque específico: permitir aplicar aliviada como excepción
     const puedeExcepcionAliviada = esCortado && bloqueInicial > 0 && !periodoCerrado
-      && canDo('asistencia','corregir') && letraActual === 'I';
+      && canDo('asistencia','corregir') && !sinCorrPropia && letraActual === 'I';
     document.getElementById('mpanel-bloqueado-aliviada').style.display = puedeExcepcionAliviada ? '' : 'none';
     document.getElementById('btn-bloqueado-aliviada').style.display    = puedeExcepcionAliviada ? '' : 'none';
     // Cortado + bloque específico: permitir asignar vacaciones como excepción
     const puedeExcepcionVac = esCortado && bloqueInicial > 0 && !periodoCerrado
-      && canDo('vacaciones','asignar') && letraActual === 'I';
+      && canDo('vacaciones','asignar') && !sinCorrPropia && letraActual === 'I';
     document.getElementById('mpanel-bloqueado-vac').style.display = puedeExcepcionVac ? '' : 'none';
     document.getElementById('btn-bloqueado-vac').style.display    = puedeExcepcionVac ? '' : 'none';
-  } else if (letraActual === 'A!!!') {
+  } else if (letraActual === 'A!!!' && !sinCorrPropia) {
     document.getElementById('asc-comentario').value = '';
     document.getElementById('asc-aviso-turno').style.display = fecha === _localDateStr() ? 'block' : 'none';
     modalTabPlani('ausente-sc');
@@ -2067,7 +2088,7 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
     _poblarHorariosFT();
     modalTabPlani('ft');
   } else {
-    modalTabPlani('nov');
+    modalTabPlani(sinCorrPropia ? 'co' : 'nov');
   }
 
   document.getElementById('fm-entrada').value    = '';
@@ -2376,6 +2397,7 @@ async function guardarFichajeManual() {
     const res = await fetch('/api/fichajes', {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body),
     });
+    if (await LegajoPropio.siNoPermitido(res)) return;
     if (!res.ok) { const e = await res.json(); toast('Error: '+(e.detail||res.status)); return; }
   }
   await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, { method: 'POST' }).catch(() => {});
@@ -2487,6 +2509,7 @@ async function guardarHorarioFT() {
     body: JSON.stringify({empleado_id: eid, fecha, horario_id}),
   });
   if (res.ok) { toast('Horario asignado'); cerrarModal(); cargar(); }
+  else if (await LegajoPropio.siNoPermitido(res)) return;
   else { const e = await res.json(); toast('Error: ' + (e.detail || res.status)); }
 }
 
@@ -2560,6 +2583,7 @@ async function asignarFranco() {
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({empleado_id: eid, fecha, es_franco: true, horario_id: null}),
     });
+    if (await LegajoPropio.siNoPermitido(res)) return;
     if (!res.ok) {
       const e = await res.json();
       toast('Error: ' + (e.detail || res.status));
@@ -2579,6 +2603,7 @@ async function quitarFrancoDia() {
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({empleado_id: eid, fecha}),
   });
+  if (await LegajoPropio.siNoPermitido(res)) return;
   if (!res.ok) {
     const e = await res.json().catch(()=>({}));
     toast('Error: ' + (e.detail || res.status));

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from db.database import db_session
-from auth.core import require_permiso, get_current_user
+from auth.core import require_permiso, get_current_user, check_no_es_legajo_propio
 from config import DATA_DIR
 
 FOTOS_DIR            = DATA_DIR / "fotos"
@@ -145,10 +145,16 @@ def get_empleado(eid: int, _user=Depends(require_permiso("empleados", "ver"))):
 def update_empleado(eid: int, data: EmpleadoIn, _user=Depends(require_permiso("empleados", "editar"))):
     with db_session() as conn:
         row = conn.execute(
-            "SELECT id, activo, cargo_id, fecha_ingreso, fecha_recontratacion FROM empleados WHERE id=?", (eid,)
+            "SELECT id, activo, cargo_id, categoria_id, tipo, fecha_ingreso, fecha_recontratacion "
+            "FROM empleados WHERE id=?", (eid,)
         ).fetchone()
         if not row:
             raise HTTPException(404, "Empleado no encontrado")
+        # En el propio legajo, lo que mueve asistencia, vacaciones o premios exige
+        # empleados:propia. El resto (contacto, domicilio, foto) se edita igual.
+        if (data.fecha_ingreso, data.tipo, data.cargo_id, data.categoria_id, int(bool(data.activo))) != \
+           (row["fecha_ingreso"], row["tipo"], row["cargo_id"], row["categoria_id"], int(bool(row["activo"]))):
+            check_no_es_legajo_propio(conn, _user, [eid])
         if row["fecha_recontratacion"] and data.fecha_ingreso != row["fecha_ingreso"]:
             raise HTTPException(409, "No se puede modificar fecha_ingreso cuando existe una recontratación por jubilación")
         anterior = row
@@ -259,6 +265,7 @@ def set_jubilacion(eid: int, data: JubilacionIn,
     with db_session() as conn:
         if not conn.execute("SELECT id FROM empleados WHERE id=?", (eid,)).fetchone():
             raise HTTPException(404, "Empleado no encontrado")
+        check_no_es_legajo_propio(conn, _user, [eid])
         conn.execute(
             "UPDATE empleados SET fecha_recontratacion=?, vac_dias_jubilacion=? WHERE id=?",
             (data.fecha_recontratacion, data.vac_dias_jubilacion, eid)

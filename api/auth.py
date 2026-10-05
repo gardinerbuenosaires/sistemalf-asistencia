@@ -75,7 +75,8 @@ def logout(response: Response):
 def me(user=Depends(get_current_user)):
     with db_session() as conn:
         row = conn.execute(
-            """SELECT u.id, u.nombre, u.email, u.rol_id, u.turno_dist, u.departamento_dist, r.nombre as rol
+            """SELECT u.id, u.nombre, u.email, u.rol_id, u.turno_dist, u.departamento_dist, u.empleado_id,
+                      r.nombre as rol
                FROM usuarios u LEFT JOIN roles r ON r.id=u.rol_id
                WHERE u.id=?""",
             (user["sub"],)
@@ -159,7 +160,7 @@ def update_usuario(uid: int, data: UsuarioIn, user=Depends(require_permiso("usua
             actual = conn.execute("SELECT empleado_id FROM usuarios WHERE id=?", (uid,)).fetchone()[0]
             rol = user.get("rol_id") or 0
             if actual != data.empleado_id and not all(tiene_permiso(rol, m, a) for m, a in PERMISOS_PROPIOS):
-                raise HTTPException(403, "No podés cambiar tu propio empleado vinculado. Pedíselo a otro usuario.")
+                raise HTTPException(403, "No podés cambiar tu propio empleado vinculado. Si hace falta, pedíselo a otro encargado.")
         pagina = data.pagina_inicio.strip() or None
         turno_dist = data.turno_dist.strip() or None
         if data.password:

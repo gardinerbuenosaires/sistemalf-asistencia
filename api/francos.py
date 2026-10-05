@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from db.database import db_session
-from auth.core import require_permiso
+from auth.core import require_permiso, check_no_es_correccion_propia
 from api.periodos_cerrados import check_periodo_abierto
 
 router = APIRouter(prefix="/api/francos", tags=["francos"])
@@ -48,6 +48,7 @@ def get_saldo_inicial(mes: str, _user=Depends(require_permiso("asistencia", "car
 def upsert_saldo_inicial(data: SaldoInicialIn, _user=Depends(require_permiso("asistencia", "carga_inicial"))):
     """Inserta o actualiza el saldo inicial de francos para un empleado en un mes."""
     with db_session() as conn:
+        check_no_es_correccion_propia(conn, _user, [data.empleado_id])
         check_periodo_abierto(conn, f"{data.mes}-01")
         if not conn.execute("SELECT id FROM empleados WHERE id=?", (data.empleado_id,)).fetchone():
             raise HTTPException(404, "Empleado no encontrado")

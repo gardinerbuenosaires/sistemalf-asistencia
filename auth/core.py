@@ -28,7 +28,7 @@ MODULOS = [
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
     "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes", "actualizacion",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio", "asignar"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio", "asignar", "correccion_propia"]
 # corregir       → asistencia:corregir (novedades en planilla)
 # fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
 #                  individuales o por fuerza mayor). Separado de "editar" porque
@@ -37,9 +37,17 @@ ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reab
 #                  del empleado vinculado al propio usuario). Sin él, "editar"
 #                  alcanza para todos menos para uno mismo: cambiarse el horario
 #                  del día después de llegar borra la llegada tarde.
+#                  vacaciones:propia → vacaciones pagadas y saldo inicial propios.
+#                  empleados:propia → en el propio legajo, lo que mueve asistencia,
+#                  vacaciones o premios: ingreso, tipo (un jerárquico sin fichar
+#                  queda presente), cargo, categoría, activo y jubilación.
 # fichaje_propio → asistencia:fichaje_propio (crear y borrar fichadas manuales
 #                  del empleado vinculado al propio usuario). Igual que "propia":
 #                  una entrada manual anterior a la marca real tapa la tardanza.
+# correccion_propia → asistencia:correccion_propia (cargar, cambiar o borrar
+#                  novedades del propio legajo, salvo la observación, y editar
+#                  su saldo de francos). Un CP o un NF tapan una tardanza o una
+#                  falta igual que cambiarse el horario.
 # asignar        → vacaciones:asignar (poner o sacar una V, desde la planilla o
 #                  desde las grillas de distribución). Separado de
 #                  asistencia:corregir y de editar las grillas, que cubren el
@@ -50,17 +58,18 @@ ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reab
 # require_permiso() con una acción nueva, sumarla al módulo correspondiente.
 MODULO_ACCIONES = {
     "dashboard":     ["ver"],
-    "empleados":     ["ver", "editar", "jubilacion"],
+    "empleados":     ["ver", "editar", "jubilacion", "propia"],
     "horarios":      ["ver", "editar", "eliminar"],
     "planificacion": ["ver", "editar", "propia"],
     "calendarios":   ["ver", "editar", "eliminar"],
-    "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos", "fichaje_manual", "fichaje_propio"],
+    "asistencia":    ["ver", "editar", "corregir", "carga_inicial", "ver_todos", "fichaje_manual", "fichaje_propio",
+                     "correccion_propia"],
     "resultados":    ["ver", "procesar"],
     "usuarios":      ["ver", "editar", "eliminar"],
     "roles":         ["ver", "editar", "eliminar"],
     "sync":          ["procesar"],
     "premios":       ["ver", "editar", "corregir", "cerrar", "reabrir"],
-    "vacaciones":    ["ver", "editar", "carga_inicial", "asignar"],
+    "vacaciones":    ["ver", "editar", "carga_inicial", "asignar", "propia"],
     "periodos":      ["ver", "cerrar", "reabrir"],
     "distribucion":  ["ver", "editar", "confirmar"],
     "mozos":         ["ver", "editar", "confirmar"],
@@ -180,10 +189,19 @@ def require_permiso(modulo: str, accion: str):
 
 
 # Acciones que habilitan a un usuario a tocarse a sí mismo, y qué se le dice si no
-# la tiene. Cambiarse el propio vínculo con un empleado exige todas.
+# la tiene. Cambiarse el propio vínculo con un empleado exige todas. Los mismos
+# textos están en web/static/js/legajo-propio.js, que avisa antes de intentar.
 PERMISOS_PROPIOS = {
-    ("planificacion", "propia"):         "No podés modificar tu propia planificación.",
-    ("asistencia",    "fichaje_propio"): "No podés cargar ni borrar tus propias fichadas.",
+    ("planificacion", "propia"):
+        "No podés modificar tu propia planificación. Si necesitás un cambio, pedíselo a otro encargado.",
+    ("asistencia",    "fichaje_propio"):
+        "No podés cargar ni borrar tus propias fichadas. Si necesitás una corrección, pedísela a otro encargado.",
+    ("asistencia",    "correccion_propia"):
+        "No podés cargar, cambiar ni borrar novedades en tu propio legajo. Si necesitás una, pedísela a otro encargado.",
+    ("vacaciones",    "propia"):
+        "No podés modificar tus propias vacaciones pagadas ni tu saldo inicial de vacaciones. Si necesitás un cambio, pedíselo a otro encargado.",
+    ("empleados",     "propia"):
+        "No podés cambiar en tu propio legajo el ingreso, el tipo, el cargo, la categoría, el estado ni la jubilación. Si hace falta, pedíselo a otro encargado.",
 }
 
 
@@ -198,7 +216,7 @@ def _check_no_es_propio(conn, user: dict, empleado_ids, modulo: str, accion: str
     propio = row["empleado_id"] if row else None
     if propio and propio in {int(e) for e in empleado_ids if e is not None}:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            PERMISOS_PROPIOS[(modulo, accion)] + " Pedíselo a otro usuario.")
+                            PERMISOS_PROPIOS[(modulo, accion)])
 
 
 def check_no_es_propia(conn, user: dict, empleado_ids) -> None:
@@ -207,6 +225,18 @@ def check_no_es_propia(conn, user: dict, empleado_ids) -> None:
 
 def check_no_es_fichaje_propio(conn, user: dict, empleado_ids) -> None:
     _check_no_es_propio(conn, user, empleado_ids, "asistencia", "fichaje_propio")
+
+
+def check_no_es_correccion_propia(conn, user: dict, empleado_ids) -> None:
+    _check_no_es_propio(conn, user, empleado_ids, "asistencia", "correccion_propia")
+
+
+def check_no_es_vacacion_propia(conn, user: dict, empleado_ids) -> None:
+    _check_no_es_propio(conn, user, empleado_ids, "vacaciones", "propia")
+
+
+def check_no_es_legajo_propio(conn, user: dict, empleado_ids) -> None:
+    _check_no_es_propio(conn, user, empleado_ids, "empleados", "propia")
 
 
 def check_asignar_vacaciones(user: dict) -> None:

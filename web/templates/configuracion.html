@@ -3322,7 +3322,12 @@ async function cargarEnPuerta(dispositivoId, userId, boton) {
       // pasa en casi todas sin que signifique nada: un aviso que aparece
       // siempre enseña a ignorar los avisos.
       + (r.aviso_grupo ? `<div style="color:#8a5d06;font-size:.76rem;margin-left:72px">
-           ${_esc(r.aviso_grupo)}</div>` : '');
+           ${_esc(r.aviso_grupo)}</div>` : '')
+      // Quedo con el numero como nombre en pantalla del lector. Se arregla
+      // poniendole el nombre corto en la pestana Accesos del legajo.
+      + (r.nombre_por_defecto ? `<div style="color:#8a5d06;font-size:.76rem;margin-left:72px">
+           quedó con el número como nombre: no tiene nombre de lector en el legajo y el
+           equipo de fichaje no contestó para copiarle el suyo.</div>` : '');
   }
   toast(`${r.empleado} cargado en ${r.equipo}`);
 }

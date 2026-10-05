@@ -103,6 +103,28 @@ def _intactos(antes, despues, excepto):
     return problemas
 
 
+def _nombre_para_el_lector(configurado, del_maestro, numero):
+    """
+    Qué nombre se le escribe a una persona en una puerta, y si hubo que inventarlo.
+
+    El orden es el configurado en el legajo, después el que el equipo de fichaje
+    ya le muestra, y recién al final el número. El número no es una buena opción
+    y por eso se avisa: pasa solo cuando no hay nombre en el legajo Y el equipo
+    de fichaje no contestó, y conviene que se vea para arreglarlo.
+
+    No se usa el apellido del legajo como último recurso, aunque exista. Quedaría
+    escrito en el equipo pareciendo una decisión que alguien tomó, y nadie
+    volvería a mirarlo.
+    """
+    elegido = (configurado or "").strip()
+    if elegido:
+        return elegido, False
+    elegido = (getattr(del_maestro, "name", "") or "").strip()
+    if elegido:
+        return elegido, False
+    return str(numero), True
+
+
 def _escribir_usuario(conexion, uid, nombre, privilegio, grupo, numero, franja=0):
     """
     Crea o reescribe un usuario SIN degradarle el nivel.
@@ -426,10 +448,15 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
             ventana, aviso_grupo = ventana_del_grupo(conexion, grupo), None
         # El nombre que se eligió para los lectores; si no hay, el del maestro,
         # que es lo que esa persona ya muestra en el otro equipo.
-        # `quien` es None cuando la huella salio del respaldo y no del
-        # equipo: ahi no hay nombre que copiar y manda el configurado.
-        texto = ((nombre or "").strip()
-                 or (getattr(quien, "name", "") or "").strip() or numero)
+        # El nombre corto que el lector muestra en pantalla. Sale del legajo
+        # —pestaña Accesos— y si ahi no hay nada se copia el que el equipo de
+        # fichaje ya muestra, que es lo que esa persona viene viendo.
+        #
+        # Cuando no hay ninguno de los dos queda el numero. Es feo a proposito:
+        # no se pone el apellido porque quedaria pareciendo configurado, y esto
+        # se tiene que ver para que alguien lo arregle. Pasa en un solo caso
+        # —sin nombre en el legajo Y con el equipo de fichaje caido— y se avisa.
+        texto, por_defecto = _nombre_para_el_lector(nombre, quien, numero)
 
         _escribir_usuario(conexion, uid, texto, 0, grupo, numero)
         recien = next((u for u in conexion.get_users()
@@ -445,6 +472,7 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
         bien = quedo and quedo["huellas"] == len(suyas) and not problemas
         return {"ok": bool(bien), "transporte": transporte,
                 "uid": uid, "grupo": grupo, "nombre_escrito": texto,
+                "nombre_por_defecto": por_defecto,
                 "grupo_ambiguo": ambiguo,
                 "reparto_grupos": dict(reparto),
                 "horario": ventana["texto"] if ventana else None,
@@ -551,8 +579,8 @@ def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list,
                                             f"{faltan.get(numero, 'no se pudo leer')}"})
                 continue
             quien, suyas = traidas[numero]
-            texto = ((alta.get("nombre") or "").strip()
-                     or (getattr(quien, "name", "") or "").strip() or numero)
+            texto, por_defecto = _nombre_para_el_lector(
+                alta.get("nombre"), quien, numero)
             try:
                 uid = max(usados) + 1 if usados else 1
                 _escribir_usuario(conexion, uid, texto, 0, grupo, numero)
@@ -568,6 +596,7 @@ def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list,
                 tocados.add(numero)
                 resultados.append({"user_id": numero, "accion": "cargar", "ok": True,
                                    "nombre_escrito": texto, "grupo": grupo,
+                                   "nombre_por_defecto": por_defecto,
                                    "huellas_esperadas": len(suyas), "error": None})
             except Exception as exc:
                 resultados.append({"user_id": numero, "accion": "cargar", "ok": False,

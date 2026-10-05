@@ -3052,6 +3052,33 @@ chequear("y las salteadas se listan",
          _fr.rango([1, 4, 9]) == "franjas 1, 4, 9", _fr.rango([1, 4, 9]))
 chequear("ninguna tambien tiene nombre", _fr.rango([]) == "ninguna franja")
 
+# --- Que nombre se le escribe a una persona en una puerta -------------------
+# El nombre corto que el lector muestra al apoyar el dedo. Sale del legajo
+# --pestana Accesos-- y si ahi no hay nada se copia el que el equipo de fichaje
+# ya le muestra. El numero es el ultimo recurso y se avisa, porque pasa solo
+# cuando faltan los dos y conviene que alguien lo arregle.
+_nom = _em._nombre_para_el_lector
+_DEL_EQUIPO = type("Q", (), {"name": "JPEREZ"})()
+
+chequear("manda el configurado en el legajo",
+         _nom("J PEREZ", _DEL_EQUIPO, "42") == ("J PEREZ", False),
+         _nom("J PEREZ", _DEL_EQUIPO, "42"))
+chequear("si no hay, se copia el que el equipo ya le muestra",
+         _nom(None, _DEL_EQUIPO, "42") == ("JPEREZ", False),
+         _nom(None, _DEL_EQUIPO, "42"))
+chequear("un configurado en blanco no cuenta como configurado",
+         _nom("   ", _DEL_EQUIPO, "42") == ("JPEREZ", False),
+         _nom("   ", _DEL_EQUIPO, "42"))
+chequear("sin ninguno de los dos queda el numero, y se avisa",
+         _nom(None, None, "42") == ("42", True), _nom(None, None, "42"))
+chequear("un nombre vacio en el equipo tampoco cuenta",
+         _nom(None, type("Q", (), {"name": "  "})(), "42") == ("42", True))
+# No se usa el apellido del legajo como ultimo recurso aunque exista: quedaria
+# escrito en el equipo pareciendo una decision que alguien tomo.
+chequear("y no se inventa un nombre a partir del legajo",
+         _nom(None, None, "42")[0] == "42", _nom(None, None, "42"))
+
+
 # --- Aplicar todo el plan de una puerta, en una sola pasada ------------------
 # Fila por fila serian treinta lecturas completas del mismo equipo. Aca se lee
 # una vez, se hacen todos los cambios y se lee una vez. La verificacion no se

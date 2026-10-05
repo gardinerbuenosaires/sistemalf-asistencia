@@ -969,7 +969,12 @@ def cargar_en_puerta(data: CargarEnPuertaIn,
             # Y por que se eligio ese grupo, cuando no fue simplemente el mas
             # usado: si hubo que desviarse, conviene que se vea.
             "aviso_grupo": r.get("aviso_grupo"),
-            "nombre_escrito": r["nombre_escrito"], "otros_intactos": r["otros"]}
+            "nombre_escrito": r["nombre_escrito"],
+            # Si quedo con el numero como nombre es porque no tiene nombre de
+            # lector en el legajo y el equipo de fichaje no contesto. Se ve
+            # para que alguien lo arregle, en vez de quedar asi para siempre.
+            "nombre_por_defecto": r.get("nombre_por_defecto", False),
+            "otros_intactos": r["otros"]}
 
 
 # Los cuatro motivos con los que el plan pide sacar a alguien, y si el sistema

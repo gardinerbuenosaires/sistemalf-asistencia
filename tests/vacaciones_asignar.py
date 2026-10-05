@@ -22,6 +22,10 @@ podian = {r[0] for r in c.execute(
     """SELECT DISTINCT rol_id FROM permisos
        WHERE (modulo='asistencia' AND accion='corregir')
           OR (modulo IN ('distribucion','mozos','barmans','peones') AND accion='editar')""")}
+# Si la base ya pasó por la migración, lo que falte se lo sacaron a propósito
+# desde Roles: ahí no hay nada que verificar.
+ya_migrada = c.execute(
+    "SELECT COUNT(*) FROM permisos WHERE modulo='vacaciones' AND accion='asignar'").fetchone()[0] > 0
 c.close()
 
 from db.database import init_db
@@ -50,8 +54,11 @@ con.row_factory = sqlite3.Row
 
 con_permiso = {r[0] for r in con.execute(
     "SELECT rol_id FROM permisos WHERE modulo='vacaciones' AND accion='asignar'")}
-chequear("la migración conserva a quien ya cargaba vacaciones", podian <= con_permiso,
-         podian - con_permiso)
+if ya_migrada:
+    print("  --   la base ya estaba migrada: no se verifica la migración")
+else:
+    chequear("la migración conserva a quien ya cargaba vacaciones", podian <= con_permiso,
+             podian - con_permiso)
 
 # Un rol que corrige la planilla y edita las grillas, pero sin vacaciones:asignar.
 rid = con.execute("INSERT INTO roles (nombre, descripcion, nivel) VALUES ('PruebaSinVac','',1)").lastrowid

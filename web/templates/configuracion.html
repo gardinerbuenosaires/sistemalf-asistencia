@@ -1232,7 +1232,7 @@ function buildForm(u={}) {
         <option value="">— No es empleado —</option>
         ${empleadosVinc.map(e => `<option value="${e.id}"${u.empleado_id===e.id?' selected':''}>${e.apellido}, ${e.nombre}</option>`).join('')}
       </select>
-      <div class="hint">Su propio legajo. Si el rol no tiene "Planificación › Propia", no puede cambiarse su horario ni su calendario; sin "Asistencia › Fichaje propio", no puede cargarse ni borrarse fichadas.</div>
+      <div class="hint">Su propio legajo. Lo que su rol no tenga tildado en Roles no se lo puede hacer a sí mismo: Planificación › Propia (horario y calendario), Asistencia › Fichaje propio y Corrección propia (fichadas y novedades), Vacaciones › Propia y Empleados › Propia (ingreso, tipo, cargo, categoría, estado).</div>
     </div>
     <div class="form-group">
       <label>Página de inicio</label>
@@ -1363,7 +1363,8 @@ const ACCION_LABELS = {
   corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir", carga_inicial:"Carga inicial",
   ver_todos:"Ver todos", confirmar:"Confirmar", jubilacion:"Jubilación",
   fichaje_manual:"Fichaje manual", propia:"Propia", fichaje_propio:"Fichaje propio",
-  asignar:"Asignar", excepcion:"Excepciones", aplicar:"Aplicar en los equipos"
+  asignar:"Asignar", correccion_propia:"Corrección propia",
+  excepcion:"Excepciones", aplicar:"Aplicar en los equipos"
 };
 
 // Algunas acciones necesitan decir sobre QUE actuan: "Editar" no aclara si se
@@ -1392,6 +1393,7 @@ const ACCION_AYUDA = {
     editar:   "Cambiar IP, puerto y para que se usa cada lector.",
     eliminar: "Borrar un lector. Solo si ningun perfil ni excepcion lo usa.",
   },
+
 };
 // Qué acciones aplica cada módulo: lo define el backend (auth/core.py) y llega
 // por /api/roles/modulos, así la matriz no se desincroniza del código.

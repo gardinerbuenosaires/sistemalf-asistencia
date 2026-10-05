@@ -186,6 +186,7 @@
 <div id="toast"></div>
 
 <script src="/static/js/session.js"></script>
+<script src="/static/js/legajo-propio.js"></script>
 <script src="/static/js/user-menu.js"></script>
 <script>
 function _localDateStr(d = new Date()) { return ymdLocal(d); }
@@ -392,22 +393,25 @@ function renderEmpleados() {
   const editable = canDo('calendarios','editar');
   lista.innerHTML = mostrar.map(e => {
     const asignado = asignadosIds.has(e.id);
-    return `<label class="empleado-chk${asignado ? " ya-asignado" : ""}">
-      <input type="checkbox" class="chk-emp" value="${e.id}"${asignado ? " checked" : ""}${editable ? "" : " disabled"}>
-      <span>${e.apellido}${e.nombre ? ", "+e.nombre : ""} <small style="color:#888">${e.cargo||""}</small></span>
+    // El propio legajo sin planificacion:propia queda fijo: ni se asigna ni se quita.
+    const propio = LegajoPropio.esPropio(e.id) && !LegajoPropio.puedePlanificacion;
+    return `<label class="empleado-chk${asignado ? " ya-asignado" : ""}"${propio ? ` style="opacity:.6" title="${LegajoPropio.MSG.planificacion}"` : ""}>
+      <input type="checkbox" class="chk-emp" value="${e.id}"${asignado ? " checked" : ""}${editable && !propio ? "" : " disabled"}>
+      <span>${e.apellido}${e.nombre ? ", "+e.nombre : ""} <small style="color:#888">${e.cargo||""}</small>${propio
+        ? ' <small style="color:#c0392b">🔒 tu legajo</small>' : ""}</span>
       ${asignado ? '<small style="color:#27ae60;font-weight:bold;margin-left:auto">✓ asignado</small>' : ""}
     </label>`;
   }).join("");
 }
 
 function filtrarEmpleados() { renderEmpleados(); }
-function desmarcarTodos() { document.querySelectorAll(".chk-emp").forEach(c => c.checked = false); }
+function desmarcarTodos() { document.querySelectorAll(".chk-emp:not(:disabled)").forEach(c => c.checked = false); }
 
 async function asignarEmpleados() {
   if (!editandoId) { toast("Guardá el calendario primero"); return; }
   const desde = document.getElementById("asig-desde").value;
   if (!desde) { toast("Seleccioná fecha desde"); return; }
-  const ids = [...document.querySelectorAll(".chk-emp:checked")].map(c => parseInt(c.value));
+  const ids = [...document.querySelectorAll(".chk-emp:checked:not(:disabled)")].map(c => parseInt(c.value));
   if (!ids.length) { toast("Seleccioná al menos un empleado"); return; }
 
   // Confirmación para fechas pasadas
@@ -446,13 +450,15 @@ async function asignarEmpleados() {
     renderEmpleados();
     await cargarLista();
     document.getElementById(`cal-item-${editandoId}`)?.classList.add("activo");
-  } else {
-    toast("Error al asignar");
+  } else if (!(await LegajoPropio.siNoPermitido(res))) {
+    const err = await res.json().catch(() => ({}));
+    toast(err.detail || "Error al asignar");
   }
 }
 
 async function init() {
   await _loadPerms();
+  await LegajoPropio.listo;
   const [hRes, eRes] = await Promise.all([
     fetch("/api/horarios"),
     fetch("/api/empleados")

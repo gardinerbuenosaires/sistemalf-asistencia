@@ -167,6 +167,7 @@
 <div id="toast"></div>
 
 <script src="/static/js/session.js"></script>
+<script src="/static/js/legajo-propio.js"></script>
 <script src="/static/js/user-menu.js"></script>
 <script>
 function _localDateStr(d = new Date()) { return ymdLocal(d); }
@@ -248,6 +249,7 @@ function celda(plan, fecha, empleadoId, empleadoNombre) {
 }
 
 async function cargar() {
+  await LegajoPropio.listo;   // para marcar la fila del propio legajo
   const res = await fetch(`/api/planificacion/semana?fecha=${fechaRef}`);
   const data = await res.json();
   horarios = data.horarios;
@@ -308,8 +310,10 @@ async function cargar() {
     // Turnos que tiene este empleado esta semana
     const turnosEmp = data.dias.map(d => emp.dias[d]?.horario_id ? horarioTurnoMap[emp.dias[d].horario_id] : null).filter(Boolean);
     const dataTurnos = [...new Set(turnosEmp)].join(",");
-    html += `<tr data-nombre="${nombre.toLowerCase()}" data-turnos="${dataTurnos}">
-      <td class="col-nombre" title="${nombre}">${nombre}</td>
+    const bloqueado = LegajoPropio.esPropio(emp.empleado.id) && !LegajoPropio.puedePlanificacion;
+    html += `<tr data-nombre="${nombre.toLowerCase()}" data-turnos="${dataTurnos}"${bloqueado ? ' style="opacity:.6"' : ''}>
+      <td class="col-nombre" title="${bloqueado ? LegajoPropio.MSG.planificacion : nombre}">${nombre}${bloqueado
+        ? ' <span style="font-size:.7rem;font-weight:normal;color:#c0392b">🔒 tu legajo</span>' : ''}</td>
       ${data.dias.map(d => `<td class="col-dia">${celda(emp.dias[d], d, emp.empleado.id, nombre)}</td>`).join("")}
     </tr>`;
   }
@@ -343,6 +347,10 @@ function filtrarTabla() {
 }
 
 function abrirModal(empleadoId, fecha, nombre) {
+  if (LegajoPropio.esPropio(empleadoId) && !LegajoPropio.puedePlanificacion) {
+    LegajoPropio.noPermitido(LegajoPropio.MSG.planificacion);
+    return;
+  }
   const plan = planData[`${empleadoId}_${fecha}`] || null;
   modalCtx = { empleadoId, fecha };
 
@@ -392,7 +400,7 @@ async function asignar(empleadoId, fecha, horarioId, esFranco) {
                 esFranco ? "Franco asignado" : "Horario asignado";
     toast(msg);
     cargar();
-  } else {
+  } else if (!(await LegajoPropio.siNoPermitido(res))) {
     const err = await res.json().catch(() => ({}));
     toast(err.detail || "Error al guardar");
   }

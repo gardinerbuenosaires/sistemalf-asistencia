@@ -334,6 +334,7 @@
 </div>
 
 <script src="/static/js/session.js"></script>
+<script src="/static/js/legajo-propio.js"></script>
 <script src="/static/js/user-menu.js"></script>
 <script>
 function _localDateStr(d = new Date()) { return ymdLocal(d); }
@@ -631,7 +632,7 @@ async function eliminarFichaje(id) {
     if (res.ok) {
       toast('Fichaje eliminado');
       cargarFichajes();
-    } else {
+    } else if (!(await LegajoPropio.siNoPermitido(res))) {
       let msg = `HTTP ${res.status}`;
       try { const e = await res.json(); msg = e.detail || msg; } catch {}
       toast('Error: ' + msg);
@@ -768,6 +769,10 @@ async function guardarIndividual() {
   if (!empId || !fecha) { toast('Completá empleado y fecha'); return; }
 
   if (_mTipoCorr === 'nf') {
+    if (LegajoPropio.esPropio(empId) && !LegajoPropio.puedeCorreccion) {
+      LegajoPropio.noPermitido(LegajoPropio.MSG.correccion);
+      return;
+    }
     const res = await fetch('/api/asistencia/novedades', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -776,6 +781,10 @@ async function guardarIndividual() {
     if (!res.ok) { const e = await res.json(); toast('Error: '+(e.detail||res.status)); return; }
     toast('Novedad NF registrada');
   } else {
+    if (LegajoPropio.esPropio(empId) && !LegajoPropio.puedeFichadas) {
+      LegajoPropio.noPermitido(LegajoPropio.MSG.fichadas);
+      return;
+    }
     const entrada = document.getElementById('m-entrada').value;
     const salida  = document.getElementById('m-salida').value;
     if (!entrada && !salida) { toast('Ingresá al menos una hora'); return; }
@@ -786,6 +795,7 @@ async function guardarIndividual() {
       const res = await fetch('/api/fichajes', {
         method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body),
       });
+      if (await LegajoPropio.siNoPermitido(res)) return;
       if (!res.ok) { const e = await res.json(); toast('Error: '+(e.detail||res.status)); return; }
     }
     toast('Fichaje manual registrado');
@@ -819,13 +829,16 @@ async function cargarEmpleadosGrupal() {
     hora_salida:  sugMap[p.empleado_id]?.hora_salida  || '',
   }));
 
-  const filas = _grupalEmps.map((e, i) => `
-    <tr>
-      <td style="text-align:center"><input type="checkbox" id="mg-chk-${i}" checked></td>
-      <td><div class="emp-cell">${e.nombre}</div><div class="emp-cargo">${e.cargo}</div></td>
+  const filas = _grupalEmps.map((e, i) => {
+    const bloq = LegajoPropio.esPropio(e.empleado_id) && !LegajoPropio.puedeFichadas;
+    return `
+    <tr${bloq ? ` style="opacity:.6" title="${LegajoPropio.MSG.fichadas}"` : ''}>
+      <td style="text-align:center"><input type="checkbox" id="mg-chk-${i}" ${bloq ? 'disabled' : 'checked'}></td>
+      <td><div class="emp-cell">${e.nombre}${bloq ? ' <span style="font-size:.7rem;color:#c0392b">🔒 tu legajo: pedíselo a otro encargado</span>' : ''}</div><div class="emp-cargo">${e.cargo}</div></td>
       <td><input type="time" class="mg-time" id="mg-ent-${i}" value="${e.hora_entrada}"></td>
       <td><input type="time" class="mg-time" id="mg-sal-${i}" value="${e.hora_salida}"></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   document.getElementById('mg-tabla').innerHTML = `
     <table>
@@ -838,7 +851,7 @@ async function cargarEmpleadosGrupal() {
 }
 
 function _selAll(checked) {
-  _grupalEmps.forEach((_, i) => { const c = document.getElementById(`mg-chk-${i}`); if(c) c.checked = checked; });
+  _grupalEmps.forEach((_, i) => { const c = document.getElementById(`mg-chk-${i}`); if(c && !c.disabled) c.checked = checked; });
 }
 
 async function guardarGrupal() {
@@ -863,6 +876,7 @@ async function guardarGrupal() {
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({fecha, empleados, motivo_manual: motivo}),
   });
+  if (await LegajoPropio.siNoPermitido(res)) return;
   const r = await res.json().catch(() => ({}));
   if (!res.ok) { toast('Error: ' + (r.detail || res.status)); return; }
   toast(`${r.creados} fichajes creados${r.errores.length ? ` · ${r.errores.length} con error` : ''}`);

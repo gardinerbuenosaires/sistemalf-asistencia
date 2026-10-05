@@ -359,6 +359,7 @@
 <div id="toast"></div>
 
 <script src="/static/js/session.js"></script>
+<script src="/static/js/legajo-propio.js"></script>
 <script src="/static/js/user-menu.js"></script>
 <script>
 function _localDateStr(d = new Date()) { return ymdLocal(d); }
@@ -724,14 +725,19 @@ function buildCalendarioSection(asignaciones = []) {
   );
   const historial = asignaciones.filter(a => a !== vigente).slice(0, 3);
 
+  // Propio legajo sin planificacion:propia: no se ofrece asignar ni quitar.
+  const calPropioBloqueado = LegajoPropio.esPropio(editandoId) && !LegajoPropio.puedePlanificacion;
+  const puedeEditarCal = canDo('calendarios','editar') && !calPropioBloqueado;
+
   const diasOpts = `<option value="FRANCO">— Franco —</option>` +
     horarios.map(h => `<option value="${h.id}">${h.nombre}</option>`).join("");
 
   let html = `<div class="form-section">
     <div class="form-section-title" style="display:flex;justify-content:space-between;align-items:center">
       <span>Calendario asignado</span>
-      ${canDo('calendarios','editar') ? `<button type="button" class="btn btn-secondary btn-sm" onclick="toggleNuevoCalendario()">+ Crear nuevo</button>` : ''}
+      ${puedeEditarCal ? `<button type="button" class="btn btn-secondary btn-sm" onclick="toggleNuevoCalendario()">+ Crear nuevo</button>` : ''}
     </div>
+    ${calPropioBloqueado && canDo('calendarios','editar') ? LegajoPropio.avisoHtml(LegajoPropio.MSG.planificacion) : ''}
 
     <div id="nuevo-cal-panel" style="display:none;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;padding:14px;margin-bottom:14px">
       <div class="form-group" style="margin-bottom:10px">
@@ -762,7 +768,7 @@ function buildCalendarioSection(asignaciones = []) {
       <div class="cal-nombre">${vigente.calendario_nombre}${francoLabel}</div>
       <div class="cal-desde">desde ${_fmtF(vigente.fecha_desde)}${vigente.fecha_hasta ? " hasta " + _fmtF(vigente.fecha_hasta) : ""}</div>
       ${canDo('calendarios','ver') ? `<a href="/calendarios" class="cal-link">Ver calendarios</a>` : ''}
-      ${canDo('calendarios','editar') ? `<button type="button" class="btn btn-sm" style="background:#e74c3c;color:white;margin-left:auto"
+      ${puedeEditarCal ? `<button type="button" class="btn btn-sm" style="background:#e74c3c;color:white;margin-left:auto"
         onclick="quitarCalendario(${vigente.id})">Quitar</button>` : ''}
     </div>`;
   } else {
@@ -780,7 +786,7 @@ function buildCalendarioSection(asignaciones = []) {
     `<option value="${c.id}"${vigente && vigente.calendario_id === c.id ? " selected" : ""}>${c.nombre}</option>`
   ).join("");
 
-  if (canDo('calendarios', 'editar')) {
+  if (puedeEditarCal) {
     html += `<div class="cal-asignar" style="margin-top:10px;flex-wrap:wrap;gap:6px">
       <select id="asig-cal-id" style="flex:1;min-width:160px">
         <option value="">— Asignar calendario existente —</option>
@@ -896,6 +902,9 @@ function abrirQrFotos() {
 }
 
 function buildForm(e = {}, asignaciones = []) {
+  // Propio legajo sin empleados:propia: lo que mueve asistencia, vacaciones o
+  // premios queda fijo (el servidor igual lo rechaza); el contacto se edita.
+  const legBloq = !!editandoId && LegajoPropio.esPropio(editandoId) && !LegajoPropio.puedeLegajo;
   return `
     <form id="emp-form" onsubmit="return false">
       <div id="pane-legajo">
@@ -960,24 +969,25 @@ function buildForm(e = {}, asignaciones = []) {
 
       <div class="form-section">
         <div class="form-section-title">Datos laborales</div>
+        ${legBloq ? LegajoPropio.avisoHtml(LegajoPropio.MSG.legajo) : ''}
         <div class="form-grid">
           <div class="form-group">
             <label>Cargo</label>
-            <select id="f-cargo" onchange="onCargoChange()">
+            <select id="f-cargo" onchange="onCargoChange()"${legBloq ? ' disabled' : ''}>
               <option value="">—</option>
               ${cargosOpts.map(o => `<option value="${o.id}"${e.cargo_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
             </select>
           </div>
           <div class="form-group">
             <label>Categoría</label>
-            <select id="f-categoria">
+            <select id="f-categoria"${legBloq ? ' disabled' : ''}>
               <option value="">—</option>
               ${categoriasOpts.map(o => `<option value="${o.id}"${e.categoria_id===o.id?" selected":""}>${o.nombre}</option>`).join("")}
             </select>
           </div>
           <div class="form-group">
             <label>Fecha de ingreso${e.fecha_recontratacion ? ' <span style="color:#888;font-size:.8em">(original — bloqueada)</span>' : ''}</label>
-            <input type="date" id="f-ingreso" value="${e.fecha_ingreso||""}" ${e.fecha_recontratacion ? 'disabled style="background:#f8f9fa;color:#666"' : ''}>
+            <input type="date" id="f-ingreso" value="${e.fecha_ingreso||""}" ${e.fecha_recontratacion || legBloq ? 'disabled style="background:#f8f9fa;color:#666"' : ''}>
           </div>
           ${e.fecha_recontratacion ? `
           <div class="form-group">
@@ -992,7 +1002,7 @@ function buildForm(e = {}, asignaciones = []) {
           ${editandoId ? _buildPremioAviso(e) : ""}
           <div class="form-group">
             <label>Tipo de empleado</label>
-            <select id="f-tipo">
+            <select id="f-tipo"${legBloq ? ' disabled' : ''}>
               <option value="normal"     ${(e.tipo||"normal")==="normal"     ? "selected" : ""}>Normal</option>
               <option value="jerarquico" ${(e.tipo||"normal")==="jerarquico" ? "selected" : ""}>Jerárquico (sin fichaje)</option>
               <option value="acceso"     ${(e.tipo||"normal")==="acceso"     ? "selected" : ""}>Solo acceso (excluir de planillas)</option>
@@ -1127,7 +1137,7 @@ function buildForm(e = {}, asignaciones = []) {
         </div>
       </div>
 
-      ${editandoId && canDo('empleados','jubilacion') ? `
+      ${editandoId && canDo('empleados','jubilacion') && !legBloq ? `
       <div style="border-top:2px solid #8e44ad;margin:16px 0 8px;padding-top:14px">
         <div class="form-section-title" style="color:#8e44ad">Recontratación por jubilación</div>
         <div class="form-grid cols-2">
@@ -1817,7 +1827,7 @@ async function quitarCalendario(asignacionId) {
   if (res.ok) {
     toast("Calendario quitado");
     await refrescarCalendarioSection();
-  } else {
+  } else if (!(await LegajoPropio.siNoPermitido(res))) {
     const err = await res.json().catch(() => ({}));
     toast(err.detail || "Error al quitar el calendario");
   }
@@ -1866,7 +1876,7 @@ async function asignarCalendario() {
   if (res.ok) {
     toast("Calendario asignado");
     await refrescarCalendarioSection();
-  } else {
+  } else if (!(await LegajoPropio.siNoPermitido(res))) {
     const err = await res.json().catch(() => ({}));
     toast(err.detail || "Error al asignar");
   }
@@ -1924,7 +1934,7 @@ async function crearYAsignarCalendario() {
     const cRes = await fetch("/api/calendarios");
     calendarios = await cRes.json();
     await refrescarCalendarioSection();
-  } else {
+  } else if (!(await LegajoPropio.siNoPermitido(asRes))) {
     toast("Calendario creado, error al asignar");
   }
 }

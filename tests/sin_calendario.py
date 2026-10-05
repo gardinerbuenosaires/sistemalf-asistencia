@@ -43,6 +43,10 @@ def d(n):
 
 con = sqlite3.connect(DB)
 con.row_factory = sqlite3.Row
+# Las fechas son relativas a hoy y a principio de mes caen en el mes anterior,
+# que la base real ya cerró. En la copia se reabren: acá no se prueba el cierre.
+con.execute("DELETE FROM periodos_cerrados")
+con.commit()
 cli = TestClient(main.app)
 cli.cookies.set("session", token_sistema()[0])
 

@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import date, timedelta
 from collections import defaultdict
 from db.database import db_session
-from auth.core import require_permiso, check_asignar_vacaciones
+from auth.core import require_permiso, check_asignar_vacaciones, check_no_es_correccion_propia
 
 router = APIRouter(prefix="/api/asistencia", tags=["asistencia_mensual"])
 
@@ -1053,6 +1053,8 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
         raise HTTPException(400, "El comentario requiere una descripción")
     # Poner una V, o pisar una V con otra novedad, es asignar/quitar vacaciones.
     with db_session() as conn:
+        if data.tipo != "CO":
+            check_no_es_correccion_propia(conn, user, [data.empleado_id])
         previa = conn.execute(
             "SELECT tipo FROM novedades WHERE empleado_id=? AND fecha=? AND bloque=?",
             (data.empleado_id, data.fecha, data.bloque)
@@ -1166,6 +1168,8 @@ def eliminar_novedades_rango(data: NovedadRangoIn, _user=Depends(require_permiso
                 (data.empleado_id, data.fecha_desde, data.fecha_hasta, data.bloque),
             ).fetchall()
         }
+        if tipos_afectados - {"CO"}:
+            check_no_es_correccion_propia(conn, _user, [data.empleado_id])
         if "V" in tipos_afectados:
             check_asignar_vacaciones(_user)
         conn.execute(
@@ -1189,6 +1193,8 @@ def eliminar_novedad(nov_id: int, _user=Depends(require_permiso("asistencia", "c
         row = conn.execute("SELECT id, fecha, tipo, empleado_id FROM novedades WHERE id=?", (nov_id,)).fetchone()
         if not row:
             raise HTTPException(404, "Novedad no encontrada")
+        if row["tipo"] != "CO":
+            check_no_es_correccion_propia(conn, _user, [row["empleado_id"]])
         if row["tipo"] == "V":
             check_asignar_vacaciones(_user)
         check_periodo_abierto(conn, row["fecha"])
@@ -1209,6 +1215,7 @@ def set_saldo_francos(empleado_id: int, mes: str, body: dict, _user=Depends(requ
     saldo = float(body.get("saldo", 0))
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
+        check_no_es_correccion_propia(conn, _user, [empleado_id])
         check_periodo_abierto(conn, f"{mes}-01")
         conn.execute(
             """INSERT INTO saldo_francos (empleado_id, mes, saldo) VALUES (?,?,?)

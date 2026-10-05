@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from db.database import db_session
-from auth.core import require_permiso
+from auth.core import require_permiso, check_no_es_vacacion_propia
 
 router = APIRouter(prefix="/api/vacaciones", tags=["vacaciones"])
 
@@ -376,6 +376,7 @@ def upsert_vp(empleado_id: int, periodo: str, data: VpIn,
               _user=Depends(require_permiso("vacaciones", "editar"))):
     """Inserta o actualiza los días VP de un empleado para un período."""
     with db_session() as conn:
+        check_no_es_vacacion_propia(conn, _user, [empleado_id])
         if not conn.execute("SELECT id FROM empleados WHERE id=?", (empleado_id,)).fetchone():
             raise HTTPException(404, "Empleado no encontrado")
         if data.dias <= 0:
@@ -396,6 +397,7 @@ def upsert_vp(empleado_id: int, periodo: str, data: VpIn,
 def upsert_saldo_inicial(data: SaldoInicialIn, _user=Depends(require_permiso("vacaciones", "carga_inicial"))):
     """Inserta o actualiza el saldo inicial de un empleado para un año."""
     with db_session() as conn:
+        check_no_es_vacacion_propia(conn, _user, [data.empleado_id])
         if not conn.execute("SELECT id FROM empleados WHERE id=?", (data.empleado_id,)).fetchone():
             raise HTTPException(404, "Empleado no encontrado")
         conn.execute("""

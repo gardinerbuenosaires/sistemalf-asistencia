@@ -134,6 +134,112 @@ def _escribir_usuario(conexion, uid, nombre, privilegio, grupo, numero, franja=0
     conexion.refresh_data()
 
 
+def _respaldar(conexion, puerta, usuario, huellas):
+    """
+    Guarda el registro completo antes de borrarlo, con sus huellas.
+
+    Al lado de la base, como los respaldos del relevamiento. **Tiene huellas
+    adentro: no sale de esta máquina.**
+
+    Sin esto, sacar a alguien de un lector es irreversible. Y el caso que más
+    necesita la herramienta —alguien que quedó cargado por un error— es
+    justamente el que no se sabe de antemano si está bien decidido.
+    """
+    import json
+    import os
+    from datetime import datetime
+    from pathlib import Path
+
+    base = os.environ.get("DB_PATH")
+    destino = (Path(base).resolve().parent if base else Path(".")) / "borrados"
+    destino.mkdir(parents=True, exist_ok=True)
+    ruta = destino / (f"{puerta['ip'].replace('.', '-')}"
+                      f"-{usuario['user_id']}-{datetime.now():%Y%m%d-%H%M%S}.json")
+    ruta.write_text(json.dumps({
+        "equipo": puerta["nombre"], "ip": puerta["ip"],
+        "cuando": datetime.now().strftime("%d-%m-%Y %H:%M:%S"),
+        "uid": usuario["uid"], "user_id": usuario["user_id"],
+        "nombre": usuario["nombre"], "grupo": usuario["grupo"],
+        "privilegio": usuario["privilegio"],
+        "huellas": [h.json_pack() for h in huellas],
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    return str(ruta)
+
+
+def resultado_de_sacar(r: dict) -> str:
+    """
+    Cómo se registra un borrado: `sacado`, `pendiente` o `falló`.
+
+    Son tres estados y no dos. Que la persona siga cargada no es una falla: el
+    borrado quedó pendiendo y la próxima pasada lo retoma. Un problema con los
+    demás usuarios sí es una falla, y es de las que hay que mirar hoy.
+    """
+    if r.get("ok"):
+        return "sacado"
+    return "pendiente" if r.get("sigue") else "falló"
+
+
+def sacar_de_puerta(puerta: dict, numero: str) -> dict:
+    """
+    Saca a una persona de una puerta, con respaldo y verificación.
+
+    Lo que hace que esto no sea un `delete_user` suelto son las dos lecturas.
+    Antes, para guardar el respaldo y para comprobar que la lista vino completa:
+    si vino corta, no se borra, porque borrar por índice sobre una lista
+    incompleta es sacar a quien no era. Después, para verificar que la persona
+    ya no está **y que los demás quedaron enteros** — un borrado puede correr
+    los índices del resto, y eso no se nota hasta que alguien se queda afuera.
+
+    No decide. Decidir si corresponde es de quien llama: desde el plan, porque
+    la política dice que esa persona no va ahí; a mano, porque alguien lo pidió
+    con un motivo. Acá se ejecuta y se verifica.
+    """
+    numero = str(numero).strip()
+    conexion = None
+    try:
+        conexion, transporte = _conectar(puerta)
+        antes = _foto(conexion)
+        cierra, detalle = _lectura_cierra(antes)
+        if not cierra:
+            return {"ok": False, "error": f"Lectura no confiable: {detalle}. "
+                                          f"No se borró nada."}
+        objetivo = antes["usuarios"].get(numero)
+        if objetivo is None:
+            return {"ok": False, "no_estaba": True,
+                    "error": f"El {numero} no está cargado en {puerta['nombre']}."}
+
+        huellas = antes["huellas_crudas"].get(objetivo["uid"], [])
+        respaldo = _respaldar(conexion, puerta, {**objetivo, "user_id": numero}, huellas)
+        conexion.delete_user(uid=objetivo["uid"])
+
+        # Se relee: que el equipo conteste que sí no alcanza, un lector viejo
+        # puede aceptar el comando y no hacer nada.
+        despues = _foto(conexion)
+        sigue = numero in despues["usuarios"]
+        problemas = _intactos(antes, despues, numero)
+        bien = not sigue and not problemas
+        return {"ok": bien, "transporte": transporte, "respaldo": respaldo,
+                "nombre_equipo": objetivo["nombre"], "uid": objetivo["uid"],
+                "huellas": len(huellas), "otros": len(antes["usuarios"]) - 1,
+                "problemas": problemas,
+                # Que siga cargado no es lo mismo que haber fallado: el borrado
+                # sigue pendiendo y se va a reintentar. Un problema con los
+                # demás, en cambio, es algo que hay que mirar ahora.
+                "sigue": sigue,
+                "error": None if bien else (
+                    "sigue cargado después de borrarlo" if sigue
+                    else "; ".join(problemas))}
+    except Exception as exc:
+        logger.warning("No se pudo sacar %s de %s: %s", numero, puerta.get("ip"), exc)
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
 def _elegir_grupo(conexion, reparto):
     """
     En qué grupo del equipo va la persona que se está cargando.

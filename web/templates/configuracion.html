@@ -3159,11 +3159,14 @@ async function verPlan() {
           ? `<button class="btn btn-sm btn-secondary" style="margin-left:8px"
                      onclick="cargarEnPuerta(${p.id}, '${_esc(a.user_id)}', this)">Cargar</button>` : ''}
       </div>`),
-      ...p.sacar.map(s => `<div style="padding:4px 0 4px 14px;font-size:.83rem">
+      ...p.sacar.map(s => `<div style="padding:4px 0 4px 14px;font-size:.83rem" id="sacar-${p.id}-${s.user_id}">
         <span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">− sacar</span>
         <span style="font-family:monospace;color:#888">${_esc(s.user_id)}</span> ${_esc(s.nombre) || '<i style="color:#999">sin legajo</i>'}
         <span style="color:#999;margin-left:6px">· ${_esc(s.motivo_texto)}</span>
         ${s.fecha_egreso ? `<span style="color:#b3261e;font-size:.75rem"> (egreso ${_esc(s.fecha_egreso)})</span>` : ''}
+        ${canDo('accesos','aplicar') && s.motivo !== 'sin_politica'
+          ? `<button class="btn btn-sm btn-secondary" style="margin-left:8px"
+                     onclick="sacarPorPlan(${p.id}, '${_esc(s.user_id)}', this)">Sacar</button>` : ''}
         ${s.en_maestro === false ? '<span style="background:#f6dedc;color:#b3261e;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px" title="La baja se sincronizó con el equipo de asistencia pero en esta puerta quedó">tampoco está en asistencia</span>' : ''}
         ${s.era_de ? `<div style="font-size:.75rem;color:#5b3a8a;margin-left:72px">
           este número era de ${_esc(s.era_de)}, liberado el ${_esc(_fechaHora(s.liberado_en))}</div>` : ''}
@@ -3209,8 +3212,9 @@ async function verPlan() {
       exactamente al revés de lo que corresponde. Es lo primero para mirar de esta lista.</div>` : ''}
     <div style="overflow-y:auto;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>
     <div style="font-size:.78rem;color:#999;margin-top:10px">
-      Esto es solo el plan. Aplicarlo va a estar disponible cuando la escritura en los equipos
-      esté probada contra los lectores reales.</div>`;
+      Cada línea se aplica de a una, y cada una se verifica releyendo el equipo: que la persona
+      quedó como corresponde y que los demás siguen enteros. Lo que se hizo queda en
+      «Lo que se escribió en los equipos», con quién y cuándo.</div>`;
 }
 
 // Cargar a una persona en una puerta, con su huella copiada del equipo de
@@ -3253,6 +3257,45 @@ async function cargarEnPuerta(dispositivoId, userId, boton) {
            ${_esc(r.aviso_grupo)}</div>` : '');
   }
   toast(`${r.empleado} cargado en ${r.equipo}`);
+}
+
+// Sacar a alguien que, según la política, no debería estar en esa puerta. Es el
+// espejo de cargar, y por eso no pide motivo: el motivo es el plan, y el backend
+// lo recalcula solo. El de la pantalla de cargados sí lo pide, porque ese se
+// sale de la política y es lo único que va a explicarlo después.
+async function sacarPorPlan(dispositivoId, userId, boton) {
+  const fila = document.getElementById(`sacar-${dispositivoId}-${userId}`);
+  const quien = fila ? fila.textContent.replace(/−\s*sacar/, '').trim() : userId;
+  // Se pregunta una vez. Borrar una huella de un lector no se deshace con un
+  // botón: se restaura de un respaldo, y para eso hay que saber que existe.
+  if (!confirm(`Sacar a ${quien} de este equipo.\n\n`
+      + `Se le borra el usuario y las huellas del lector. Antes se guarda un `
+      + `respaldo en la PC, así que se puede volver atrás, pero no con un botón.`
+      + `\n\n¿Lo saco?`)) return;
+
+  if (boton) { boton.disabled = true; boton.textContent = 'Sacando…'; }
+  const res = await fetch('/api/accesos/sacar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ dispositivo_id: dispositivoId, user_id: userId }),
+  });
+  let r = {};
+  try { r = await res.json(); } catch {}
+  if (!res.ok) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error: ' + (r.detail || 'no se pudo sacar'));
+  }
+  // La fila se tacha en vez de desaparecer: ver lo que se hizo recién, y en qué
+  // orden, es lo que permite darse cuenta si algo salió distinto.
+  if (fila) {
+    fila.style.opacity = '.55';
+    fila.innerHTML = `<span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">sacado</span>`
+      + `<span style="font-family:monospace;color:#888">${_esc(userId)}</span> `
+      + `${_esc(r.empleado) || `«${_esc(r.nombre_equipo || 'sin nombre')}»`}`
+      + `<span style="color:#888;margin-left:6px">· ${_esc(r.motivo)},`
+      + ` los otros ${r.otros_intactos} intactos</span>`
+      + `<div style="font-size:.72rem;color:#bbb;margin-left:72px">respaldo guardado en la PC</div>`;
+  }
+  toast(`${r.empleado || userId} sacado de ${r.equipo}`);
 }
 
 // ── Perfiles de acceso ────────────────────────────────────────────────────────

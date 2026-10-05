@@ -570,36 +570,6 @@ class SacarDelEquipoIn(BaseModel):
         return v
 
 
-def _respaldar_usuario(conexion, dispositivo, usuario, huellas):
-    """
-    Guarda el registro completo antes de borrarlo, con sus huellas.
-
-    Al lado de la base, como los respaldos del relevamiento. Tiene huellas
-    adentro: no sale de esta máquina.
-
-    Sin esto, sacar a alguien de un lector es irreversible. Y el caso que más
-    necesita esta herramienta —alguien que quedó por un error— es justamente
-    aquel en el que no se sabe de antemano si la decisión está bien.
-    """
-    import json
-    from pathlib import Path
-
-    base = os.environ.get("DB_PATH")
-    destino = (Path(base).resolve().parent if base else Path(".")) / "borrados"
-    destino.mkdir(parents=True, exist_ok=True)
-    ruta = destino / (f"{dispositivo['ip'].replace('.', '-')}"
-                      f"-{usuario['user_id']}-{datetime.now():%Y%m%d-%H%M%S}.json")
-    ruta.write_text(json.dumps({
-        "equipo": dispositivo["nombre"], "ip": dispositivo["ip"],
-        "cuando": datetime.now().strftime("%d-%m-%Y %H:%M:%S"),
-        "uid": usuario["uid"], "user_id": usuario["user_id"],
-        "nombre": usuario["nombre"], "grupo": usuario["grupo"],
-        "privilegio": usuario["privilegio"],
-        "huellas": [h.json_pack() for h in huellas],
-    }, ensure_ascii=False, indent=1), encoding="utf-8")
-    return str(ruta)
-
-
 @router.post("/{did}/cargados/{numero}/sacar")
 def sacar_del_equipo(did: int, numero: str, data: SacarDelEquipoIn,
                      usuario=Depends(require_permiso("accesos", "aplicar"))):
@@ -617,10 +587,11 @@ def sacar_del_equipo(did: int, numero: str, data: SacarDelEquipoIn,
     seis meses nadie va a saber por qué esa persona no está más en esa puerta.
 
     Antes de borrar guarda el registro completo con sus huellas, y después
-    relee el equipo para verificar. Que el lector conteste que sí no alcanza:
-    puede aceptar el comando y no hacer nada.
+    relee el equipo para verificar que la persona ya no está y que los demás
+    quedaron enteros. Que el lector conteste que sí no alcanza: puede aceptar el
+    comando y no hacer nada, y un borrado puede correrle el índice al resto.
     """
-    from sync.lectores import leer_cargados, _conectar
+    from sync.escritura import resultado_de_sacar, sacar_de_puerta
 
     with db_session() as conn:
         d = _traer(conn, did)
@@ -630,42 +601,9 @@ def sacar_del_equipo(did: int, numero: str, data: SacarDelEquipoIn,
         emp = dict(emp) if emp else None
 
     numero = str(numero).strip()
-    antes = leer_cargados(d, con_huellas=True)
-    if not antes["ok"]:
-        raise HTTPException(400, f"El equipo no contestó: {antes['error']}")
-
-    objetivo = next((u for u in antes["usuarios"] if u["user_id"] == numero), None)
-    if objetivo is None:
-        raise HTTPException(404, f"El {numero} no está cargado en {d['nombre']}.")
-
-    conexion = None
-    try:
-        conexion, _t = _conectar(d["ip"], d.get("puerto", 4370),
-                                 d.get("password", 0), d.get("timeout", 10))
-        huellas = [h for h in conexion.get_templates()
-                   if h.uid == objetivo["uid"] and getattr(h, "valid", 1)]
-        respaldo = _respaldar_usuario(conexion, d, objetivo, huellas)
-        conexion.delete_user(uid=objetivo["uid"])
-
-        # Se relee: lo que se registra es lo que se verificó, no lo que el
-        # equipo contestó.
-        despues = leer_cargados(d)
-        sigue = (not despues["ok"]
-                 or any(u["user_id"] == numero for u in despues["usuarios"]))
-        resultado = "pendiente" if sigue else "sacado"
-        detalle = (None if not sigue else
-                   ("no se pudo releer el equipo para verificar"
-                    if not despues["ok"] else "sigue cargado después de borrarlo"))
-    except HTTPException:
-        raise
-    except Exception as exc:
-        resultado, detalle, respaldo = "falló", f"{type(exc).__name__}: {exc}", None
-    finally:
-        if conexion:
-            try:
-                conexion.disconnect()
-            except Exception:
-                pass
+    r = sacar_de_puerta(d, numero)
+    if r.get("no_estaba"):
+        raise HTTPException(404, r["error"])
 
     with db_session() as conn:
         conn.execute(
@@ -674,14 +612,15 @@ def sacar_del_equipo(did: int, numero: str, data: SacarDelEquipoIn,
                   accion, motivo, resultado, detalle, respaldo, usuario_id)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (did, d["nombre"], numero, emp["id"] if emp else None,
-             objetivo["nombre"], "sacar", data.motivo, resultado, detalle,
-             respaldo, int(usuario.get("sub") or 0) or None))
+             r.get("nombre_equipo"), "sacar", data.motivo,
+             resultado_de_sacar(r), r.get("error"), r.get("respaldo"),
+             int(usuario.get("sub") or 0) or None))
 
-    if resultado != "sacado":
+    if not r["ok"]:
         raise HTTPException(400, f"No se pudo sacar al {numero} de {d['nombre']}: "
-                                 f"{detalle}. Quedó registrado igual.")
+                                 f"{r['error']}. Quedó registrado igual.")
     return {"ok": True, "equipo": d["nombre"], "user_id": numero,
-            "nombre_equipo": objetivo["nombre"], "respaldo": respaldo,
+            "nombre_equipo": r.get("nombre_equipo"), "respaldo": r.get("respaldo"),
             "empleado": (f"{emp['apellido']}, {emp['nombre']}".strip(", ")
                          if emp else None)}
 

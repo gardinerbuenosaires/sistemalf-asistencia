@@ -2338,10 +2338,21 @@ _estado15 = {"usuarios": [{"uid": 5, "user_id": _uid15, "nombre": "QUIEN SEA",
                            "grupo": "1", "privilegio": 0, "huellas": 1}],
              "borrados": []}
 
+class _UsuarioFalso:
+    """Lo que devuelve get_users: los nombres de campo son los de pyzk."""
+    def __init__(s, d):
+        s.uid, s.user_id, s.name = d["uid"], d["user_id"], d["nombre"]
+        s.group_id, s.privilege = d["grupo"], d["privilegio"]
+
 class _EquipoFalso:
     class _H:
         uid, fid, valid = 5, 0, 1
         def json_pack(s): return {"uid": 5, "fid": 0, "valid": 1, "template": "00"}
+    # El equipo declara cuantos tiene; si no coincide con los leidos, la
+    # escritura aborta antes de borrar nada.
+    @property
+    def users(s): return len(_estado15["usuarios"])
+    def get_users(s): return [_UsuarioFalso(u) for u in _estado15["usuarios"]]
     def get_templates(s): return [s._H()]
     def delete_user(s, uid=None, user_id=""):
         _estado15["borrados"].append(uid)
@@ -2541,6 +2552,97 @@ if _f18:
     _esc_mod.cargar_en_puerta = _real18
 
 
+print("\n=== SACAR A UNA PERSONA DESDE EL PLAN ===")
+# El espejo de cargar, y la simetria es lo que mantiene el plan honesto: cargar
+# se niega si el perfil NO incluye esa puerta, sacar se niega si SI la incluye.
+
+if _f18:
+    _sacado = {}
+    _real_sacar = _esc_mod.sacar_de_puerta
+    _esc_mod.sacar_de_puerta = lambda puerta, numero: (
+        _sacado.update({"puerta": puerta["id"], "numero": numero}),
+        {"ok": True, "respaldo": "C:/x/borrados/x.json", "nombre_equipo": "ALGUIEN",
+         "uid": 7, "huellas": 2, "otros": 26, "problemas": [], "error": None})[1]
+
+    # Lo que NO deja hacer, que es la mitad que importa. El perfil de _uid18
+    # quedo acotado a p_personal, asi que esa puerta SI le corresponde.
+    r = cli.post("/api/accesos/sacar",
+                 json={"dispositivo_id": p_personal, "user_id": _uid18})
+    chequear("no saca a quien le corresponde esa puerta segun su perfil",
+             r.status_code == 400 and "le corresponde" in r.json()["detail"],
+             r.text[:200])
+    chequear("y no toco el equipo", not _sacado, _sacado)
+
+    # Un numero que no existe en la base: politica del local, si no esta en la
+    # bd no deberia estar en las terminales aunque haya quedado por un error.
+    r = cli.post("/api/accesos/sacar",
+                 json={"dispositivo_id": p_personal, "user_id": "888222"})
+    chequear("saca a un desconocido", r.status_code == 200, r.text[:200])
+    chequear("con el motivo que corresponde",
+             r.json()["motivo"] == "No existe en el sistema", r.text[:160])
+    chequear("y le pasa el numero a la escritura",
+             _sacado.get("numero") == "888222", _sacado)
+    _opsS = cli.get("/api/dispositivos/operaciones").json()["operaciones"]
+    chequear("queda registrado como sacado",
+             _opsS[0]["accion"] == "sacar" and _opsS[0]["resultado"] == "sacado",
+             _opsS[0])
+    chequear("con el respaldo anotado", _opsS[0]["respaldo"], _opsS[0])
+
+    # Un egresado. Es el caso que justifica todo el modulo.
+    if _baja:
+        r = cli.post("/api/accesos/sacar",
+                     json={"dispositivo_id": p_personal,
+                           "user_id": str(_baja[0]).strip()})
+        chequear("saca a un egresado", r.status_code == 200, r.text[:200])
+        chequear("y dice que es por la baja",
+                 "baja" in r.json()["motivo"], r.text[:160])
+
+    # El motivo que el sistema NO ejecuta: ninguna puerta en ningun perfil.
+    # Aplicarlo dejaria la puerta vacia, y eso no es una baja sino una politica
+    # incompleta.
+    _perfS = cli.get("/api/perfiles-acceso").json()["perfiles"]
+    _antesS = {p["id"]: list(p["dispositivos"]) for p in _perfS}
+    for _p in _perfS:
+        cli.put(f"/api/perfiles-acceso/{_p['id']}",
+                json={"nombre": _p["nombre"], "activo": True, "orden": _p.get("orden", 0),
+                      "dispositivos": [d for d in _p["dispositivos"] if d != p_oficina]})
+    r = cli.post("/api/accesos/sacar",
+                 json={"dispositivo_id": p_oficina, "user_id": _uid18})
+    chequear("no vacia una puerta que ningun perfil incluye",
+             r.status_code == 400 and "Ningún perfil incluye" in r.json()["detail"],
+             r.text[:220])
+    for _p in _perfS:
+        cli.put(f"/api/perfiles-acceso/{_p['id']}",
+                json={"nombre": _p["nombre"], "activo": True, "orden": _p.get("orden", 0),
+                      "dispositivos": _antesS[_p["id"]]})
+
+    # Si la escritura falla, se registra igual: el registro no puede depender de
+    # que las cosas salgan bien.
+    _esc_mod.sacar_de_puerta = lambda *a, **k: {
+        "ok": False, "error": "sigue cargado despues de borrarlo", "problemas": []}
+    r = cli.post("/api/accesos/sacar",
+                 json={"dispositivo_id": p_personal, "user_id": "888222"})
+    chequear("un borrado que no se pudo verificar se rechaza",
+             r.status_code == 400, r.status_code)
+    _opsS2 = cli.get("/api/dispositivos/operaciones").json()["operaciones"]
+    chequear("y queda registrado como fallido",
+             _opsS2[0]["resultado"] == "falló"
+             and "sigue cargado" in (_opsS2[0]["detalle"] or ""), _opsS2[0])
+
+    # Y si no estaba, es un 404 y no un borrado inventado.
+    _esc_mod.sacar_de_puerta = lambda *a, **k: {
+        "ok": False, "no_estaba": True, "error": "El 888222 no está cargado en X."}
+    r = cli.post("/api/accesos/sacar",
+                 json={"dispositivo_id": p_personal, "user_id": "888222"})
+    chequear("si no estaba cargado, 404", r.status_code == 404, r.status_code)
+
+    chequear("sacar necesita accesos:aplicar",
+             _aplica.post("/api/accesos/sacar",
+                          json={"dispositivo_id": p_personal,
+                                "user_id": "888222"}).status_code == 403)
+    _esc_mod.sacar_de_puerta = _real_sacar
+
+
 print("\n=== EL GRUPO DEL EQUIPO, CUANDO ELEGIRLO ES UNA DECISION ===")
 # El grupo es de donde el lector saca sus propias reglas y puede decidir si
 # alguien abre al margen de estar cargado. Copiar el mas frecuente no es una
@@ -2643,6 +2745,91 @@ chequear("una sola se nombra en singular", _fr.rango([3]) == "franja 3")
 chequear("y las salteadas se listan",
          _fr.rango([1, 4, 9]) == "franjas 1, 4, 9", _fr.rango([1, 4, 9]))
 chequear("ninguna tambien tiene nombre", _fr.rango([]) == "ninguna franja")
+
+# --- Sacar a alguien, y verificar que los demas quedaron enteros -------------
+# Que la persona ya no este es la parte facil. Lo que hay que probar es que el
+# borrado no se llevo puesto a nadie mas: estos equipos borran por indice, y un
+# indice corrido no se nota hasta que alguien se queda afuera.
+
+
+class _PuertaParaBorrar:
+    """Un equipo del que se puede sacar gente. `rompe` simula los desastres."""
+
+    def __init__(s, cuantos=3, rompe=None):
+        s.rompe = rompe            # None | "no_borra" | "pisa_a_otro" | "lista_corta"
+        s._u = [type("U", (), {"uid": i + 1, "user_id": str(100 + i),
+                               "name": f"N{i}", "group_id": "1", "privilege": 0})()
+                for i in range(cuantos)]
+        s.borrados = []
+
+    @property
+    def users(s):
+        return len(s._u) + (1 if s.rompe == "lista_corta" else 0)
+
+    def get_users(s): return list(s._u)
+    def get_templates(s):
+        return [type("H", (), {"uid": 1, "valid": 1,
+                               "json_pack": lambda s2: {"t": "x"}})()]
+    def delete_user(s, uid=None, user_id=""):
+        s.borrados.append(uid)
+        if s.rompe == "no_borra":
+            return
+        s._u = [u for u in s._u if u.uid != uid]
+        if s.rompe == "pisa_a_otro" and s._u:
+            s._u[0].name = "SE ME CAMBIO EL NOMBRE"
+    def disconnect(s): pass
+
+
+_PUERTA_X = {"nombre": "Puerta X", "ip": "10.0.0.9"}
+
+def _probar_sacar(**kw):
+    equipo = _PuertaParaBorrar(**kw)
+    _em._conectar = lambda d: (equipo, "udp")
+    _em._respaldar = lambda conexion, puerta, usuario, huellas: "C:/x/respaldo.json"
+    return equipo, _em.sacar_de_puerta(_PUERTA_X, "100")
+
+_real_respaldar = _em._respaldar
+
+_eq, _rs = _probar_sacar()
+chequear("saca a la persona pedida", _rs["ok"] is True, _rs)
+chequear("y se lo pidio al equipo por su indice interno",
+         _eq.borrados == [1], _eq.borrados)
+chequear("informa cuantos quedaron", _rs["otros"] == 2, _rs)
+chequear("y que guardo respaldo antes de borrar", _rs["respaldo"], _rs)
+
+# Un equipo que acepta el comando y no hace nada. Queda pendiente, no fallado:
+# el borrado sigue debiendose y la proxima pasada lo retoma.
+_eq, _rs = _probar_sacar(rompe="no_borra")
+chequear("si el equipo no borra, no se da por hecho", _rs["ok"] is False, _rs)
+chequear("se dice que sigue cargado", "sigue cargado" in _rs["error"], _rs)
+chequear("y se registra como pendiente, no como falla",
+         _em.resultado_de_sacar(_rs) == "pendiente", _rs)
+
+# Lo que esta verificacion existe para encontrar.
+_eq, _rs = _probar_sacar(rompe="pisa_a_otro")
+chequear("si el borrado le cambio algo a otro, no esta ok", _rs["ok"] is False, _rs)
+chequear("y se dice a quien y que le cambio",
+         _rs["problemas"] and "nombre" in _rs["problemas"][0], _rs["problemas"])
+chequear("eso si es una falla, no algo pendiente",
+         _em.resultado_de_sacar(_rs) == "falló", _rs)
+
+# Si la lista vino corta no se borra NADA: el indice se calcula de esa lista.
+_eq, _rs = _probar_sacar(rompe="lista_corta")
+chequear("con la lista incompleta no se borra nada", _rs["ok"] is False, _rs)
+chequear("y no se le pidio nada al equipo", _eq.borrados == [], _eq.borrados)
+chequear("diciendo que la lectura no cierra",
+         "no confiable" in _rs["error"], _rs["error"])
+
+_eqv = _PuertaParaBorrar()
+_em._conectar = lambda d: (_eqv, "udp")
+_rs = _em.sacar_de_puerta(_PUERTA_X, "999777")
+chequear("un numero que no esta en el equipo se avisa aparte",
+         _rs.get("no_estaba") is True, _rs)
+chequear("y no se borro nada", _eqv.borrados == [], _eqv.borrados)
+
+_em._respaldar = _real_respaldar
+_em._conectar = _conectar_real
+
 
 # --- El horario que le da un grupo ------------------------------------------
 # Los bytes son los que contesto el .209: la franja 2 de 08:00 a 19:30 y la 3 de

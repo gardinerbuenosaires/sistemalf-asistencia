@@ -958,6 +958,124 @@ def cargar_en_puerta(data: CargarEnPuertaIn,
             "nombre_escrito": r["nombre_escrito"], "otros_intactos": r["otros"]}
 
 
+# Los cuatro motivos con los que el plan pide sacar a alguien, y si el sistema
+# los ejecuta por su cuenta. Son cuatro situaciones muy distintas aunque las
+# cuatro terminen en "esta persona no deberia estar en esta puerta".
+MOTIVOS_QUE_SE_APLICAN = {
+    # La dieron de baja. Es el caso que justifica todo el modulo.
+    "egresado": True,
+    # No existe en la base. Politica del local: si no esta en la bd, no deberia
+    # estar en las terminales, aunque haya quedado por un error.
+    "desconocido": True,
+    # Esta activa y su perfil no incluye esta puerta: el perfil ya decidio.
+    "sin_derecho": True,
+    # Ningun perfil incluye esta puerta. Eso no es "sacar a toda esta gente",
+    # es que la politica todavia no contempla la puerta. Aplicarlo la dejaria
+    # vacia y sin que nadie pueda entrar.
+    "sin_politica": False,
+}
+
+
+@router.post("/sacar")
+def sacar_por_plan(data: CargarEnPuertaIn,
+                   usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Saca de una puerta a alguien que, segun la politica, no deberia estar ahi.
+
+    Es el espejo de `/cargar`, y la simetria es lo que mantiene el plan honesto:
+    cargar se niega si el perfil NO incluye esa puerta, y sacar se niega si SI la
+    incluye. Las dos puntas miran la misma fuente, asi que el plan no puede
+    pedir algo que el sistema despues no haga, ni hacer algo que el plan no
+    pida.
+
+    El motivo no lo manda la pantalla: se recalcula aca. Si viniera de afuera,
+    cualquiera podria mandar "egresado" sobre alguien que trabaja, y el registro
+    de la operacion —que es lo unico que va a explicar esto en seis meses—
+    quedaria diciendo una mentira.
+
+    No ejecuta el motivo `sin_politica`. Esa puerta no esta en ningun perfil, asi
+    que el plan la muestra con TODA su gente para sacar; aplicarlo la dejaria
+    vacia. Eso no es una baja, es una politica incompleta, y se arregla
+    agregando la puerta a los perfiles. Para los casos sueltos sigue estando el
+    boton de la pantalla de cargados, que pide motivo y queda registrado.
+    """
+    from sync.escritura import resultado_de_sacar, sacar_de_puerta
+    from sync.plan_accesos import MOTIVOS_SACAR, estado_deseado
+
+    numero = str(data.user_id).strip()
+    with db_session() as conn:
+        puerta = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
+                      es_acceso, cuenta_asistencia
+                 FROM dispositivos WHERE id = ? AND activo = 1""",
+            (data.dispositivo_id,)).fetchone()
+        if not puerta:
+            raise HTTPException(404, "Esa puerta no existe o está desactivada")
+        if not puerta["es_acceso"]:
+            raise HTTPException(400, f"{puerta['nombre']} no es una puerta.")
+        if puerta["protocolo"] != "pull":
+            raise HTTPException(400, f"{puerta['nombre']} es un equipo push: no "
+                                     f"atiende llamadas.")
+        puerta = dict(puerta)
+
+        emp = conn.execute(
+            """SELECT id, nombre, apellido, activo
+                 FROM empleados WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
+        emp = dict(emp) if emp else None
+
+        # El motivo, recalculado desde la misma fuente que arma el plan.
+        deseado = estado_deseado(conn)
+        if numero in deseado.get(puerta["id"], {}):
+            quien = (f"{emp['apellido']}, {emp['nombre']}".strip(", ") if emp
+                     else f"el {numero}")
+            raise HTTPException(
+                400, f"A {quien} le corresponde {puerta['nombre']} según su "
+                     f"perfil, así que el sistema no lo saca. Si no tiene que "
+                     f"abrir ahí, cambiale el perfil o ponele una excepción.")
+
+        con_perfil = {r["dispositivo_id"] for r in conn.execute(
+            "SELECT DISTINCT dispositivo_id FROM perfiles_dispositivos")}
+
+    if emp is None:
+        motivo = "desconocido"
+    elif not emp["activo"]:
+        motivo = "egresado"
+    elif puerta["id"] not in con_perfil:
+        motivo = "sin_politica"
+    else:
+        motivo = "sin_derecho"
+
+    if not MOTIVOS_QUE_SE_APLICAN.get(motivo):
+        raise HTTPException(
+            400, f"Ningún perfil incluye {puerta['nombre']}, así que el plan "
+                 f"muestra toda su gente para sacar. Eso no es una baja: es que "
+                 f"la política todavía no contempla esta puerta, y aplicarlo la "
+                 f"dejaría vacía. Agregala a los perfiles que correspondan.")
+
+    r = sacar_de_puerta(puerta, numero)
+
+    with db_session() as conn:
+        _registrar_operacion(
+            conn, dispositivo_id=puerta["id"], equipo=puerta["nombre"],
+            user_id=numero, empleado_id=emp["id"] if emp else None,
+            nombre_equipo=r.get("nombre_equipo"), accion="sacar",
+            motivo=MOTIVOS_SACAR[motivo], resultado=resultado_de_sacar(r),
+            detalle=r.get("error"), respaldo=r.get("respaldo"),
+            usuario_id=int(usuario.get("sub") or 0) or None)
+
+    if r.get("no_estaba"):
+        raise HTTPException(404, r["error"])
+    if not r["ok"]:
+        raise HTTPException(400, f"No se pudo sacar al {numero} de "
+                                 f"{puerta['nombre']}: {r['error']}. "
+                                 f"Quedó registrado igual.")
+    return {"ok": True, "equipo": puerta["nombre"], "user_id": numero,
+            "empleado": (f"{emp['apellido']}, {emp['nombre']}".strip(", ")
+                         if emp else None),
+            "nombre_equipo": r.get("nombre_equipo"), "motivo": MOTIVOS_SACAR[motivo],
+            "respaldo": r.get("respaldo"), "otros_intactos": r.get("otros")}
+
+
 @router.get("/sin-perfil")
 def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     """

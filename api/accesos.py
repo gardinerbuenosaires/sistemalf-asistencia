@@ -890,6 +890,7 @@ def cargar_en_puerta(data: CargarEnPuertaIn,
     hecho y no lo está, y nadie vuelve a mirar algo que ya figura resuelto.
     """
     from sync.escritura import cargar_en_puerta as escribir
+    from sync.huellas import guardadas_de as huellas_guardadas
     from sync.plan_accesos import trabaja_hoy
 
     numero = str(data.user_id).strip()
@@ -933,7 +934,12 @@ def cargar_en_puerta(data: CargarEnPuertaIn,
                      f"ponele una excepción, y después aplicá.")
         puerta, maestro, emp = dict(puerta), dict(maestro), dict(emp)
 
-    r = escribir(puerta, maestro, numero, nombre=emp["nombre_lector"])
+    # Lo respaldado en la base, que se usa solo si el equipo de fichaje no lo
+    # puede dar: sin esto, un equipo caido deja las puertas sin poder tocar.
+    with db_session() as conn:
+        guardadas = huellas_guardadas(conn, [numero])
+    r = escribir(puerta, maestro, numero, nombre=emp["nombre_lector"],
+                 guardadas=guardadas)
 
     with db_session() as conn:
         _registrar_operacion(
@@ -1163,6 +1169,7 @@ def aplicar_puerta(did: int, usuario=Depends(require_permiso("accesos", "aplicar
     contempla, y aplicarlas la vaciaria.
     """
     from sync.escritura import aplicar_en_puerta
+    from sync.huellas import guardadas_de as huellas_guardadas
     from sync.lectores import leer_cargados
     from sync.plan_accesos import MOTIVOS_SACAR, estado_deseado, trabaja_hoy
 
@@ -1225,7 +1232,9 @@ def aplicar_puerta(did: int, usuario=Depends(require_permiso("accesos", "aplicar
         return {"ok": True, "equipo": puerta["nombre"], "sin_cambios": True,
                 "resultados": [], "omitidas": omitidas}
 
-    r = aplicar_en_puerta(puerta, maestro, altas, bajas)
+    with db_session() as conn:
+        guardadas = huellas_guardadas(conn, [a["user_id"] for a in altas])
+    r = aplicar_en_puerta(puerta, maestro, altas, bajas, guardadas)
 
     # Cada persona queda registrada por separado, aunque la pasada haya sido una
     # sola: dentro de seis meses lo que se busca es una persona, no una tanda.
@@ -1266,6 +1275,57 @@ def _resultado(x: dict) -> str:
     if x["accion"] == "sacar" and x.get("sigue"):
         return "pendiente"
     return "falló"
+
+
+@router.get("/huellas")
+def huellas_resumen(_user=Depends(require_permiso("accesos", "ver"))):
+    """Cuantas huellas hay respaldadas, de cuando, y a quien le falta."""
+    from sync.huellas import resumen
+
+    with db_session() as conn:
+        return resumen(conn)
+
+
+@router.post("/huellas/respaldar")
+def huellas_respaldar(usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Copia a la base las huellas que tiene el equipo de fichaje.
+
+    Hoy ese equipo es el unico lugar donde estan todas. La otra copia la tiene
+    Enterprise, y todo esto existe para apagar Enterprise: el dia que se apague,
+    un equipo quemado significa que cada persona vuelve a enrolarse con el dedo,
+    de a una.
+
+    Contra el equipo es solo lectura. Lo unico que escribe es la base.
+
+    Pide `aplicar` y no `ver` aunque no toque ningun lector, porque mueve datos
+    biometricos de casi doscientas personas a un archivo que despues se copia y
+    se respalda. Que no sea peligroso para los equipos no lo vuelve inocuo.
+    """
+    from sync.huellas import respaldar_desde
+
+    with db_session() as conn:
+        equipo = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, algoritmo_huella
+                 FROM dispositivos
+                WHERE activo=1 AND cuenta_asistencia=1 AND protocolo='pull'
+                  AND ip IS NOT NULL ORDER BY orden, id LIMIT 1""").fetchone()
+        if not equipo:
+            raise HTTPException(400, "No hay equipo de fichaje cargado.")
+        equipo = dict(equipo)
+
+    with db_session() as conn:
+        r = respaldar_desde(conn, equipo)
+        if r["ok"]:
+            _registrar_operacion(
+                conn, dispositivo_id=equipo["id"], equipo=equipo["nombre"],
+                accion="respaldar huellas", resultado="guardado",
+                detalle=f"{r['huellas']} huella(s) de {r['personas']} persona(s)",
+                usuario_id=int(usuario.get("sub") or 0) or None)
+
+    if not r["ok"]:
+        raise HTTPException(400, f"No se pudo leer {equipo['nombre']}: {r['error']}")
+    return {**r, "equipo": equipo["nombre"]}
 
 
 @router.get("/sin-perfil")

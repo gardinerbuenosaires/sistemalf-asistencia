@@ -296,31 +296,7 @@ def _elegir_grupo(conexion, reparto):
     return elegido, ventana, aviso
 
 
-def huellas_de(dispositivo, numero):
-    """Las huellas de una persona en un equipo. SOLO LECTURA."""
-    conexion = None
-    try:
-        conexion, _t = _conectar(dispositivo)
-        quien = next((u for u in conexion.get_users()
-                      if str(u.user_id).strip() == str(numero).strip()), None)
-        if quien is None:
-            return None, "no está cargado en el equipo de asistencia"
-        suyas = [h for h in conexion.get_templates()
-                 if h.uid == quien.uid and getattr(h, "valid", 1)]
-        if not suyas:
-            return None, "está en el equipo de asistencia pero sin ninguna huella"
-        return (quien, suyas), None
-    except Exception as exc:
-        return None, f"{type(exc).__name__}: {exc}"
-    finally:
-        if conexion:
-            try:
-                conexion.disconnect()
-            except Exception:
-                pass
-
-
-def huellas_de_varios(dispositivo, numeros):
+def huellas_de_varios(dispositivo, numeros, guardadas=None):
     """
     Las huellas de varias personas en un equipo, de una sola conexión. SOLO LECTURA.
 
@@ -329,12 +305,28 @@ def huellas_de_varios(dispositivo, numeros):
     lista y las huellas una vez y repartirlas acá es la diferencia entre
     molestarlo una vez y molestarlo treinta.
 
+    `guardadas` son las que hay respaldadas en la base, y se usan **solo para lo
+    que el equipo no pudo dar**: porque no contestó, o porque esa persona no
+    está cargada ahí. El equipo sigue siendo la fuente, y no por desconfianza
+    del respaldo sino porque de ahí sale también el nombre corto que el lector
+    muestra en pantalla, que el respaldo no tiene. Reemplazarlo haría que cargar
+    a alguien le cambiara el nombre sin que nadie lo pidiera.
+
     Devuelve {numero: (usuario, [huellas])} con los que tienen, y
     {numero: motivo} con los que no, para poder decir por qué en cada caso.
     """
     pedidos = {str(n).strip() for n in numeros}
     if not pedidos:
         return {}, {}
+    guardadas = {str(k).strip(): v for k, v in (guardadas or {}).items() if v}
+
+    def _con_respaldo(traidas, faltan):
+        """Lo que el equipo no dio, si está respaldado en la base."""
+        for numero in list(faltan):
+            if numero in guardadas:
+                traidas[numero] = (None, guardadas[numero])
+                faltan.pop(numero)
+        return traidas, faltan
 
     conexion = None
     try:
@@ -356,11 +348,15 @@ def huellas_de_varios(dispositivo, numeros):
                 faltan[numero] = "está en el equipo de asistencia pero sin ninguna huella"
                 continue
             traidas[numero] = (quien, suyas)
-        return traidas, faltan
+        return _con_respaldo(traidas, faltan)
     except Exception as exc:
+        # El equipo no contesto. Es justo el caso para el que se guardan: sin el
+        # respaldo, una puerta no se podria tocar hasta que el equipo de fichaje
+        # vuelva.
         logger.warning("No se pudieron leer las huellas de %s: %s",
                        dispositivo.get("ip"), exc)
-        return {}, {n: f"{type(exc).__name__}: {exc}" for n in pedidos}
+        return _con_respaldo(
+            {}, {n: f"{type(exc).__name__}: {exc}" for n in pedidos})
     finally:
         if conexion:
             try:
@@ -370,7 +366,8 @@ def huellas_de_varios(dispositivo, numeros):
 
 
 def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
-                     nombre: str = None, grupo: str = None) -> dict:
+                     nombre: str = None, grupo: str = None,
+                     guardadas: dict = None) -> dict:
     """
     Carga a una persona en una puerta, con su huella copiada del maestro.
 
@@ -393,10 +390,11 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
     from collections import Counter
 
     numero = str(numero).strip()
-    traido, error = huellas_de(maestro, numero)
-    if error:
-        return {"ok": False, "error": f"No hay huella para copiar: {error}"}
-    quien, suyas = traido
+    traidas, faltan = huellas_de_varios(maestro, [numero], guardadas)
+    if numero not in traidas:
+        return {"ok": False, "error": f"No hay huella para copiar: "
+                                      f"{faltan.get(numero, 'no se pudo leer')}"}
+    quien, suyas = traidas[numero]
 
     conexion = None
     try:
@@ -428,7 +426,10 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
             ventana, aviso_grupo = ventana_del_grupo(conexion, grupo), None
         # El nombre que se eligió para los lectores; si no hay, el del maestro,
         # que es lo que esa persona ya muestra en el otro equipo.
-        texto = (nombre or "").strip() or (quien.name or "").strip() or numero
+        # `quien` es None cuando la huella salio del respaldo y no del
+        # equipo: ahi no hay nombre que copiar y manda el configurado.
+        texto = ((nombre or "").strip()
+                 or (getattr(quien, "name", "") or "").strip() or numero)
 
         _escribir_usuario(conexion, uid, texto, 0, grupo, numero)
         recien = next((u for u in conexion.get_users()
@@ -467,7 +468,8 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
                 pass
 
 
-def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list) -> dict:
+def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list,
+                      guardadas: dict = None) -> dict:
     """
     Aplica de una vez todo lo que el plan pide para una puerta.
 
@@ -492,7 +494,7 @@ def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list) -> 
     acá se ejecuta y se verifica.
     """
     numeros_altas = [str(a["user_id"]).strip() for a in altas]
-    traidas, faltan = (huellas_de_varios(maestro, numeros_altas)
+    traidas, faltan = (huellas_de_varios(maestro, numeros_altas, guardadas)
                        if numeros_altas else ({}, {}))
 
     conexion, resultados = None, []
@@ -550,7 +552,7 @@ def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list) -> 
                 continue
             quien, suyas = traidas[numero]
             texto = ((alta.get("nombre") or "").strip()
-                     or (quien.name or "").strip() or numero)
+                     or (getattr(quien, "name", "") or "").strip() or numero)
             try:
                 uid = max(usados) + 1 if usados else 1
                 _escribir_usuario(conexion, uid, texto, 0, grupo, numero)

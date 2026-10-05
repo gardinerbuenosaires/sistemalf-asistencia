@@ -2491,7 +2491,7 @@ if _f18:
 
     _escrito = {}
     _real18 = _esc_mod.cargar_en_puerta
-    _esc_mod.cargar_en_puerta = lambda puerta, maestro, numero, nombre=None, grupo=None: (
+    _esc_mod.cargar_en_puerta = lambda puerta, maestro, numero, nombre=None, **kw: (
         _escrito.update({"puerta": puerta["id"], "numero": numero, "nombre": nombre}),
         {"ok": True, "uid": 50, "grupo": "1", "nombre_escrito": nombre or "X",
          "huellas": 2, "huellas_esperadas": 2, "otros": 26, "problemas": [],
@@ -2550,6 +2550,107 @@ if _f18:
                           json={"dispositivo_id": p_personal,
                                 "user_id": _uid18}).status_code == 403)
     _esc_mod.cargar_en_puerta = _real18
+
+
+print("\n=== LAS HUELLAS RESPALDADAS EN LA BASE ===")
+# Hoy el unico lugar donde estan todas es el equipo de fichaje. La otra copia la
+# tiene Enterprise, y todo esto existe para apagarlo: sin respaldo, un equipo
+# quemado son doscientas personas volviendo a enrolarse con el dedo, de a una.
+import sync.huellas as _hu
+
+_ch = sqlite3.connect(DB)
+_fh = _ch.execute(
+    """SELECT id, user_id FROM empleados
+        WHERE activo=1 AND user_id IS NOT NULL AND TRIM(user_id) <> '' LIMIT 2"""
+).fetchall()
+_ch.close()
+
+if len(_fh) >= 2:
+    (_eid1, _un1), (_eid2, _un2) = [(r[0], str(r[1]).strip()) for r in _fh]
+
+    class _Maestro:
+        """Contesta como el equipo de fichaje: dos personas, una con dos dedos."""
+        def __init__(s, gente):
+            s.gente = gente
+            s._u = [type("U", (), {"uid": i + 1, "user_id": n, "name": f"N{n}",
+                                   "group_id": "1", "privilege": 0})()
+                    for i, (n, _d) in enumerate(gente)]
+        def get_users(s): return list(s._u)
+        def get_templates(s):
+            salida = []
+            for i, (_n, dedos) in enumerate(s.gente):
+                for d in range(dedos):
+                    salida.append(type("H", (), {
+                        "uid": i + 1, "fid": d, "valid": 1,
+                        "template": bytes([d + 1]) * 600})())
+            return salida
+        def disconnect(s): pass
+
+    _real_con = _hu_conectar = None
+    import sync.lectores as _lr_h
+    _real_con = _lr_h._conectar
+    # Un equipo que exista de verdad: la huella guarda de donde salio.
+    _EQ_H = {"id": p_personal, "nombre": "Reloj", "ip": "1.2.3.4",
+             "algoritmo_huella": "v10"}
+
+    _lr_h._conectar = lambda *a, **kw: (_Maestro([(_un1, 2), (_un2, 1)]), "udp")
+    with db_session() as _cn:
+        _rh = _hu.respaldar_desde(_cn, _EQ_H)
+    chequear("respalda las huellas del equipo de fichaje", _rh["ok"] is True, _rh)
+    chequear("dos personas", _rh["personas"] == 2, _rh)
+    chequear("y tres huellas, porque una tiene dos dedos", _rh["huellas"] == 3, _rh)
+
+    with db_session() as _cn:
+        _g = _hu.guardadas_de(_cn, [_un1, _un2])
+    chequear("se recuperan por numero de legajo", set(_g) == {_un1, _un2}, list(_g))
+    chequear("con los dos dedos del que tenia dos", len(_g[_un1]) == 2, len(_g[_un1]))
+    chequear("la plantilla vuelve igual a como entro",
+             _g[_un1][0].template == bytes([1]) * 600, _g[_un1][0].size)
+    chequear("y con el dedo que era", sorted(f.fid for f in _g[_un1]) == [0, 1],
+             [f.fid for f in _g[_un1]])
+
+    # Si alguien agrega un dedo, el respaldo tiene que quedar igual al equipo y
+    # no ser la suma de todo lo que alguna vez tuvo.
+    _lr_h._conectar = lambda *a, **kw: (_Maestro([(_un1, 1), (_un2, 1)]), "udp")
+    with db_session() as _cn:
+        _hu.respaldar_desde(_cn, _EQ_H)
+        _g2 = _hu.guardadas_de(_cn, [_un1])
+    chequear("si en el equipo quedo un dedo, en el respaldo queda uno",
+             len(_g2[_un1]) == 1, len(_g2[_un1]))
+
+    # Una lectura que no trae a alguien NO es una baja.
+    _lr_h._conectar = lambda *a, **kw: (_Maestro([(_un1, 1)]), "udp")
+    with db_session() as _cn:
+        _hu.respaldar_desde(_cn, _EQ_H)
+        _g3 = _hu.guardadas_de(_cn, [_un2])
+    chequear("el que no vino en la lectura sigue respaldado", _un2 in _g3, list(_g3))
+
+    # Un numero del equipo que no es de nadie no se guarda: al restaurarlo
+    # habria que decidir de quien es.
+    _lr_h._conectar = lambda *a, **kw: (_Maestro([("999888", 1)]), "udp")
+    with db_session() as _cn:
+        _rh4 = _hu.respaldar_desde(_cn, _EQ_H)
+    chequear("una huella sin legajo no se guarda, se cuenta",
+             _rh4["personas"] == 0 and _rh4["sin_legajo"] == 1, _rh4)
+
+    # Si el equipo no contesta, se dice y no se borra nada de lo guardado.
+    def _explota(*a, **kw):
+        raise OSError("no contesta")
+    _lr_h._conectar = _explota
+    with db_session() as _cn:
+        _rh5 = _hu.respaldar_desde(_cn, _EQ_H)
+        _g5 = _hu.guardadas_de(_cn, [_un1])
+    chequear("si el equipo no contesta se avisa", _rh5["ok"] is False, _rh5)
+    chequear("y lo respaldado sigue estando", _un1 in _g5, list(_g5))
+
+    # Y lo que se borra al cerrar una baja.
+    with db_session() as _cn:
+        _n = _hu.olvidar(_cn, _eid1)
+        _g6 = _hu.guardadas_de(_cn, [_un1])
+    chequear("olvidar borra las huellas de esa persona", _n >= 1, _n)
+    chequear("y no quedan", _un1 not in _g6, list(_g6))
+
+    _lr_h._conectar = _real_con
 
 
 print("\n=== LA BAJA ADELANTADA ===")
@@ -2870,13 +2971,14 @@ class _Puerta:
 
 import sync.escritura as _em
 _conectar_real = _em._conectar
-_huellas_real = _em.huellas_de
+_huellas_real = _em.huellas_de_varios
 _escribir_real = _em._escribir_usuario
 
 def _probar(grupos):
     equipo = _Puerta(grupos)
-    _em._conectar = lambda d: (equipo, "udp")
-    _em.huellas_de = lambda d, n: ((type("Q", (), {"name": "ALGUIEN"})(), ["h"]), None)
+    _em._conectar = lambda *a, **kw: (equipo, "udp")
+    _em.huellas_de_varios = lambda d, nums, *a, **kw: (
+        {str(n).strip(): (type("Q", (), {"name": "ALGUIEN"})(), ["h"]) for n in nums}, {})
     def _fake_escribir(conexion, uid, nombre, privilegio, grupo, numero, franja=0):
         conexion.escrito = grupo
         conexion.users += 1
@@ -2992,9 +3094,9 @@ class _PuertaPasada:
 
 
 def _preparar_pasada(equipo):
-    _em._conectar = lambda d: (equipo, "udp")
-    _em._respaldar = lambda conexion, puerta, usuario, huellas: "C:/x/r.json"
-    _em.huellas_de_varios = lambda disp, numeros: (
+    _em._conectar = lambda *a, **kw: (equipo, "udp")
+    _em._respaldar = lambda *a, **kw: "C:/x/r.json"
+    _em.huellas_de_varios = lambda disp, numeros, *a, **kw: (
         {str(n): (type("Q", (), {"name": f"MAESTRO{n}"})(), ["h1", "h2"])
          for n in numeros if str(n) != "sinhuella"},
         {"sinhuella": "está en el equipo de asistencia pero sin ninguna huella"})
@@ -3137,8 +3239,8 @@ _PUERTA_X = {"nombre": "Puerta X", "ip": "10.0.0.9"}
 
 def _probar_sacar(**kw):
     equipo = _PuertaParaBorrar(**kw)
-    _em._conectar = lambda d: (equipo, "udp")
-    _em._respaldar = lambda conexion, puerta, usuario, huellas: "C:/x/respaldo.json"
+    _em._conectar = lambda *a, **kw: (equipo, "udp")
+    _em._respaldar = lambda *a, **kw: "C:/x/respaldo.json"
     return equipo, _em.sacar_de_puerta(_PUERTA_X, "100")
 
 _real_respaldar = _em._respaldar
@@ -3272,7 +3374,7 @@ chequear("si el equipo no contesta, no se afirma que abra siempre",
 
 
 _em._conectar = _conectar_real
-_em.huellas_de = _huellas_real
+_em.huellas_de_varios = _huellas_real
 _em._escribir_usuario = _escribir_real
 
 # --- En que grupo va la persona que se carga --------------------------------

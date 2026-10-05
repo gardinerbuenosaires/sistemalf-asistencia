@@ -161,6 +161,48 @@ def _migrar_perfiles(conn):
     conn.execute("""CREATE INDEX IF NOT EXISTS idx_accesos_op_user
                       ON accesos_operaciones (user_id)""")
 
+    # Las huellas, copiadas del equipo de fichaje.
+    #
+    # Hoy el único lugar donde están completas es ese equipo. Enterprise tiene
+    # la otra copia, y todo esto existe para apagar Enterprise: el día que se
+    # apague, un equipo quemado significa que cada persona vuelve a enrolarse
+    # con el dedo, de a una.
+    #
+    # Van en la base y no en una carpeta al lado porque `backup.ps1` copia
+    # únicamente `fichajes.db`. Un respaldo que no incluye justo lo que se
+    # quiere proteger es peor que no tenerlo: se descubre el día que no sirve.
+    # El costo es chico —unos cientos de KB sobre 16 MB— y la contra, que la
+    # base se copia a la máquina de pruebas, se resuelve del otro lado: el
+    # script que copia también vacía esta tabla.
+    #
+    # Por `empleado_id` y no por número de dispositivo. El número se libera y se
+    # reasigna; una huella pegada a un número reasignado es exactamente el
+    # accidente que el módulo entero trata de impedir.
+    #
+    # `algoritmo` viaja con cada huella porque v10 y v12 no son intercambiables
+    # ni convertibles: una huella guardada solo sirve para un equipo del mismo
+    # algoritmo. Sin ese dato, un respaldo puede no entrar en el equipo nuevo y
+    # nadie se entera hasta que lo necesita.
+    #
+    # La plantilla va en bytes crudos. Los respaldos en JSON la guardan en
+    # hexadecimal, que ocupa el doble sin agregar nada.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS huellas (
+            empleado_id  INTEGER NOT NULL REFERENCES empleados(id) ON DELETE CASCADE,
+            dedo         INTEGER NOT NULL,
+            algoritmo    TEXT,
+            plantilla    BLOB NOT NULL,
+            tamano       INTEGER NOT NULL,
+            -- De qué equipo salió, solo como dato. Si ese equipo se borra, la
+            -- huella se queda sin procedencia pero se queda: lo que importa
+            -- acá es la plantilla, y perderla por un dato accesorio sería
+            -- exactamente al revés.
+            equipo_id    INTEGER REFERENCES dispositivos(id) ON DELETE SET NULL,
+            leida_en     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            PRIMARY KEY (empleado_id, dedo)
+        )
+    """)
+
     # Quién puede administrar el lector desde el lector: dar de alta gente y
     # tomarle la huella parado frente al equipo. Es UNA sola propiedad de la
     # persona y no una por equipo, aunque el campo exista en todos: las puertas

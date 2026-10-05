@@ -3187,11 +3187,14 @@ async function verPlan() {
     const vanACargar = p.agregar.filter(a => !a.sin_huella).length;
     const vanASacar = p.sacar.filter(s => s.motivo !== 'sin_politica').length;
     const aplicables = vanACargar + vanASacar;
-    // El botón dice cuántas entran y cuántas salen, no un total. "Aplicar las
+    // El botón dice cuántas entran y cuántas salen, no un total: "Aplicar las
     // 70" esconde que las 70 son bajas, y es un número lo que se mira antes de
-    // aceptar.
-    const queHace = [vanACargar ? `cargar ${vanACargar}` : '',
-                     vanASacar ? `sacar ${vanASacar}` : ''].filter(Boolean).join(' y ');
+    // aceptar. Pero empieza con el verbo igual, porque al lado de filas que
+    // cada una tiene su "Sacar", un botón que dice "sacar 70" no se reconoce
+    // como el que hace la puerta entera.
+    const queHace = 'Aplicar todo: '
+      + [vanACargar ? `cargar ${vanACargar}` : '',
+         vanASacar ? `sacar ${vanASacar}` : ''].filter(Boolean).join(', ');
     const botonTodo = canDo('accesos','aplicar') && aplicables
       ? `<button class="btn btn-sm" style="margin-left:10px" id="aplicar-${p.id}"
                  onclick="aplicarPuerta(${p.id}, this, ${vanACargar}, ${vanASacar})">${queHace}</button>`

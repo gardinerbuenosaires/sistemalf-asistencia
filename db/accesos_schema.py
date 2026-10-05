@@ -317,17 +317,32 @@ def _sembrar_equipo_actual(conn):
         except (TypeError, ValueError):
             return defecto
 
+    ip = (cfg.get("device_ip") or "").strip()
+    if not ip:
+        # Sin IP configurada no se inventa una. Antes se sembraba
+        # 192.168.1.201, que es la de un local y no la del otro —Happening
+        # está en la .0.201— y la bajada de fichajes lee de esta tabla: una IP
+        # adivinada deja el local sin registrar asistencia y sin ningún aviso.
+        #
+        # Dejar la tabla vacía no rompe nada: el downloader cae a las claves
+        # `device_*` y después a config.py, que es exactamente lo que venía
+        # haciendo. El módulo muestra que no hay equipos y se carga a mano,
+        # que es visible en vez de silenciosamente equivocado.
+        logger.warning("Migración: no hay device_ip en configuracion, no se "
+                       "siembra ningún equipo. La asistencia sigue por el "
+                       "camino anterior hasta que se cargue el lector a mano.")
+        return
+
     conn.execute(
         """INSERT INTO dispositivos
                (nombre, protocolo, ip, puerto, password, timeout,
                 cuenta_asistencia, es_acceso, activo, orden)
            VALUES (?, 'pull', ?, ?, ?, ?, 1, 0, 1, 0)""",
         (
-            "Lector principal",
-            (cfg.get("device_ip") or "").strip() or "192.168.1.201",
+            "Lector principal", ip,
             _entero("device_port", 4370),
             _entero("device_password", 0),
             _entero("device_timeout", 10),
         ),
     )
-    logger.info("Migración: dispositivos sembrado con el lector ya configurado")
+    logger.info("Migración: dispositivos sembrado con el lector ya configurado (%s)", ip)

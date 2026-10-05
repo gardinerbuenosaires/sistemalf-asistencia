@@ -2735,5 +2735,79 @@ _em._conectar = _conectar_real
 _em.huellas_de = _huellas_real
 _em._escribir_usuario = _escribir_real
 
+# --- En que grupo va la persona que se carga --------------------------------
+# El criterio era "el mas usado de esta puerta". Sigue valiendo, salvo cuando el
+# mas usado impone horario: eso nunca es lo que se quiso, porque el unico equipo
+# donde alguien asigno horarios a proposito es el .209 y en los demas las
+# franjas abiertas son el estado de fabrica.
+
+
+class _PuertaConGrupos:
+    """Un equipo que contesta por sus grupos. `horario` son los que restringen."""
+
+    def __init__(self, horario=(), muda=False):
+        self.horario = {str(g) for g in horario}
+        self.muda = muda
+        self._ZK__data = b""
+
+    def _ZK__send_command(self, comando, datos, respuesta):
+        from zk import const
+        if self.muda:
+            self._ZK__data = b""
+            return {"status": False}
+        n = datos[0]
+        if comando == const.CMD_GRPTZ_RRQ:
+            # Los que restringen apuntan a la franja 2; los demas, a la 1.
+            cual = 2 if str(n) in self.horario else 1
+            self._ZK__data = pack("<IIII", 3, cual, cual, cual)
+        elif comando == const.CMD_TZ_RRQ:
+            self._ZK__data = (bytes.fromhex("08 00 13 1e" * 7) if n == 2
+                              else bytes.fromhex("00 00 17 3b" * 7))
+        return {"status": True}
+
+
+from collections import Counter as _Cnt
+from struct import pack
+
+_g, _v, _av = _em._elegir_grupo(_PuertaConGrupos(), _Cnt({"1": 18, "0": 9}))
+chequear("sin horarios en juego, se copia el mas usado", _g == "1", (_g, _av))
+chequear("y no se avisa nada, porque la eleccion no tuvo consecuencias",
+         _av is None, _av)
+chequear("igual se informa el horario de ese grupo",
+         _v["restringe"] is False, _v)
+
+# El caso que importa: el mas usado tiene horario. Copiarlo le pondria un
+# horario a alguien sin que nadie lo haya decidido.
+_g, _v, _av = _em._elegir_grupo(_PuertaConGrupos(horario=["1"]),
+                                _Cnt({"1": 18, "0": 9}))
+chequear("si el mas usado tiene horario, se elige otro sin horario",
+         _g == "0", (_g, _av))
+chequear("y se explica por que se desvio del mas usado",
+         _av and "tiene horario" in _av and "08:00 a 19:30" in _av, _av)
+chequear("el grupo elegido no restringe", _v["restringe"] is False, _v)
+
+# Si TODOS tienen horario no se bloquea: dejaria la puerta inutilizable hasta
+# que alguien camine hasta el equipo, y el horario ya se informa en rojo.
+_g, _v, _av = _em._elegir_grupo(_PuertaConGrupos(horario=["1", "0"]),
+                                _Cnt({"1": 18, "0": 9}))
+chequear("si todos tienen horario, se copia el mas usado igual", _g == "1", _g)
+chequear("el horario elegido se informa como restrictivo",
+         _v["restringe"] is True, _v)
+chequear("y se dice que no habia ninguno sin horario",
+         _av and "todos los grupos" in _av, _av)
+
+# No poder leer no es lo mismo que no tener horario.
+_g, _v, _av = _em._elegir_grupo(_PuertaConGrupos(muda=True),
+                                _Cnt({"1": 18, "0": 9}))
+chequear("si el equipo no contesta, se copia el mas usado", _g == "1", _g)
+chequear("sin afirmar que no tiene horario", _v["restringe"] is None, _v)
+chequear("y diciendo que no se pudo comprobar",
+         _av and "no se pudo leer" in _av, _av)
+
+_g, _v, _av = _em._elegir_grupo(_PuertaConGrupos(), _Cnt())
+chequear("en una puerta vacia no hay de donde copiar: va el 1", _g == "1", _g)
+chequear("y no se inventa un horario", _v is None, _v)
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

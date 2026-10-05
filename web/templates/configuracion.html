@@ -3245,12 +3245,12 @@ async function cargarEnPuerta(dispositivoId, userId, boton) {
            Fuera de ese horario no va a abrir, aunque esté cargado.</div>`
          : (r.horario ? `<div style="color:#888;font-size:.76rem;margin-left:72px">
            horario del grupo ${_esc(r.grupo)}: ${_esc(r.horario)}</div>` : ''))
-      // Y si en esa puerta hay gente repartida entre grupos, el elegido fue una
-      // decisión y no una copia. Con el horario arriba ya se puede juzgar.
-      + (r.grupo_ambiguo ? `<div style="color:#8a5d06;font-size:.76rem;margin-left:72px">
-           esta puerta tiene gente en ${Object.keys(r.reparto_grupos).length} grupos
-           (${Object.entries(r.reparto_grupos).map(([g, n]) => `${g}: ${n}`).join(', ')}).
-           Se usó el más frecuente.</div>` : '');
+      // Por qué se eligió ese grupo, solo si no fue simplemente el más usado.
+      // Antes avisaba cada vez que la puerta tenía gente en dos grupos, y eso
+      // pasa en casi todas sin que signifique nada: un aviso que aparece
+      // siempre enseña a ignorar los avisos.
+      + (r.aviso_grupo ? `<div style="color:#8a5d06;font-size:.76rem;margin-left:72px">
+           ${_esc(r.aviso_grupo)}</div>` : '');
   }
   toast(`${r.empleado} cargado en ${r.equipo}`);
 }

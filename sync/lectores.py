@@ -15,6 +15,11 @@ todavía. O sea que el mecanismo funciona y está usado a medias: cambiarle el
 grupo a alguien sin querer le cambia el horario, y eso no da error, simplemente
 un día a cierta hora no abre.
 
+El .209 es el único equipo donde alguien asignó horarios a propósito. En los
+demás las franjas están todas abiertas de 00:00 a 23:59, que es el estado de
+fábrica, así que ahí no hay ninguna intención que respetar. Conviene no leer esa
+diferencia como una configuración: no lo es.
+
 Ojo que hay DOS cosas distintas que se llaman franja:
 
   · la del equipo, que es la definición de horarios (ver `ventana_del_grupo`),
@@ -176,14 +181,33 @@ def ventana_del_grupo(conexion, grupo) -> dict:
     None: no saber no es lo mismo que no tener horario, y decir «abre a
     cualquier hora» sobre algo que nadie leyó es peor que no decir nada.
     """
+    return ventanas_de_grupos(conexion, [grupo])[str(grupo)]
+
+
+def ventanas_de_grupos(conexion, grupos) -> dict:
+    """
+    El horario de varios grupos de un equipo, de una. Solo lectura.
+
+    Juntos y no uno por uno porque los grupos suelen compartir franja: leer las
+    definiciones una vez son dos comandos en lugar de seis, y estos equipos
+    contestan de a uno por UDP.
+
+    Hace falta para elegir en qué grupo cargar a alguien. Antes se copiaba el
+    más usado de la puerta sin mirar; ahora se puede preferir uno que no le
+    imponga horario a nadie.
+    """
     from sync.franjas import describir_grupo
 
-    suyas = _franjas_asignadas(conexion, grupo)
-    definiciones = _definiciones_de_franjas(conexion, suyas or [])
-    texto, restringe = describir_grupo(suyas, definiciones)
-    return {"grupo": str(grupo),
-            "franjas": sorted({n for n in suyas if n}) if suyas else [],
-            "texto": texto, "restringe": restringe}
+    asignadas = {str(g): _franjas_asignadas(conexion, g) for g in grupos}
+    necesarias = {n for suyas in asignadas.values() if suyas for n in suyas if n}
+    definiciones = _definiciones_de_franjas(conexion, necesarias)
+
+    ventanas = {}
+    for g, suyas in asignadas.items():
+        texto, restringe = describir_grupo(suyas, definiciones)
+        ventanas[g] = {"grupo": g, "texto": texto, "restringe": restringe,
+                       "franjas": sorted({n for n in suyas if n}) if suyas else []}
+    return ventanas
 
 
 def leer_cargados(dispositivo: dict, con_huellas: bool = False,

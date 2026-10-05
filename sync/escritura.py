@@ -134,6 +134,60 @@ def _escribir_usuario(conexion, uid, nombre, privilegio, grupo, numero, franja=0
     conexion.refresh_data()
 
 
+def _elegir_grupo(conexion, reparto):
+    """
+    En qué grupo del equipo va la persona que se está cargando.
+
+    El criterio era «el más usado de esta puerta»: copiar lo que ya funciona en
+    vez de probar algo nuevo. Sigue valiendo, con una corrección que apareció al
+    leer el .209 — ahí hay dos franjas horarias cargadas de verdad, 08:00 a
+    19:30 y 17:00 a 03:00, en grupos donde hoy no hay nadie.
+
+    O sea que el grupo puede imponer horario. Y como el único equipo donde
+    alguien asignó horarios a propósito es el .209 —en los demás las franjas
+    abiertas son el estado de fábrica— poner a alguien en un grupo con horario
+    nunca es lo que se quiso. Entonces se prefiere **el más usado que no
+    restrinja**, y si hubo que desviarse del más usado se dice por qué.
+
+    No se bloquea nunca. Si todos los grupos de esa puerta tienen horario, se
+    copia el más usado igual: la alternativa sería dejar esa puerta inutilizable
+    hasta que alguien camine hasta el equipo, y ahora el horario elegido se
+    informa en rojo, así que la falla se ve antes de que alguien quede afuera.
+
+    Devuelve (grupo, ventana, aviso).
+    """
+    from sync.lectores import ventanas_de_grupos
+
+    if not reparto:
+        # Puerta vacía: no hay de dónde copiar. El 1 es el que usan todas las
+        # puertas de este local para la gente común.
+        return "1", None, None
+
+    orden = [g for g, _ in reparto.most_common()]
+    ventanas = ventanas_de_grupos(conexion, orden)
+    sin_horario = [g for g in orden if ventanas.get(g, {}).get("restringe") is False]
+
+    if sin_horario:
+        elegido = sin_horario[0]
+        aviso = None
+        if elegido != orden[0]:
+            otro = ventanas[orden[0]]
+            aviso = (f"el grupo más usado de esta puerta es el {orden[0]}, pero "
+                     f"tiene horario ({otro['texto']}), así que se usó el "
+                     f"{elegido}, que no le pone horario a nadie")
+        return elegido, ventanas[elegido], aviso
+
+    elegido = orden[0]
+    ventana = ventanas.get(elegido)
+    if ventana and ventana["restringe"] is None:
+        aviso = ("no se pudo leer el horario de los grupos de esta puerta, así "
+                 "que se copió el más usado sin poder comprobar si impone horario")
+    else:
+        aviso = ("todos los grupos de esta puerta tienen horario, así que no hubo "
+                 "ninguno sin restricción para elegir")
+    return elegido, ventana, aviso
+
+
 def huellas_de(dispositivo, numero):
     """Las huellas de una persona en un equipo. SOLO LECTURA."""
     conexion = None
@@ -171,17 +225,13 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
     que abren están en el grupo 1, crear a este en el 1 reproduce lo que ya
     funciona; elegir otro sería probar algo distinto sin querer.
 
-    Pero si en esa puerta la gente está repartida entre varios grupos, "el más
-    frecuente" deja de ser obvio y pasa a ser una elección — y lo que el grupo
-    define es el horario en que abre esa persona. En el .209 hay dos franjas
-    cargadas de verdad: 08:00 a 19:30 y 17:00 a 03:00. Hoy sin nadie adentro,
-    pero el mecanismo anda.
-
-    Por eso se lee en qué horario deja el grupo elegido y se devuelve en
-    `horario`, con `horario_restringe` en True si no es todo el día. Un número
-    de grupo nadie lo revisa; "abre de 08:00 a 19:30" sí. Y es la única forma de
-    enterarse, porque meter a alguien en el grupo equivocado no da ningún error:
-    simplemente un día a cierta hora no abre.
+    El grupo, si no se indica, lo elige `_elegir_grupo`: el más usado de esa
+    puerta que no le imponga horario a nadie. Y en cualquier caso se lee en qué
+    horario lo deja y se devuelve en `horario`, con `horario_restringe` en True
+    si no es todo el día. Un número de grupo nadie lo revisa; "abre de 08:00 a
+    19:30" sí. Y es la única forma de enterarse, porque meter a alguien en el
+    grupo equivocado no da ningún error: simplemente un día a cierta hora no
+    abre, y nadie relaciona una cosa con la otra.
     """
     from collections import Counter
 
@@ -210,20 +260,15 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
         # abre quien está en él: cada grupo apunta a franjas, y cada franja trae
         # los horarios de los siete días. Puede decidir que alguien no abra aun
         # estando cargado, por eso no es un dato de adorno.
-        #
-        # Cuando todos los de esa puerta están en el mismo grupo, copiarlo no es
-        # una decisión. Cuando están repartidos, sí lo es, y se avisa: elegir en
-        # silencio sería decidir el horario de alguien sin que nadie se entere.
         reparto = Counter(u["grupo"] for u in antes["usuarios"].values() if u["grupo"])
         ambiguo = len(reparto) > 1
         if grupo is None:
-            grupo = reparto.most_common(1)[0][0] if reparto else "1"
-
-        # Y en qué horario lo deja ese grupo. Se pregunta antes de escribir
-        # porque es lo único que convierte «grupo 2» en algo que alguien puede
-        # revisar: un número no se mira, «abre de 08:00 a 19:30» sí.
-        from sync.lectores import ventana_del_grupo
-        ventana = ventana_del_grupo(conexion, grupo)
+            grupo, ventana, aviso_grupo = _elegir_grupo(conexion, reparto)
+        else:
+            # Lo pidió quien llama: se respeta, pero igual se lee el horario.
+            # Un número de grupo nadie lo revisa; «abre de 08:00 a 19:30» sí.
+            from sync.lectores import ventana_del_grupo
+            ventana, aviso_grupo = ventana_del_grupo(conexion, grupo), None
         # El nombre que se eligió para los lectores; si no hay, el del maestro,
         # que es lo que esa persona ya muestra en el otro equipo.
         texto = (nombre or "").strip() or (quien.name or "").strip() or numero
@@ -244,8 +289,9 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
                 "uid": uid, "grupo": grupo, "nombre_escrito": texto,
                 "grupo_ambiguo": ambiguo,
                 "reparto_grupos": dict(reparto),
-                "horario": ventana["texto"],
-                "horario_restringe": ventana["restringe"],
+                "horario": ventana["texto"] if ventana else None,
+                "horario_restringe": ventana["restringe"] if ventana else None,
+                "aviso_grupo": aviso_grupo,
                 "huellas": quedo["huellas"] if quedo else 0,
                 "huellas_esperadas": len(suyas),
                 "otros": len(antes["usuarios"]), "problemas": problemas,

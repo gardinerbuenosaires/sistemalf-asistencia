@@ -952,6 +952,9 @@ def cargar_en_puerta(data: CargarEnPuertaIn,
             # horario, esa persona no abre fuera de el y nada avisa.
             "horario": r.get("horario"),
             "horario_restringe": r.get("horario_restringe", False),
+            # Y por que se eligio ese grupo, cuando no fue simplemente el mas
+            # usado: si hubo que desviarse, conviene que se vea.
+            "aviso_grupo": r.get("aviso_grupo"),
             "nombre_escrito": r["nombre_escrito"], "otros_intactos": r["otros"]}
 
 

@@ -435,6 +435,8 @@
             <button class="btn btn-secondary btn-sm" onclick="revisarTodos()">Revisar todos</button>
             <button class="btn btn-secondary btn-sm" onclick="verRelojes()">Relojes</button>
             <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                    onclick="verHuellas()">Huellas</button>
+            <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
                     onclick="verOperaciones()">Operaciones</button>
             <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
                     onclick="nuevoDispositivo()">+ Nuevo equipo</button>
@@ -3814,6 +3816,93 @@ async function ponerEnHora(id, boton) {
   toast(r.quedo_en_hora
     ? `En hora. Estaba corrido ${r.desfase_antes} min`
     : `Se le escribió, pero sigue corrido ${r.desfase_minutos} min: miralo`);
+}
+
+// ── El respaldo de las huellas ────────────────────────────────────────────────
+// Hoy el único lugar donde están todas es el equipo de fichaje. La otra copia la
+// tiene Enterprise, y todo esto existe para apagarlo: sin respaldo, un equipo
+// quemado son doscientas personas volviendo a enrolarse con el dedo, de a una.
+
+async function verHuellas() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:620px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Respaldo de huellas</div>
+      <div style="font-size:.8rem;color:#888;margin-top:4px">
+        Copia a la base las huellas que tiene el equipo de fichaje. Hoy es el único lugar
+        donde están todas: si ese equipo se quema, cada persona vuelve a enrolarse con el dedo.
+        Contra el equipo es solo lectura.</div>
+      <div id="huellas-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
+        Consultando…</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex:none">
+        ${canDo('accesos','aplicar')
+          ? `<button class="btn btn-primary btn-sm" id="btn-respaldar"
+                     onclick="respaldarHuellas(this)">Respaldar ahora</button>` : ''}
+        <button class="btn btn-secondary btn-sm"
+                onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  pintarHuellas();
+}
+
+async function pintarHuellas() {
+  const cuerpo = document.getElementById('huellas-cuerpo');
+  if (!cuerpo) return;
+  let d;
+  try {
+    const res = await fetch('/api/accesos/huellas');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    cuerpo.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  const kb = (d.bytes / 1024).toFixed(0);
+  cuerpo.innerHTML = `
+    <div style="font-size:.9rem;color:#333">
+      <b>${d.huellas}</b> huella(s) de <b>${d.personas}</b> persona(s)
+      <span style="color:#888">· ${kb} KB</span>
+    </div>
+    <div style="font-size:.84rem;color:#666;margin-top:6px">
+      ${d.ultima ? `Última copia: ${_esc(_fechaHora(d.ultima))}`
+                 : '<span style="color:#b3261e">Todavía no se respaldó ninguna.</span>'}
+    </div>
+    ${d.sin_respaldo
+      // El numero que importa no es cuantas hay, es a cuantos no cubre.
+      ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.82rem;margin-top:10px">
+           <b>${d.sin_respaldo} persona(s) que trabajan hoy no tienen huella respaldada.</b>
+           O no están enroladas en el equipo de fichaje, o el respaldo quedó viejo.
+           Un respaldo vale por los que cubre, no por los que tiene.</div>`
+      : `<div style="background:#dcede2;color:#2e7d4f;padding:8px 11px;border-radius:5px;font-size:.82rem;margin-top:10px">
+           Todos los que trabajan hoy tienen su huella respaldada.</div>`}
+    <div style="font-size:.78rem;color:#999;margin-top:10px">
+      Las huellas quedan en <code>fichajes.db</code>, así que el respaldo de la base ya las
+      incluye. Por lo mismo, no copies esa base a otra máquina sin vaciarlas:
+      <code>scripts\\copiar_base_a_pruebas.bat</code> hace las dos cosas.</div>`;
+}
+
+async function respaldarHuellas(boton) {
+  if (boton) { boton.disabled = true; boton.textContent = 'Leyendo el equipo…'; }
+  let r = {};
+  try {
+    const res = await fetch('/api/accesos/huellas/respaldar', { method: 'POST' });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo respaldar');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error: ' + e.message);
+  }
+  if (boton) { boton.disabled = false; boton.textContent = 'Respaldar ahora'; }
+  // Lo que no se pudo guardar se dice: un respaldo que calla lo que le falta es
+  // peor que no tenerlo, porque nadie vuelve a mirarlo.
+  const sobras = [
+    r.sin_legajo ? `${r.sin_legajo} del equipo no son de nadie en el sistema` : '',
+    r.sin_huella ? `${r.sin_huella} están cargados sin ninguna huella` : '',
+  ].filter(Boolean).join(' · ');
+  toast(`${r.huellas} huella(s) de ${r.personas} persona(s)${sobras ? ' — ' + sobras : ''}`);
+  pintarHuellas();
 }
 
 // ── Operaciones sobre los equipos ─────────────────────────────────────────────

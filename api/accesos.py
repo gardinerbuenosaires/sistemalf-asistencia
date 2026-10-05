@@ -396,7 +396,7 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
     alguien sin su huella lo deja sin poder abrir igual.
     """
     from sync.lectores import leer_cargados_varios
-    from sync.plan_accesos import armar_plan
+    from sync.plan_accesos import armar_plan, plan_fichaje
 
     with db_session() as conn:
         puertas = [
@@ -454,7 +454,13 @@ def plan(_user=Depends(require_permiso("accesos", "ver"))):
     maestro = lecturas.get(maestros[0]["id"]) if maestros else None
 
     with db_session() as conn:
-        return {**armar_plan(conn, puertas, lecturas, maestro), "fuera_de_plan": fuera}
+        plan = {**armar_plan(conn, puertas, lecturas, maestro), "fuera_de_plan": fuera}
+        # El equipo de fichaje, que es el que faltaba: hasta ahora una baja
+        # dejaba de abrir puertas y seguia pudiendo fichar.
+        if maestros:
+            plan["fichaje"] = plan_fichaje(conn, maestros[0], maestro,
+                                           lecturas, puertas)
+        return plan
 
 
 @router.get("/descubrir")
@@ -976,6 +982,47 @@ MOTIVOS_QUE_SE_APLICAN = {
 }
 
 
+def _verificar_fuera_de_las_puertas(puertas, numero, quien):
+    """
+    La condicion que ordena toda la baja: no se borra del equipo de fichaje
+    hasta confirmar que ese numero no quedo en ninguna puerta.
+
+    El motivo es el lector mismo. Solo ofrece numeros que el no tiene, asi que
+    mientras el sistema no lo borre de ahi, nadie puede reusar ese numero.
+    Borrarlo antes de limpiar las puertas devuelve el numero a circulacion con
+    la huella vieja todavia cargada en una puerta: el dedo del que se fue
+    abriendo con el legajo del que entro.
+
+    Si alguna puerta no contesta, tampoco se borra. No haber podido leerla no es
+    lo mismo que haberla leido vacia, y esta es justo la decision donde esa
+    diferencia importa.
+    """
+    from sync.lectores import leer_cargados_varios
+
+    if not puertas:
+        return
+    lecturas = leer_cargados_varios(puertas)
+    quedan, sin_leer = [], []
+    for d in puertas:
+        suya = lecturas.get(d["id"], {})
+        if not suya.get("ok"):
+            sin_leer.append(d["nombre"])
+        elif any(u["user_id"] == numero for u in suya["usuarios"]):
+            quedan.append(d["nombre"])
+
+    if quedan:
+        raise HTTPException(
+            400, f"{quien} todavía está cargado en {', '.join(quedan)}. Primero "
+                 f"hay que sacarlo de ahí: si se lo borra del equipo de fichaje "
+                 f"antes, el número vuelve a estar libre y su huella sigue "
+                 f"abriendo esas puertas con el legajo del que lo reciba.")
+    if sin_leer:
+        raise HTTPException(
+            400, f"No se pudo leer {', '.join(sin_leer)}, así que no se puede "
+                 f"confirmar que {quien} no haya quedado ahí. No se borra del "
+                 f"equipo de fichaje hasta poder comprobarlo.")
+
+
 @router.post("/sacar")
 def sacar_por_plan(data: CargarEnPuertaIn,
                    usuario=Depends(require_permiso("accesos", "aplicar"))):
@@ -1010,9 +1057,10 @@ def sacar_por_plan(data: CargarEnPuertaIn,
                  FROM dispositivos WHERE id = ? AND activo = 1""",
             (data.dispositivo_id,)).fetchone()
         if not puerta:
-            raise HTTPException(404, "Esa puerta no existe o está desactivada")
-        if not puerta["es_acceso"]:
-            raise HTTPException(400, f"{puerta['nombre']} no es una puerta.")
+            raise HTTPException(404, "Ese equipo no existe o está desactivado")
+        if not puerta["es_acceso"] and not puerta["cuenta_asistencia"]:
+            raise HTTPException(400, f"{puerta['nombre']} no es ni puerta ni "
+                                     f"equipo de fichaje.")
         if puerta["protocolo"] != "pull":
             raise HTTPException(400, f"{puerta['nombre']} es un equipo push: no "
                                      f"atiende llamadas.")
@@ -1023,34 +1071,52 @@ def sacar_por_plan(data: CargarEnPuertaIn,
                  FROM empleados WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
         emp = dict(emp) if emp else None
 
-        # El motivo, recalculado desde la misma fuente que arma el plan.
-        deseado = estado_deseado(conn)
-        if numero in deseado.get(puerta["id"], {}):
-            quien = (f"{emp['apellido']}, {emp['nombre']}".strip(", ") if emp
-                     else f"el {numero}")
-            raise HTTPException(
-                400, f"A {quien} le corresponde {puerta['nombre']} según su "
-                     f"perfil, así que el sistema no lo saca. Si no tiene que "
-                     f"abrir ahí, cambiale el perfil o ponele una excepción.")
+        quien = (f"{emp['apellido']}, {emp['nombre']}".strip(", ") if emp
+                 else f"el {numero}")
+        # El equipo de fichaje no se gobierna por perfiles: ahí va todo el que
+        # trabaja. Entonces la pregunta es otra, y la condición también.
+        es_fichaje = bool(puerta["cuenta_asistencia"]) and not puerta["es_acceso"]
+        if es_fichaje:
+            if emp and emp["activo"]:
+                raise HTTPException(
+                    400, f"{quien} está activo, así que tiene que poder fichar. "
+                         f"El sistema no lo saca del equipo de fichaje.")
+            motivo = "egresado" if emp else "desconocido"
+            otras = [dict(x) for x in conn.execute(
+                """SELECT id, nombre, ip, puerto, password, timeout
+                     FROM dispositivos
+                    WHERE activo=1 AND es_acceso=1 AND protocolo='pull'
+                      AND ip IS NOT NULL ORDER BY orden, id""")]
+        else:
+            # El motivo, recalculado desde la misma fuente que arma el plan.
+            deseado = estado_deseado(conn)
+            if numero in deseado.get(puerta["id"], {}):
+                raise HTTPException(
+                    400, f"A {quien} le corresponde {puerta['nombre']} según su "
+                         f"perfil, así que el sistema no lo saca. Si no tiene que "
+                         f"abrir ahí, cambiale el perfil o ponele una excepción.")
 
-        con_perfil = {r["dispositivo_id"] for r in conn.execute(
-            "SELECT DISTINCT dispositivo_id FROM perfiles_dispositivos")}
+            con_perfil = {r["dispositivo_id"] for r in conn.execute(
+                "SELECT DISTINCT dispositivo_id FROM perfiles_dispositivos")}
+            if emp is None:
+                motivo = "desconocido"
+            elif not emp["activo"]:
+                motivo = "egresado"
+            elif puerta["id"] not in con_perfil:
+                motivo = "sin_politica"
+            else:
+                motivo = "sin_derecho"
 
-    if emp is None:
-        motivo = "desconocido"
-    elif not emp["activo"]:
-        motivo = "egresado"
-    elif puerta["id"] not in con_perfil:
-        motivo = "sin_politica"
-    else:
-        motivo = "sin_derecho"
+            if not MOTIVOS_QUE_SE_APLICAN.get(motivo):
+                raise HTTPException(
+                    400, f"Ningún perfil incluye {puerta['nombre']}, así que el "
+                         f"plan muestra toda su gente para sacar. Eso no es una "
+                         f"baja: es que la política todavía no contempla esta "
+                         f"puerta, y aplicarlo la dejaría vacía. Agregala a los "
+                         f"perfiles que correspondan.")
 
-    if not MOTIVOS_QUE_SE_APLICAN.get(motivo):
-        raise HTTPException(
-            400, f"Ningún perfil incluye {puerta['nombre']}, así que el plan "
-                 f"muestra toda su gente para sacar. Eso no es una baja: es que "
-                 f"la política todavía no contempla esta puerta, y aplicarlo la "
-                 f"dejaría vacía. Agregala a los perfiles que correspondan.")
+    if es_fichaje:
+        _verificar_fuera_de_las_puertas(otras, numero, quien)
 
     r = sacar_de_puerta(puerta, numero)
 

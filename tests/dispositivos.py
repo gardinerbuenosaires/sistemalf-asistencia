@@ -2552,6 +2552,101 @@ if _f18:
     _esc_mod.cargar_en_puerta = _real18
 
 
+print("\n=== EL EQUIPO DE FICHAJE DENTRO DEL PLAN ===")
+# El que faltaba: una baja dejaba de abrir puertas y seguia pudiendo fichar.
+# Solo tiene bajas, porque agregar a alguien ahi no es algo que el sistema pueda
+# hacer: de ahi salen las huellas, no van hacia ahi.
+from sync.plan_accesos import plan_fichaje as _pf
+
+_MAESTRO_F = {"id": 90, "nombre": "Reloj de personal"}
+_PUERTAS_F = [{"id": p_personal, "nombre": "Personal"},
+              {"id": p_oficina, "nombre": "Oficina"}]
+
+_cf = sqlite3.connect(DB)
+_act = str(_cf.execute(
+    "SELECT user_id FROM empleados WHERE activo=1 AND user_id IS NOT NULL LIMIT 1"
+).fetchone()[0]).strip()
+_bajaf = _cf.execute(
+    "SELECT user_id FROM empleados WHERE activo=0 AND user_id IS NOT NULL LIMIT 1").fetchone()
+_bajaf = str(_bajaf[0]).strip() if _bajaf else None
+_cf.close()
+
+def _lect(usuarios, ok=True):
+    return {"ok": ok, "error": None if ok else "no contesto",
+            "usuarios": [{"user_id": u} for u in usuarios]}
+
+if _bajaf:
+    # Caso limpio: el egresado esta en el fichaje y en ninguna puerta.
+    with db_session() as _cn:
+        _r = _pf(_cn, _MAESTRO_F, _lect([_act, _bajaf]),
+                 {p_personal: _lect([_act]), p_oficina: _lect([])}, _PUERTAS_F)
+    _s = next((x for x in _r["sacar"] if x["user_id"] == _bajaf), None)
+    chequear("el egresado figura para sacar del equipo de fichaje", _s is not None,
+             _r["sacar"][:3])
+    chequear("como egresado", _s and _s["motivo"] == "egresado", _s)
+    chequear("y se puede, porque no quedo en ninguna puerta",
+             _s and _s["se_puede"] is True, _s)
+    chequear("el activo no figura para sacar",
+             all(x["user_id"] != _act for x in _r["sacar"]), _r["sacar"][:3])
+
+    # La condicion que ordena todo: si sigue en una puerta, no se puede.
+    with db_session() as _cn:
+        _r2 = _pf(_cn, _MAESTRO_F, _lect([_bajaf]),
+                  {p_personal: _lect([_bajaf]), p_oficina: _lect([])}, _PUERTAS_F)
+    _s2 = next(x for x in _r2["sacar"] if x["user_id"] == _bajaf)
+    chequear("si sigue cargado en una puerta, NO se puede sacar del fichaje",
+             _s2["se_puede"] is False, _s2)
+    chequear("y se dice en cual", _s2["en_puertas"] == ["Personal"], _s2)
+
+    # Una puerta que no contesta tampoco habilita: no haberla leido no es
+    # haberla leido vacia, y esta es la decision donde esa diferencia importa.
+    with db_session() as _cn:
+        _r3 = _pf(_cn, _MAESTRO_F, _lect([_bajaf]),
+                  {p_personal: _lect([], ok=False), p_oficina: _lect([])}, _PUERTAS_F)
+    _s3 = next(x for x in _r3["sacar"] if x["user_id"] == _bajaf)
+    chequear("si una puerta no contesta, tampoco se puede",
+             _s3["se_puede"] is False, _s3)
+    chequear("y se dice cual no se pudo leer",
+             _r3["puertas_sin_leer"] == ["Personal"], _r3["puertas_sin_leer"])
+
+# Un numero que no existe en la base tambien sale del equipo de fichaje.
+with db_session() as _cn:
+    _r4 = _pf(_cn, _MAESTRO_F, _lect(["777111"]),
+              {p_personal: _lect([]), p_oficina: _lect([])}, _PUERTAS_F)
+_s4 = next(x for x in _r4["sacar"] if x["user_id"] == "777111")
+chequear("un desconocido tambien sale del equipo de fichaje",
+         _s4["motivo"] == "desconocido", _s4)
+
+# Los activos que no estan enrolados: no son algo para aplicar, son gente que
+# tiene que venir a poner el dedo. Pero explican por que no se los puede cargar.
+with db_session() as _cn:
+    _r5 = _pf(_cn, _MAESTRO_F, _lect([]),
+              {p_personal: _lect([]), p_oficina: _lect([])}, _PUERTAS_F)
+chequear("los activos que no estan enrolados se listan aparte",
+         any(x["user_id"] == _act for x in _r5["sin_enrolar"]),
+         _r5["sin_enrolar"][:3])
+chequear("y no como algo para sacar",
+         all(x["user_id"] != _act for x in _r5["sacar"]), _r5["sacar"][:3])
+
+# Si el equipo de fichaje no contesta, se dice y no se inventa nada.
+with db_session() as _cn:
+    _r6 = _pf(_cn, _MAESTRO_F, _lect([], ok=False), {}, _PUERTAS_F)
+chequear("si el equipo de fichaje no contesta, no hay plan para el",
+         _r6["ok"] is False and _r6["sacar"] == [], _r6)
+
+# Y el endpoint: un activo no se saca del equipo de fichaje ni aunque se pida.
+_cf = sqlite3.connect(DB)
+_mid = _cf.execute(
+    "SELECT id FROM dispositivos WHERE cuenta_asistencia=1 AND es_acceso=0 LIMIT 1").fetchone()
+_cf.close()
+if _mid:
+    r = cli.post("/api/accesos/sacar",
+                 json={"dispositivo_id": _mid[0], "user_id": _act})
+    chequear("un activo no se saca del equipo de fichaje",
+             r.status_code == 400 and "tiene que poder fichar" in r.json()["detail"],
+             r.text[:200])
+
+
 print("\n=== SACAR A UNA PERSONA DESDE EL PLAN ===")
 # El espejo de cargar, y la simetria es lo que mantiene el plan honesto: cargar
 # se niega si el perfil NO incluye esa puerta, sacar se niega si SI la incluye.

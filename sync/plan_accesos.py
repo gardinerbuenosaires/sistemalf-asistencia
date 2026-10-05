@@ -299,3 +299,105 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
         "huellas_verificadas": con_huella is not None,
         "maestro_leido": en_maestro is not None,
     }
+
+
+def plan_fichaje(conn, equipo: dict, lectura: dict, lecturas: dict,
+                 puertas: list) -> dict:
+    """
+    Lo que hay que corregir en el equipo de fichaje. Es el que faltaba.
+
+    El plan administraba solo puertas, así que una baja dejaba de abrir y
+    **seguía pudiendo fichar**. Eso es al revés de lo que importa: que alguien
+    que no trabaja más figure marcando asistencia ensucia los datos con los que
+    se liquida.
+
+    Acá solo hay bajas, y es a propósito. Agregar a alguien al equipo de fichaje
+    no es algo que el sistema pueda hacer: de ahí salen las huellas, no van
+    hacia ahí. Una persona nueva se enrola parada frente al lector, con el dedo.
+    Por eso los activos que no están figuran aparte, como pendientes de enrolar,
+    y no como algo para aplicar.
+
+    La condición que ordena todo lo demás:
+
+        no se borra del equipo de fichaje hasta confirmar que ese número no
+        está en ninguna puerta.
+
+    Porque el lector solo ofrece números que él no tiene: mientras el sistema no
+    lo borre de ahí, nadie puede reusar ese número. Borrarlo antes de limpiar
+    las puertas deja la huella vieja cargada en una puerta bajo un número que
+    ya es de otra persona — el dedo del que se fue abriendo con el legajo del
+    que entró.
+
+    Y si alguna puerta no contestó, tampoco se borra: no haberla podido leer no
+    es lo mismo que haberla leído vacía.
+    """
+    empleados = {
+        str(r["user_id"]).strip(): dict(r)
+        for r in conn.execute(
+            """SELECT id, user_id, nombre, apellido, activo, fecha_egreso
+                 FROM empleados WHERE user_id IS NOT NULL
+                   AND TRIM(user_id) <> ''"""
+        )
+    }
+    liberados = {
+        str(r["user_id_anterior"]).strip(): dict(r)
+        for r in conn.execute(
+            """SELECT user_id_anterior, user_id_liberado_en, nombre, apellido
+                 FROM empleados
+                WHERE user_id_anterior IS NOT NULL AND TRIM(user_id_anterior) <> ''"""
+        )
+    }
+
+    salida = {"id": equipo["id"], "nombre": equipo["nombre"],
+              "ok": bool(lectura and lectura.get("ok")),
+              "error": (lectura or {}).get("error"),
+              "sacar": [], "sin_enrolar": [], "puertas_sin_leer": []}
+    if not salida["ok"]:
+        return salida
+
+    # Dónde está cada número en las puertas, y cuáles no se pudieron leer. Las
+    # dos cosas hacen falta: una para saber si se puede borrar, la otra para
+    # saber si siquiera se puede responder esa pregunta.
+    en_puertas: dict[str, list] = {}
+    for d in puertas:
+        suya = lecturas.get(d["id"], {})
+        if not suya.get("ok"):
+            salida["puertas_sin_leer"].append(d["nombre"])
+            continue
+        for u in suya["usuarios"]:
+            en_puertas.setdefault(u["user_id"], []).append(d["nombre"])
+
+    actual = {u["user_id"] for u in lectura["usuarios"]}
+    activos = {n for n, e in empleados.items() if e["activo"]}
+
+    for user_id in sorted(actual - activos, key=lambda x: (len(x), x)):
+        emp = empleados.get(user_id)
+        antes_de = liberados.get(user_id) if emp is None else None
+        puertas_suyas = en_puertas.get(user_id, [])
+        salida["sacar"].append({
+            "user_id": user_id,
+            "nombre": (f"{emp['apellido']}, {emp['nombre']}".strip(", ")
+                       if emp else None),
+            "era_de": (f"{antes_de['apellido']}, {antes_de['nombre']}".strip(", ")
+                       if antes_de else None),
+            "liberado_en": antes_de["user_id_liberado_en"] if antes_de else None,
+            "empleado_id": emp["id"] if emp else None,
+            "fecha_egreso": emp["fecha_egreso"] if emp else None,
+            "motivo": "egresado" if emp else "desconocido",
+            "motivo_texto": MOTIVOS_SACAR["egresado" if emp else "desconocido"],
+            # Lo que decide si se puede o no, y por qué no.
+            "en_puertas": puertas_suyas,
+            "se_puede": not puertas_suyas and not salida["puertas_sin_leer"],
+        })
+
+    # Los activos que no están. No es un pendiente del sistema sino del local:
+    # esa persona tiene que venir a poner el dedo. Pero explica por qué el plan
+    # no puede cargarla en ninguna puerta.
+    for user_id in sorted(activos - actual, key=lambda x: (len(x), x)):
+        emp = empleados[user_id]
+        salida["sin_enrolar"].append({
+            "user_id": user_id,
+            "nombre": f"{emp['apellido']}, {emp['nombre']}".strip(", "),
+            "empleado_id": emp["id"],
+        })
+    return salida

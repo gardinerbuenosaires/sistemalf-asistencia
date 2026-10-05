@@ -3211,6 +3211,49 @@ async function verPlan() {
       <div style="margin-top:6px">${filas}</div></div>`;
   }).join('');
 
+  // El equipo de fichaje. Va aparte de las puertas porque la pregunta es otra:
+  // acá no decide el perfil, acá va todo el que trabaja. Y porque solo tiene
+  // bajas — agregar a alguien al equipo de fichaje no es algo que el sistema
+  // pueda hacer: de ahí salen las huellas, no van hacia ahí.
+  const f = d.fichaje;
+  const bloqueFichaje = !f ? '' : (!f.ok
+    ? `<div style="margin-top:12px;background:#fdf3f2;padding:10px 12px;border-radius:5px;font-size:.84rem">
+         <b>${_esc(f.nombre)}</b> <span style="color:#b3261e">no contestó</span>
+         <div style="font-family:monospace;font-size:.75rem;color:#999">${_esc(f.error || '')}</div></div>`
+    : `<div style="margin-top:12px;border:1px solid #eee;border-radius:4px;padding:10px 12px">
+        <b>${_esc(f.nombre)}</b>
+        <span style="color:#888;font-size:.8rem">· equipo de fichaje · ${f.sacar.length} a sacar</span>
+        ${!f.sacar.length ? `<div style="color:#2e7d4f;font-size:.84rem;margin-top:4px">
+            Nadie que no trabaje está pudiendo fichar.</div>` : ''}
+        ${f.sacar.map(s => `<div style="padding:4px 0 4px 14px;font-size:.83rem" id="sacar-${f.id}-${s.user_id}">
+          <span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">− sacar</span>
+          <span style="font-family:monospace;color:#888">${_esc(s.user_id)}</span>
+          ${_esc(s.nombre) || '<i style="color:#999">sin legajo</i>'}
+          <span style="color:#999;margin-left:6px">· ${_esc(s.motivo_texto)}</span>
+          ${s.fecha_egreso ? `<span style="color:#b3261e;font-size:.75rem"> (egreso ${_esc(s.fecha_egreso)})</span>` : ''}
+          ${s.se_puede && canDo('accesos','aplicar')
+            ? `<button class="btn btn-sm btn-secondary" style="margin-left:8px"
+                       onclick="sacarPorPlan(${f.id}, '${_esc(s.user_id)}', this)">Sacar</button>`
+            : ''}
+          ${s.en_puertas.length ? `<div style="font-size:.76rem;color:#8a5d06;margin-left:72px">
+             sigue cargado en ${_esc(s.en_puertas.join(', '))}. Primero hay que sacarlo de ahí:
+             si se lo borra de acá antes, el número queda libre y su huella sigue abriendo
+             esas puertas con el legajo del que lo reciba.</div>` : ''}
+          ${s.era_de ? `<div style="font-size:.75rem;color:#5b3a8a;margin-left:72px">
+             este número era de ${_esc(s.era_de)}, liberado el ${_esc(_fechaHora(s.liberado_en))}</div>` : ''}
+        </div>`).join('')}
+        ${f.puertas_sin_leer.length ? `<div style="background:#f6e9ce;color:#6b5a26;padding:7px 10px;border-radius:4px;font-size:.8rem;margin-top:6px">
+           No contestaron ${_esc(f.puertas_sin_leer.join(', '))}, así que no se puede confirmar
+           que estas personas no hayan quedado ahí. Hasta poder leerlas, no se borra de acá.</div>` : ''}
+        ${f.sin_enrolar.length ? `<div style="margin-top:8px;font-size:.8rem;color:#8a5d06">
+           <b>${f.sin_enrolar.length} activo(s) sin enrolar:</b>
+           ${f.sin_enrolar.slice(0, 12).map(x => _esc(x.nombre) || _esc(x.user_id)).join(' · ')}
+           ${f.sin_enrolar.length > 12 ? ` y ${f.sin_enrolar.length - 12} más` : ''}
+           <div style="color:#999;margin-top:2px">Tienen que venir a poner el dedo. El sistema no
+           puede cargarlos acá, y hasta que no se enrolen tampoco puede cargarlos en ninguna puerta.</div>
+         </div>` : ''}
+       </div>`);
+
   const hayCambios = t.agregar || t.sacar;
   caja.innerHTML = fuera + `
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -3235,6 +3278,7 @@ async function verPlan() {
       de asistencia, y en las puertas quedó. No pueden fichar y siguen abriendo, que es
       exactamente al revés de lo que corresponde. Es lo primero para mirar de esta lista.</div>` : ''}
     <div style="overflow-y:auto;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>
+    ${bloqueFichaje}
     <div style="font-size:.78rem;color:#999;margin-top:10px">
       Cada línea se aplica de a una, y cada una se verifica releyendo el equipo: que la persona
       quedó como corresponde y que los demás siguen enteros. Lo que se hizo queda en

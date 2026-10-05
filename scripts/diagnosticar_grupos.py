@@ -97,12 +97,28 @@ def conectar():
 
 
 def quien_en_cada_grupo(conexion):
-    """Lo que se puede confrontar con lo que ya sabés del local."""
-    gente = {}
+    """
+    Lo que se puede confrontar con lo que ya sabés del local.
+
+    Además de la de cada grupo, cada usuario tiene una franja propia guardada en
+    su propio registro. Casi siempre está en cero, que significa «la que diga mi
+    grupo». Cuando no lo está, esa persona tiene un horario que no se ve por
+    ningún lado: no figura en el grupo, no figura en la lista, y el equipo igual
+    la deja afuera. Es el sospechoso de un acceso que falla para una sola
+    persona sin razón aparente.
+    """
+    from sync.lectores import _leer_franjas
+
+    propias = _leer_franjas(conexion) or {}
+    gente, con_propia = {}, []
     for u in conexion.get_users():
         g = str(u.group_id).strip() or "(vacío)"
-        gente.setdefault(g, []).append(
-            (str(u.user_id).strip(), (u.name or "").strip()))
+        numero, nombre = str(u.user_id).strip(), (u.name or "").strip()
+        suya = propias.get(u.uid, 0)
+        gente.setdefault(g, []).append((numero, nombre))
+        if suya:
+            con_propia.append((numero, nombre, g, suya))
+
     print("\n  QUIÉN ESTÁ EN CADA GRUPO")
     for g in sorted(gente):
         print(f"\n     grupo {g}: {len(gente[g])} persona(s)")
@@ -110,6 +126,19 @@ def quien_en_cada_grupo(conexion):
             print(f"        {numero:>8}  {nombre}")
     if len(gente) == 1:
         print("\n     uno solo, así que copiarlo al cargar gente no decide nada")
+
+    if not propias:
+        print("\n     (no se pudieron leer las franjas propias de cada usuario)")
+    elif con_propia:
+        print("\n     OJO: estos tienen una franja PROPIA, aparte de la de su grupo.")
+        print("     Es un horario que no se ve en ninguna pantalla del equipo y que")
+        print("     le gana al del grupo. Si a alguien le falla el acceso sin razón")
+        print("     aparente, empezá por acá.")
+        for numero, nombre, g, suya in sorted(con_propia, key=lambda x: x[0].rjust(10)):
+            print(f"        {numero:>8}  {nombre} — grupo {g}, franja propia {suya}")
+    else:
+        print("\n     Las franjas propias de cada usuario están todas en cero, o sea")
+        print("     «la que diga mi grupo». Ninguno tiene un horario escondido.")
     return gente
 
 

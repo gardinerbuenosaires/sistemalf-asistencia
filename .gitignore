@@ -35,6 +35,10 @@ relevamiento/
 borrados/
 data/relevamiento/
 data/borrados/
+
+# La configuracion exportada de los lectores: tiene las IP y las claves
+# de los equipos. Se guarda, se lleva a mano y no va al repo.
+accesos-*.json
 *.bak
 
 # Claude Code

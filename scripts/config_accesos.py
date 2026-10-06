@@ -159,21 +159,27 @@ def importar(archivo):
     print("  Archivo del " + str(datos.get("exportado", "?")))
     print(f"  {len(datos['equipos'])} equipo(s), {len(datos['perfiles'])} perfil(es)")
 
+    solo_ver = "--solo-ver" in sys.argv
+
     # Este es el unico script que ESCRIBE en la base, y escribe donde apunte
     # DB_PATH. Mientras se prueba contra los equipos, producción tiene que
     # quedar afuera por accidente imposible, no por cuidado: un comando sin
     # --base en la maquina equivocada le metería equipos a la base real.
+    #
+    # Pero el guardia es para ESCRIBIR, no para mirar. Estaba antes del preview
+    # y eso obligaba a autorizar la escritura para poder ver qué se iba a
+    # escribir, que es justo al revés: mirar primero es lo que uno quiere hacer
+    # antes de decidir.
     destino = os.environ.get("DB_PATH", "")
-    if (os.path.exists(BASE_PRODUCCION)
+    if (not solo_ver
+            and os.path.exists(BASE_PRODUCCION)
             and os.path.abspath(destino or "") == os.path.abspath(BASE_PRODUCCION)
             and "--si-es-produccion" not in sys.argv):
         salir("Esto escribiría en la base de PRODUCCIÓN:"
               f"  {destino}  "
               "Si es lo que querés —configurar producción de cero— agregá "
-              "--si-es-produccion. Si estabas probando, pasá la base de pruebas "
-              "con --base.")
-
-    solo_ver = "--solo-ver" in sys.argv
+              "--si-es-produccion. Si no estás seguro, mirá antes qué haría "
+              "con --solo-ver, que no escribe nada.")
 
     with db_session() as conn:
         if not _hay_tablas(conn):

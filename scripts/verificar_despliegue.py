@@ -65,8 +65,44 @@ def main():
 
     conn = sqlite3.connect(f"file:{BASE}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
-    print(f"\n  Base: {BASE}")
-    print(f"  Solo lectura. No se escribe nada.\n")
+
+    # Qué base está mirando, antes que nada.
+    #
+    # Las dos instalaciones de producción y las de prueba usan exactamente la
+    # misma ruta, así que la ruta no distingue nada: la única forma de saber
+    # dónde estás parado es mirar qué hay adentro. Un informe que dice «sin
+    # problemas» sobre la base equivocada es peor que no correrlo.
+    import platform
+    mb = os.path.getsize(BASE) / 1024 / 1024
+    try:
+        empleados = conn.execute("SELECT COUNT(*) FROM empleados").fetchone()[0]
+    except sqlite3.OperationalError:
+        empleados = 0
+    try:
+        fichajes = conn.execute("SELECT COUNT(*) FROM fichajes").fetchone()[0]
+    except sqlite3.OperationalError:
+        fichajes = 0
+
+    print(f"\n  Equipo: {platform.node()}")
+    print(f"  Base:   {BASE}")
+    print(f"          {mb:.1f} MB · {empleados} empleado(s) · {fichajes} fichaje(s)")
+    print(f"  Solo lectura. No se escribe nada.")
+
+    if not fichajes:
+        print("\n" + "  " + "=" * 60)
+        print("  ESTA NO ES LA BASE DE PRODUCCION")
+        print("  " + "=" * 60)
+        print("  No tiene ningun fichaje. Produccion tiene anios de marcaciones,")
+        print("  asi que esto es una instalacion de prueba.")
+        print()
+        print("  Este informe no dice NADA sobre produccion. Corré el script en")
+        print("  la maquina donde corre el sistema del local --la ruta de la base")
+        print("  es la misma en todas, asi que hay que cambiar de maquina, no de")
+        print("  ruta-- o pasale la base de produccion con --base.")
+        print()
+        raise SystemExit(2)
+
+    print()
 
     # ── 1. La IP del lector de asistencia ────────────────────────────────────
     print("  1. EL LECTOR DE ASISTENCIA")
@@ -126,13 +162,22 @@ def main():
 
     # ── 3. Que los fichajes sigan llegando ───────────────────────────────────
     print("\n  2. LA ASISTENCIA SIGUE FUNCIONANDO")
+    # Se mide por `creado_en` y no por `timestamp`. El primero es cuando el
+    # sistema lo guardo --nuestro reloj-- y el segundo cuando el equipo dice
+    # que paso. Ya sabemos que hay equipos que tuvieron la hora rota, asi que
+    # un solo registro fechado en 2103 le gana al MAX y arruina la medicion.
     try:
-        ultimo = conn.execute(
-            "SELECT MAX(fecha_hora) FROM fichajes").fetchone()[0]
-    except sqlite3.OperationalError:
-        ultimo = None
+        ultimo = conn.execute("SELECT MAX(creado_en) FROM fichajes").fetchone()[0]
+        recientes = conn.execute(
+            "SELECT COUNT(*) FROM fichajes WHERE creado_en >= datetime('now','localtime','-2 days')"
+        ).fetchone()[0]
+    except sqlite3.OperationalError as exc:
+        decir(MAL, f"No se pudo leer cuando se registro el ultimo fichaje: {exc}",
+              "Es un problema de este script, no del sistema.")
+        ultimo, recientes = None, 0
+
     if not ultimo:
-        decir(OJO, "No hay ningún fichaje en la base")
+        decir(MAL, "No hay ningun fichaje registrado")
     else:
         try:
             cuando = datetime.fromisoformat(str(ultimo)[:19])
@@ -141,12 +186,14 @@ def main():
             cuando, horas = None, None
         legible = cuando.strftime("%d-%m-%Y %H:%M") if cuando else str(ultimo)
         if horas is None:
-            decir(OJO, f"Último fichaje: {legible}")
+            decir(OJO, f"Ultimo fichaje registrado: {legible}")
         elif horas <= 24:
-            decir(BIEN, f"Último fichaje: {legible} (hace {horas:.1f} h)")
+            decir(BIEN, f"Ultimo fichaje registrado: {legible} (hace {horas:.1f} h)",
+                  f"{recientes} fichaje(s) en las ultimas 48 horas")
         else:
-            decir(MAL, f"El último fichaje es de hace {horas/24:.1f} día(s): {legible}",
-                  "Si acabás de desplegar, revisá la IP del punto 1.")
+            decir(MAL, f"El sistema no registra un fichaje desde hace {horas/24:.1f} dia(s)",
+                  f"Ultimo: {legible}. "
+                  "Si acabas de desplegar, revisa la IP del punto 1.")
 
     # ── 4. Quién ve el módulo nuevo ──────────────────────────────────────────
     print("\n  3. QUIÉN VE EL MÓDULO NUEVO")

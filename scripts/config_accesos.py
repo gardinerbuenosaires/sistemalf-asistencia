@@ -173,12 +173,42 @@ def importar(archivo):
               "--si-es-produccion. Si estabas probando, pasá la base de pruebas "
               "con --base.")
 
+    solo_ver = "--solo-ver" in sys.argv
+
     with db_session() as conn:
         if not _hay_tablas(conn):
             salir(_sin_tablas())
 
         existentes = {r["ip"]: r["nombre"] for r in conn.execute(
             "SELECT ip, nombre FROM dispositivos WHERE ip IS NOT NULL")}
+
+        # Ver antes de aplicar. Esto escribe en una base que puede ser la de
+        # produccion, y el archivo puede tener meses: conviene mirar que equipos
+        # trae y cuales ya estan antes de meterlos.
+        if solo_ver:
+            print()
+            print("  SIN APLICAR NADA. Esto es lo que haria:")
+            print()
+            for e in datos["equipos"]:
+                que = ("puerta" if e["es_acceso"] else
+                       "fichaje" if e["cuenta_asistencia"] else "otro")
+                estado = "activo" if e["activo"] else "DESACTIVADO"
+                if e["ip"] in existentes:
+                    print(f"     ya esta   {e['nombre']:<22} {e['ip']:<16} "
+                          f"(en esta base se llama «{existentes[e['ip']]}»)")
+                else:
+                    print(f"     AGREGAR   {e['nombre']:<22} {e['ip']:<16} "
+                          f"{que}, {estado}")
+            for p in datos["perfiles"]:
+                hay = conn.execute("SELECT 1 FROM perfiles_acceso WHERE nombre=?",
+                                   (p["nombre"],)).fetchone()
+                marca = "ya esta  " if hay else "AGREGAR  "
+                print(f"     {marca} perfil «{p['nombre']}»: "
+                      f"{', '.join(p['puertas']) or 'sin puertas'}")
+            print()
+            print("  Nada de esto se hizo. Sacá --solo-ver para aplicarlo.")
+            print()
+            return
         nuevos, ya_estaban = 0, []
         for e in datos["equipos"]:
             if e["ip"] in existentes:

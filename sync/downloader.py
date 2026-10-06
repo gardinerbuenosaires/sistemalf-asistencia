@@ -14,9 +14,36 @@ logger = logging.getLogger(__name__)
 
 
 def _get_device_config() -> dict:
-    """Lee config del dispositivo desde la DB; cae a config.py si falla."""
+    """
+    Devuelve los datos del lector que alimenta la asistencia.
+
+    Primero la tabla `dispositivos`, que es la fuente de verdad desde que hay
+    más de un equipo por local. Si todavía no tiene filas —una base vieja que
+    no migró, o un rollback de código— vuelve a las claves `device_*` de
+    `configuracion`, y recién al final a config.py. Ese orden importa: cada
+    instancia tiene su propia IP y el default de config.py sirve para una sola.
+
+    Toma el primer equipo activo marcado con `cuenta_asistencia`. Hoy es uno
+    solo; cuando haya varios, el sync los va a recorrer a todos y esta función
+    queda para quien necesite "el principal".
+    """
     try:
         with db_session() as conn:
+            fila = conn.execute(
+                """SELECT ip, puerto, password, timeout
+                     FROM dispositivos
+                    WHERE activo = 1 AND cuenta_asistencia = 1 AND protocolo = 'pull'
+                      AND ip IS NOT NULL
+                 ORDER BY orden, id
+                    LIMIT 1"""
+            ).fetchone()
+            if fila:
+                return {
+                    "ip":       fila["ip"],
+                    "port":     int(fila["puerto"]),
+                    "password": int(fila["password"]),
+                    "timeout":  int(fila["timeout"]),
+                }
             return {
                 "ip":       get_config(conn, "device_ip",       DEVICE_IP),
                 "port":     int(get_config(conn, "device_port",     str(DEVICE_PORT))),

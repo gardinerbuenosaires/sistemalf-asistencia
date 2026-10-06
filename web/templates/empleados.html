@@ -55,6 +55,10 @@
   /* Formulario */
   .form-scroll { padding: 20px; flex: 1; min-height: 0; overflow-y: auto; }
   .form-section { margin-bottom: 20px; }
+  .legajo-tab { background: none; border: none; border-bottom: 2px solid transparent;
+                padding: 9px 14px; font-size: .86rem; color: #888; cursor: pointer; }
+  .legajo-tab:hover { color: #555; }
+  .legajo-tab.activa { color: #2c3e50; font-weight: 600; border-bottom-color: #2c3e50; }
   .form-section-title { font-size: .75rem; font-weight: bold; text-transform: uppercase; letter-spacing: .06em; color: #888; margin-bottom: 10px; padding-bottom: 4px; border-bottom: 1px solid #eee; }
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
   .form-grid.cols-1 { grid-template-columns: 1fr; }
@@ -319,6 +323,13 @@
         <button class="btn btn-secondary btn-sm" onclick="cancelar()">Cancelar</button>
         <button class="btn btn-primary btn-sm" data-perm="empleados:editar" onclick="guardar()">Guardar</button>
       </div>
+    </div>
+
+    <div id="legajo-tabs" style="display:none;gap:2px;padding:0 16px;border-bottom:1px solid #e8e8e8">
+      <button type="button" class="legajo-tab activa" id="ltab-legajo"
+              onclick="cambiarPestanaLegajo('legajo')">Legajo</button>
+      <button type="button" class="legajo-tab" id="ltab-accesos"
+              onclick="cambiarPestanaLegajo('accesos')">Accesos</button>
     </div>
 
     <div class="form-scroll" id="form-contenido">
@@ -896,6 +907,7 @@ function buildForm(e = {}, asignaciones = []) {
   const legBloq = !!editandoId && LegajoPropio.esPropio(editandoId) && !LegajoPropio.puedeLegajo;
   return `
     <form id="emp-form" onsubmit="return false">
+      <div id="pane-legajo">
       ${buildFotoSection(e)}
       <div class="form-section">
         <div class="form-section-title">Datos personales</div>
@@ -1165,6 +1177,11 @@ function buildForm(e = {}, asignaciones = []) {
         ${e.activo && editandoId && canDo('empleados','editar') ? `
         <button class="btn btn-danger btn-sm" onclick="toggleBajaPanel()">Dar de baja</button>` : ''}
       </div>
+      </div>
+
+      <div id="pane-accesos" style="display:none">
+        <div id="accesos-section"></div>
+      </div>
     </form>`;
 }
 
@@ -1205,7 +1222,10 @@ async function editarEmpleado(id) {
   document.getElementById("form-titulo").textContent = `${e.apellido}, ${e.nombre}`;
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
   document.getElementById("form-contenido").innerHTML = buildForm(e, asignaciones);
+  mostrarPestanasLegajo(canDo('accesos', 'ver'));
+  cambiarPestanaLegajo("legajo");
   cargarResumenUniformes(id);
+  cargarAccesos(id);
   if (!canDo('empleados', 'editar')) {
     document.querySelectorAll('#emp-form input, #emp-form select, #emp-form textarea').forEach(el => el.disabled = true);
   }
@@ -1217,10 +1237,450 @@ async function editarEmpleado(id) {
     .forEach(id => document.getElementById(id)?.addEventListener("input", actualizarManzanaLabels));
 }
 
+// Texto de la base metido dentro de HTML. Existía en configuración y no acá, y
+// al usarla sin definirla toda la sección de accesos quedaba en blanco: el error
+// se lanza mientras se arma la plantilla, así que no se dibuja nada y no hay
+// nada en pantalla que lo diga.
+function _esc(t) {
+  return String(t ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ── Pestañas del legajo ───────────────────────────────────────────────────────
+// Los accesos son otro tipo de dato que el resto del legajo: no se guardan con
+// el formulario sino solos, y tienen sus propios permisos. Tenerlos en medio de
+// los domicilios y los contactos de emergencia mezclaba dos cosas que ni se
+// editan igual.
+
+function cambiarPestanaLegajo(cual) {
+  document.getElementById("pane-legajo").style.display = cual === "legajo" ? "" : "none";
+  document.getElementById("pane-accesos").style.display = cual === "accesos" ? "" : "none";
+  document.getElementById("ltab-legajo")?.classList.toggle("activa", cual === "legajo");
+  document.getElementById("ltab-accesos")?.classList.toggle("activa", cual === "accesos");
+  // El formulario es largo: al cambiar de pestaña se vuelve arriba, si no la
+  // pestaña nueva aparece scrolleada por la mitad.
+  document.getElementById("form-contenido")?.scrollTo(0, 0);
+}
+
+// La pestaña solo existe si hay algo que mostrar: al crear a alguien todavía no
+// hay a quién asignarle accesos, y sin permiso no hay nada que ver.
+function mostrarPestanasLegajo(hay) {
+  const barra = document.getElementById("legajo-tabs");
+  if (barra) barra.style.display = hay ? "flex" : "none";
+}
+
+// ── Accesos a puertas ─────────────────────────────────────────────────────────
+// Se guarda solo y aparte del resto del legajo, a propósito: cambiarle el acceso
+// a alguien tiene su propio permiso, así RRHH puede hacerlo sin poder redefinir
+// qué significa cada perfil.
+
+let _accPerfiles = [], _accPuertas = [], _accDatos = null;
+
+async function cargarAccesos(id) {
+  const caja = document.getElementById("accesos-section");
+  if (!caja) return;
+  if (!canDo('accesos', 'ver')) { caja.innerHTML = ""; mostrarPestanasLegajo(false); return; }
+
+  let datos, cat;
+  try {
+    const [aRes, pRes] = await Promise.all([
+      fetch(`/api/accesos/empleado/${id}`),
+      fetch('/api/perfiles-acceso'),
+    ]);
+    if (!aRes.ok || !pRes.ok) throw new Error();
+    datos = await aRes.json();
+    cat = await pRes.json();
+  } catch { caja.innerHTML = ""; mostrarPestanasLegajo(false); return; }
+
+  _accPerfiles = cat.perfiles;
+  _accPuertas = cat.puertas;
+  _accDatos = datos;
+  // Sin puertas ni perfiles cargados todavía, la sección solo confundiría.
+  if (!_accPuertas.length && !_accPerfiles.length) {
+    caja.innerHTML = ""; mostrarPestanasLegajo(false); return;
+  }
+
+  // Dos permisos distintos: aplicar la politica y desviarse de ella.
+  const puede = canDo('accesos', 'asignar');
+  const puedeExcepcion = canDo('accesos', 'excepcion');
+  // Nivel del lector: pide el permiso más fuerte. Un enrolador puede dar de
+  // alta a cualquiera y tomarle la huella, o sea crear identidades, que es de
+  // donde sale el fichaje y las puertas.
+  const puedeEditar = canDo('accesos', 'editar');
+  const nivelActual = Number(datos.empleado.nivel_lector || 0);
+  const nombrePuerta = pid => (_accPuertas.find(p => p.id === pid) || {}).nombre || `#${pid}`;
+  const perfilActual = datos.perfil ? datos.perfil.id : "";
+
+  const tab = document.getElementById("ltab-accesos");
+  if (tab) {
+    tab.innerHTML = datos.puertas.length
+      ? `Accesos <span style="color:#2e7d4f;font-weight:600">· ${datos.puertas.length}</span>`
+      : `Accesos <span style="color:#bbb;font-weight:400">· sin acceso</span>`;
+  }
+
+  const abre = datos.puertas.length
+    ? datos.puertas.map(pid => `<span style="background:#dcede2;color:#2e7d4f;padding:3px 9px;border-radius:4px;font-size:.8rem;margin-right:5px;display:inline-block;margin-bottom:4px">${nombrePuerta(pid)}</span>`).join('')
+    : '<span style="color:#888;font-size:.85rem">No abre ninguna puerta</span>';
+
+  const obsoletas = datos.excepciones.filter(x => x.sin_efecto).length;
+  const excepciones = datos.excepciones.map(x => `
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f4f4f4;font-size:.85rem;${x.sin_efecto ? 'opacity:.6' : ''}">
+      <span style="color:${x.sin_efecto ? '#999' : (x.modo === 'quitar' ? '#b3261e' : '#2e7d4f')};font-weight:600;min-width:64px">
+        ${x.modo === 'quitar' ? '− quitar' : '+ agregar'}</span>
+      <span style="min-width:120px">${nombrePuerta(x.dispositivo_id)}</span>
+      ${x.sin_efecto ? '<span style="background:#eee;color:#777;padding:2px 7px;border-radius:3px;font-size:.72rem">sin efecto</span>' : ''}
+      <span style="color:#888;flex:1">${x.motivo ? x.motivo : '<i>sin motivo</i>'}</span>
+      <span style="color:#bbb;font-size:.75rem">${(x.creado_en || '').slice(0,10)}</span>
+      ${puedeExcepcion ? `<button type="button" class="btn btn-sm btn-secondary" onclick="quitarExcepcion(${id}, ${x.dispositivo_id})">Sacar</button>` : ''}
+    </div>`).join('');
+
+  caja.innerHTML = `
+    <div class="form-section">
+      <div class="form-section-title">Accesos a puertas</div>
+      <div style="font-size:.78rem;color:#888;margin:-4px 0 10px">
+        Lo de esta pestaña se guarda al momento de cambiarlo: no hace falta Guardar.
+        Tiene permisos propios, aparte de los del resto del legajo.
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group span-2">
+          <label>Perfil de acceso</label>
+          <select id="f-perfil-acceso" ${puede ? '' : 'disabled'}
+                  onchange="guardarPerfilAcceso(${id}, this.value)">
+            <option value="">— Sin perfil —</option>
+            ${_accPerfiles.filter(p => p.activo).map(p =>
+              `<option value="${p.id}"${p.id === perfilActual ? ' selected' : ''}>${p.nombre}</option>`).join('')}
+          </select>
+          <div style="font-size:.78rem;color:#888;margin-top:4px">
+            ${datos.perfil
+              ? 'El acceso sale de este perfil. Cambiarle el cargo no lo modifica.'
+              : datos.puertas.length
+                ? `Sin perfil, pero abre ${datos.puertas.length} puerta(s) por excepción. Sacá la excepción si no tiene que abrir nada.`
+                : 'Hoy no abre ninguna puerta.'}
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:4px">
+        <div style="font-size:.78rem;color:#888;margin-bottom:5px">
+          Nombre que muestra el lector</div>
+        <input type="text" id="f-nombre-lector" maxlength="24" style="max-width:260px"
+               value="${(datos.empleado.nombre_lector || '').replace(/"/g, '&quot;')}"
+               placeholder="— se respeta el del equipo —"
+               ${puede ? '' : 'disabled'}
+               onchange="guardarNombreLector(${id}, this.value)">
+        <div id="nombre-lector-corte" style="font-size:.76rem;color:#999;margin-top:4px"></div>
+        <div style="font-size:.76rem;color:#999;margin-top:3px">
+          Es lo que aparece en pantalla al apoyar el dedo. Hasta 24 caracteres, que es lo
+          que guarda el equipo de fichaje; las puertas guardan 8 y cortan el resto.
+          Vacío no borra nada: el sistema deja el nombre que cada equipo ya tenga.
+          Para ver cuál es, «Ver qué tienen los lectores» más abajo.
+        </div>
+      </div>
+
+      <div style="margin-top:12px;padding-top:10px;border-top:1px solid #f0f0f0">
+        <div style="font-size:.78rem;color:#888;margin-bottom:5px">
+          Administración del equipo de fichaje</div>
+        <select id="f-nivel-lector" style="max-width:340px" ${puedeEditar ? '' : 'disabled'}
+                onchange="guardarNivelLector(${id}, this.value)">
+          ${Object.entries(datos.niveles_lector || {}).map(([v, t]) =>
+            `<option value="${v}"${Number(v) === nivelActual ? ' selected' : ''}>${t}</option>`).join('')}
+        </select>
+        <div style="font-size:.76rem;color:#999;margin-top:4px">
+          Es el permiso para manejar el equipo de fichaje parado frente a él: dar de alta
+          gente y tomarle la huella. No tiene que ver con las puertas —no tienen pantalla—
+          ni con lo que esta persona puede hacer dentro del sistema.
+          ${puedeEditar ? '' : '<br>Cambiarlo necesita permiso para editar accesos.'}
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <div style="font-size:.78rem;color:#888;margin-bottom:5px">Puertas que abre hoy</div>
+        ${abre}
+        <div style="margin-top:9px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="btn btn-sm btn-secondary" id="acc-verif-btn"
+                  onclick="verificarEnLectores(${id})">Ver qué tienen los lectores</button>
+          <span style="font-size:.76rem;color:#999;flex:1;min-width:200px">
+            Lo de arriba es lo que le corresponde. Esto le pregunta a cada equipo
+            si de verdad lo tiene cargado.</span>
+        </div>
+        <div id="acc-lectores"></div>
+      </div>
+
+      <div style="margin-top:14px">
+        <div style="font-size:.78rem;color:#888;margin-bottom:5px">
+          Excepciones ${datos.excepciones.length ? '' : '<i>— ninguna</i>'}</div>
+        ${obsoletas ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:7px 10px;font-size:.8rem;color:#6b5a26;margin-bottom:8px">
+          ${obsoletas === 1 ? 'Hay una excepción que no cambia nada' : `Hay ${obsoletas} excepciones que no cambian nada`}:
+          ${datos.perfil
+            ? `su perfil actual ya ${obsoletas === 1 ? 'dice lo mismo' : 'dice lo mismo'}. Suelen quedar de un perfil anterior.`
+            : `esta persona no tiene perfil, así que no hay puertas de las que sacarla.`}
+          ${puedeExcepcion
+            ? `Conviene ${obsoletas === 1 ? 'sacarla' : 'sacarlas'} para que la ficha diga la verdad.`
+            : 'Sacarlas lo tiene que hacer alguien con permiso para manejar excepciones.'}</div>` : ''}
+        ${excepciones}
+        ${puedeExcepcion && _accPuertas.length && !datos.perfil ? `
+        <div style="font-size:.8rem;color:#888;margin-top:8px">
+          Para ponerle una excepción primero necesita un perfil: una excepción lo modifica.
+          Si necesita una combinación de puertas que no existe, creá un perfil nuevo.</div>` : ''}
+        ${puedeExcepcion && _accPuertas.length && datos.perfil ? `
+        <div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap">
+          <select id="f-exc-puerta" style="max-width:160px">
+            ${_accPuertas.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
+          </select>
+          <select id="f-exc-modo" style="max-width:120px">
+            <option value="quitar">− quitar</option>
+            <option value="agregar">+ agregar</option>
+          </select>
+          <input type="text" id="f-exc-motivo" placeholder="Motivo" style="flex:1;min-width:140px">
+          <button type="button" class="btn btn-sm btn-primary" onclick="agregarExcepcion(${id})">Agregar</button>
+        </div>
+        <div style="font-size:.76rem;color:#999;margin-top:5px">
+          El motivo no es obligatorio, pero dentro de un año es lo único que va a explicar
+          por qué esta persona tiene algo distinto al resto.</div>` : ''}
+      </div>
+    </div>`;
+
+  mostrarCorteNombre();
+  document.getElementById('f-nombre-lector')
+    ?.addEventListener('input', mostrarCorteNombre);
+}
+
+// Lo que los lectores realmente tienen. Va aparte y a pedido porque son varias
+// conexiones a equipos viejos y tarda unos segundos: no puede colgar el legajo
+// cada vez que alguien abre una ficha.
+// El equipo de asistencia tiene sus propias etiquetas y no comparte ninguna con
+// las puertas: ese equipo no abre nada, y ponerle "ABRE" —aunque sea por reusar
+// un cartel— es decir algo falso de un equipo.
+const _ACC_ESTADOS = {
+  falta:              { color: '#b3261e', fondo: '#fbe9e7', texto: 'FALTA' },
+  sin_huella:         { color: '#b3261e', fondo: '#fbe9e7', texto: 'SIN HUELLA' },
+  sobra:              { color: '#8a6d1f', fondo: '#f6f2e6', texto: 'SOBRA' },
+  sin_leer:           { color: '#777',    fondo: '#f2f2f2', texto: 'SIN LEER' },
+  abre:               { color: '#2e7d4f', fondo: '#dcede2', texto: 'ABRE' },
+  no_abre:            { color: '#999',    fondo: '#f7f7f7', texto: '—' },
+  maestro_sin_huella: { color: '#b3261e', fondo: '#fbe9e7', texto: 'SIN HUELLA' },
+  no_enrolado:        { color: '#8a6d1f', fondo: '#f6f2e6', texto: 'NO ENROLADO' },
+  enrolado:           { color: '#4a6b8a', fondo: '#eef3f8', texto: 'ENROLADO' },
+};
+
+async function verificarEnLectores(id) {
+  const caja = document.getElementById('acc-lectores');
+  const btn = document.getElementById('acc-verif-btn');
+  if (!caja) return;
+  // El aviso queda en pantalla hasta que termina. Un toast que se va solo a los
+  // segundos deja al proceso corriendo sin nada que lo diga, y esa incertidumbre
+  // hace apretar el botón de nuevo.
+  if (btn) { btn.disabled = true; btn.textContent = 'Consultando...'; }
+  caja.innerHTML = `<div style="margin-top:9px;background:#eef3f8;border-left:3px solid #4a7ba7;padding:8px 11px;font-size:.82rem;color:#2c4d6b">
+      Preguntándole a los equipos, de a uno y en paralelo. Los viejos tardan
+      varios segundos, y los apagados tardan más todavía porque hay que esperar
+      que no contesten. No cierres la ficha.</div>`;
+
+  let d;
+  try {
+    const res = await fetch(`/api/accesos/empleado/${id}/en-lectores`);
+    if (!res.ok) { let e = {}; try { e = await res.json(); } catch {}; throw new Error(e.detail || 'no se pudo consultar'); }
+    d = await res.json();
+  } catch (err) {
+    caja.innerHTML = `<div style="margin-top:9px;background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.82rem;color:#8c1d18">
+        No se pudo consultar: ${err.message}</div>`;
+    if (btn) { btn.disabled = false; btn.textContent = 'Reintentar'; }
+    return;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Volver a consultar'; }
+
+  if (d.aviso) {
+    caja.innerHTML = `<div style="margin-top:9px;background:#f6f2e6;border-left:3px solid #c8a951;padding:8px 11px;font-size:.82rem;color:#6b5a26">${d.aviso}</div>`;
+    return;
+  }
+
+  const r = d.resumen;
+  const problemas = r.falta + r.sin_huella + r.sobra;
+  // Sin perfil, el sistema no sabe qué le corresponde, así que TODO lo que tenga
+  // cargado figura como que sobra. Es correcto y engaña: leído sin contexto
+  // parece que hay que sacar a la persona de todas las puertas, cuando lo que
+  // falta es decidir qué le toca.
+  const sinPerfil = !d.ficha.perfil && r.sobra > 0;
+  const filas = d.equipos.map(e => {
+    const est = _ACC_ESTADOS[e.estado];
+    // Cargado sin poder leer las huellas no es lo mismo que cargado sin huella.
+    const huella = !e.cargado ? ''
+      : e.huellas === null ? '<span style="color:#b98900">huella: no se pudo leer</span>'
+      : e.huellas === 0 ? '<span style="color:#b3261e;font-weight:600">sin huella</span>'
+      : `<span style="color:#666">${e.huellas} huella${e.huellas === 1 ? '' : 's'}</span>`;
+    // El nombre solo se marca si se pidió uno. Sin pedido, lo que tenga el
+    // equipo está bien por definición.
+    const comoFigura = e.cargado
+      ? `cargado como "${e.nombre_en_equipo || '(sin nombre)'}"`
+        + (e.nombre_ok === false
+            ? ' <span style="color:#8a5d06">≠ al que le pusiste</span>' : '')
+      : 'no está cargado';
+    const detalle = e.ok
+      ? [ comoFigura,
+          huella,
+          e.grupo !== null && e.grupo !== undefined ? `grupo ${e.grupo}` : '' ]
+        .filter(Boolean).join(' · ')
+      : `<span style="color:#b3261e">${e.error || 'no contestó'}</span>`;
+    return `
+      <div style="display:flex;gap:9px;align-items:baseline;padding:6px 0;border-bottom:1px solid #f4f4f4;font-size:.84rem">
+        <span style="background:${est.fondo};color:${est.color};font-weight:700;font-size:.7rem;
+                     padding:2px 7px;border-radius:3px;min-width:78px;text-align:center;flex:none">${est.texto}</span>
+        <span style="min-width:140px;flex:none">
+          ${e.nombre}${e.es_puerta ? '' : ' <span style="color:#aaa;font-size:.74rem">(no abre puertas)</span>'}
+          ${e.ubicacion ? `<span style="color:#bbb;font-size:.74rem"> · ${e.ubicacion}</span>` : ''}
+        </span>
+        <span style="flex:1;color:#777">${detalle}</span>
+      </div>
+      ${e.es_puerta ? '' : `<div style="font-size:.74rem;color:#aaa;padding:0 0 6px 87px">
+        Solo registra la asistencia. Se muestra porque de acá sale la huella que
+        se copia a las puertas.</div>`}`;
+  }).join('');
+
+  caja.innerHTML = `
+    <div style="margin-top:9px">
+      <div style="background:${problemas ? '#fbe9e7' : '#dcede2'};
+                  border-left:3px solid ${problemas ? '#b3261e' : '#2e7d4f'};
+                  padding:8px 11px;font-size:.82rem;color:${problemas ? '#8c1d18' : '#2e7d4f'}">
+        ${problemas
+          ? `Hay ${problemas} cosa(s) que no coinciden con su perfil.`
+          : 'Los equipos coinciden con lo que le corresponde.'}
+        ${r.sin_leer ? ` ${r.sin_leer} equipo(s) no contestaron, así que de esos no se sabe nada.` : ''}
+      </div>
+      ${r.sin_huella ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:5px">
+        Ojo con «SIN HUELLA»: figura en la lista del equipo, así que revisando el
+        lista parece resuelto, pero sin huella no abre.</div>` : ''}
+      ${r.nombre_distinto ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:8px 11px;font-size:.8rem;color:#6b5a26;margin-top:5px">
+        En ${r.nombre_distinto} equipo(s) figura con otro nombre que el que le pusiste.
+        No le impide abrir —el equipo identifica por número, no por nombre— pero es lo que
+        se va a ver en pantalla al apoyar el dedo hasta que se le escriba el nuevo.</div>` : ''}
+      ${r.sin_huella_maestro ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:5px">
+        En el equipo de asistencia no tiene huella, así que no hay ninguna huella
+        para copiar a las puertas. Esto se arregla primero: hay que enrolarlo ahí.</div>` : ''}
+      ${sinPerfil ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:8px 11px;font-size:.8rem;color:#6b5a26;margin-top:5px">
+        Esta persona no tiene perfil, así que el sistema todavía no sabe qué le
+        corresponde: por eso todo lo que los equipos tienen cargado figura como
+        «SOBRA». No significa que haya que sacarla de esas puertas — significa que
+        falta decidir su perfil. Asignándoselo, estas filas se acomodan solas.</div>` : ''}
+      <div style="margin-top:7px">${filas}</div>
+      <div style="font-size:.74rem;color:#aaa;margin-top:6px">
+        Leído recién de los equipos. No se cambió nada en ninguno.</div>
+    </div>`;
+}
+
+// Cada equipo corta el nombre a un largo distinto —24 el de asistencia, 8 las
+// puertas— así que escribirlo entero y que llegue cortado es lo que hace que
+// deje de identificar a nadie. Mejor verlo antes de guardarlo.
+function mostrarCorteNombre() {
+  const campo = document.getElementById('f-nombre-lector');
+  const caja = document.getElementById('nombre-lector-corte');
+  if (!campo || !caja || !_accDatos) return;
+  const largos = _accDatos.largo_nombre || { asistencia: 24, puertas: 8 };
+  const texto = (campo.value || '').trim();
+  if (!texto) { caja.innerHTML = ''; return; }
+  const corte = (n) => texto.length > n
+    ? `<b>${_esc(texto.slice(0, n))}</b><span style="color:#c8a951">${_esc(texto.slice(n))}</span>`
+    : `<b>${_esc(texto)}</b>`;
+  caja.innerHTML = `Se va a ver así — fichaje: ${corte(largos.asistencia)}`
+    + ` · puertas: ${corte(largos.puertas)}`
+    + (texto.length > largos.puertas
+        ? ' <span style="color:#8a5d06">(lo amarillo no entra)</span>' : '');
+}
+
+async function guardarNombreLector(id, valor) {
+  const res = await fetch(`/api/accesos/empleado/${id}/nombre-lector`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nombre_lector: valor }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    toast('Error: ' + (e.detail || 'no se pudo guardar'));
+  } else {
+    toast(valor.trim() ? 'Nombre del lector guardado'
+                       : 'Sin nombre propio: se respeta el que tenga cada equipo');
+  }
+  cargarAccesos(id);
+}
+
+async function guardarNivelLector(id, valor) {
+  const res = await fetch(`/api/accesos/empleado/${id}/nivel-lector`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nivel_lector: Number(valor) }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    toast('Error: ' + (e.detail || 'no se pudo guardar'));
+  } else {
+    toast(Number(valor) ? 'Puede administrar el equipo de fichaje'
+                        : 'Ya no administra el equipo de fichaje');
+  }
+  cargarAccesos(id);
+}
+
+async function guardarPerfilAcceso(id, valor) {
+  // Sacarle el perfil borra sus excepciones, porque una excepcion modifica un
+  // perfil. Se avisa antes y con nombre y motivo: cada una la escribio alguien.
+  if (!valor && _accDatos && _accDatos.excepciones.length) {
+    const detalle = _accDatos.excepciones.map(x =>
+      `  ${x.modo === 'quitar' ? '− quitar' : '+ agregar'} ${x.dispositivo}` +
+      (x.motivo ? ` ("${x.motivo}")` : '')).join('\n');
+    const n = _accDatos.excepciones.length;
+    if (!confirm(`Sacarle el perfil también va a borrar ${n === 1 ? 'su excepción' : `sus ${n} excepciones`}:\n\n${detalle}\n\n¿Seguir?`)) {
+      return cargarAccesos(id);   // el selector vuelve a lo que estaba
+    }
+  }
+
+  const res = await fetch(`/api/accesos/empleado/${id}/perfil`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ perfil_acceso_id: valor ? Number(valor) : null }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    toast('Error: ' + (e.detail || 'no se pudo guardar'));
+  } else {
+    const d = await res.json();
+    toast(d.excepciones_borradas
+      ? `Perfil guardado · ${d.excepciones_borradas} excepción(es) borrada(s)`
+      : 'Perfil de acceso guardado');
+  }
+  cargarAccesos(id);
+}
+
+async function agregarExcepcion(id) {
+  const cuerpo = {
+    dispositivo_id: Number(document.getElementById('f-exc-puerta').value),
+    modo: document.getElementById('f-exc-modo').value,
+    motivo: document.getElementById('f-exc-motivo').value,
+  };
+  const res = await fetch(`/api/accesos/empleado/${id}/excepcion`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(cuerpo),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo agregar'));
+  }
+  toast('Excepción agregada');
+  cargarAccesos(id);
+}
+
+async function quitarExcepcion(id, dispositivoId) {
+  const res = await fetch(`/api/accesos/empleado/${id}/excepcion/${dispositivoId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo sacar'));
+  }
+  toast('Excepción sacada — vuelve a lo que diga su perfil');
+  cargarAccesos(id);
+}
+
 function cancelar() {
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; _leafletMarker = null; }
   editandoId = null;
   document.getElementById("form-titulo").textContent = "Seleccioná un empleado";
+  mostrarPestanasLegajo(false);
   document.getElementById("form-contenido").innerHTML = '<div class="empty-state">Seleccioná un empleado de la lista.</div>';
   document.querySelectorAll(".emp-item").forEach(el => el.classList.remove("activo"));
 }

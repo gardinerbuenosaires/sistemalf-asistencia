@@ -38,9 +38,17 @@ def preparar(migrar=True):
     dst = sqlite3.connect(destino)
     src.backup(dst)
     src.close()
-    # La copia nunca habla con el reloj real.
+    # La copia nunca habla con el reloj real. Hay que apagar los dos lugares:
+    # la clave vieja, que es de donde sale la siembra si la tabla todavía no
+    # existe, y la tabla `dispositivos`, que es la que manda cuando ya está
+    # migrada. Si la base de origen ya tiene equipos cargados, sin esto las
+    # pruebas saldrían a buscar lectores de verdad en la red del restaurante.
     dst.execute("UPDATE configuracion SET valor='127.0.0.1' WHERE clave='device_ip'")
     dst.execute("UPDATE configuracion SET valor='0' WHERE clave='limpiar_dispositivo_auto'")
+    try:
+        dst.execute("UPDATE dispositivos SET ip='127.0.0.1'")
+    except sqlite3.OperationalError:
+        pass  # copia anterior a la tabla; la crea init_db() y la siembra ya sale con la IP de arriba
     dst.commit()
     dst.close()
 

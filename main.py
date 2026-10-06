@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 import uvicorn
 import shutil
@@ -34,9 +35,12 @@ from api.mozos import router as mozos_router
 from api.barmans import router as barmans_router
 from api.parking import router as parking_router
 from api.uniformes import router as uniformes_router
+from api.dispositivos import router as dispositivos_router
+from api.perfiles_acceso import router as perfiles_acceso_router
+from api.accesos import router as accesos_router
 from api.actualizacion import router as actualizacion_router, cerrar_pendientes_al_arrancar
 from auth.actividad import registrar as registrar_actividad
-from auth.core import decode_token, ensure_admin,check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
+from auth.core import decode_token, ensure_admin, check_page_auth, require_permiso, get_current_user, refresh_token, INACTIVITY_TTL
 
 logging.basicConfig(
     level=logging.INFO,
@@ -86,7 +90,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:      # nunca impedir el arranque por esto
         logger.error("No se pudo cerrar el registro de actualizaciones: %s", e)
     _avisar_si_base_vacia()
-    start_scheduler()
+
+    # Una segunda instancia levantada para probar contra los equipos reales no
+    # tiene que correr el scheduler: sincroniza sola, y ademas le reinicia el
+    # lector a las 4 AM, le cambia la hora, y los dias 1 y 15 le BORRA todos los
+    # registros. Todo eso ya lo hace produccion; duplicarlo desde una copia es
+    # tocar hardware en uso sin que nadie lo haya pedido.
+    #
+    # Con SCHEDULER=0 la instancia queda pasiva: solo habla con los equipos
+    # cuando alguien aprieta un boton, que es lo unico que hace falta para
+    # probar el modulo de accesos.
+    if os.getenv("SCHEDULER", "1") == "0":
+        logger.warning("=" * 70)
+        logger.warning("SCHEDULER APAGADO (SCHEDULER=0)")
+        logger.warning("No sincroniza sola, no reinicia el lector, no le cambia la hora")
+        logger.warning("y no le borra los registros. De eso se encarga produccion.")
+        logger.warning("=" * 70)
+    else:
+        start_scheduler()
     yield
 
 
@@ -180,6 +201,9 @@ app.include_router(mozos_router)
 app.include_router(barmans_router)
 app.include_router(parking_router)
 app.include_router(uniformes_router)
+app.include_router(dispositivos_router)
+app.include_router(perfiles_acceso_router)
+app.include_router(accesos_router)
 app.include_router(actualizacion_router)
 
 

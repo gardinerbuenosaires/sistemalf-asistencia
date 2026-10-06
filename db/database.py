@@ -15,6 +15,27 @@ def get_connection() -> sqlite3.Connection:
 
 
 @contextmanager
+def db_solo_lectura(ruta=None):
+    """
+    Abre la base en modo SOLO LECTURA de verdad, no por convención.
+
+    `db_session` abre para escritura aunque no se escriba, así que "este script
+    solo lee" depende de que nadie agregue un UPDATE más adelante. Con esto, un
+    UPDATE falla en el momento en vez de pasar inadvertido.
+
+    Es para los scripts que consultan la base de producción mientras se prueba
+    contra los equipos: ahí la garantía tiene que estar en el código, no en la
+    revisión.
+    """
+    conn = sqlite3.connect(f"file:{ruta or DB_PATH}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
 def db_session():
     conn = get_connection()
     try:
@@ -28,6 +49,15 @@ def db_session():
 
 
 def init_db():
+    # Si DB_PATH apunta a un archivo que no existe, sqlite lo crea vacio sin
+    # decir nada, y el sistema arranca como si fuera una instalacion nueva: sin
+    # empleados, sin fichajes, sin nada. Pasa por una ruta mal escrita o una
+    # variable que quedo sin definir, y se descubre tarde. Decirlo fuerte es
+    # gratis, y es la diferencia entre entenderlo en el arranque o dentro de
+    # media hora.
+    import os as _os
+    _nace = not _os.path.exists(DB_PATH)
+
     with db_session() as conn:
         conn.executescript("""
 
@@ -474,7 +504,14 @@ def init_db():
 
         """)
         _migrate(conn)
-    logger.info("Base de datos inicializada: %s", DB_PATH)
+    if _nace:
+        logger.warning("=" * 70)
+        logger.warning("BASE DE DATOS NUEVA Y VACIA: %s", _os.path.abspath(DB_PATH))
+        logger.warning("Ese archivo no existia, asi que se creo de cero. Si esperabas")
+        logger.warning("encontrar los datos de siempre, la ruta esta mal: revisa DB_PATH.")
+        logger.warning("=" * 70)
+    else:
+        logger.info("Base de datos inicializada: %s", _os.path.abspath(DB_PATH))
 
 
 def get_config(conn, clave: str, default=None):
@@ -1640,3 +1677,8 @@ def _migrate(conn):
     # archivo para que este punto de contacto sea una sola línea.
     from db.uniformes_schema import migrar_uniformes
     migrar_uniformes(conn)
+
+    # Control de accesos: los equipos pasan de cuatro claves sueltas en
+    # configuracion a una tabla con una fila por lector. Mismo criterio.
+    from db.accesos_schema import migrar_accesos
+    migrar_accesos(conn)

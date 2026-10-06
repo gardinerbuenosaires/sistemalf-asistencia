@@ -26,9 +26,10 @@ INACTIVITY_TTL  = 600  # segundos — 10 minutos sin actividad desloguea
 MODULOS = [
     "dashboard", "empleados", "horarios", "planificacion",
     "calendarios", "asistencia", "resultados", "usuarios", "roles", "sync", "premios", "vacaciones",
-    "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes", "actualizacion",
+    "periodos", "distribucion", "mozos", "barmans", "peones", "uniformes",
+    "actualizacion", "dispositivos", "accesos",
 ]
-ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio", "asignar", "correccion_propia"]
+ACCIONES = ["ver", "editar", "eliminar", "procesar", "corregir", "cerrar", "reabrir", "carga_inicial", "ver_todos", "confirmar", "jubilacion", "fichaje_manual", "propia", "fichaje_propio", "asignar", "correccion_propia", "excepcion", "aplicar"]
 # corregir       → asistencia:corregir (novedades en planilla)
 # fichaje_manual → asistencia:fichaje_manual (crear y borrar fichadas a mano,
 #                  individuales o por fuerza mayor). Separado de "editar" porque
@@ -83,6 +84,25 @@ MODULO_ACCIONES = {
     # actualizacion:procesar → bajar la versión nueva de GitHub y reiniciar el
     #   sistema desde Configuración. De entrada, solo Sistema.
     "actualizacion":  ["procesar"],
+    # dispositivos → los lectores biométricos: el maestro de asistencia y los de
+    #   puerta. Es configuración técnica, por eso arranca solo en Sistema: tocar
+    #   una IP mal deja al restaurante sin fichaje.
+    "dispositivos":   ["ver", "editar", "eliminar"],
+    # accesos → la politica de quien abre que puerta, separada de los equipos.
+    #   editar    → redefinir que puertas incluye un perfil. Cambia el acceso de
+    #               todos los que lo tengan.
+    #   asignar   → ponerle un perfil a una persona. Es aplicar la politica, se
+    #               hace al dar de alta a alguien, y puede vivir en RRHH.
+    #   excepcion → sacarle o darle una puerta suelta a alguien. Es desviarse de
+    #               la politica, y es lo mas dificil de auditar: un perfil se ve
+    #               en la matriz, una excepcion solo abriendo esa ficha. Por eso
+    #               va aparte de asignar.
+    #   aplicar   → escribirle a los equipos: llevar la politica a los lectores
+    #               y sacar a mano lo que quedo por un error. Va aparte de las
+    #               demas porque las otras deciden y esta ejecuta: una politica
+    #               equivocada se corrige antes de aplicarla, un borrado en un
+    #               lector deja a alguien afuera a las siete de la maniana.
+    "accesos":        ["ver", "editar", "eliminar", "asignar", "excepcion", "aplicar"],
 }
 
 # Cómo se agrupan los módulos en la pantalla de Roles. Un módulo que no figure
@@ -92,7 +112,8 @@ MODULO_GRUPOS = [
     ("Programación", ["horarios", "planificacion", "calendarios"]),
     ("Distribución", ["distribucion", "mozos", "barmans", "peones"]),
     ("Personal",     ["empleados", "vacaciones", "premios", "uniformes"]),
-    ("Sistema",      ["dashboard", "usuarios", "roles", "actualizacion"]),
+    ("Sistema",      ["dashboard", "usuarios", "roles", "actualizacion",
+                      "dispositivos", "accesos"]),
 ]
 
 # Cache simple de permisos: {rol_id: (timestamp, set{(modulo,accion)})}

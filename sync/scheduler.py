@@ -266,6 +266,106 @@ def _sincronizar_hora_auto():
         logger.error("Error en sync automático de hora: %s", e)
 
 
+_fecha_ultimo_sync_puertas = None
+
+
+def _sincronizar_hora_puertas():
+    """
+    Les pone la hora a los lectores de puerta, una vez por día, de madrugada.
+
+    El equipo de asistencia ya tenía su sincronización; las puertas no la tenían
+    nunca, y un lector de quince años se corre meses. Mientras tanto todas sus
+    pasadas quedan fechadas con la hora corrida, y eso no se puede arreglar
+    después: el registro guarda lo que el equipo creía que era.
+
+    Se mide ANTES de corregir y se guarda el desfase. Ese número es el
+    diagnóstico: un equipo que se atrasa cinco minutos por semana tiene la pila
+    del reloj agotándose, y corrigiéndolo en silencio todas las noches eso no se
+    ve hasta que el reloj se para del todo.
+
+    Solo corrige lo que está corrido más de dos minutos. Escribir todas las
+    noches por treinta segundos de deriva ensucia la fecha de «puesto en hora»,
+    que es lo que después dice si esto está funcionando.
+    """
+    global _fecha_ultimo_sync_puertas
+    ahora = datetime.now()
+    hoy = str(ahora.date())
+    if _fecha_ultimo_sync_puertas == hoy or ahora.hour not in (1, 2):
+        return
+
+    try:
+        from db.database import db_session
+        from sync.lectores import ver_reloj, poner_en_hora
+
+        with db_session() as conn:
+            if not conn.execute(
+                """SELECT 1 FROM sqlite_master
+                    WHERE type='table' AND name='dispositivos'""").fetchone():
+                return
+            equipos = [dict(r) for r in conn.execute(
+                """SELECT id, nombre, ip, puerto, password, timeout, protocolo
+                     FROM dispositivos
+                    WHERE activo=1 AND es_acceso=1 AND protocolo='pull'
+                      AND ip IS NOT NULL ORDER BY orden, id""")]
+
+        # Primero se mide todo y recién después se corrige. Un equipo corrido se
+        # entiende mirando los otros, y esa comparación solo existe si antes se
+        # miraron todos.
+        medidos, sin_responder = [], 0
+        for d in equipos:
+            medido = ver_reloj(d)
+            if not medido["ok"]:
+                sin_responder += 1
+                continue
+            desfase = medido["desfase_minutos"]
+            medidos.append((d, desfase))
+            with db_session() as conn:
+                conn.execute(
+                    """UPDATE dispositivos SET reloj_desfase_min=?,
+                           reloj_visto_en=datetime('now','localtime') WHERE id=?""",
+                    (desfase, d["id"]))
+
+        # Si TODOS están corridos y casi lo mismo, lo más probable no es que
+        # fallaran todos los relojes a la vez: es que el desfasado sea el de esta
+        # máquina. Escribirles esa hora propagaría el error a cada equipo, todas
+        # las noches y sin que nadie lo vea. La pantalla ya avisa de esto; acá no
+        # hay nadie mirando, así que directamente no se toca nada.
+        corridos = [x for x in medidos if abs(x[1]) > 2]
+        if len(medidos) > 1 and len(corridos) == len(medidos):
+            desfases = [x[1] for x in medidos]
+            if max(desfases) - min(desfases) < 10:
+                logger.warning(
+                    "Relojes de puertas: los %s equipos estan corridos casi lo mismo "
+                    "(entre %s y %s minutos). Lo mas probable es que el desfasado sea "
+                    "el reloj de esta maquina, asi que NO se corrige ninguno.",
+                    len(medidos), min(desfases), max(desfases))
+                _fecha_ultimo_sync_puertas = hoy
+                return
+
+        corregidos = 0
+        for d, desfase in corridos:
+            r = poner_en_hora(d)
+            if r["ok"] and r.get("quedo_en_hora"):
+                corregidos += 1
+                with db_session() as conn:
+                    conn.execute(
+                        """UPDATE dispositivos SET reloj_desfase_min=?,
+                               reloj_puesto_en=datetime('now','localtime') WHERE id=?""",
+                        (desfase, d["id"]))
+                logger.info("Puerta %s estaba corrida %s min, puesta en hora",
+                            d["nombre"], desfase)
+            else:
+                logger.warning("No se pudo poner en hora la puerta %s: %s",
+                               d["nombre"], r.get("error") or "sigue corrida")
+
+        _fecha_ultimo_sync_puertas = hoy
+        if equipos:
+            logger.info("Relojes de puertas: %s revisadas, %s corregidas, %s sin responder",
+                        len(equipos), corregidos, sin_responder)
+    except Exception as e:
+        logger.error("Error sincronizando la hora de las puertas: %s", e)
+
+
 def _get_dia_cierre_auto() -> int:
     """Lee el día de cierre automático de períodos desde la DB."""
     try:
@@ -567,6 +667,7 @@ def start_scheduler():
             _sync_feriados_auto()
             _reiniciar_dispositivo_auto()
             _sincronizar_hora_auto()
+            _sincronizar_hora_puertas()
             _cerrar_periodo_auto()
             _cerrar_premios_periodo_auto()
             _evaluar_barrido_manana()

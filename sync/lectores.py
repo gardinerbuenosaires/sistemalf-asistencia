@@ -1,0 +1,805 @@
+"""Quiénes están cargados en un lector, cruzados contra los empleados.
+
+Para qué sirve. Verificar que lo cargado en un lector coincida con la realidad
+es la tarea más frecuente del control de accesos, y confirmar que una baja salió
+de todos los equipos es la más riesgosa. Hoy las dos se hacen a ojo, equipo por
+equipo, en pantallas distintas. Acá se hacen de una.
+
+Es SOLO LECTURA. No escribe nada en ningún equipo.
+
+Sobre el grupo. Cada usuario pertenece a un grupo dentro del lector, y el grupo
+apunta a hasta tres franjas horarias: de ahí sale a qué hora abre esa persona.
+Se lee y se informa, pero no se toca. En el .209 hay dos franjas cargadas de
+verdad —08:00 a 19:30 y 17:00 a 03:00, en los grupos 2 y 3— sin nadie adentro
+todavía. O sea que el mecanismo funciona y está usado a medias: cambiarle el
+grupo a alguien sin querer le cambia el horario, y eso no da error, simplemente
+un día a cierta hora no abre.
+
+El .209 es el único equipo donde alguien asignó horarios a propósito. En los
+demás las franjas están todas abiertas de 00:00 a 23:59, que es el estado de
+fábrica, así que ahí no hay ninguna intención que respetar. Conviene no leer esa
+diferencia como una configuración: no lo es.
+
+Ojo que hay DOS cosas distintas que se llaman franja:
+
+  · la del equipo, que es la definición de horarios (ver `ventana_del_grupo`),
+    y a la que apunta el grupo;
+
+  · la de cada usuario, un número suelto en su propio registro (ver
+    `_leer_franjas`), que hubo que desempaquetar a mano porque pyzk sí la lee y
+    la descarta.
+
+La segunda importa antes de escribir: pyzk la pisa con cero al grabar, y grabar
+una huella reenvía el registro del usuario entero, así que agregarle un dedo a
+alguien le borraría su horario propio. Hasta ahora se leyeron en cero en todos
+los equipos, y en cero significa "la que diga mi grupo". Si en algún equipo
+dejan de estarlo, el camino de escritura tiene que resolverlo ANTES de tocarlo;
+está anotado en `plan_accesos`.
+"""
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _conectar(ip, puerto, password, timeout):
+    """
+    Primero TCP y, si no contesta, UDP: los equipos viejos a veces solo hablan
+    UDP, y probar solo TCP los da por muertos sin serlo.
+    """
+    from zk import ZK
+
+    ultimo = None
+    for udp in (False, True):
+        try:
+            zk = ZK(ip, port=int(puerto), timeout=int(timeout),
+                    password=int(password), force_udp=udp,
+                    ommit_ping=True, encoding="latin-1")
+            return zk.connect(), ("udp" if udp else "tcp")
+        except Exception as exc:
+            ultimo = exc
+    raise ultimo
+
+
+def _contar_huellas(conexion) -> dict | None:
+    """
+    Cuántas huellas tiene cada usuario en este equipo, por uid interno.
+
+    Se lee aparte porque el lista no la trae: el equipo devuelve los usuarios
+    en un paquete y las huellas en otro. Importa porque un usuario cargado sin
+    huella figura en la lista y no abre igual — parece hecho y no lo está.
+
+    Devuelve None si no se pudo leer. Es a propósito: informar "no tiene huella"
+    porque falló la lectura haría borrar y recargar gente que estaba bien.
+    """
+    try:
+        cuenta: dict[int, int] = {}
+        for h in conexion.get_templates():
+            if getattr(h, "valid", 1):
+                cuenta[h.uid] = cuenta.get(h.uid, 0) + 1
+        return cuenta
+    except Exception as exc:
+        logger.warning("No se pudieron leer las huellas: %s", exc)
+        return None
+
+
+def _leer_franjas(conexion) -> dict | None:
+    """
+    La franja horaria de cada usuario, por uid interno. Solo lectura.
+
+    Hay que desempaquetar el lista a mano porque pyzk sí lee este campo pero lo
+    tira: lo desempaqueta en `get_users` y no lo pone en el objeto User, que ni
+    siquiera tiene dónde guardarlo. Y al grabar lo escribe en cero, siempre.
+
+    Importa antes de escribir cualquier cosa. Agregarle una huella a alguien
+    reenvía su registro completo —el protocolo los manda juntos— así que le
+    pisaría la franja con cero. Si nadie la usa, no hay nada que perder y el
+    problema no existe; si alguien la usa, hay que resolverlo antes.
+
+    Devuelve None si no se pudo leer: no saber no es lo mismo que no haber.
+    """
+    from struct import unpack
+    from zk import const
+
+    try:
+        if conexion.user_packet_size != 28:
+            # El formato de 72 bytes guarda la franja en otro lado y este
+            # desempaquetado no le corresponde. Mejor no contestar que mentir.
+            return None
+        datos, _ = conexion.read_with_buffer(const.CMD_USERTEMP_RRQ, const.FCT_USER)
+        datos = datos[4:]
+        franjas = {}
+        while len(datos) >= 28:
+            uid, _priv, _pw, _nom, _card, _grupo, franja, _uid_txt = unpack(
+                "<HB5s8sIxBhI", datos[:28])
+            franjas[uid] = franja
+            datos = datos[28:]
+        return franjas
+    except Exception as exc:
+        logger.warning("No se pudieron leer las franjas horarias: %s", exc)
+        return None
+
+
+def _franjas_asignadas(conexion, grupo) -> list | None:
+    """
+    Qué franjas tiene asignadas un grupo del equipo. Solo lectura.
+
+    None si no se pudo leer, y lista vacía si el grupo no tiene ninguna. La
+    diferencia importa: devolver vacío cuando falló la lectura haría decir «abre
+    a cualquier hora» sobre algo que nadie leyó, y eso es peor que no contestar.
+    """
+    from zk import const
+
+    from sync.franjas import franjas_del_grupo
+
+    try:
+        respuesta = getattr(conexion, "_ZK__send_command")(
+            const.CMD_GRPTZ_RRQ, bytes([int(grupo), 0, 0, 0]), 1032)
+        crudo = getattr(conexion, "_ZK__data", b"")
+        if not respuesta.get("status") or not crudo:
+            return None
+        suyas, _sin_identificar = franjas_del_grupo(crudo)
+        return suyas
+    except Exception as exc:
+        logger.warning("No se pudieron leer las franjas del grupo %s: %s", grupo, exc)
+        return None
+
+
+def _definiciones_de_franjas(conexion, cuales) -> dict:
+    """Los horarios de las franjas pedidas, por número. Solo lectura."""
+    from zk import const
+
+    from sync.franjas import semana
+
+    definiciones = {}
+    for n in sorted({int(x) for x in cuales if x}):
+        try:
+            respuesta = getattr(conexion, "_ZK__send_command")(
+                const.CMD_TZ_RRQ, bytes([n, 0, 0, 0]), 1032)
+            crudo = getattr(conexion, "_ZK__data", b"")
+            definiciones[n] = semana(crudo) if respuesta.get("status") and crudo else None
+        except Exception as exc:
+            logger.warning("No se pudo leer la franja %s: %s", n, exc)
+            definiciones[n] = None
+    return definiciones
+
+
+def ventana_del_grupo(conexion, grupo) -> dict:
+    """
+    En qué horario abre quien está en este grupo del equipo. Solo lectura.
+
+    Hace falta antes de meter a alguien en un grupo. El grupo no decide por
+    cuál puerta entra —eso lo decide el perfil— pero sí a qué hora, y en el
+    .209 hay dos franjas cargadas de verdad: una de 08:00 a 19:30 y otra de
+    17:00 a 03:00. Hoy no hay nadie en esos grupos, pero el mecanismo funciona.
+
+    Meter a alguien en el grupo equivocado le da un horario que no le
+    corresponde, y es una falla que no se ve: no hay error, no hay aviso, un
+    día a cierta hora no abre y nadie sabe por qué. Por eso se lee y se informa
+    en vez de escribir a ciegas.
+
+    Devuelve siempre un dict. Si no se pudo leer lo dice, y `restringe` queda en
+    None: no saber no es lo mismo que no tener horario, y decir «abre a
+    cualquier hora» sobre algo que nadie leyó es peor que no decir nada.
+    """
+    return ventanas_de_grupos(conexion, [grupo])[str(grupo)]
+
+
+def ventanas_de_grupos(conexion, grupos) -> dict:
+    """
+    El horario de varios grupos de un equipo, de una. Solo lectura.
+
+    Juntos y no uno por uno porque los grupos suelen compartir franja: leer las
+    definiciones una vez son dos comandos en lugar de seis, y estos equipos
+    contestan de a uno por UDP.
+
+    Hace falta para elegir en qué grupo cargar a alguien. Antes se copiaba el
+    más usado de la puerta sin mirar; ahora se puede preferir uno que no le
+    imponga horario a nadie.
+    """
+    from sync.franjas import describir_grupo
+
+    asignadas = {str(g): _franjas_asignadas(conexion, g) for g in grupos}
+    necesarias = {n for suyas in asignadas.values() if suyas for n in suyas if n}
+    definiciones = _definiciones_de_franjas(conexion, necesarias)
+
+    ventanas = {}
+    for g, suyas in asignadas.items():
+        texto, restringe = describir_grupo(suyas, definiciones)
+        ventanas[g] = {"grupo": g, "texto": texto, "restringe": restringe,
+                       "franjas": sorted({n for n in suyas if n}) if suyas else []}
+    return ventanas
+
+
+def leer_cargados(dispositivo: dict, con_huellas: bool = False,
+                con_franja: bool = False) -> dict:
+    """
+    Trae los usuarios cargados en un lector.
+
+    `dispositivo` es una fila de la tabla. Devuelve
+    {ok, transporte, usuarios:[...], error}. Nunca levanta excepción: un equipo
+    apagado es un resultado válido y la pantalla tiene que poder mostrarlo.
+
+    Con `con_huellas` trae además cuántas huellas tiene cada uno. Es una lectura
+    más y bastante más pesada —son todos los templates del equipo— así que no va
+    por defecto: sirve cuando la pregunta es "¿esta persona realmente puede
+    abrir?", no cuando solo se comparan listas.
+    """
+    if dispositivo.get("protocolo") == "push":
+        return {"ok": False, "usuarios": [], "transporte": None,
+                "error": "Es un equipo push: no atiende llamadas, es él quien "
+                         "llama al sistema. Su lista no se puede consultar así."}
+    if not dispositivo.get("ip"):
+        return {"ok": False, "usuarios": [], "transporte": None,
+                "error": "El equipo no tiene IP cargada"}
+
+    conexion = None
+    try:
+        conexion, transporte = _conectar(
+            dispositivo["ip"], dispositivo.get("puerto", 4370),
+            dispositivo.get("password", 0), dispositivo.get("timeout", 10),
+        )
+        usuarios = [
+            {
+                "uid":        u.uid,
+                "user_id":    str(u.user_id).strip(),
+                "nombre":     (u.name or "").strip(),
+                "privilegio": u.privilege,
+                "tarjeta":    u.card,
+                "grupo":      str(u.group_id).strip() if u.group_id not in (None, "") else None,
+            }
+            for u in conexion.get_users()
+        ]
+        huellas = _contar_huellas(conexion) if con_huellas else None
+        if con_huellas:
+            for u in usuarios:
+                u["huellas"] = huellas.get(u["uid"], 0) if huellas is not None else None
+        if con_franja:
+            franjas = _leer_franjas(conexion)
+            for u in usuarios:
+                u["franja"] = franjas.get(u["uid"]) if franjas is not None else None
+        return {"ok": True, "transporte": transporte, "usuarios": usuarios,
+                "error": None, "huellas_leidas": None if not con_huellas else huellas is not None}
+    except Exception as exc:
+        logger.warning("No se pudo leer el lista de %s: %s", dispositivo.get("ip"), exc)
+        return {"ok": False, "usuarios": [], "transporte": None,
+                "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
+def _hora_zk(crudo):
+    """
+    Decodifica la hora tal como la empaqueta el equipo.
+
+    ZK guarda el instante como un solo entero, contando **31 días por mes**: no
+    es un calendario, es una cuenta. Por eso un registro basura —o un parseo
+    corrido— produce fechas que no existen, como un 31 de septiembre.
+
+    Levanta ValueError cuando la fecha no existe. Eso es a propósito: el que
+    llama decide si saltea ese registro, que es lo correcto, en vez de inventar
+    una fecha cercana.
+    """
+    from datetime import datetime
+    from struct import unpack
+
+    t = unpack("<I", crudo)[0]
+    segundo = t % 60;  t //= 60
+    minuto  = t % 60;  t //= 60
+    hora    = t % 24;  t //= 24
+    dia     = t % 31 + 1;  t //= 31
+    mes     = t % 12 + 1;  t //= 12
+    return datetime(t + 2000, mes, dia, hora, minuto, segundo)
+
+
+def leer_reloj(conexion):
+    """
+    Qué hora cree que es el equipo. Solo lectura; devuelve None si no contesta.
+
+    Importa más de lo que parece. A las puertas nadie les sincroniza la hora: el
+    sistema se la pone solo al equipo de asistencia. Un lector de quince años
+    puede estar corrido meses, y entonces todas las pasadas que informa están
+    corridas lo mismo — no están mal leídas, están mal fechadas desde el origen.
+    """
+    try:
+        return conexion.get_time()
+    except Exception as exc:
+        logger.warning("No se pudo leer el reloj del equipo: %s", exc)
+        return None
+
+
+def ver_reloj(dispositivo: dict) -> dict:
+    """
+    Qué hora tiene este equipo y cuánto está corrido. SOLO LECTURA.
+
+    El desfase va en minutos y con signo: positivo si el equipo está adelantado.
+    """
+    from datetime import datetime
+
+    if dispositivo.get("protocolo") == "push" or not dispositivo.get("ip"):
+        return {"ok": False, "error": "No se puede consultar este equipo",
+                "reloj": None, "desfase_minutos": None}
+    conexion = None
+    try:
+        conexion, transporte = _conectar(
+            dispositivo["ip"], dispositivo.get("puerto", 4370),
+            dispositivo.get("password", 0), dispositivo.get("timeout", 10))
+        reloj = leer_reloj(conexion)
+        if reloj is None:
+            return {"ok": False, "error": "El equipo no dio la hora",
+                    "reloj": None, "desfase_minutos": None}
+        return {"ok": True, "transporte": transporte, "error": None,
+                "reloj": reloj.strftime("%d-%m-%Y %H:%M:%S"),
+                "desfase_minutos": round((reloj - datetime.now()).total_seconds() / 60)}
+    except Exception as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}",
+                "reloj": None, "desfase_minutos": None}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
+def poner_en_hora(dispositivo: dict) -> dict:
+    """
+    Le pone al equipo la hora de esta máquina. ESCRIBE, pero no toca datos.
+
+    Es la única escritura de este módulo que no puede perder nada: no hay
+    usuarios ni huellas de por medio, y si sale mal se vuelve a intentar.
+
+    Mide antes y vuelve a medir después. Que el equipo conteste que sí no
+    alcanza: lo que importa es que el reloj haya quedado en hora, y eso solo se
+    sabe volviéndolo a leer.
+
+    Lo que sí cambia: los registros que el equipo ya tiene quedan fechados con
+    la hora vieja, así que al corregir un desfase grande conviven pasadas con
+    dos escalas de tiempo. Por eso el desfase medido se guarda — para saber,
+    mirando un registro viejo, cuánto había que corregirle.
+    """
+    from datetime import datetime
+
+    if dispositivo.get("protocolo") == "push" or not dispositivo.get("ip"):
+        return {"ok": False, "error": "No se le puede escribir a este equipo"}
+    conexion = None
+    try:
+        conexion, transporte = _conectar(
+            dispositivo["ip"], dispositivo.get("puerto", 4370),
+            dispositivo.get("password", 0), dispositivo.get("timeout", 10))
+        antes = leer_reloj(conexion)
+        desfase_antes = (round((antes - datetime.now()).total_seconds() / 60)
+                         if antes else None)
+        conexion.set_time(datetime.now())
+        despues = leer_reloj(conexion)
+        desfase = (round((despues - datetime.now()).total_seconds() / 60)
+                   if despues else None)
+        return {"ok": True, "transporte": transporte, "error": None,
+                "antes": antes.strftime("%d-%m-%Y %H:%M:%S") if antes else None,
+                "desfase_antes": desfase_antes,
+                "reloj": despues.strftime("%d-%m-%Y %H:%M:%S") if despues else None,
+                "desfase_minutos": desfase,
+                # Que haya quedado en hora es lo que se verifica, no que el
+                # equipo haya dicho que sí.
+                "quedo_en_hora": desfase is not None and abs(desfase) <= 2}
+    except Exception as exc:
+        logger.warning("No se pudo poner en hora %s: %s", dispositivo.get("ip"), exc)
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
+def _plausible(fecha, referencia=None) -> bool:
+    """
+    Una fecha que podría ser de una pasada real: ni del futuro ni de hace veinte
+    años. Es el criterio con el que se elige cómo leer el registro, así que no
+    pretende ser exacto — solo distinguir una fecha de un número cualquiera.
+
+    La referencia es el reloj DEL EQUIPO y no el de esta PC. Los registros los
+    fechó el equipo con su propia hora, así que compararlos contra la nuestra
+    daría todo por inverosímil justamente cuando el equipo está desfasado, que
+    es cuando más falta hace leerlo bien.
+
+    Y contra ese reloj el futuro no existe: el equipo no pudo fechar una pasada
+    después del momento en que cree estar. Los cinco minutos de gracia son para
+    el tiempo que pasa entre leerle la hora y leerle los registros, nada más.
+    Una pasada de pasado mañana no es una pasada: es una fecha escrita cuando el
+    reloj estaba mal.
+    """
+    from datetime import datetime, timedelta
+    ahora = referencia or datetime.now()
+    return datetime(2015, 1, 1) <= fecha <= ahora + timedelta(minutes=5)
+
+
+def _formato_de_8(datos: bytes, reloj=None):
+    """
+    Dónde está el tiempo dentro de un registro de 8 bytes: lo decide la evidencia.
+
+    pyzk asume uid(2) estado(1) tiempo(4) punch(1). En los equipos de este local
+    el tiempo arranca un byte más adelante, y leído corrido da fechas del siglo
+    XXII: se reconoce porque el byte bajo sale siempre 00 y el alto 0xFF, que es
+    relleno y no tiempo. No es que el equipo esté roto.
+
+    Como las dos variantes existen según el firmware, se prueban las dos sobre
+    una muestra y gana la que produce más fechas que podrían ser reales. Elegir
+    por evidencia en vez de clavar una constante es lo que va a hacer que esto
+    siga andando el día que aparezca un lector distinto.
+    """
+    from struct import unpack
+
+    candidatos = [
+        ("<HBB4s", lambda c: (c[0], c[3])),    # uid, estado, punch, tiempo
+        ("<HB4sB", lambda c: (c[0], c[2])),    # uid, estado, tiempo, punch (pyzk)
+    ]
+    mejor, puntaje_mejor, de_cuantos = None, -1, 0
+    for patron, extraer in candidatos:
+        # Del FINAL del bloque, no del principio. Los registros viejos pueden
+        # estar fechados con un reloj que el equipo tenía mal antes de que se lo
+        # corrigieran, y esas fechas son inverosímiles aunque el formato sea el
+        # correcto. Los más nuevos son los únicos escritos con el reloj de
+        # ahora, así que son los que dicen si lo estamos leyendo bien.
+        puntaje, leidos, muestra = 0, 0, datos[-8 * 60:]
+        while len(muestra) >= 8:
+            _uid, hora = extraer(unpack(patron, muestra[:8]))
+            muestra = muestra[8:]
+            leidos += 1
+            try:
+                if _plausible(_hora_zk(hora), reloj):
+                    puntaje += 1
+            except Exception:
+                pass
+        de_cuantos = leidos
+        if puntaje > puntaje_mejor:
+            mejor, puntaje_mejor = (patron, extraer), puntaje
+
+    # Si el que mejor anduvo no llega ni a la mitad, ninguno de los formatos
+    # conocidos sirve para este equipo. Devolver el "menos malo" llenaría la
+    # pantalla de fechas del siglo XXII, que es peor que no mostrar nada: una
+    # fecha inventada se lee como un dato y una pantalla vacía con un motivo se
+    # lee como lo que es.
+    if de_cuantos and puntaje_mejor < de_cuantos / 3:
+        return None
+    return mejor
+
+
+def _registros_crudos(conexion, reloj=None) -> tuple:
+    """
+    Las pasadas del equipo, salteando las que no se pueden leer.
+
+    Existe porque `get_attendance` de pyzk decodifica la hora adentro del bucle
+    y no atrapa nada: un solo registro con una fecha imposible tira abajo la
+    lectura entera y no queda ninguno. En equipos de quince años eso pasa.
+
+    Devuelve (registros, ilegibles, tamaño_de_registro). El conteo de ilegibles
+    no es un detalle: si son unos pocos, son registros corruptos y saltearlos es
+    lo correcto; si son casi todos, el parseo está corrido y lo que se muestre
+    no sirve. Son dos situaciones distintas y hay que poder distinguirlas.
+    """
+    from struct import unpack
+    from zk import const
+
+    usuarios = {u.uid: str(u.user_id).strip() for u in conexion.get_users()}
+    conexion.read_sizes()
+    if not getattr(conexion, "records", 0):
+        return [], 0, 0, True
+
+    datos, _ = conexion.read_with_buffer(const.CMD_ATTLOG_RRQ)
+    if len(datos) < 4:
+        return [], 0, 0, True
+    total = unpack("I", datos[:4])[0]
+    datos = datos[4:]
+    tam = total // conexion.records if conexion.records else 0
+
+    # Los tres tamaños que maneja pyzk. El de 8 identifica por índice interno;
+    # los otros traen el número de legajo.
+    formatos = {16: ("<I4sBB2sI", lambda c: (str(c[0]), c[1])),
+                40: ("<H24sB4sB8s",
+                     lambda c: (c[1].split(b"\x00")[0].decode(errors="ignore"), c[3]))}
+    if tam != 8 and tam not in formatos:
+        tam = 40
+    if tam == 8:
+        # Dónde cae el tiempo adentro del registro no es fijo, así que se
+        # averigua. El índice interno se resuelve contra el lista acá.
+        elegido = _formato_de_8(datos, reloj)
+        if elegido is None:
+            # Ningún formato conocido sirve para este equipo. No se devuelve el
+            # menos malo: se devuelve nada, y quien llame avisa.
+            return [], 0, tam, False
+        patron, bruto = elegido
+
+        def extraer(c, _b=bruto):
+            uid, hora = _b(c)
+            return usuarios.get(uid, str(uid)), hora
+    else:
+        patron, extraer = formatos[tam]
+
+    registros, ilegibles = [], 0
+    while len(datos) >= tam:
+        crudo = unpack(patron, datos[:tam].ljust(tam, b"\x00"))
+        datos = datos[tam:]
+        numero, hora_cruda = extraer(crudo)
+        try:
+            registros.append((numero, _hora_zk(hora_cruda)))
+        except Exception:
+            ilegibles += 1
+    return registros, ilegibles, tam, True
+
+
+def leer_registros(dispositivo: dict, desde=None, hasta=None) -> dict:
+    """
+    Las pasadas guardadas en un lector: quién apoyó el dedo y a qué hora.
+
+    No se guardan en la base a propósito. El equipo conserva miles —con lo que
+    hay hoy cubre meses— y la pregunta real es siempre por unos días atrás. Una
+    copia nuestra sería trabajo y una fuente más de desincronización.
+
+    La contracara: si el equipo es la única copia, **ningún proceso nuestro
+    puede borrarle los registros a una puerta**. Al maestro se los limpia los
+    días 1 y 15 porque sus fichadas ya están en la base; las de las puertas no
+    están en ningún lado.
+
+    El equipo no sabe filtrar por fecha: manda todo y se recorta acá.
+
+    Solo lectura.
+    """
+    if dispositivo.get("protocolo") == "push":
+        return {"ok": False, "registros": [], "transporte": None, "total": 0,
+                "error": "Es un equipo push: no atiende llamadas."}
+    if not dispositivo.get("ip"):
+        return {"ok": False, "registros": [], "transporte": None, "total": 0,
+                "error": "El equipo no tiene IP cargada"}
+
+    conexion = None
+    try:
+        conexion, transporte = _conectar(
+            dispositivo["ip"], dispositivo.get("puerto", 4370),
+            dispositivo.get("password", 0), dispositivo.get("timeout", 30),
+        )
+        # El reloj del equipo primero: con él se juzga si una fecha es creíble,
+        # y de paso se informa cuánto está corrido. Todas las pasadas que
+        # devuelve están desplazadas exactamente eso.
+        reloj = leer_reloj(conexion)
+        todos, ilegibles, tam, entendido = _registros_crudos(conexion, reloj)
+        registros, con_reloj_viejo = [], 0
+        for numero, ts in todos:
+            # Fechado con un reloj que el equipo tenía mal: la pasada ocurrió,
+            # pero no en esa fecha. Mezclarlas con las buenas es peor que
+            # contarlas aparte, porque en una tabla se leen igual de ciertas.
+            if not _plausible(ts, reloj):
+                con_reloj_viejo += 1
+                continue
+            if (desde and ts < desde) or (hasta and ts > hasta):
+                continue
+            registros.append({
+                "user_id": numero,
+                # dd-mm-aaaa, como en el resto del sistema. El timestamp va
+                # aparte y en ISO porque es el que ordena.
+                "fecha": ts.strftime("%d-%m-%Y"),
+                "hora": ts.strftime("%H:%M:%S"),
+                "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+        if not entendido:
+            # Mostrar fechas inventadas es peor que no mostrar nada: una fecha
+            # se lee como un dato, y un motivo se lee como lo que es.
+            return {"ok": False, "registros": [], "transporte": transporte,
+                    "total": 0, "ilegibles": 0, "tamano_registro": tam,
+                    "reloj": reloj.strftime("%d-%m-%Y %H:%M:%S") if reloj else None,
+                    "desfase_minutos": None, "formato_desconocido": True,
+                    "error": "Este equipo guarda las pasadas en un formato que el "
+                             "sistema todavía no sabe leer. Las fechas saldrían "
+                             "inventadas, así que no se muestra ninguna. Para "
+                             "averiguar su formato, correr en la PC del sistema: "
+                             "scripts/diagnosticar_pasadas.bat "
+                             + str(dispositivo.get("ip") or "")}
+
+        registros.sort(key=lambda r: r["timestamp"], reverse=True)
+        from datetime import datetime
+        desfase = round((reloj - datetime.now()).total_seconds() / 60) if reloj else None
+        return {"ok": True, "transporte": transporte, "registros": registros,
+                "total": len(todos), "ilegibles": ilegibles,
+                "con_reloj_viejo": con_reloj_viejo,
+                "tamano_registro": tam, "error": None,
+                "reloj": reloj.strftime("%d-%m-%Y %H:%M:%S") if reloj else None,
+                "desfase_minutos": desfase}
+    except Exception as exc:
+        logger.warning("No se pudieron leer las pasadas de %s: %s",
+                       dispositivo.get("ip"), exc)
+        return {"ok": False, "registros": [], "transporte": None, "total": 0,
+                "ilegibles": 0, "tamano_registro": 0,
+                "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass
+
+
+def leer_cargados_varios(dispositivos: list, con_huellas=False) -> dict:
+    """
+    Lee varios lectores a la vez. Devuelve {id_dispositivo: resultado}.
+
+    En paralelo y no de a uno: con seis equipos, cada uno reintentando por TCP y
+    después por UDP, uno apagado hace esperar a todos los demás. Leer es una
+    operación de red, así que los hilos sirven aunque sea Python.
+
+    El límite de hilos existe porque un local puede tener muchos lectores y no
+    tiene sentido abrirle una conexión a cada uno al mismo tiempo.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    if not dispositivos:
+        return {}
+    # `con_huellas` puede ser un booleano para todos, o el conjunto de ids a los
+    # que pedírselas. Existe la segunda forma porque el caso real es mixto: al
+    # maestro hay que leerle las huellas y a las puertas no, y hacerlo en dos
+    # tandas le sumaría a la pantalla el tiempo del maestro en serie.
+    pedir = ((lambda d: bool(con_huellas)) if isinstance(con_huellas, bool)
+             else (lambda d: d["id"] in con_huellas))
+    with ThreadPoolExecutor(max_workers=min(8, len(dispositivos))) as pool:
+        resultados = pool.map(lambda d: leer_cargados(d, con_huellas=pedir(d)), dispositivos)
+    return {d["id"]: r for d, r in zip(dispositivos, list(resultados))}
+
+
+# Los equipos viejos guardan el nombre en un campo más corto y lo cortan al
+# grabarlo, así que el nombre del lector CASI NUNCA es igual al del legajo. Un
+# nombre cortado no es un problema; confundirlo con otra persona manda a
+# investigar decenas de casos que no lo son, y una pantalla que marca cosas que
+# no son problemas deja de mirarse.
+#
+# Por eso la comparación es por palabras y tolerante:
+#
+#   · sin acentos, sin mayúsculas, sin puntuación — el equipo guarda PEREZ y el
+#     legajo dice Pérez, y son la misma persona
+#   · sin importar el orden — "ANA GOMEZ" y "GOMEZ, ANA" son la misma persona
+#   · cada palabra del lector alcanza con que sea el COMIENZO de alguna del
+#     legajo, que es exactamente lo que hace el corte por largo
+#
+# Solo se marca cuando alguna palabra del lector no se parece a ninguna del
+# legajo. Eso ya no es un corte: es otro nombre, y casi siempre un número
+# reutilizado con el empleado anterior todavía adentro.
+def _normalizar(texto: str) -> list:
+    import unicodedata
+    sin_tilde = "".join(c for c in unicodedata.normalize("NFKD", texto or "")
+                        if not unicodedata.combining(c))
+    limpio = "".join(c if c.isalnum() else " " for c in sin_tilde.upper())
+    return [p for p in limpio.split() if p]
+
+
+def _mismo_nombre(en_lector: str, en_sistema: str) -> bool:
+    palabras_lector = _normalizar(en_lector)
+    palabras_sistema = _normalizar(en_sistema)
+    if not palabras_lector or not palabras_sistema:
+        return True          # sin con qué comparar no se acusa a nadie
+    return all(
+        any(p.startswith(q) or q.startswith(p) for q in palabras_sistema)
+        for p in palabras_lector
+    )
+
+
+# Los cuatro niveles del equipo. Los dos del medio son los que permiten
+# administrar el lector desde el lector: dar de alta gente y tomarle la huella
+# parado ahí. Se leen y se informan; el día que el sistema escriba usuarios va a
+# tener que conservarlos, porque `set_user` de pyzk los deja en cero sin avisar.
+NIVELES = {0: "usuario común", 2: "enrolador", 6: "administrador",
+           14: "super admin"}
+
+
+def comparar_con_empleados(usuarios: list, empleados: dict) -> dict:
+    """
+    Cruza el lista del lector contra los empleados del sistema.
+
+    `empleados` es {user_id: fila}. Clasifica cada persona cargada en el equipo:
+
+      · `de_baja`     está en el equipo y en el sistema figura desvinculada.
+                      Si esa puerta está en servicio, sigue abriendo.
+      · `desconocido` el número no existe en el sistema. O lo cargaron a mano en
+                      el equipo, o el legajo se borró y el lector no se enteró.
+      · `ok`          todo en orden.
+
+    Y marca `nombre_distinto` cuando el nombre del equipo no es el que
+    corresponde. Qué es "el que corresponde" depende:
+
+      · si la persona tiene un nombre configurado para el lector, ese. Es una
+        decisión explícita y el equipo tiene que reflejarla.
+      · si no, el del legajo, y solo como pista. El equipo guarda un nombre
+        corto que eligió alguien, no uno derivado del legajo: "FEDE" para
+        Federico es correcto y no se parece en nada. Por eso ahí el marcador no
+        afirma un error, señala algo para mirar.
+
+    Lo que se busca en los dos casos es el número reutilizado: el equipo todavía
+    tiene el nombre del empleado anterior.
+    """
+    # El nombre más largo que hay en este equipo. Es informativo —da una idea de
+    # a cuántos caracteres corta— y nada depende de él: la comparación de nombres
+    # tolera el corte por sí sola, sin tener que adivinar el ancho del campo.
+    limite = max((len(u["nombre"]) for u in usuarios), default=0)
+    # Las huellas son una lectura aparte y no siempre se piden. Cuando no se
+    # pidieron, el conteo va en None: informar "0 sin huella" sin haberlas leido
+    # es decir que todos pueden abrir sin haberlo verificado.
+    huellas_leidas = any("huellas" in u for u in usuarios)
+    franjas_leidas = any(u.get("franja") is not None for u in usuarios)
+    from datetime import datetime
+
+    filas, resumen = [], {"total": len(usuarios), "de_baja": 0, "desconocidos": 0,
+                          "nombre_distinto": 0, "nombre_no_configurado": 0,
+                          "ok": 0, "administran": 0, "egresan_pronto": 0,
+                          "sin_huella": 0 if huellas_leidas else None,
+                          "con_franja": 0 if franjas_leidas else None}
+
+    for u in usuarios:
+        emp = empleados.get(u["user_id"])
+        fila = dict(u, estado="ok", empleado=None, nombre_distinto=False,
+                    referencia_nombre=None)
+
+        if emp is None:
+            fila["estado"] = "desconocido"
+            resumen["desconocidos"] += 1
+        else:
+            nombre_sistema = f"{emp['apellido']}, {emp['nombre']}".strip(", ")
+            fila["empleado"] = {
+                "id": emp["id"], "nombre": nombre_sistema,
+                "activo": emp["activo"], "fecha_egreso": emp["fecha_egreso"],
+                "tipo": emp["tipo"],
+            }
+            # Una baja puede estar adelantada: se la carga hoy con fecha del 10
+            # y la persona trabaja hasta el 9. Marcarla como «desvinculada»
+            # mientras sigue entrando sería informar mal justo en la pantalla
+            # cuyo trabajo es decir qué está mal. `fecha_egreso` es el primer
+            # día NO trabajado, igual que en todo el resto del sistema.
+            hoy = datetime.now().strftime("%Y-%m-%d")
+            egreso = (emp["fecha_egreso"] or "")[:10]
+            if not emp["activo"] and (not egreso or egreso <= hoy):
+                fila["estado"] = "de_baja"
+                resumen["de_baja"] += 1
+            else:
+                # Si se va pronto se dice, pero sin contarlo como un problema:
+                # hoy esta persona tiene que estar cargada.
+                if not emp["activo"]:
+                    fila["egresa_el"] = egreso
+                    resumen["egresan_pronto"] += 1
+                resumen["ok"] += 1
+
+            # Contra lo configurado si existe, y si no contra el legajo. Son dos
+            # cosas distintas y la pantalla las dice distinto: una es "el equipo
+            # no tiene lo que pediste" y la otra es "fijate".
+            configurado = (emp.get("nombre_lector") or "").strip()
+            fila["referencia_nombre"] = "configurado" if configurado else "legajo"
+            if not _mismo_nombre(u["nombre"], configurado or nombre_sistema):
+                fila["nombre_distinto"] = True
+                resumen["nombre_distinto"] += 1
+                if configurado:
+                    resumen["nombre_no_configurado"] += 1
+
+        # Cargado sin huella: figura en la lista y no abre igual. Se cuenta
+        # aparte de los estados porque no es un problema de identidad —la
+        # persona es quien dice ser— sino de que la carga quedó a medias.
+        if u.get("huellas") == 0:
+            resumen["sin_huella"] += 1
+        # Franja distinta de cero: a esta persona el equipo le aplica un horario
+        # propio, y escribirle una huella se lo borraria.
+        if u.get("franja"):
+            resumen["con_franja"] += 1
+
+        # Quién puede administrar este lector parado frente a él. Es una
+        # propiedad del equipo, no del legajo, así que no se ve en ningún otro
+        # lado del sistema.
+        fila["nivel"] = NIVELES.get(u.get("privilegio"), None)
+        if u.get("privilegio"):
+            resumen["administran"] += 1
+
+        filas.append(fila)
+
+    # Primero lo que hay que mirar: las bajas arriba de todo, después los
+    # desconocidos, y el resto por número.
+    orden = {"de_baja": 0, "desconocido": 1, "ok": 2}
+    filas.sort(key=lambda f: (orden[f["estado"]], len(f["user_id"]), f["user_id"]))
+    return {"resumen": resumen, "filas": filas, "nombre_limite": limite,
+            "huellas_leidas": huellas_leidas, "franjas_leidas": franjas_leidas}

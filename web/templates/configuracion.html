@@ -34,7 +34,11 @@
   .section.wide { max-width: 100%; }
   .section-title { font-size: 1rem; font-weight: bold; margin-bottom: 6px; }
   .section-desc  { font-size: .82rem; color: #888; margin-bottom: 20px; }
-  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .section-header { display: flex; justify-content: space-between; align-items: center;
+                    margin-bottom: 6px; flex-wrap: wrap; gap: 8px; }
+  /* El bloque de texto no baja de un ancho legible: antes competia con cada
+     boton como un item mas del flex y terminaba partido palabra por palabra. */
+  .section-header > div:first-child { flex: 1 1 320px; min-width: 0; }
 
   /* Tabla genérica */
   table { width: 100%; border-collapse: collapse; font-size: .9rem; }
@@ -242,6 +246,7 @@
     <button class="cfg-tab" id="tab-usuarios"  onclick="switchCfgTab('usuarios')">Usuarios</button>
     <button class="cfg-tab" data-perm="roles:ver" id="tab-roles" onclick="switchCfgTab('roles')">Roles y permisos</button>
     <button class="cfg-tab" data-perm="premios:ver" id="tab-premios" onclick="switchCfgTab('premios')">Premios</button>
+    <button class="cfg-tab" data-perm="dispositivos:ver" id="tab-dispositivos" onclick="switchCfgTab('dispositivos')">Dispositivos</button>
     <button class="cfg-tab" id="tab-parking"   onclick="switchCfgTab('parking')">Parking</button>
     <button class="cfg-tab" id="tab-automatico" onclick="switchCfgTab('automatico')">Procesos automáticos</button>
     <button class="cfg-tab" data-perm="actualizacion:procesar" id="tab-actualizacion" onclick="switchCfgTab('actualizacion')">Actualización</button>
@@ -397,6 +402,78 @@
           <tr><td colspan="4" style="padding:12px;color:#aaa">Cargando...</td></tr>
         </tbody>
       </table>
+    </div>
+
+  </div>
+
+  <!-- ── Panel: Dispositivos ── -->
+  <div class="cfg-panel" data-perm="dispositivos:ver" id="panel-dispositivos">
+
+    <div class="section wide">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Lectores biométricos</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Los equipos del local. <b>Asistencia</b> marca cuál alimenta la planilla: sus fichajes
+            entran al sistema. Los de <b>acceso</b> solo abren puertas y sus pasadas no cuentan
+            como fichadas. <b>Probar</b> se conecta al equipo y completa solo su modelo, firmware,
+            número de serie y algoritmo de huella — no le escribe nada.
+          </div>
+        </div>
+        <!-- Dos grupos: lo que se le pregunta a los equipos y lo que define la
+             politica de quien abre que. Son ocho botones; si van a cortar en
+             dos lineas, que corten donde la division significa algo. -->
+        <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end;margin-left:16px">
+          <div style="display:flex;gap:6px;flex-wrap:nowrap" data-perm="accesos:ver">
+            <button class="btn btn-secondary btn-sm" onclick="verPlan()">Plan de cambios</button>
+            <button class="btn btn-secondary btn-sm" onclick="verPendientes()">Sin acceso</button>
+            <button class="btn btn-secondary btn-sm" onclick="descubrirPerfiles()">Deducir perfiles</button>
+            <button class="btn btn-secondary btn-sm" onclick="asignarPorCargo()">Asignar por cargo</button>
+            <button class="btn btn-secondary btn-sm" onclick="adoptarNiveles()">Traer del fichaje</button>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:nowrap">
+            <button class="btn btn-secondary btn-sm" onclick="revisarTodos()">Revisar todos</button>
+            <button class="btn btn-secondary btn-sm" onclick="verRelojes()">Relojes</button>
+            <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                    onclick="verHuellas()">Huellas</button>
+            <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                    onclick="verOperaciones()">Operaciones</button>
+            <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
+                    onclick="nuevoDispositivo()">+ Nuevo equipo</button>
+          </div>
+        </div>
+      </div>
+      <div style="overflow-x:auto;margin-top:16px">
+      <table style="font-size:.85rem;min-width:860px">
+        <thead><tr>
+          <th>Nombre</th><th>Dirección</th><th style="width:70px">Usa</th>
+          <th style="width:90px">Asistencia</th><th style="width:70px">Acceso</th>
+          <th>Equipo</th><th style="width:400px">Acciones</th>
+        </tr></thead>
+        <tbody id="tabla-dispositivos">
+          <tr><td colspan="7" style="color:#aaa">Cargando...</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <div class="section wide">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Perfiles de acceso</div>
+          <div class="section-desc" style="margin-bottom:0">
+            Qué puertas abre cada perfil. Cada empleado tiene uno, y el cargo propone el suyo
+            por defecto. Tildá las puertas de cada perfil: se guarda solo.
+            <b>Una puerta nueva no entra sola en ningún perfil</b> — aparece como columna vacía,
+            a propósito, para que decidas quién la abre.
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" data-perm="accesos:editar"
+                style="flex-shrink:0;margin-left:16px" onclick="nuevoPerfil()">+ Nuevo perfil</button>
+      </div>
+      <div id="matriz-perfiles" style="margin-top:16px;overflow-x:auto">
+        <p style="color:#aaa;font-size:.9rem">Cargando...</p>
+      </div>
     </div>
 
   </div>
@@ -801,6 +878,38 @@ async function _loadPerms() {
 }
 function canDo(m, a) { return _perms.has(`${m}:${a}`); }
 
+// ── Cerrar las ventanas flotantes ────────────────────────────────────────────
+// Esc y clic afuera. Es la red para cuando el boton Cerrar no se ve: paso por
+// un error de layout, pero quedarse encerrado en una ventana no deberia
+// depender de que el layout este bien.
+//
+// Se cierra la de mas arriba, no todas: si una abrio a otra, Esc devuelve un
+// paso en vez de tirar abajo las dos.
+function _ventanasFlotantes() {
+  // Por la firma del estilo y no por el id: solo cinco de las doce ventanas
+  // tienen id, y pedirle un id a cada una para esto seria arreglar el problema
+  // en doce lugares en vez de uno.
+  return [...document.body.children].filter(
+    el => el.style && el.style.position === 'fixed' && el.style.zIndex === '9999');
+}
+
+function cerrarVentanaFlotante() {
+  const abiertas = _ventanasFlotantes();
+  if (abiertas.length) { abiertas[abiertas.length - 1].remove(); return true; }
+  return false;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') cerrarVentanaFlotante();
+});
+
+document.addEventListener('click', e => {
+  // Solo el fondo: un clic adentro de la ventana no la cierra, que es lo que
+  // uno espera cuando esta seleccionando texto de una tabla.
+  const v = _ventanasFlotantes();
+  if (v.length && e.target === v[v.length - 1]) v[v.length - 1].remove();
+});
+
 // ── Toast ──────────────────────────────────────────────────────────────────────
 function toast(msg, ms=3000) {
   const el = document.getElementById("toast");
@@ -940,26 +1049,6 @@ async function logout() {
 
 // ── Parámetros ────────────────────────────────────────────────────────────────
 const PARAMS_META = {
-  device_ip: {
-    label: "IP del lector de huellas",
-    tipo: "text", width: "150px",
-    descripcion: "Dirección IP del dispositivo ZKTeco en la red local. Requiere reiniciar el servicio para aplicar."
-  },
-  device_port: {
-    label: "Puerto del lector",
-    tipo: "number", min: 1, max: 65535,
-    descripcion: "Puerto TCP del dispositivo ZKTeco (por defecto 4370). Requiere reiniciar el servicio para aplicar."
-  },
-  device_password: {
-    label: "Contraseña del dispositivo",
-    tipo: "number", min: 0,
-    descripcion: "Contraseña numérica del dispositivo ZKTeco. Usar 0 si no tiene contraseña configurada."
-  },
-  device_timeout: {
-    label: "Timeout de conexión (segundos)",
-    tipo: "number", min: 1, max: 60,
-    descripcion: "Segundos de espera antes de dar por fallida la conexión al dispositivo."
-  },
   sync_interval_minutos: {
     label: "Intervalo de sync (minutos)",
     tipo: "number", min: 1, max: 60,
@@ -1266,13 +1355,45 @@ const MODULO_LABELS = {
   resultados:"Resultados", usuarios:"Usuarios", roles:"Roles", sync:"Sincronización",
   premios:"Premios", vacaciones:"Vacaciones", periodos:"Períodos", distribucion:"Horarios Cocina",
   mozos:"Mozos", barmans:"Barmans", peones:"Peones",
-  uniformes:"Uniformes y EPP", actualizacion:"Actualización"
+  uniformes:"Uniformes y EPP", actualizacion:"Actualización",
+  dispositivos:"Lectores", accesos:"Accesos a puertas"
 };
 const ACCION_LABELS = {
   ver:"Ver", editar:"Editar", eliminar:"Eliminar", procesar:"Procesar",
   corregir:"Corregir", cerrar:"Cerrar", reabrir:"Reabrir", carga_inicial:"Carga inicial",
   ver_todos:"Ver todos", confirmar:"Confirmar", jubilacion:"Jubilación",
-  fichaje_manual:"Fichaje manual", propia:"Propia", fichaje_propio:"Fichaje propio", asignar:"Asignar", correccion_propia:"Corrección propia"
+  fichaje_manual:"Fichaje manual", propia:"Propia", fichaje_propio:"Fichaje propio",
+  asignar:"Asignar", correccion_propia:"Corrección propia",
+  excepcion:"Excepciones", aplicar:"Aplicar en los equipos"
+};
+
+// Algunas acciones necesitan decir sobre QUE actuan: "Editar" no aclara si se
+// edita un perfil o el acceso de una persona, y esa diferencia es justamente
+// la que separa los dos permisos. La etiqueta del modulo le gana a la general.
+const ACCION_LABELS_POR_MODULO = {
+  accesos: { editar:"Definir perfiles", asignar:"Asignar a personas",
+             eliminar:"Borrar perfiles", excepcion:"Excepciones",
+             aplicar:"Escribir en los equipos" },
+  dispositivos: { editar:"Editar equipos", eliminar:"Borrar equipos" },
+};
+
+// El alcance de cada permiso, que es lo que de verdad hay que entender antes de
+// darlo: a cuanta gente le cambia el acceso.
+const ACCION_AYUDA = {
+  accesos: {
+    ver:       "Ver quien abre que puerta, la lista de pendientes y el plan de cambios.",
+    editar:    "Cambiar que puertas incluye un perfil. Le cambia el acceso a TODOS los que lo tengan.",
+    asignar:   "Ponerle un perfil a una persona. Afecta solo a esa persona.",
+    excepcion: "Sacarle o darle una puerta suelta a una persona, apartandola de su perfil.",
+    eliminar:  "Borrar un perfil. Solo se puede si no lo usa nadie.",
+    aplicar:   "Llevar la politica a los lectores y sacar a mano lo que quedo por un error. Las otras deciden; esta ejecuta.",
+  },
+  dispositivos: {
+    ver:      "Ver los lectores, quien esta cargado en ellos y probar la conexion.",
+    editar:   "Cambiar IP, puerto y para que se usa cada lector.",
+    eliminar: "Borrar un lector. Solo si ningun perfil ni excepcion lo usa.",
+  },
+
 };
 // Qué acciones aplica cada módulo: lo define el backend (auth/core.py) y llega
 // por /api/roles/modulos, así la matriz no se desincroniza del código.
@@ -1466,7 +1587,7 @@ function renderPermGrupos(permsActuales, editable, rolId) {
                 <input type="checkbox" class="chk-perm" data-m="${m}" data-a="${a}"
                   ${tiene ? 'checked' : ''}
                   ${editable ? `onchange="onPermChange(this)"` : 'disabled'}>
-                <span>${ACCION_LABELS[a]||a}</span></label>`;
+                <span title="${escHtml((ACCION_AYUDA[m]||{})[a]||'')}">${(ACCION_LABELS_POR_MODULO[m]||{})[a] || ACCION_LABELS[a] || a}</span></label>`;
             }).join('')}
             ${validas.length > 1 ? `<label class="perm-chip perm-chip-todo">
               <input type="checkbox" class="chk-all" data-m="${m}" ${todos ? 'checked' : ''}
@@ -2241,7 +2362,1954 @@ function switchCfgTab(tab) {
   if (tab === 'premios') cargarTraposCocina();
   if (tab === 'sistema') cargarVpActivo();
   if (tab === 'parking') cargarParkingCorte();
+  if (tab === 'dispositivos') { cargarDispositivos(); cargarPerfiles(); }
   if (tab === 'actualizacion') cargarActualizacion(true);
+}
+
+// ── Dispositivos ──────────────────────────────────────────────────────────────
+// Los lectores del local. Hasta acá el equipo era un par de claves sueltas en
+// los parámetros del sistema, que alcanzaban porque había uno solo.
+
+let _dispositivos = [];
+
+function _esc(t) {
+  return String(t ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
+
+async function cargarDispositivos() {
+  const cuerpo = document.getElementById('tabla-dispositivos');
+  try {
+    const res = await fetch('/api/dispositivos');
+    if (!res.ok) throw new Error();
+    _dispositivos = await res.json();
+  } catch {
+    cuerpo.innerHTML = '<tr><td colspan="7" style="color:#c0392b">No se pudo cargar la lista</td></tr>';
+    return;
+  }
+  if (!_dispositivos.length) {
+    cuerpo.innerHTML = '<tr><td colspan="7" style="color:#aaa">No hay equipos cargados</td></tr>';
+    return;
+  }
+  const si = '<span style="color:#27ae60;font-weight:600">Sí</span>';
+  const no = '<span style="color:#bbb">—</span>';
+  cuerpo.innerHTML = _dispositivos.map(d => {
+    const direccion = d.protocolo === 'push'
+      ? `<span style="color:#888">serie</span> ${_esc(d.numero_serie) || '—'}`
+      : `${_esc(d.ip)}:${d.puerto}`;
+    // El algoritmo de huella se muestra siempre que se conozca: es el que decide
+    // si una huella del maestro sirve en este equipo, y no son intercambiables.
+    const equipo = d.modelo || d.plataforma
+      ? `${_esc(d.modelo || d.plataforma)}${d.algoritmo_huella ? ` · huella v${_esc(d.algoritmo_huella)}` : ''}`
+      : '<span style="color:#bbb">sin probar</span>';
+    return `<tr${d.activo ? '' : ' style="opacity:.5"'}>
+      <td><b>${_esc(d.nombre)}</b>${d.ubicacion ? `<div style="font-size:.78rem;color:#888">${_esc(d.ubicacion)}</div>` : ''}</td>
+      <td style="font-family:monospace;font-size:.8rem">${direccion}</td>
+      <td>${d.protocolo === 'push' ? 'push' : (d.transporte || 'pull')}</td>
+      <td>${d.cuenta_asistencia ? si : no}</td>
+      <td>${d.es_acceso ? si : no}</td>
+      <td style="font-size:.8rem">${equipo}</td>
+      <td style="white-space:nowrap">
+        <div style="display:flex;gap:5px;flex-wrap:nowrap;justify-content:flex-end">
+          <button class="btn btn-sm btn-secondary" onclick="verCargados(${d.id})">Cargados</button>
+          ${canDo('accesos','ver') ? `<button class="btn btn-sm btn-secondary" onclick="verPasadas(${d.id})">Pasadas</button>` : ''}
+          ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-secondary" style="min-width:104px" onclick="probarDispositivo(${d.id}, this)">Probar</button>` : ''}
+          ${canDo('dispositivos','editar') ? `<button class="btn btn-sm btn-primary" onclick="editarDispositivo(${d.id})">Editar</button>` : ''}
+          ${canDo('dispositivos','eliminar') ? `<button class="btn btn-sm btn-danger" onclick="eliminarDispositivo(${d.id})">Borrar</button>` : ''}
+        </div>
+      </td></tr>`;
+  }).join('');
+}
+
+function nuevoDispositivo() { _formDispositivo(null); }
+
+function editarDispositivo(id) {
+  _formDispositivo(_dispositivos.find(d => d.id === id) || null);
+}
+
+function _formDispositivo(d) {
+  const esNuevo = !d;
+  d = d || { nombre:'', ubicacion:'', protocolo:'pull', ip:'', puerto:4370, password:0,
+             timeout:10, numero_serie:'', cuenta_asistencia:0, es_acceso:1, activo:1, orden:0 };
+  const campo = 'padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:.9rem';
+  const fila  = 'display:flex;align-items:center;gap:10px;margin-bottom:10px';
+  const etiq  = 'font-size:.85rem;font-weight:500;color:#333;min-width:150px';
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:540px;max-width:95vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem;margin-bottom:14px">${esNuevo ? 'Nuevo equipo' : 'Editar equipo'}</div>
+
+      <div style="${fila}"><label style="${etiq}">Nombre</label>
+        <input id="d-nombre" style="${campo};flex:1" value="${_esc(d.nombre)}" placeholder="Lector principal"></div>
+      <div style="${fila}"><label style="${etiq}">Ubicación</label>
+        <input id="d-ubicacion" style="${campo};flex:1" value="${_esc(d.ubicacion)}" placeholder="Entrada de personal"></div>
+
+      <div style="${fila}"><label style="${etiq}">Se comunica</label>
+        <select id="d-protocolo" style="${campo}" onchange="_dProtocolo()">
+          <option value="pull"${d.protocolo === 'pull' ? ' selected':''}>El sistema lo llama (pull)</option>
+          <option value="push"${d.protocolo === 'push' ? ' selected':''}>El equipo llama al sistema (push)</option>
+        </select></div>
+
+      <div id="d-bloque-pull">
+        <div style="${fila}"><label style="${etiq}">IP</label>
+          <input id="d-ip" style="${campo};width:160px" value="${_esc(d.ip)}" placeholder="192.168.1.201">
+          <label style="font-size:.85rem;color:#666">Puerto</label>
+          <input id="d-puerto" type="number" style="${campo};width:90px" value="${d.puerto}"></div>
+        <div style="${fila}"><label style="${etiq}">Contraseña</label>
+          <input id="d-password" type="number" style="${campo};width:90px" value="${d.password}">
+          <label style="font-size:.85rem;color:#666">Espera (seg)</label>
+          <input id="d-timeout" type="number" style="${campo};width:90px" value="${d.timeout}">
+          <span style="font-size:.78rem;color:#888">0 = sin contraseña</span></div>
+      </div>
+
+      <div id="d-bloque-push">
+        <div style="${fila}"><label style="${etiq}">Número de serie</label>
+          <input id="d-serie" style="${campo};flex:1" value="${_esc(d.numero_serie)}" placeholder="Lo informa el equipo"></div>
+        <div style="font-size:.78rem;color:#888;margin:-4px 0 10px 160px">
+          Un equipo push no se ubica por IP: se identifica por su número de serie cuando llama.</div>
+      </div>
+
+      <div style="border-top:1px solid #eee;margin:14px 0 12px"></div>
+
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer">
+        <input type="checkbox" id="d-asistencia" ${d.cuenta_asistencia ? 'checked':''} style="width:16px;height:16px;cursor:pointer">
+        <span><b>Cuenta para asistencia</b><div style="font-size:.78rem;color:#888">
+          Sus fichajes entran a la planilla. Dejalo apagado en los lectores de puerta: si no, cada
+          paso por una puerta se contaría como una fichada y daría vuelta el día.</div></span></label>
+
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer">
+        <input type="checkbox" id="d-acceso" ${d.es_acceso ? 'checked':''} style="width:16px;height:16px;cursor:pointer">
+        <span><b>Abre una puerta</b></span></label>
+
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="d-activo" ${d.activo ? 'checked':''} style="width:16px;height:16px;cursor:pointer">
+        <span><b>Activo</b></span></label>
+
+      <div id="d-error" style="color:#c0392b;font-size:.83rem;margin-top:12px"></div>
+
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <button class="btn btn-secondary btn-sm" onclick="this.closest('div[style*=fixed]').remove()">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="d-guardar">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  _dProtocolo();
+  document.getElementById('d-guardar').onclick = () => _guardarDispositivo(d.id, modal);
+}
+
+function _dProtocolo() {
+  const push = document.getElementById('d-protocolo').value === 'push';
+  document.getElementById('d-bloque-pull').style.display = push ? 'none' : '';
+  document.getElementById('d-bloque-push').style.display = push ? '' : 'none';
+}
+
+async function _guardarDispositivo(id, modal) {
+  const cuerpo = {
+    nombre:            document.getElementById('d-nombre').value,
+    ubicacion:         document.getElementById('d-ubicacion').value,
+    protocolo:         document.getElementById('d-protocolo').value,
+    ip:                document.getElementById('d-ip').value,
+    puerto:            Number(document.getElementById('d-puerto').value) || 4370,
+    password:          Number(document.getElementById('d-password').value) || 0,
+    timeout:           Number(document.getElementById('d-timeout').value) || 10,
+    numero_serie:      document.getElementById('d-serie').value,
+    cuenta_asistencia: document.getElementById('d-asistencia').checked,
+    es_acceso:         document.getElementById('d-acceso').checked,
+    activo:            document.getElementById('d-activo').checked,
+  };
+  const res = await fetch(id ? `/api/dispositivos/${id}` : '/api/dispositivos', {
+    method: id ? 'PUT' : 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(cuerpo),
+  });
+  if (res.ok) {
+    modal.remove();
+    toast(id ? 'Equipo actualizado' : 'Equipo agregado');
+    cargarDispositivos();
+    return;
+  }
+  let detalle = 'No se pudo guardar';
+  try {
+    const e = await res.json();
+    detalle = typeof e.detail === 'string' ? e.detail
+            : (e.detail?.[0]?.msg || detalle);
+  } catch {}
+  document.getElementById('d-error').textContent = detalle;
+}
+
+async function probarDispositivo(id, boton) {
+  // El estado va en el boton y no en un aviso: la prueba puede tardar 20
+  // segundos —intenta TCP y despues reintenta por UDP— y un aviso que dura
+  // tres deja el resto del tiempo sin saber si esta pasando algo. Ademas
+  // deshabilitarlo evita el segundo click, que abriria otra conexion al mismo
+  // equipo mientras la primera sigue esperando.
+  let textoOriginal, contador;
+  if (boton) {
+    textoOriginal = boton.textContent;
+    boton.disabled = true;
+    let seg = 0;
+    boton.textContent = 'Probando…';
+    contador = setInterval(() => { seg++; boton.textContent = `Probando ${seg}s`; }, 1000);
+  }
+  try {
+    const res = await fetch(`/api/dispositivos/${id}/probar`, { method: 'POST' });
+    let data = {};
+    try { data = await res.json(); } catch {}
+    if (!res.ok) return toast('Error: ' + (data.detail || 'no se pudo probar'));
+    if (!data.ok) return toast(`No contesta — ${data.error || 'sin respuesta'}`, 6000);
+    toast(`Contesta por ${data.transporte.toUpperCase()} · ${data.modelo || data.plataforma || 'equipo'}`
+          + (data.algoritmo_huella ? ` · huella v${data.algoritmo_huella}` : ''), 6000);
+    cargarDispositivos();
+  } finally {
+    // Va en finally porque los returns de arriba tambien salen por aca: sin
+    // esto, un equipo que no contesta dejaba el boton clavado en "Probando".
+    if (boton) {
+      clearInterval(contador);
+      boton.disabled = false;
+      boton.textContent = textoOriginal;
+    }
+  }
+}
+
+async function eliminarDispositivo(id) {
+  const d = _dispositivos.find(x => x.id === id);
+  if (!confirm(`¿Borrar el equipo "${d ? d.nombre : id}"?`)) return;
+  const res = await fetch(`/api/dispositivos/${id}`, { method: 'DELETE' });
+  if (res.ok) { toast('Equipo borrado'); cargarDispositivos(); return; }
+  let e = {};
+  try { e = await res.json(); } catch {}
+  toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Adoptar los niveles que el equipo de fichaje ya tiene ─────────────────────
+// El momento de adopción, y pasa una sola vez. La columna del legajo arranca en
+// cero para todos, y ese cero no significa "no administra": significa que nadie
+// lo decidió. Si el sistema empezara a escribir desde ahí, le sacaría el permiso
+// a todos los que hoy lo tienen. Así que primero se trae lo que el equipo tiene,
+// se mira de a uno, y recién después el sistema pasa a mandar.
+
+let _nivelesDif = [];
+
+async function adoptarNiveles() {
+  const modal = document.createElement('div');
+  modal.id = 'modal-niveles';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Traer lo que el equipo de fichaje ya sabe</div>
+      <div id="niveles-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
+        Leyendo el equipo… puede tardar unos segundos.</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+              onclick="document.getElementById('modal-niveles').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+  await pintarNiveles();
+}
+
+async function pintarNiveles() {
+  const caja = document.getElementById('niveles-cuerpo');
+  if (!caja) return;
+  let d;
+  try {
+    const res = await fetch('/api/accesos/niveles-lector');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    caja.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  if (!d.ok) {
+    caja.innerHTML = `<div style="color:#c0392b">${_esc(d.aviso || 'El equipo no contestó.')}</div>
+      ${d.error ? `<div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(d.error)}</div>` : ''}`;
+    return;
+  }
+
+  _nivelesDif = d.diferencias;
+  const nombre = n => ({0: 'no administra', 2: 'enrolador', 6: 'administrador',
+                        14: 'super admin'}[n] || `nivel ${n}`);
+
+  if (!d.diferencias.length && !d.ajenos.length) {
+    caja.innerHTML = `<div style="background:#dcede2;color:#2e7d4f;padding:9px 12px;border-radius:5px;font-size:.85rem">
+      El equipo <b>${_esc(d.equipo)}</b> y los legajos dicen lo mismo para los ${d.iguales} usuarios:
+      mismo nombre en pantalla y mismo nivel de administración. No hay nada que traer.</div>`;
+    return;
+  }
+
+  const filas = d.diferencias.map(f => `
+    <tr style="border-bottom:1px solid #f4f4f4">
+      <td style="padding:6px 10px"><input type="checkbox" class="nivel-chk" value="${f.empleado_id}" checked></td>
+      <td style="padding:6px 10px;font-family:monospace;color:#888">${_esc(f.user_id)}</td>
+      <td style="padding:6px 10px">${_esc(f.nombre)}
+        ${f.activo ? '' : '<span style="color:#b3261e;font-size:.75rem"> (dado de baja)</span>'}</td>
+      <td style="padding:6px 10px">
+        ${f.difiere_nombre
+          ? `<b>${_esc(f.nombre_equipo)}</b>${f.nombre_legajo
+               ? `<div style="font-size:.72rem;color:#999">en el legajo: ${_esc(f.nombre_legajo)}</div>`
+               : '<div style="font-size:.72rem;color:#999">el legajo no tiene ninguno</div>'}`
+          : '<span style="color:#bbb">—</span>'}</td>
+      <td style="padding:6px 10px">
+        ${f.difiere_nivel
+          ? `<b style="color:#2c4d6b">${nombre(f.en_el_equipo)}</b>
+             <div style="font-size:.72rem;color:#999">en el legajo: ${nombre(f.en_el_legajo)}</div>
+             ${f.conocido ? '' : '<div style="font-size:.72rem;color:#8a5d06">no se puede adoptar</div>'}`
+          : '<span style="color:#bbb">—</span>'}</td>
+    </tr>`).join('');
+
+  caja.innerHTML = `
+    <div style="font-size:.85rem;color:#444">
+      Equipo <b>${_esc(d.equipo)}</b> · ${d.iguales} usuarios ya coinciden con su legajo.
+    </div>
+    <div style="background:#eef3f8;border-left:3px solid #4a7ba7;padding:8px 11px;font-size:.8rem;color:#2c4d6b;margin-top:8px">
+      Esta es la única vez que el equipo le gana al sistema. Lo que traigas queda en el legajo
+      y de ahí en más manda el legajo.
+      <b>Los nombres son dos botones distintos que los niveles a propósito:</b> traer nombres
+      no le da permisos a nadie y conviene para todos; un nivel de administración sí, y esa
+      lista puede tener años.
+    </div>
+    ${d.ajenos.length ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:7px">
+      <b>${d.ajenos.length} usuario(s) administran el equipo y no existen en el sistema:</b>
+      ${d.ajenos.map(a => `${_esc(a.user_id)} «${_esc(a.nombre)}» (${nombre(a.nivel)})`).join(' · ')}.
+      No se pueden adoptar porque no tienen legajo. Mirá quiénes son.</div>` : ''}
+    ${d.diferencias.length ? `
+    <div style="overflow-y:auto;margin-top:10px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="padding:6px 10px;width:34px"></th>
+              <th style="text-align:left;padding:6px 10px">N°</th>
+              <th style="text-align:left;padding:6px 10px">Empleado</th>
+              <th style="text-align:left;padding:6px 10px">Nombre en pantalla</th>
+              <th style="text-align:left;padding:6px 10px">Administración</th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+      <button class="btn btn-sm btn-secondary" onclick="marcarNiveles(true)">Marcar todos</button>
+      <button class="btn btn-sm btn-secondary" onclick="marcarNiveles(false)">Ninguno</button>
+      <button class="btn btn-sm btn-primary" onclick="importarNombres()">Traer los nombres</button>
+      <button class="btn btn-sm btn-secondary" onclick="importarNiveles()">Traer los niveles de administración</button>
+    </div>` : ''}`;
+}
+
+function marcarNiveles(valor) {
+  document.querySelectorAll('.nivel-chk:not([disabled])').forEach(c => c.checked = valor);
+}
+
+async function importarNombres() {
+  const ids = [...document.querySelectorAll('.nivel-chk:checked')].map(c => Number(c.value));
+  const conNombre = _nivelesDif.filter(f => ids.includes(f.empleado_id) && f.difiere_nombre);
+  if (!conNombre.length) return toast('Ninguno de los marcados tiene un nombre que traer');
+  if (!confirm(`Traer al legajo el nombre que el equipo muestra, para ${conNombre.length} persona(s).`
+      + `
+
+No cambia permisos ni accesos: es el texto que aparece al apoyar el dedo.`
+      + `
+
+¿Seguir?`)) return;
+  const res = await fetch('/api/accesos/nombres-lector/importar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ empleados: conNombre.map(f => f.empleado_id) }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo traer'));
+  }
+  const d = await res.json();
+  toast(`${d.importados} nombre(s) traído(s)`);
+  await pintarNiveles();
+}
+
+async function importarNiveles() {
+  const marcados = [...document.querySelectorAll('.nivel-chk:checked')].map(c => Number(c.value));
+  const ids = _nivelesDif
+    .filter(f => marcados.includes(f.empleado_id) && f.difiere_nivel && f.conocido)
+    .map(f => f.empleado_id);
+  if (!ids.length) return toast('Ninguno de los marcados tiene un nivel que traer');
+  const suben = _nivelesDif.filter(f => ids.includes(f.empleado_id) && f.en_el_equipo > 0).length;
+  if (!confirm(`Adoptar el nivel del equipo para ${ids.length} persona(s).`
+      + (suben ? `\n\n${suben} van a quedar pudiendo administrar el equipo de fichaje.` : '')
+      + `\n\n¿Seguir?`)) return;
+
+  const res = await fetch('/api/accesos/niveles-lector/importar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ empleados: ids }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo adoptar'));
+  }
+  const d = await res.json();
+  toast(`${d.importados} adoptado(s)` + (d.sin_tocar ? ` · ${d.sin_tocar} sin tocar` : ''));
+  await pintarNiveles();
+}
+
+// ── Asignar perfiles por cargo ────────────────────────────────────────────────
+// El otro camino para el arranque, y el que no necesita que los lectores se
+// puedan leer: "Deducir perfiles" saca los grupos de lo que los equipos ya
+// tienen cargado; esto parte de cómo el usuario ya piensa quién entra a dónde.
+//
+// No guarda ninguna relación cargo → perfil. El cargo elige a quién, y después
+// el perfil es de cada persona: cambiarle el cargo a alguien no le cambia las
+// puertas. Eso es a propósito — cambiar un cargo lo puede hacer quien edita
+// empleados, sin permiso de accesos.
+
+let _cargosAcc = null;
+
+async function asignarPorCargo() {
+  const modal = document.createElement('div');
+  modal.id = 'modal-por-cargo';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:880px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Asignar perfiles por cargo</div>
+      <div id="cargo-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">Cargando...</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+              onclick="document.getElementById('modal-por-cargo').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+  await pintarPorCargo();
+}
+
+async function pintarPorCargo() {
+  const caja = document.getElementById('cargo-cuerpo');
+  if (!caja) return;
+  let d;
+  try {
+    const res = await fetch('/api/accesos/por-cargo');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    caja.innerHTML = `<span style="color:#c0392b">No se pudo cargar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  _cargosAcc = d;
+
+  if (!d.perfiles.length) {
+    caja.innerHTML = `<div style="background:#f6e9ce;color:#6b5a26;padding:9px 12px;border-radius:5px;font-size:.85rem">
+      Todavía no hay ningún perfil de acceso creado. Creá los perfiles primero —abajo, en
+      <b>Perfiles de acceso</b>— y después volvé acá a repartirlos por cargo.</div>`;
+    return;
+  }
+
+  const opciones = d.perfiles.map(p =>
+    `<option value="${p.id}">${_esc(p.nombre)}</option>`).join('');
+
+  const filas = d.cargos.map(c => {
+    const clave = c.cargo_id === null ? 'null' : c.cargo_id;
+    const actuales = c.perfiles_actuales.length
+      ? c.perfiles_actuales.map(p =>
+          `<span style="background:#eef3f8;color:#4a6b8a;padding:2px 7px;border-radius:3px;font-size:.74rem;margin-right:4px;white-space:nowrap">${_esc(p.nombre)}: ${p.cuantos}</span>`).join('')
+      : '<span style="color:#bbb;font-size:.78rem">ninguno tiene perfil</span>';
+    return `<tr style="border-bottom:1px solid #f4f4f4">
+      <td style="padding:7px 10px">
+        ${c.cargo_id === null ? '<i style="color:#888">Sin cargo</i>' : _esc(c.cargo)}
+        <div style="font-size:.74rem;color:#aaa">${c.total} activo${c.total === 1 ? '' : 's'}</div>
+      </td>
+      <td style="padding:7px 10px;text-align:center">
+        ${c.sin_perfil
+          ? `<b style="color:#8a5d06">${c.sin_perfil}</b>`
+          : '<span style="color:#2e7d4f;font-size:.8rem">todos asignados</span>'}
+      </td>
+      <td style="padding:7px 10px">${actuales}
+        ${c.con_excepciones ? `<div style="font-size:.74rem;color:#8a5d06;margin-top:3px">
+          ${c.con_excepciones} con excepciones</div>` : ''}</td>
+      <td style="padding:7px 10px;white-space:nowrap">
+        <select id="cargo-perfil-${clave}" style="max-width:150px;font-size:.82rem">${opciones}</select>
+        <button class="btn btn-sm btn-primary" style="margin-left:5px"
+                onclick="aplicarPorCargo(${clave})">Asignar</button>
+      </td></tr>`;
+  }).join('');
+
+  caja.innerHTML = `
+    <div style="font-size:.85rem;color:#444">
+      <b>${d.sin_perfil}</b> de ${d.activos} activos no tienen perfil de acceso.
+    </div>
+    <div style="background:#eef3f8;border-left:3px solid #4a7ba7;padding:8px 11px;font-size:.8rem;color:#2c4d6b;margin-top:8px">
+      Elegí el perfil que le toca a cada cargo y se lo aplica a toda su gente.
+      Es por una vez: al que entre nuevo hay que asignarle el perfil a mano, y lo vas
+      a encontrar en «Sin acceso asignado».
+    </div>
+    <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;color:#666;margin-top:10px">
+      <input type="checkbox" id="cargo-pisar" onchange="pintarAvisoPisar()">
+      Reemplazar también el perfil de los que ya tienen uno
+    </label>
+    <div id="cargo-aviso-pisar"></div>
+    <div style="overflow-y:auto;margin-top:10px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px">Cargo</th>
+              <th style="padding:6px 10px;width:90px">Sin perfil</th>
+              <th style="text-align:left;padding:6px 10px">Perfiles que ya tienen</th>
+              <th style="padding:6px 10px;width:235px"></th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <div style="font-size:.76rem;color:#999;margin-top:9px">
+      Esto no le escribe nada a los lectores. «Ver plan de cambios» muestra la diferencia
+      entre lo que asignaste y lo que los equipos tienen cargado hoy.
+    </div>`;
+  pintarAvisoPisar();
+}
+
+function pintarAvisoPisar() {
+  const caja = document.getElementById('cargo-aviso-pisar');
+  if (!caja) return;
+  const pisar = document.getElementById('cargo-pisar')?.checked;
+  caja.innerHTML = pisar
+    ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:6px">
+        Le cambia el perfil también a quien ya tenía uno, incluso si se lo habían puesto
+        a propósito. Las excepciones no se borran, pero algunas pueden quedar sin efecto
+        contra el perfil nuevo.</div>`
+    : '';
+}
+
+async function aplicarPorCargo(cargoId) {
+  const sel = document.getElementById(`cargo-perfil-${cargoId === null ? 'null' : cargoId}`);
+  const pisar = !!document.getElementById('cargo-pisar')?.checked;
+  if (!sel) return;
+  const perfilId = Number(sel.value);
+  const perfil = (_cargosAcc.perfiles.find(p => p.id === perfilId) || {}).nombre || '';
+  const c = _cargosAcc.cargos.find(x => x.cargo_id === cargoId);
+  const cuantos = pisar ? c.total : c.sin_perfil;
+  if (!cuantos) return toast('No hay nadie a quien asignarle en ese cargo');
+
+  const nombreCargo = cargoId === null ? 'los que no tienen cargo' : c.cargo;
+  if (!confirm(`Asignar «${perfil}» a ${cuantos} persona(s) de ${nombreCargo}.`
+      + (pisar && c.con_perfil ? `\n\nSe reemplaza el perfil de ${c.con_perfil} que ya tenían uno.` : '')
+      + `\n\n¿Seguir?`)) return;
+
+  const res = await fetch('/api/accesos/por-cargo/aplicar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ cargo_id: cargoId, perfil_acceso_id: perfilId, pisar }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo asignar'));
+  }
+  const d = await res.json();
+  toast(`${d.asignados} asignado(s)`
+    + (d.sin_tocar ? ` · ${d.sin_tocar} sin tocar` : '')
+    + (d.con_excepciones ? ` · ${d.con_excepciones} con excepciones, revisalas` : ''));
+  await pintarPorCargo();
+}
+
+// ── Deducir perfiles desde los lectores ───────────────────────────────────────
+// La carga inicial. Nadie tiene perfil y son cientos de personas, pero los
+// perfiles ya existen dentro de los equipos: quien esta cargado en las mismas
+// puertas que otro comparte perfil con el, aunque nadie lo haya escrito nunca.
+
+let _grupos = [];
+
+async function descubrirPerfiles() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:880px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Deducir perfiles desde los lectores</div>
+      <div style="font-size:.8rem;color:#888;margin-top:2px">
+        Agrupa a la gente por el conjunto exacto de puertas donde está cargada hoy.
+        Cada grupo es un perfil que ya existe, aunque nadie lo haya escrito.</div>
+      <div id="desc-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
+        Leyendo los equipos…</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+  await _cargarDescubrimiento();
+}
+
+async function _cargarDescubrimiento() {
+  const caja = document.getElementById('desc-cuerpo');
+  if (!caja) return;
+  let d;
+  try {
+    const res = await fetch('/api/accesos/descubrir');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    caja.innerHTML = `<span style="color:#c0392b">No se pudo: ${_esc(e.message)}</span>`;
+    return;
+  }
+
+  if (d.aviso) {
+    caja.innerHTML = `<div style="color:#8a5d06;background:#f6e9ce;padding:10px 12px;border-radius:5px">${_esc(d.aviso)}</div>`;
+    return;
+  }
+  if (!d.completo) {
+    caja.innerHTML = `<div style="background:#f6dedc;border-left:3px solid #b3261e;padding:10px 12px;border-radius:4px;font-size:.85rem;color:#7a211c">
+      <b>No se pudieron leer todas las puertas, así que no se propone nada.</b>
+      <div style="margin-top:4px">Con una puerta sin leer, el conjunto de cada persona quedaría
+      incompleto y los grupos saldrían mal. Mejor no proponer nada que proponer algo falso.</div>
+      ${d.sin_leer.map(p => `<div style="margin-top:4px">· ${_esc(p.nombre)} — ${_esc(p.error)}</div>`).join('')}
+    </div>`;
+    return;
+  }
+  if (!d.grupos.length) {
+    caja.innerHTML = '<div style="color:#888">No hay nadie cargado en las puertas.</div>';
+    return;
+  }
+
+  _grupos = d.grupos;
+  const opciones = _perfiles.filter(p => p.activo)
+    .map(p => `<option value="${p.id}">${_esc(p.nombre)}</option>`).join('');
+
+  const bloques = _grupos.map((g, i) => {
+    const puertas = g.nombres_puertas.map(n =>
+      `<span style="background:#dcede2;color:#2e7d4f;padding:2px 8px;border-radius:4px;font-size:.78rem;margin-right:4px">${_esc(n)}</span>`).join('');
+    const gente = g.personas.map(p =>
+      `<span style="color:${p.tiene_perfil ? '#bbb' : '#555'}">${_esc(p.nombre)}</span>`).join(' · ');
+
+    const accion = g.sin_perfil === 0
+      ? '<span style="color:#2e7d4f;font-size:.82rem;font-weight:600">todos ya tienen perfil</span>'
+      : g.perfil_existente
+        ? `<button class="btn btn-sm btn-primary" onclick="_aplicarGrupo(${i}, ${g.perfil_existente.id})">Asignar «${_esc(g.perfil_existente.nombre)}» a ${g.sin_perfil}</button>`
+        : `<select id="desc-perfil-${i}" style="padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:.82rem">
+             <option value="">— elegir perfil —</option>${opciones}</select>
+           <button class="btn btn-sm btn-primary" style="margin-left:5px"
+                   onclick="_aplicarGrupo(${i}, document.getElementById('desc-perfil-${i}').value)">Asignar a ${g.sin_perfil}</button>`;
+
+    return `<div style="padding:12px;border-bottom:1px solid #f0f0f0">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <b style="font-size:.9rem">${g.total} persona(s)</b>
+        <span style="color:#888;font-size:.8rem">abren</span> ${puertas}
+        ${g.perfil_existente
+          ? `<span style="color:#24506e;font-size:.8rem">· coincide con <b>${_esc(g.perfil_existente.nombre)}</b></span>`
+          : '<span style="color:#8a5d06;font-size:.8rem">· no hay perfil con esas puertas exactas</span>'}
+        <span style="flex:1"></span>${accion}
+      </div>
+      <div style="font-size:.8rem;color:#666;margin-top:6px;line-height:1.5">${gente}</div>
+      ${g.con_perfil ? `<div style="font-size:.76rem;color:#999;margin-top:4px">${g.con_perfil} en gris ya tienen perfil propio y no se tocan.</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const ignorados = d.ignorados.length ? `
+    <div style="background:#f6e9ce;color:#6b5a26;padding:9px 12px;border-radius:5px;font-size:.82rem;margin-bottom:10px">
+      <b>${d.ignorados.length} cargados en puertas que no entran en ningún grupo:</b>
+      ${d.ignorados.slice(0, 12).map(x =>
+        `<div style="margin-top:2px">· ${_esc(x.user_id)}${x.nombre ? ' ' + _esc(x.nombre) : ''} — ${_esc(x.motivo)}</div>`).join('')}
+      ${d.ignorados.length > 12 ? `<div style="margin-top:2px">… y ${d.ignorados.length - 12} más</div>` : ''}
+      <div style="margin-top:5px">Estos aparecen en «Revisar todos» como gente a sacar de esas puertas.</div>
+    </div>` : '';
+
+  caja.innerHTML = `
+    <div style="font-size:.84rem;color:#333;margin-bottom:10px">
+      <b>${_grupos.length} grupo(s)</b> — los más grandes primero, que son los perfiles de verdad.
+      Los de una o dos personas suelen ser un error de carga o una excepción que nadie anotó.</div>
+    ${ignorados}
+    <div style="overflow-y:auto;border:1px solid #eee;border-radius:4px">${bloques}</div>
+    <div style="font-size:.78rem;color:#999;margin-top:10px">
+      Asignar acá solo guarda el perfil en el sistema. No se escribe nada en los lectores.</div>`;
+}
+
+async function _aplicarGrupo(indice, perfilId) {
+  if (!perfilId) return toast('Elegí un perfil primero');
+  const g = _grupos[indice];
+  const ids = g.personas.filter(p => !p.tiene_perfil).map(p => p.empleado_id);
+  if (!ids.length) return;
+  const res = await fetch('/api/accesos/descubrir/aplicar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ empleados: ids, perfil_acceso_id: Number(perfilId) }),
+  });
+  if (!res.ok) {
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo asignar'));
+  }
+  const d = await res.json();
+  toast(`${d.asignados} persona(s) quedaron con ese perfil`);
+  await cargarPerfiles();
+  await _cargarDescubrimiento();
+}
+
+// ── Sin acceso asignado ───────────────────────────────────────────────────────
+// Un reporte, no una pantalla de accion: dice quienes quedaron sin acceso y
+// lleva al legajo de cada uno, que es el unico lugar donde se cambia. Sirve
+// para detectar el olvido —alguien entro y nadie le asigno nada— que es el
+// mismo modo de falla que el egresado que sigue cargado en una puerta.
+
+async function verPendientes() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:760px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Sin acceso asignado</div>
+      <div style="font-size:.8rem;color:#888;margin-top:2px">
+        Activos que hoy no abren ninguna puerta. Puede estar bien, o puede ser alguien
+        a quien nadie le asignó el acceso todavía.</div>
+      <div id="pend-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">Cargando…</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let gente;
+  try {
+    const res = await fetch('/api/accesos/sin-perfil');
+    if (!res.ok) throw new Error();
+    gente = await res.json();
+  } catch {
+    document.getElementById('pend-cuerpo').innerHTML =
+      '<span style="color:#c0392b">No se pudo cargar</span>';
+    return;
+  }
+
+  const caja = document.getElementById('pend-cuerpo');
+  if (!gente.length) {
+    caja.innerHTML = `<div style="background:#dcede2;color:#2e7d4f;padding:10px 12px;border-radius:5px;font-weight:600">
+      Todos los activos tienen un perfil asignado.</div>`;
+    return;
+  }
+
+  const filas = gente.map(p => `
+    <tr>
+      <td style="padding:6px 10px">
+        <a href="/empleados?id=${p.id}" style="color:#1b5e8c;text-decoration:none;font-weight:600">${_esc(p.apellido)}, ${_esc(p.nombre)}</a>
+        ${p.user_id ? `<span style="font-family:monospace;color:#bbb;font-size:.78rem"> ${_esc(p.user_id)}</span>` : ''}</td>
+      <td style="padding:6px 10px;color:${p.cargo ? '#555' : '#bbb'}">${_esc(p.cargo) || 'sin cargo'}</td>
+    </tr>`).join('');
+
+  caja.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="background:#f6e9ce;color:#8a5d06;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${gente.length} sin acceso</span>
+    </div>
+    <div style="overflow-y:auto;margin-top:12px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa"><tr>
+          <th style="text-align:left;padding:6px 10px">Empleado</th>
+          <th style="text-align:left;padding:6px 10px">Cargo</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <div style="font-size:.78rem;color:#999;margin-top:10px">
+      El acceso se asigna en el legajo de cada persona. Hacé clic en un nombre para abrirlo.</div>`;
+}
+
+// ── Plan de cambios ───────────────────────────────────────────────────────────
+// Lo que habria que cambiar en cada lector para que refleje la politica. No
+// escribe nada: el boton de aplicar no existe hasta que escribir en los equipos
+// este probado de verdad.
+
+async function verPlan() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:880px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Plan de cambios</div>
+      <div style="font-size:.8rem;color:#888;margin-top:2px">
+        Lo que hay que cambiar en cada <b>puerta</b> para que coincida con los perfiles:
+        a quién falta cargar y a quién sacar. Se aplica desde acá, de a una persona o toda
+        la puerta de una vez.
+        <div style="margin-top:3px">Para ver qué equipo tiene gente dada de baja, números que
+        no existen o nombres que no coinciden —y eso incluye el <b>equipo de fichaje</b>— está
+        «Revisar todos», que compara contra el legajo en vez de contra los perfiles.</div></div>
+      <div id="plan-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
+        Leyendo los equipos… se leen todos a la vez, pero puede tardar.</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let d;
+  try {
+    const res = await fetch('/api/accesos/plan');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    document.getElementById('plan-cuerpo').innerHTML =
+      `<span style="color:#c0392b">No se pudo armar el plan: ${_esc(e.message)}</span>`;
+    return;
+  }
+
+  const caja = document.getElementById('plan-cuerpo');
+  // Puertas que un perfil todavia da pero que el sistema no administra. Va
+  // arriba de todo: es lo unico del plan que no se resuelve mirando el plan.
+  const fuera = (d.fuera_de_plan || []).length
+    ? `<div style="background:#f6dedc;border-left:3px solid #b3261e;padding:9px 12px;border-radius:4px;font-size:.83rem;color:#7a211c;margin-bottom:12px">
+        <b>${d.fuera_de_plan.length} puerta(s) que algún perfil da, pero que el sistema no está administrando:</b>
+        ${d.fuera_de_plan.map(f => `<div style="margin-top:3px">· ${_esc(f.nombre)} — ${_esc(f.motivo)}</div>`).join('')}
+        <div style="margin-top:5px;color:#8a4b46">Quien esté cargado ahí se queda como está, egresados incluidos.
+        Corregí el equipo, o sacá esa puerta de los perfiles.</div></div>`
+    : '';
+
+  if (d.aviso) {
+    caja.innerHTML = fuera + `<div style="color:#8a5d06;background:#f6e9ce;padding:10px 12px;border-radius:5px">${_esc(d.aviso)}</div>`;
+    return;
+  }
+
+  const t = d.total;
+  const chip = (n, txt, fondo, color) => n
+    ? `<span style="background:${fondo};color:${color};padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${n} ${txt}</span>`
+    : '';
+
+  const bloques = d.puertas.map(p => {
+    const cab = `<b>${_esc(p.nombre)}</b>`
+      + (p.ubicacion ? ` <span style="color:#888;font-size:.8rem">${_esc(p.ubicacion)}</span>` : '');
+    if (!p.ok) {
+      return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0;background:#fdf3f2">
+        ${cab}<div style="color:#b3261e;font-size:.82rem;margin-top:3px">No contestó — no hay plan para esta puerta</div>
+        <div style="font-family:monospace;font-size:.75rem;color:#999">${_esc(p.error)}</div></div>`;
+    }
+    if (!p.agregar.length && !p.sacar.length) {
+      return `<div style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:.85rem;color:#555">
+        ${cab} <span style="color:#2e7d4f">· ya coincide, sin cambios</span></div>`;
+    }
+    const filas = [
+      ...p.agregar.map(a => `<div style="padding:4px 0 4px 14px;font-size:.83rem" id="cargar-${p.id}-${a.user_id}">
+        <span style="color:#2e7d4f;font-weight:600;min-width:62px;display:inline-block">+ cargar</span>
+        <span style="font-family:monospace;color:#888">${_esc(a.user_id)}</span> ${_esc(a.nombre)}
+        ${a.sin_huella ? `<span style="background:#f6e9ce;color:#8a5d06;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px"
+             title="${a.motivo_huella === 'no_en_maestro'
+               ? 'No está cargado en el equipo de asistencia, así que no existe ninguna huella suya para copiar'
+               : 'Está cargado en el equipo de asistencia pero sin ninguna huella enrolada'}">${
+             a.motivo_huella === 'no_en_maestro' ? 'no está en asistencia' : 'sin huella enrolada'}</span>` : ''}
+        ${canDo('accesos','aplicar') && !a.sin_huella
+          ? `<button class="btn btn-sm btn-secondary" style="margin-left:8px"
+                     onclick="cargarEnPuerta(${p.id}, '${_esc(a.user_id)}', this)">Cargar</button>` : ''}
+      </div>`),
+      ...p.sacar.map(s => `<div style="padding:4px 0 4px 14px;font-size:.83rem" id="sacar-${p.id}-${s.user_id}">
+        <span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">− sacar</span>
+        <span style="font-family:monospace;color:#888">${_esc(s.user_id)}</span> ${_esc(s.nombre) || '<i style="color:#999">sin legajo</i>'}
+        <span style="color:#999;margin-left:6px">· ${_esc(s.motivo_texto)}</span>
+        ${s.fecha_egreso ? `<span style="color:#b3261e;font-size:.75rem"> (egreso ${_esc(s.fecha_egreso)})</span>` : ''}
+        ${canDo('accesos','aplicar') && s.motivo !== 'sin_politica'
+          ? `<button class="btn btn-sm btn-secondary" style="margin-left:8px"
+                     onclick="sacarPorPlan(${p.id}, '${_esc(s.user_id)}', this)">Sacar</button>` : ''}
+        ${s.en_maestro === false ? '<span style="background:#f6dedc;color:#b3261e;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px" title="La baja se sincronizó con el equipo de asistencia pero en esta puerta quedó">tampoco está en asistencia</span>' : ''}
+        ${s.era_de ? `<div style="font-size:.75rem;color:#5b3a8a;margin-left:72px">
+          este número era de ${_esc(s.era_de)}, liberado el ${_esc(_fechaHora(s.liberado_en))}</div>` : ''}
+      </div>`),
+    ].join('');
+    // Una puerta que ningun perfil incluye no es un problema de accesos de la
+    // gente: es que la politica todavia no la contempla. Sin decirlo, el plan
+    // invita a sacar a todos de ahi.
+    const aviso = !p.en_algun_perfil && p.sacar.length
+      ? `<div style="background:#f6e9ce;color:#6b5a26;padding:7px 10px;border-radius:4px;font-size:.8rem;margin-top:6px">
+           <b>Ningún perfil incluye esta puerta.</b> Por eso figura toda su gente para sacar.
+           Si esta puerta tiene que seguir funcionando, agregala a los perfiles que correspondan
+           antes de aplicar nada. Suele pasar cuando la puerta estaba caída al armar los perfiles.</div>`
+      : '';
+    // Aplicar toda la puerta de una. Es una conexión al equipo en vez de una
+    // por persona: con ochenta cargados, fila por fila se hace tan largo que
+    // nadie lo usa. Las filas que el sistema no ejecuta no cuentan para el botón.
+    const vanACargar = p.agregar.filter(a => !a.sin_huella).length;
+    const vanASacar = p.sacar.filter(s => s.motivo !== 'sin_politica').length;
+    const aplicables = vanACargar + vanASacar;
+    // El botón dice cuántas entran y cuántas salen, no un total: "Aplicar las
+    // 70" esconde que las 70 son bajas, y es un número lo que se mira antes de
+    // aceptar. Pero empieza con el verbo igual, porque al lado de filas que
+    // cada una tiene su "Sacar", un botón que dice "sacar 70" no se reconoce
+    // como el que hace la puerta entera.
+    const queHace = 'Aplicar todo: '
+      + [vanACargar ? `cargar ${vanACargar}` : '',
+         vanASacar ? `sacar ${vanASacar}` : ''].filter(Boolean).join(', ');
+    const botonTodo = canDo('accesos','aplicar') && aplicables
+      ? `<button class="btn btn-sm" style="margin-left:10px" id="aplicar-${p.id}"
+                 onclick="aplicarPuerta(${p.id}, this, ${vanACargar}, ${vanASacar})">${queHace}</button>`
+      : '';
+    return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0" id="puerta-plan-${p.id}">
+      ${cab} <span style="color:#888;font-size:.8rem">· ${p.agregar.length} a cargar, ${p.sacar.length} a sacar</span>
+      ${botonTodo}
+      ${aviso}
+      <div style="margin-top:6px">${filas}</div></div>`;
+  }).join('');
+
+  // El equipo de fichaje. Va aparte de las puertas porque la pregunta es otra:
+  // acá no decide el perfil, acá va todo el que trabaja. Y porque solo tiene
+  // bajas — agregar a alguien al equipo de fichaje no es algo que el sistema
+  // pueda hacer: de ahí salen las huellas, no van hacia ahí.
+  const f = d.fichaje;
+  const bloqueFichaje = !f ? '' : (!f.ok
+    ? `<div style="margin-top:12px;background:#fdf3f2;padding:10px 12px;border-radius:5px;font-size:.84rem">
+         <b>${_esc(f.nombre)}</b> <span style="color:#b3261e">no contestó</span>
+         <div style="font-family:monospace;font-size:.75rem;color:#999">${_esc(f.error || '')}</div></div>`
+    : `<div style="margin-top:12px;border:1px solid #eee;border-radius:4px;padding:10px 12px">
+        <b>${_esc(f.nombre)}</b>
+        <span style="color:#888;font-size:.8rem">· equipo de fichaje · ${f.sacar.length} a sacar</span>
+        ${!f.sacar.length ? `<div style="color:#2e7d4f;font-size:.84rem;margin-top:4px">
+            Nadie que no trabaje está pudiendo fichar.</div>` : ''}
+        ${f.sacar.map(s => `<div style="padding:4px 0 4px 14px;font-size:.83rem" id="sacar-${f.id}-${s.user_id}">
+          <span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">− sacar</span>
+          <span style="font-family:monospace;color:#888">${_esc(s.user_id)}</span>
+          ${_esc(s.nombre) || '<i style="color:#999">sin legajo</i>'}
+          <span style="color:#999;margin-left:6px">· ${_esc(s.motivo_texto)}</span>
+          ${s.fecha_egreso ? `<span style="color:#b3261e;font-size:.75rem"> (egreso ${_esc(s.fecha_egreso)})</span>` : ''}
+          ${s.se_puede && canDo('accesos','aplicar')
+            ? `<button class="btn btn-sm btn-secondary" style="margin-left:8px"
+                       onclick="sacarPorPlan(${f.id}, '${_esc(s.user_id)}', this)">Sacar</button>`
+            : ''}
+          ${s.en_puertas.length ? `<div style="font-size:.76rem;color:#8a5d06;margin-left:72px">
+             sigue cargado en ${_esc(s.en_puertas.join(', '))}. Primero hay que sacarlo de ahí:
+             si se lo borra de acá antes, el número queda libre y su huella sigue abriendo
+             esas puertas con el legajo del que lo reciba.</div>` : ''}
+          ${s.era_de ? `<div style="font-size:.75rem;color:#5b3a8a;margin-left:72px">
+             este número era de ${_esc(s.era_de)}, liberado el ${_esc(_fechaHora(s.liberado_en))}</div>` : ''}
+        </div>`).join('')}
+        ${f.puertas_sin_leer.length ? `<div style="background:#f6e9ce;color:#6b5a26;padding:7px 10px;border-radius:4px;font-size:.8rem;margin-top:6px">
+           No contestaron ${_esc(f.puertas_sin_leer.join(', '))}, así que no se puede confirmar
+           que estas personas no hayan quedado ahí. Hasta poder leerlas, no se borra de acá.</div>` : ''}
+        ${f.sin_enrolar.length ? `<div style="margin-top:8px;font-size:.8rem;color:#8a5d06">
+           <b>${f.sin_enrolar.length} activo(s) sin enrolar:</b>
+           ${f.sin_enrolar.slice(0, 12).map(x => _esc(x.nombre) || _esc(x.user_id)).join(' · ')}
+           ${f.sin_enrolar.length > 12 ? ` y ${f.sin_enrolar.length - 12} más` : ''}
+           <div style="color:#999;margin-top:2px">Tienen que venir a poner el dedo. El sistema no
+           puede cargarlos acá, y hasta que no se enrolen tampoco puede cargarlos en ninguna puerta.</div>
+         </div>` : ''}
+       </div>`);
+
+  const hayCambios = t.agregar || t.sacar;
+  caja.innerHTML = fuera + `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:.85rem;color:#333"><b>${t.puertas}</b> puertas</span>
+      ${chip(t.agregar, 'a cargar', '#dcede2', '#2e7d4f')}
+      ${chip(t.sacar, 'a sacar', '#f6dedc', '#b3261e')}
+      ${chip(t.sin_huella, 'sin huella enrolada', '#f6e9ce', '#8a5d06')}
+      ${chip(t.no_en_maestro, 'bajas no propagadas', '#f6dedc', '#b3261e')}
+      ${chip(t.sin_leer, 'no contestaron', '#f6dedc', '#b3261e')}
+      ${hayCambios ? '' : '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo al día</span>'}
+    </div>
+    ${!d.huellas_verificadas ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:10px">
+      No se pudo leer el equipo de asistencia, así que no se verificó quién tiene la huella
+      enrolada. Los que figuran para cargar podrían no tener nada que copiar.</div>` : ''}
+    ${t.sin_huella ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:10px">
+      ${t.sin_huella} persona(s) figuran para cargar y no hay huella suya para copiar: o no están
+      en el equipo de asistencia, o están sin ninguna huella enrolada. Cada una dice cuál de las
+      dos. Tienen que enrolarse antes, o se las cargaría sin poder abrir igual.</div>` : ''}
+    ${t.no_en_maestro ? `<div style="background:#f6dedc;color:#8c1d18;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:10px">
+      <b>${t.no_en_maestro} persona(s) están en puertas y no en el equipo de asistencia.</b>
+      Eso suele ser una baja que no se propagó: la dieron de baja, se sincronizó con el equipo
+      de asistencia, y en las puertas quedó. No pueden fichar y siguen abriendo, que es
+      exactamente al revés de lo que corresponde. Es lo primero para mirar de esta lista.</div>` : ''}
+    <div style="overflow-y:auto;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>
+    ${bloqueFichaje}
+    <div style="font-size:.78rem;color:#999;margin-top:10px">
+      Cada línea se aplica de a una, y cada una se verifica releyendo el equipo: que la persona
+      quedó como corresponde y que los demás siguen enteros. Lo que se hizo queda en
+      «Lo que se escribió en los equipos», con quién y cuándo.</div>`;
+}
+
+// Cargar a una persona en una puerta, con su huella copiada del equipo de
+// fichaje. Es la mitad que faltaba: hasta ahora el plan decía a quién había que
+// cargar y no había forma de hacerlo desde el sistema.
+async function cargarEnPuerta(dispositivoId, userId, boton) {
+  if (boton) { boton.disabled = true; boton.textContent = 'Cargando…'; }
+  const res = await fetch('/api/accesos/cargar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ dispositivo_id: dispositivoId, user_id: userId }),
+  });
+  let r = {};
+  try { r = await res.json(); } catch {}
+  if (!res.ok) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error: ' + (r.detail || 'no se pudo cargar'));
+  }
+  // La fila se tacha en vez de desaparecer: ver lo que se hizo recién, y en qué
+  // orden, es lo que permite darse cuenta si algo salió distinto.
+  const fila = document.getElementById(`cargar-${dispositivoId}-${userId}`);
+  if (fila) {
+    fila.style.opacity = '.55';
+    fila.innerHTML = `<span style="color:#2e7d4f;font-weight:600;min-width:62px;display:inline-block">cargado</span>`
+      + `<span style="font-family:monospace;color:#888">${_esc(userId)}</span> ${_esc(r.empleado)}`
+      + `<span style="color:#888;margin-left:6px">· ${r.huellas} huella(s), grupo ${_esc(r.grupo)},`
+      + ` los otros ${r.otros_intactos} intactos</span>`
+      // El horario que le da el grupo. Si tiene horario va en rojo y sin
+      // esconderse: es lo único que puede dejar afuera a alguien que el sistema
+      // da por cargado, y no avisa de ninguna otra forma.
+      + (r.horario_restringe ? `<div style="color:#b3261e;font-size:.78rem;margin-left:72px">
+           ojo: el grupo ${_esc(r.grupo)} tiene horario — ${_esc(r.horario)}.
+           Fuera de ese horario no va a abrir, aunque esté cargado.</div>`
+         : (r.horario ? `<div style="color:#888;font-size:.76rem;margin-left:72px">
+           horario del grupo ${_esc(r.grupo)}: ${_esc(r.horario)}</div>` : ''))
+      // Por qué se eligió ese grupo, solo si no fue simplemente el más usado.
+      // Antes avisaba cada vez que la puerta tenía gente en dos grupos, y eso
+      // pasa en casi todas sin que signifique nada: un aviso que aparece
+      // siempre enseña a ignorar los avisos.
+      + (r.aviso_grupo ? `<div style="color:#8a5d06;font-size:.76rem;margin-left:72px">
+           ${_esc(r.aviso_grupo)}</div>` : '')
+      // Quedo con el numero como nombre en pantalla del lector. Se arregla
+      // poniendole el nombre corto en la pestana Accesos del legajo.
+      + (r.nombre_por_defecto ? `<div style="color:#8a5d06;font-size:.76rem;margin-left:72px">
+           quedó con el número como nombre: no tiene nombre de lector en el legajo y el
+           equipo de fichaje no contestó para copiarle el suyo.</div>` : '');
+  }
+  toast(`${r.empleado} cargado en ${r.equipo}`);
+}
+
+// Sacar a alguien que, según la política, no debería estar en esa puerta. Es el
+// espejo de cargar, y por eso no pide motivo: el motivo es el plan, y el backend
+// lo recalcula solo. El de la pantalla de cargados sí lo pide, porque ese se
+// sale de la política y es lo único que va a explicarlo después.
+async function sacarPorPlan(dispositivoId, userId, boton) {
+  const fila = document.getElementById(`sacar-${dispositivoId}-${userId}`);
+  const quien = fila ? fila.textContent.replace(/−\s*sacar/, '').trim() : userId;
+  // Se pregunta una vez. Borrar una huella de un lector no se deshace con un
+  // botón: se restaura de un respaldo, y para eso hay que saber que existe.
+  if (!confirm(`Sacar a ${quien} de este equipo.\n\n`
+      + `Se le borra el usuario y las huellas del lector. Antes se guarda un `
+      + `respaldo en la PC, así que se puede volver atrás, pero no con un botón.`
+      + `\n\n¿Lo saco?`)) return;
+
+  if (boton) { boton.disabled = true; boton.textContent = 'Sacando…'; }
+  const res = await fetch('/api/accesos/sacar', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ dispositivo_id: dispositivoId, user_id: userId }),
+  });
+  let r = {};
+  try { r = await res.json(); } catch {}
+  if (!res.ok) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error: ' + (r.detail || 'no se pudo sacar'));
+  }
+  // La fila se tacha en vez de desaparecer: ver lo que se hizo recién, y en qué
+  // orden, es lo que permite darse cuenta si algo salió distinto.
+  if (fila) {
+    fila.style.opacity = '.55';
+    fila.innerHTML = `<span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">sacado</span>`
+      + `<span style="font-family:monospace;color:#888">${_esc(userId)}</span> `
+      + `${_esc(r.empleado) || `«${_esc(r.nombre_equipo || 'sin nombre')}»`}`
+      + `<span style="color:#888;margin-left:6px">· ${_esc(r.motivo)},`
+      + ` los otros ${r.otros_intactos} intactos</span>`
+      + `<div style="font-size:.72rem;color:#bbb;margin-left:72px">respaldo guardado en la PC</div>`;
+  }
+  toast(`${r.empleado || userId} sacado de ${r.equipo}`);
+}
+
+// Aplicar todo el plan de una puerta. Va por puerta y no por todas juntas: cada
+// una es una conexión a un equipo viejo que puede no contestar, y así lo que
+// falla es una puerta y no la pasada entera.
+async function aplicarPuerta(dispositivoId, boton, vanACargar, vanASacar) {
+  const bloque = document.getElementById(`puerta-plan-${dispositivoId}`);
+  const nombre = bloque ? (bloque.querySelector('b') || {}).textContent : 'esta puerta';
+  // Se nombra lo que va a pasar, no un total: "70 cambios" y "70 personas
+  // pierden el acceso" son el mismo número y no son la misma frase.
+  const que = [vanACargar ? `${vanACargar} persona(s) van a quedar cargadas` : '',
+               vanASacar ? `${vanASacar} persona(s) van a perder el acceso` : '']
+              .filter(Boolean).join('\n');
+  // Una tanda grande de bajas casi nunca es la política poniéndose al día: es
+  // una lista que alguien no esperaba. Vale la pena frenar y mirarla.
+  const mucho = vanASacar >= 10
+    ? `\n\nSon muchas bajas de una sola puerta. Si esta lista no es la que `
+      + `esperabas, mirala antes: puede ser un perfil mal asignado y no `
+      + `${vanASacar} bajas de verdad.`
+    : '';
+  if (!confirm(`${nombre}\n\n${que}${mucho}\n\n`
+      + `De los que se sacan se guarda un respaldo con sus huellas en la PC `
+      + `antes de borrar, pero volver atrás no es un botón.\n\n¿Aplico?`)) return;
+
+  if (boton) { boton.disabled = true; boton.textContent = 'Aplicando…'; }
+  let r = {};
+  try {
+    const res = await fetch(`/api/accesos/aplicar/${dispositivoId}`, { method: 'POST' });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo aplicar');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error: ' + e.message);
+  }
+
+  // Cada línea se tacha con lo que realmente pasó, no con lo que se pidió.
+  (r.resultados || []).forEach(x => {
+    const fila = document.getElementById(
+      `${x.accion === 'cargar' ? 'cargar' : 'sacar'}-${dispositivoId}-${x.user_id}`);
+    if (!fila) return;
+    fila.style.opacity = '.55';
+    const quien = _esc(x.empleado) || `«${_esc(x.nombre_escrito || x.nombre_equipo || '')}»`;
+    if (x.ok) {
+      const hecho = x.accion === 'cargar' ? 'cargado' : 'sacado';
+      const color = x.accion === 'cargar' ? '#2e7d4f' : '#b3261e';
+      fila.innerHTML = `<span style="color:${color};font-weight:600;min-width:62px;display:inline-block">${hecho}</span>`
+        + `<span style="font-family:monospace;color:#888">${_esc(x.user_id)}</span> ${quien}`
+        + (x.accion === 'cargar'
+            ? `<span style="color:#888;margin-left:6px">· ${x.huellas} huella(s)</span>`
+            : `<span style="color:#888;margin-left:6px">· respaldo guardado</span>`);
+    } else {
+      fila.innerHTML = `<span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">no se pudo</span>`
+        + `<span style="font-family:monospace;color:#888">${_esc(x.user_id)}</span> ${quien}`
+        + `<div style="font-size:.76rem;color:#b3261e;margin-left:72px">${_esc(x.error || '')}</div>`;
+    }
+  });
+
+  // Lo que le pasó al resto del equipo va arriba de todo y en rojo: es lo único
+  // que puede haber roto algo que nadie pidió tocar.
+  if (bloque && (r.problemas || []).length) {
+    const alerta = document.createElement('div');
+    alerta.style.cssText = 'background:#f6dedc;color:#8c1d18;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:8px';
+    alerta.innerHTML = `<b>Ojo: al aplicar cambió gente que no estaba en el plan.</b>`
+      + r.problemas.map(p => `<div style="margin-top:3px">· ${_esc(p)}</div>`).join('');
+    bloque.appendChild(alerta);
+  }
+  if (bloque && r.horario_restringe) {
+    const nota = document.createElement('div');
+    nota.style.cssText = 'color:#b3261e;font-size:.78rem;margin-top:6px';
+    nota.textContent = `Los que se cargaron quedaron en el grupo ${r.grupo}, `
+      + `que tiene horario: ${r.horario}. Fuera de ese horario no abren.`;
+    bloque.appendChild(nota);
+  }
+
+  const hechos = (r.resultados || []).filter(x => x.ok).length;
+  const fallados = (r.resultados || []).length - hechos;
+  if (boton) {
+    boton.disabled = fallados === 0;
+    boton.textContent = fallados ? `Reintentar ${fallados}` : 'Listo';
+  }
+  toast(`${nombre}: ${hechos} aplicado(s)${fallados ? `, ${fallados} sin poder` : ''}`);
+}
+
+// ── Perfiles de acceso ────────────────────────────────────────────────────────
+// Una matriz perfil × puerta. El mismo modelo con el que el usuario ya piensa
+// el problema: "todas", "todas menos oficina", "solo oficina", "solo cámaras".
+
+let _perfiles = [], _puertas = [];
+
+// El perfil que propone cada cargo vive acá y no en la pestaña de Cargos: es
+// política de acceso, se cambia con el permiso de accesos, y tenerlo en otra
+// pantalla era parte del problema de "todo está en lugares distintos".
+async function cargarPerfiles() {
+  const caja = document.getElementById('matriz-perfiles');
+  try {
+    const res = await fetch('/api/perfiles-acceso');
+    if (!res.ok) throw new Error();
+    const d = await res.json();
+    _perfiles = d.perfiles; _puertas = d.puertas;
+  } catch {
+    caja.innerHTML = '<p style="color:#c0392b;font-size:.9rem">No se pudo cargar</p>';
+    return;
+  }
+
+  if (!_puertas.length) {
+    caja.innerHTML = `<p style="color:#888;font-size:.88rem">
+      Todavía no hay ningún equipo marcado como <b>Abre una puerta</b>. Marcá al menos uno
+      arriba y acá vas a poder armar los perfiles.</p>`;
+    return;
+  }
+  if (!_perfiles.length) {
+    caja.innerHTML = '<p style="color:#888;font-size:.88rem">No hay perfiles cargados todavía.</p>';
+    return;
+  }
+
+  const puede = canDo('accesos', 'editar');
+  const cols = _puertas.map(p =>
+    `<th style="padding:6px 10px;font-size:.78rem;font-weight:600;text-align:center;min-width:80px">
+       ${_esc(p.nombre)}${p.ubicacion ? `<div style="font-weight:400;color:#888">${_esc(p.ubicacion)}</div>` : ''}
+       ${p.activo ? '' : '<div style="font-weight:400;color:#c0392b">inactivo</div>'}
+     </th>`).join('');
+
+  const filas = _perfiles.map(pf => {
+    const tildes = _puertas.map(p => {
+      const puesto = pf.dispositivos.includes(p.id);
+      return `<td style="text-align:center;padding:6px 10px">
+        <input type="checkbox" ${puesto ? 'checked' : ''} ${puede ? '' : 'disabled'}
+               style="width:16px;height:16px;cursor:${puede ? 'pointer' : 'default'}"
+               onchange="togglePuerta(${pf.id}, ${p.id}, this)"></td>`;
+    }).join('');
+    const cuantas = pf.dispositivos.length;
+    return `<tr${pf.activo ? '' : ' style="opacity:.55"'}>
+      <td style="padding:6px 10px">
+        <b>${_esc(pf.nombre)}</b>
+        <div style="font-size:.75rem;color:#888">
+          ${cuantas} de ${_puertas.length} puertas · ${pf.empleados} empleado(s)</div>
+      </td>
+      ${tildes}
+      <td style="padding:6px 10px;white-space:nowrap">
+        ${puede ? `<button class="btn btn-sm btn-primary" onclick="editarPerfil(${pf.id})">Renombrar</button>` : ''}
+        ${canDo('accesos','eliminar') ? `<button class="btn btn-sm btn-danger" style="margin-left:5px" onclick="eliminarPerfil(${pf.id})">Borrar</button>` : ''}
+      </td></tr>`;
+  }).join('');
+
+  caja.innerHTML = `
+    <table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
+      <thead><tr style="background:#fafafa">
+        <th style="text-align:left;padding:6px 10px;min-width:200px">Perfil</th>
+        ${cols}<th style="width:180px"></th>
+      </tr></thead>
+      <tbody>${filas}</tbody>
+    </table>`;
+}
+
+async function togglePuerta(perfilId, puertaId, control) {
+  const pf = _perfiles.find(p => p.id === perfilId);
+  if (!pf) return;
+  const antes = [...pf.dispositivos];
+  const ahora = control.checked
+    ? [...new Set([...antes, puertaId])]
+    : antes.filter(x => x !== puertaId);
+
+  const res = await fetch(`/api/perfiles-acceso/${perfilId}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nombre: pf.nombre, descripcion: pf.descripcion,
+                           activo: !!pf.activo, orden: pf.orden, dispositivos: ahora }),
+  });
+  if (!res.ok) {
+    control.checked = !control.checked;   // revertir: el servidor no lo aceptó
+    let e = {}; try { e = await res.json(); } catch {}
+    return toast('Error: ' + (e.detail || 'no se pudo guardar'));
+  }
+  pf.dispositivos = ahora;
+  cargarPerfiles();
+}
+
+async function nuevoPerfil() {
+  const nombre = prompt('Nombre del perfil\n\nPor ejemplo: Todas las puertas, Todas menos oficina, Solo oficina');
+  if (!nombre || !nombre.trim()) return;
+  const res = await fetch('/api/perfiles-acceso', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nombre: nombre.trim(), dispositivos: [] }),
+  });
+  if (res.ok) { toast('Perfil creado — ahora tildá sus puertas'); cargarPerfiles(); return; }
+  let e = {}; try { e = await res.json(); } catch {}
+  toast('Error: ' + (e.detail || 'no se pudo crear'));
+}
+
+async function editarPerfil(id) {
+  const pf = _perfiles.find(p => p.id === id);
+  if (!pf) return;
+  const nombre = prompt('Nombre del perfil', pf.nombre);
+  if (!nombre || !nombre.trim() || nombre.trim() === pf.nombre) return;
+  const res = await fetch(`/api/perfiles-acceso/${id}`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ nombre: nombre.trim(), descripcion: pf.descripcion,
+                           activo: !!pf.activo, orden: pf.orden,
+                           dispositivos: pf.dispositivos }),
+  });
+  if (res.ok) { toast('Perfil renombrado'); cargarPerfiles(); return; }
+  let e = {}; try { e = await res.json(); } catch {}
+  toast('Error: ' + (e.detail || 'no se pudo guardar'));
+}
+
+async function eliminarPerfil(id) {
+  const pf = _perfiles.find(p => p.id === id);
+  if (!confirm(`¿Borrar el perfil "${pf ? pf.nombre : id}"?`)) return;
+  const res = await fetch(`/api/perfiles-acceso/${id}`, { method: 'DELETE' });
+  if (res.ok) { toast('Perfil borrado'); cargarPerfiles(); return; }
+  let e = {}; try { e = await res.json(); } catch {}
+  toast('Error: ' + (e.detail || 'no se pudo borrar'));
+}
+
+// ── Revisión de todos los lectores ────────────────────────────────────────────
+// La rutina de verificación completa en una pantalla. Muestra solo lo que hay
+// que corregir; los equipos sin novedades se listan en una línea y nada más.
+
+async function revisarTodos() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:860px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Revisión de todos los lectores</div>
+      <div style="font-size:.8rem;color:#888;margin-top:4px">
+        Cruza lo que cada equipo tiene cargado contra los <b>legajos</b>: gente dada de baja,
+        números que no existen y nombres que no coinciden. Es la única pantalla que incluye el
+        <b>equipo de fichaje</b> — el plan de cambios administra solo las puertas.
+        No lee huellas, por eso es rápida.
+      </div>
+      <div id="rev-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
+        Consultando los equipos… se leen todos a la vez, pero si alguno está apagado puede tardar.</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let data;
+  try {
+    const res = await fetch('/api/dispositivos/revision/todos');
+    data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'error');
+  } catch (e) {
+    document.getElementById('rev-cuerpo').innerHTML =
+      `<span style="color:#c0392b">No se pudo revisar: ${_esc(e.message)}</span>`;
+    return;
+  }
+
+  const t = data.total;
+  const hayProblemas = t.de_baja || t.desconocidos || t.nombre_distinto || t.sin_responder;
+  const chip = (n, txt, fondo, color) => n
+    ? `<span style="background:${fondo};color:${color};padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${n} ${txt}</span>`
+    : '';
+
+  const bloques = data.equipos.map(eq => {
+    const cab = `<b>${_esc(eq.nombre)}</b>`
+      + (eq.ubicacion ? ` <span style="color:#888;font-size:.8rem">${_esc(eq.ubicacion)}</span>` : '')
+      + ` <span style="color:#bbb;font-family:monospace;font-size:.78rem">${_esc(eq.ip)}</span>`;
+
+    if (!eq.ok) {
+      return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0;background:#fdf3f2">
+        ${cab}<div style="color:#b3261e;font-size:.82rem;margin-top:3px">No contestó</div>
+        <div style="font-family:monospace;font-size:.75rem;color:#999">${_esc(eq.error)}</div></div>`;
+    }
+    if (!eq.problemas.length) {
+      return `<div style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#555;font-size:.85rem">
+        ${cab} <span style="color:#2e7d4f">· ${eq.resumen.total} cargados, sin novedades</span></div>`;
+    }
+    const lista = eq.problemas.map(f => {
+      const etiqueta = f.estado === 'de_baja'
+        ? `<span style="color:#b3261e;font-weight:600">dado de baja</span>${f.empleado?.fecha_egreso ? ` <span style="color:#999">· egreso ${_esc(f.empleado.fecha_egreso)}</span>` : ''}`
+        : f.estado === 'desconocido'
+          ? '<span style="color:#8a5d06;font-weight:600">no está en el sistema</span>'
+          : '<span style="color:#5b3a8a;font-weight:600">nombre distinto al legajo</span>';
+      const quien = f.empleado ? _esc(f.empleado.nombre) : _esc(f.nombre) || '—';
+      return `<div style="padding:4px 0 4px 14px;font-size:.83rem;border-bottom:1px solid #fafafa">
+        <span style="font-family:monospace;color:#888">${_esc(f.user_id)}</span>
+        &nbsp;${quien}&nbsp; ${etiqueta}</div>`;
+    }).join('');
+    return `<div style="padding:10px 12px;border-bottom:1px solid #f0f0f0">
+      ${cab} <span style="color:#888;font-size:.8rem">· ${eq.resumen.total} cargados</span>
+      <div style="margin-top:6px">${lista}</div></div>`;
+  }).join('');
+
+  document.getElementById('rev-cuerpo').innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:.85rem;color:#333"><b>${t.equipos}</b> equipos revisados</span>
+      ${chip(t.sin_responder, 'no contestaron', '#f6dedc', '#b3261e')}
+      ${chip(t.de_baja, 'dados de baja cargados', '#f6dedc', '#b3261e')}
+      ${chip(t.desconocidos, 'no están en el sistema', '#f6e9ce', '#8a5d06')}
+      ${chip(t.nombre_distinto, 'con otro nombre', '#e8e0f0', '#5b3a8a')}
+      ${hayProblemas ? '' : '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo en orden</span>'}
+    </div>
+    <div style="overflow-y:auto;margin-top:12px;border:1px solid #eee;border-radius:4px">${bloques}</div>`;
+  cargarDispositivos();
+}
+
+// ── Los relojes de los equipos ────────────────────────────────────────────────
+// A las puertas nunca se les puso la hora: el sistema se la sincroniza solo al
+// equipo de fichaje. Un lector de quince años puede estar corrido meses, y
+// entonces todas sus pasadas están corridas lo mismo.
+//
+// Se miran todos juntos a propósito: un equipo corrido se entiende mirando los
+// otros. Si están TODOS corridos lo mismo, el reloj sospechoso es el de esta
+// máquina, y ponerle esa hora a los equipos sería propagar el error.
+
+let _relojes = null;
+
+// Lo que guarda la base viene en ISO, que es como tiene que guardarse para
+// poder ordenarlo. Darlo vuelta es cosa de la pantalla.
+function _fechaHora(iso) {
+  if (!iso) return '';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}` : String(iso);
+}
+
+function _desfaseTexto(m) {
+  const abs = Math.abs(m);
+  if (abs <= 2) return { txt: 'en hora', color: '#2e7d4f' };
+  const cuanto = abs >= 1440 ? `${Math.round(abs / 1440)} día(s)`
+               : abs >= 60   ? `${Math.round(abs / 60)} hora(s)`
+                             : `${abs} min`;
+  return { txt: `${m > 0 ? '+' : '−'}${cuanto}`,
+           color: abs >= 60 ? '#b3261e' : '#8a5d06' };
+}
+
+async function verRelojes() {
+  let modal = document.getElementById('modal-relojes');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-relojes';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:white;border-radius:10px;padding:24px;width:720px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+        <div style="font-weight:bold;font-size:1rem">Relojes de los equipos</div>
+        <div id="relojes-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto"></div>
+        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+                onclick="document.getElementById('modal-relojes').remove()">Cerrar</button>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  const cuerpo = document.getElementById('relojes-cuerpo');
+  cuerpo.innerHTML = 'Preguntándole la hora a cada equipo…';
+
+  let d;
+  try {
+    const res = await fetch('/api/dispositivos/relojes');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    cuerpo.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  if (d.aviso) { cuerpo.innerHTML = `<div style="color:#888">${_esc(d.aviso)}</div>`; return; }
+  _relojes = d;
+  pintarRelojes();
+}
+
+// Dibuja con lo que ya está en memoria. Separado de la consulta a propósito:
+// después de poner un equipo en hora no hay por qué volver a preguntarle a los
+// otros cinco, y cada uno de esos es una conexión a un equipo viejo.
+function pintarRelojes() {
+  const cuerpo = document.getElementById('relojes-cuerpo');
+  const d = _relojes;
+  if (!cuerpo || !d) return;
+
+  const vivos = d.equipos.filter(e => e.ok);
+  const corridos = vivos.filter(e => Math.abs(e.desfase_minutos) > 2);
+  const todosIgual = corridos.length === vivos.length && vivos.length > 1
+    && Math.max(...vivos.map(e => e.desfase_minutos))
+       - Math.min(...vivos.map(e => e.desfase_minutos)) < 10;
+
+  const filas = d.equipos.map(e => {
+    if (!e.ok) return `<tr style="border-bottom:1px solid #f4f4f4">
+      <td style="padding:7px 10px">${_esc(e.nombre)}</td>
+      <td style="padding:7px 10px;color:#999" colspan="3">${_esc(e.error || 'no contestó')}</td></tr>`;
+    const f = _desfaseTexto(e.desfase_minutos);
+    return `<tr style="border-bottom:1px solid #f4f4f4">
+      <td style="padding:7px 10px">${_esc(e.nombre)}
+        ${e.es_asistencia ? '<span style="color:#aaa;font-size:.74rem">(fichaje)</span>' : ''}
+        <div style="font-size:.74rem;color:#bbb">${_esc(e.ip)}</div></td>
+      <td style="padding:7px 10px;font-family:monospace;color:#666">${_esc(e.reloj)}</td>
+      <td style="padding:7px 10px;color:${f.color};font-weight:600">${f.txt}</td>
+      <td style="padding:7px 10px;white-space:nowrap">
+        ${e.puesto_en ? `<div style="font-size:.72rem;color:#bbb">puesto en hora<br>${_esc(_fechaHora(e.puesto_en))}</div>` : ''}
+        ${canDo('dispositivos','editar') && Math.abs(e.desfase_minutos) > 2
+          ? `<button class="btn btn-sm btn-primary" onclick="ponerEnHora(${e.id}, this)">Poner en hora</button>` : ''}
+      </td></tr>`;
+  }).join('');
+
+  cuerpo.innerHTML = `
+    <div style="font-size:.85rem;color:#444">
+      Esta máquina marca <b>${_esc(d.ahora)}</b>. Es la hora que se les pone a los equipos.
+    </div>
+    ${todosIgual ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:8px">
+      <b>Están todos corridos casi lo mismo.</b> Eso no suele ser que fallaron todos los
+      relojes a la vez: lo más probable es que el desfasado sea el de esta máquina. Revisá
+      la hora de la PC antes de ponérsela a los equipos, o vas a propagar el error.</div>`
+    : corridos.length ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:8px 11px;font-size:.8rem;color:#6b5a26;margin-top:8px">
+      ${corridos.length} equipo(s) con la hora corrida. Mientras tanto, sus pasadas están
+      fechadas con esa hora.</div>`
+    : `<div style="background:#dcede2;color:#2e7d4f;padding:8px 11px;border-radius:5px;font-size:.8rem;margin-top:8px">
+      Todos en hora.</div>`}
+    <div style="overflow-y:auto;margin-top:10px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px">Equipo</th>
+              <th style="text-align:left;padding:6px 10px">Marca</th>
+              <th style="text-align:left;padding:6px 10px">Desfase</th>
+              <th style="padding:6px 10px;width:150px"></th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <div style="font-size:.76rem;color:#999;margin-top:8px">
+      Poner en hora no borra nada, pero las pasadas que el equipo ya tiene quedan fechadas
+      con la hora vieja: después de corregir un desfase grande conviven dos escalas de tiempo.
+    </div>`;
+}
+
+async function ponerEnHora(id, boton) {
+  const fila = (_relojes?.equipos || []).find(x => x.id === id);
+  const nombre = fila ? fila.nombre : id;
+  if (!confirm(`Ponerle a «${nombre}» la hora de esta máquina.`
+    + `\n\nLas pasadas que ya tiene quedan con la hora vieja.\n\n¿Seguir?`)) return;
+
+  if (boton) { boton.disabled = true; boton.textContent = 'Poniendo…'; }
+  const res = await fetch(`/api/dispositivos/${id}/hora`, { method: 'POST' });
+  const r = await res.json();
+  if (!res.ok || !r.ok) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Poner en hora'; }
+    return toast('Error: ' + (r.detail || r.error || 'no se pudo'));
+  }
+  // El servidor ya releyó el reloj de este equipo para verificar que quedara en
+  // hora, así que la respuesta trae el dato nuevo. Se actualiza esta fila y nada
+  // más: volver a preguntarle a los otros cinco no agrega nada, y cada uno es
+  // una conexión a un equipo viejo.
+  if (fila) {
+    fila.reloj = r.reloj;
+    fila.desfase_minutos = r.desfase_minutos;
+    fila.puesto_en = new Date().toLocaleString('sv').slice(0, 16);  // ISO, como la base
+    pintarRelojes();
+  }
+  toast(r.quedo_en_hora
+    ? `En hora. Estaba corrido ${r.desfase_antes} min`
+    : `Se le escribió, pero sigue corrido ${r.desfase_minutos} min: miralo`);
+}
+
+// ── El respaldo de las huellas ────────────────────────────────────────────────
+// Hoy el único lugar donde están todas es el equipo de fichaje. La otra copia la
+// tiene Enterprise, y todo esto existe para apagarlo: sin respaldo, un equipo
+// quemado son doscientas personas volviendo a enrolarse con el dedo, de a una.
+
+async function verHuellas() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:620px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Respaldo de huellas</div>
+      <div style="font-size:.8rem;color:#888;margin-top:4px">
+        Copia a la base las huellas que tiene el equipo de fichaje. Hoy es el único lugar
+        donde están todas: si ese equipo se quema, cada persona vuelve a enrolarse con el dedo.
+        Contra el equipo es solo lectura.</div>
+      <div id="huellas-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
+        Consultando…</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex:none">
+        ${canDo('accesos','aplicar')
+          ? `<button class="btn btn-primary btn-sm" id="btn-respaldar"
+                     onclick="respaldarHuellas(this)">Respaldar ahora</button>` : ''}
+        <button class="btn btn-secondary btn-sm"
+                onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  pintarHuellas();
+}
+
+async function pintarHuellas() {
+  const cuerpo = document.getElementById('huellas-cuerpo');
+  if (!cuerpo) return;
+  let d;
+  try {
+    const res = await fetch('/api/accesos/huellas');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    cuerpo.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  const kb = (d.bytes / 1024).toFixed(0);
+  cuerpo.innerHTML = `
+    <div style="font-size:.9rem;color:#333">
+      <b>${d.huellas}</b> huella(s) de <b>${d.personas}</b> persona(s)
+      <span style="color:#888">· ${kb} KB</span>
+    </div>
+    <div style="font-size:.84rem;color:#666;margin-top:6px">
+      ${d.ultima ? `Última copia: ${_esc(_fechaHora(d.ultima))}`
+                 : '<span style="color:#b3261e">Todavía no se respaldó ninguna.</span>'}
+    </div>
+    ${d.sin_respaldo
+      // El numero que importa no es cuantas hay, es a cuantos no cubre.
+      ? `<div style="background:#f6e9ce;color:#6b5a26;padding:8px 11px;border-radius:5px;font-size:.82rem;margin-top:10px">
+           <b>${d.sin_respaldo} persona(s) que trabajan hoy no tienen huella respaldada.</b>
+           O no están enroladas en el equipo de fichaje, o el respaldo quedó viejo.
+           Un respaldo vale por los que cubre, no por los que tiene.</div>`
+      : `<div style="background:#dcede2;color:#2e7d4f;padding:8px 11px;border-radius:5px;font-size:.82rem;margin-top:10px">
+           Todos los que trabajan hoy tienen su huella respaldada.</div>`}
+    <div style="font-size:.78rem;color:#999;margin-top:10px">
+      Las huellas quedan en <code>fichajes.db</code>, así que el respaldo de la base ya las
+      incluye. Por lo mismo, no copies esa base a otra máquina sin vaciarlas:
+      <code>scripts\\copiar_base_a_pruebas.bat</code> hace las dos cosas.</div>`;
+}
+
+async function respaldarHuellas(boton) {
+  if (boton) { boton.disabled = true; boton.textContent = 'Leyendo el equipo…'; }
+  let r = {};
+  try {
+    const res = await fetch('/api/accesos/huellas/respaldar', { method: 'POST' });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo respaldar');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error: ' + e.message);
+  }
+  if (boton) { boton.disabled = false; boton.textContent = 'Respaldar ahora'; }
+  // Lo que no se pudo guardar se dice: un respaldo que calla lo que le falta es
+  // peor que no tenerlo, porque nadie vuelve a mirarlo.
+  const sobras = [
+    r.sin_legajo ? `${r.sin_legajo} del equipo no son de nadie en el sistema` : '',
+    r.sin_huella ? `${r.sin_huella} están cargados sin ninguna huella` : '',
+  ].filter(Boolean).join(' · ');
+  toast(`${r.huellas} huella(s) de ${r.personas} persona(s)${sobras ? ' — ' + sobras : ''}`);
+  pintarHuellas();
+}
+
+// ── Operaciones sobre los equipos ─────────────────────────────────────────────
+// Lo que el sistema les escribió, y por qué. Mirarlo pide solo «ver»: el
+// registro existe para que alguien que no puede tocar nada pueda auditar lo que
+// se hizo, que es justamente el punto.
+
+async function verOperaciones() {
+  let modal = document.getElementById('modal-operaciones');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-operaciones';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:white;border-radius:10px;padding:24px;width:900px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+        <div style="font-weight:bold;font-size:1rem">Lo que se escribió en los equipos</div>
+        <div id="operaciones-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">Cargando…</div>
+        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+                onclick="document.getElementById('modal-operaciones').remove()">Cerrar</button>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  const cuerpo = document.getElementById('operaciones-cuerpo');
+  let d;
+  try {
+    const res = await fetch('/api/dispositivos/operaciones');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    cuerpo.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  if (!d.operaciones.length) {
+    cuerpo.innerHTML = `<div style="color:#888">Todavía no se le escribió nada a ningún equipo.</div>`;
+    return;
+  }
+
+  const color = { sacado: '#2e7d4f', pendiente: '#8a5d06', 'falló': '#b3261e' };
+  cuerpo.innerHTML = `
+    <div style="overflow-y:auto;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px;width:130px">Cuándo</th>
+              <th style="text-align:left;padding:6px 10px">Qué</th>
+              <th style="text-align:left;padding:6px 10px">Motivo</th>
+              <th style="text-align:left;padding:6px 10px;width:120px">Quién</th></tr>
+        </thead>
+        <tbody>${d.operaciones.map(o => `
+          <tr style="border-bottom:1px solid #f4f4f4">
+            <td style="padding:6px 10px;color:#666">${_esc(_fechaHora(o.creado_en))}</td>
+            <td style="padding:6px 10px">
+              <b style="color:${color[o.resultado] || '#666'}">${_esc(o.resultado)}</b>
+              el <span style="font-family:monospace">${_esc(o.user_id)}</span>
+              ${o.empleado ? `(${_esc(o.empleado)})` : `«${_esc(o.nombre_equipo || '')}»`}
+              de ${_esc(o.equipo)}
+              ${o.detalle ? `<div style="font-size:.75rem;color:#b3261e">${_esc(o.detalle)}</div>` : ''}
+              ${o.respaldo ? `<div style="font-size:.72rem;color:#bbb">respaldo guardado</div>` : ''}
+            </td>
+            <td style="padding:6px 10px;color:#555">${_esc(o.motivo || '')}</td>
+            <td style="padding:6px 10px;color:#888">${_esc(o.quien || '—')}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+// Sacar a una persona de UN equipo, fuera de la política. Es la salida de
+// emergencia: lo normal es corregir el perfil y aplicar el plan. Esto es para
+// cuando una auditoría encuentra que alguien quedó cargado por un error que
+// nadie previó y hay que sacarlo ahora.
+async function sacarDelEquipo(numero, nombreEnEquipo) {
+  const d = _dispositivos.find(x => x.id === _cargadosEquipo);
+  const motivo = prompt(
+    `Sacar al ${numero} «${nombreEnEquipo || 'sin nombre'}» de ${d ? d.nombre : 'este equipo'}.`
+    + `\n\nEsto se sale de la política: lo normal es corregirle el perfil y aplicar el plan.`
+    + `\nQueda registrado con tu nombre, y se guarda su huella por si hubo un error.`
+    + `\n\n¿Por qué lo estás sacando?`, '');
+  if (motivo === null) return;
+  if (motivo.trim().length < 5) return toast('Hace falta un motivo');
+
+  const res = await fetch(
+    `/api/dispositivos/${_cargadosEquipo}/cargados/${encodeURIComponent(numero)}/sacar`,
+    { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ motivo }) });
+  let r = {};
+  try { r = await res.json(); } catch {}
+  if (!res.ok) return toast('Error: ' + (r.detail || 'no se pudo sacar'));
+  toast(`${numero} sacado de ${r.equipo}`);
+  verCargados(_cargadosEquipo);
+}
+
+// ── Pasadas por un lector ─────────────────────────────────────────────────────
+// Quién apoyó el dedo y a qué hora. Se lee del equipo en el momento y no se
+// guarda nada: el lector conserva miles de pasadas, mucho más de lo que esta
+// pregunta necesita, y una copia nuestra sería una fuente más de desincronizar.
+//
+// Ojo con leerlo como asistencia: una pasada por una puerta NO es una fichada.
+// Por eso esto vive acá y no en la planilla.
+
+let _pasadas = [];
+
+async function verPasadas(id, dias) {
+  const d = _dispositivos.find(x => x.id === id);
+  dias = dias || 7;
+  let modal = document.getElementById('modal-pasadas');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-pasadas';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:white;border-radius:10px;padding:24px;width:760px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+        <div style="font-weight:bold;font-size:1rem">Pasadas por ${_esc(d ? d.nombre : id)}</div>
+        <div id="pasadas-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto"></div>
+        <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+                onclick="document.getElementById('modal-pasadas').remove()">Cerrar</button>
+      </div>`;
+    document.body.appendChild(modal);
+  }
+  const cuerpo = document.getElementById('pasadas-cuerpo');
+  cuerpo.innerHTML = `<div style="background:#eef3f8;border-left:3px solid #4a7ba7;padding:8px 11px;font-size:.82rem;color:#2c4d6b">
+      Leyendo las pasadas del equipo. Trae todas las que tiene guardadas y recorta
+      acá, así que con muchos registros tarda unos segundos.</div>`;
+
+  let data = {};
+  try {
+    const res = await fetch(`/api/dispositivos/${id}/registros?dias=${dias}`);
+    data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'error');
+  } catch (e) {
+    cuerpo.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+  if (!data.ok) {
+    // Un formato que no sabemos leer no es lo mismo que un equipo que no
+    // contesta: el equipo contestó bien, lo que falta es de este lado.
+    cuerpo.innerHTML = data.formato_desconocido
+      ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:9px 12px;font-size:.85rem;color:#6b5a26">
+           ${_esc(data.error)}</div>`
+      : `<div style="color:#c0392b">El equipo no contestó.</div>
+         <div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(data.error)}</div>`;
+    return;
+  }
+
+  _pasadas = data.registros;
+  const r = data.resumen;
+  const rango = [1, 3, 7, 15, 30].map(n =>
+    `<button class="btn btn-sm ${n === data.dias ? 'btn-primary' : 'btn-secondary'}"
+             onclick="verPasadas(${id}, ${n})">${n} día${n === 1 ? '' : 's'}</button>`).join(' ');
+
+  cuerpo.innerHTML = `
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${rango}</div>
+    <div style="font-size:.85rem;color:#333;margin-top:10px">
+      <b id="pasadas-contador">${r.pasadas} pasadas</b> de ${r.personas} persona(s)
+      en los últimos ${data.dias} día(s)
+      ${r.desconocidos ? `· <span style="color:#8a5d06">${r.desconocidos} número(s) que no están en el sistema</span>` : ''}
+    </div>
+    <div style="font-size:.76rem;color:#aaa;margin-top:3px">
+      El equipo tiene ${r.guardadas_en_el_equipo} legibles en total. No se copian a la base:
+      cuando el equipo se llene, las más viejas se pierden.
+    </div>
+    ${r.con_reloj_viejo ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:7px 10px;
+        font-size:.8rem;color:#6b5a26;margin-top:7px">
+      <b>${r.con_reloj_viejo} pasada(s) quedaron fuera porque tienen una fecha imposible.</b>
+      Son pasadas que ocurrieron de verdad, pero el equipo las fechó cuando su reloj estaba
+      mal. No se puede saber cuándo fueron, así que no se muestran junto a las buenas: en una
+      tabla se leerían igual de ciertas. Las de acá abajo son posteriores a que se le pusiera
+      la hora.</div>` : ''}
+    ${r.ilegibles ? `<div style="background:${r.ilegibles > r.guardadas_en_el_equipo ? '#fbe9e7' : '#f6f2e6'};
+        border-left:3px solid ${r.ilegibles > r.guardadas_en_el_equipo ? '#b3261e' : '#c8a951'};
+        padding:7px 10px;font-size:.8rem;margin-top:7px;
+        color:${r.ilegibles > r.guardadas_en_el_equipo ? '#8c1d18' : '#6b5a26'}">
+      ${r.ilegibles > r.guardadas_en_el_equipo
+        ? `<b>${r.ilegibles} registros ilegibles contra ${r.guardadas_en_el_equipo} legibles.</b>
+           Siendo mayoría, no son registros sueltos corruptos: lo más probable es que se esté
+           leyendo con el formato equivocado, y entonces lo de abajo tampoco es confiable.`
+        : `${r.ilegibles} registro(s) del equipo tienen una fecha que no existe y se saltearon.
+           Pasa en equipos viejos; con ${r.guardadas_en_el_equipo} legibles, el resto sirve.`}
+    </div>` : ''}
+    ${(() => {
+      const m = data.desfase_minutos;
+      if (m === null || m === undefined) return '';
+      const abs = Math.abs(m);
+      if (abs <= 5) return `<div style="font-size:.76rem;color:#2e7d4f;margin-top:5px">
+        El reloj del equipo coincide con el del sistema (${_esc(data.reloj)}).</div>`;
+      const cuanto = abs >= 1440 ? `${Math.round(abs / 1440)} día(s)`
+                   : abs >= 60   ? `${Math.round(abs / 60)} hora(s)`
+                                 : `${abs} minuto(s)`;
+      return `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:7px 10px;
+                 font-size:.8rem;color:#6b5a26;margin-top:7px">
+        <b>El reloj de este equipo está ${m > 0 ? 'adelantado' : 'atrasado'} ${cuanto}.</b>
+        Marca ${_esc(data.reloj)}. Las horas de abajo son las que el equipo creyó que eran,
+        así que están corridas exactamente eso. Nadie le sincroniza la hora a las puertas:
+        el sistema solo se la pone al equipo de fichaje.</div>`;
+    })()}
+    <input type="text" id="pasadas-buscar" oninput="filtrarPasadas()" autocomplete="off"
+           placeholder="Buscar por número o nombre"
+           style="margin-top:10px;width:100%;padding:7px 10px;font-size:.85rem;border:1px solid #ddd;border-radius:4px">
+    <div style="overflow-y:auto;margin-top:8px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px;width:110px">Fecha</th>
+              <th style="text-align:left;padding:6px 10px;width:80px">Hora</th>
+              <th style="text-align:left;padding:6px 10px;width:70px">N°</th>
+              <th style="text-align:left;padding:6px 10px">Quién</th></tr>
+        </thead>
+        <tbody id="pasadas-tbody"></tbody>
+      </table>
+    </div>
+    <div style="font-size:.76rem;color:#999;margin-top:7px">
+      Una pasada por una puerta <b>no es una fichada</b>: no entra a la planilla ni la modifica.
+    </div>`;
+  filtrarPasadas();
+}
+
+function filtrarPasadas() {
+  const q = (document.getElementById('pasadas-buscar')?.value || '').trim().toLowerCase();
+  const filas = !q ? _pasadas : _pasadas.filter(p =>
+    String(p.user_id).toLowerCase().includes(q)
+    || (p.nombre || '').toLowerCase().includes(q));
+  const tb = document.getElementById('pasadas-tbody');
+  if (tb) tb.innerHTML = filas.length ? filas.map(p => `
+    <tr style="border-bottom:1px solid #f6f6f6">
+      <td style="padding:5px 10px;color:#666">${_esc(p.fecha)}</td>
+      <td style="padding:5px 10px;font-family:monospace">${_esc(p.hora)}</td>
+      <td style="padding:5px 10px;font-family:monospace;color:#888">${_esc(p.user_id)}</td>
+      <td style="padding:5px 10px">${p.nombre
+        ? _esc(p.nombre) + (p.activo === false
+            ? ' <span style="color:#b3261e;font-size:.75rem">(dado de baja)</span>' : '')
+        : '<span style="color:#8a5d06">no está en el sistema</span>'}</td>
+    </tr>`).join('')
+    : `<tr><td colspan="4" style="padding:14px;color:#999;text-align:center">
+         Nadie coincide con «${_esc(q)}».</td></tr>`;
+  const c = document.getElementById('pasadas-contador');
+  if (c) c.textContent = q ? `${filas.length} de ${_pasadas.length} pasadas`
+                           : `${_pasadas.length} pasadas`;
+}
+
+// ── Quiénes están cargados en un lector ───────────────────────────────────────────────────────
+// Qué tiene cargado el equipo, cruzado contra los empleados. Reemplaza la
+// comparación a ojo entre dos listas en pantallas distintas.
+
+const _ESTADOS = {
+  de_baja:     { texto: 'Dado de baja', fondo: '#f6dedc', color: '#b3261e' },
+  desconocido: { texto: 'No está en el sistema', fondo: '#f6e9ce', color: '#8a5d06' },
+  ok:          { texto: '', fondo: '', color: '' },
+};
+
+async function verCargados(id) {
+  const d = _dispositivos.find(x => x.id === id);
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:820px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Quiénes están cargados en ${_esc(d ? d.nombre : id)}</div>
+      <div id="cargados-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
+        Leyendo el equipo… puede tardar unos segundos.</div>
+      <button class="btn btn-secondary btn-sm" style="align-self:flex-end;margin-top:16px;flex:none"
+              onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+    </div>`;
+  document.body.appendChild(modal);
+
+  let data = {};
+  try {
+    const res = await fetch(`/api/dispositivos/${id}/cargados`);
+    data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'error');
+  } catch (e) {
+    document.getElementById('cargados-cuerpo').innerHTML =
+      `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+
+  const cuerpo = document.getElementById('cargados-cuerpo');
+  if (!data.ok) {
+    // Un formato que no sabemos leer no es lo mismo que un equipo que no
+    // contesta: el equipo contestó bien, lo que falta es de este lado.
+    cuerpo.innerHTML = data.formato_desconocido
+      ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:9px 12px;font-size:.85rem;color:#6b5a26">
+           ${_esc(data.error)}</div>`
+      : `<div style="color:#c0392b">El equipo no contestó.</div>
+         <div style="font-family:monospace;font-size:.78rem;color:#888;margin-top:6px">${_esc(data.error)}</div>`;
+    return;
+  }
+
+  const r = data.resumen;
+  const chip = (n, t, fondo, color) => n
+    ? `<span style="background:${fondo};color:${color};padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">${n} ${t}</span>`
+    : '';
+  const alertas = [
+    chip(r.de_baja, 'dados de baja', '#f6dedc', '#b3261e'),
+    chip(r.desconocidos, 'no están en el sistema', '#f6e9ce', '#8a5d06'),
+    chip(r.sin_huella, 'sin huella', '#f6dedc', '#b3261e'),
+    chip(r.administran, 'administran el lector', '#e6eef6', '#2c4d6b'),
+    chip(r.nombre_distinto, 'con otro nombre', '#e8e0f0', '#5b3a8a'),
+    chip(r.nombre_no_configurado, 'sin el nombre configurado', '#f6f2e6', '#8a5d06'),
+  ].filter(Boolean).join(' ');
+
+  // Se guardan para poder filtrar sin volver a leer el equipo: la lectura tarda
+  // segundos y buscar a alguien no puede costar otra consulta al lector.
+  _cargadosFilas = data.filas;
+  _cargadosHuellas = data.huellas_leidas;
+  _cargadosEquipo = id;
+
+  const esPuerta = d && d.es_acceso;
+  cuerpo.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+      <span style="font-size:.85rem;color:#333"><b id="cargados-contador">${r.total} cargados</b> · contestó por ${data.transporte.toUpperCase()}</span>
+      ${alertas || '<span style="background:#dcede2;color:#2e7d4f;padding:4px 10px;border-radius:4px;font-size:.8rem;font-weight:600">todo en orden</span>'}
+    </div>
+    ${data.franjas_leidas ? (r.con_franja
+      ? `<div style="background:#f6e9ce;border-left:3px solid #c8a951;padding:7px 10px;font-size:.8rem;color:#6b5a26;margin:7px 0">
+          <b>${r.con_franja} persona(s) tienen franja horaria propia en este equipo.</b>
+          El equipo les aplica un horario particular, y hoy escribirles una huella se lo borraría.
+          Hay que resolverlo antes de que el sistema le escriba algo a esta puerta.</div>`
+      : `<div style="font-size:.78rem;color:#888;margin:7px 0">
+          Nadie tiene franja horaria propia acá: el acceso lo gobierna el grupo. Escribir una
+          huella no le pisa ningún horario a nadie.</div>`) : ''}
+    ${r.sin_huella ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:7px 10px;font-size:.8rem;color:#8c1d18;margin:7px 0">
+      ${r.sin_huella === 1 ? 'Hay una persona cargada' : `Hay ${r.sin_huella} personas cargadas`} sin huella en este equipo.
+      ${esPuerta ? 'Figuran en la lista y no abren la puerta.'
+                 : 'Figuran en la lista y no pueden fichar.'}</div>` : ''}
+    ${r.nombre_distinto ? `<div style="font-size:.78rem;color:#666;margin:6px 0">
+      El equipo guarda un <b>nombre corto que eligió alguien</b> —acá entran hasta
+      ${data.nombre_limite} caracteres— así que no tiene por qué parecerse al del legajo:
+      «FEDE» para Federico es correcto.
+      ${r.nombre_no_configurado
+        ? `<b>${r.nombre_no_configurado} no coinciden con el nombre que les configuraron en el
+           legajo</b>, y eso sí es una diferencia real.`
+        : 'Los que figuran acá no tienen un nombre configurado, así que se comparan contra el'
+          + ' legajo solo como pista: lo que se busca es un número reutilizado con el empleado'
+          + ' anterior todavía adentro.'}
+      Los dos nombres están en la tabla: mirá y decidí vos.</div>` : ''}
+    <input type="text" id="cargados-buscar" oninput="filtrarCargados()" autocomplete="off"
+           placeholder="Buscar por número o nombre"
+           style="margin-top:10px;width:100%;padding:7px 10px;font-size:.85rem;border:1px solid #ddd;border-radius:4px">
+    <div style="overflow-y:auto;margin-top:8px;border:1px solid #eee;border-radius:4px">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead style="position:sticky;top:0;background:#fafafa">
+          <tr><th style="text-align:left;padding:6px 10px">N°</th>
+              <th style="text-align:left;padding:6px 10px">En el lector</th>
+              <th style="text-align:left;padding:6px 10px">En el sistema</th>
+              <th style="text-align:left;padding:6px 10px">Estado</th>
+              ${_cargadosHuellas ? '<th style="padding:6px 10px">Huellas</th>' : ''}
+              <th style="padding:6px 10px">Grupo</th>
+              ${canDo('accesos','aplicar') ? '<th style="padding:6px 10px;width:70px"></th>' : ''}</tr>
+        </thead>
+        <tbody id="cargados-tbody"></tbody>
+      </table>
+    </div>
+    <div style="font-size:.74rem;color:#aaa;margin-top:6px">
+      Leído recién del equipo. No se cambió nada en él.</div>`;
+  filtrarCargados();
+  document.getElementById('cargados-buscar')?.focus();
+  cargarDispositivos();
+}
+
+let _cargadosFilas = [], _cargadosHuellas = false, _cargadosEquipo = null;
+
+function _cargadosFilaHtml(f) {
+  const e = _ESTADOS[f.estado];
+  const quien = f.empleado
+    ? _esc(f.empleado.nombre) + (f.empleado.fecha_egreso
+        ? `<div style="font-size:.75rem;color:#b3261e">egreso ${_esc(f.empleado.fecha_egreso)}</div>` : '')
+    : '<span style="color:#bbb">—</span>';
+  // Sin huella no abre, aunque figure en la lista. Que no se hayan podido leer
+  // las huellas es otra cosa y no se dibuja igual: confundirlos manda a recargar
+  // gente que estaba bien.
+  const huella = !_cargadosHuellas ? ''
+    : f.huellas === null || f.huellas === undefined
+      ? '<td style="text-align:center;color:#b98900;font-size:.78rem">no se pudo leer</td>'
+    : f.huellas === 0
+      ? '<td style="text-align:center;color:#b3261e;font-weight:600;font-size:.8rem">sin huella</td>'
+      : `<td style="text-align:center;color:#888">${f.huellas}</td>`;
+  return `<tr style="${e.fondo ? `background:${e.fondo}` : (f.huellas === 0 ? 'background:#fdf0ee' : '')}">
+    <td style="font-family:monospace">${_esc(f.user_id)}</td>
+    <td>${_esc(f.nombre) || '<span style="color:#bbb">sin nombre</span>'}
+      ${f.nivel && f.privilegio ? `<div style="font-size:.74rem;color:#2c4d6b">${_esc(f.nivel)}</div>` : ''}</td>
+    <td>${quien}</td>
+    <td style="color:${e.color};font-weight:${e.texto ? 600 : 400};font-size:.8rem">
+      ${e.texto}${f.nombre_distinto ? (f.referencia_nombre === 'configurado'
+        ? '<div style="color:#8a5d06;font-size:.75rem">no es el nombre que le configuraste</div>'
+        : '<div style="color:#5b3a8a;font-size:.75rem">no se parece al legajo</div>') : ''}</td>
+    ${huella}
+    <td style="text-align:center;color:#888">${f.grupo ?? '—'}</td>
+    ${canDo('accesos','aplicar') ? `<td style="text-align:right;white-space:nowrap">
+      <button class="btn btn-sm btn-secondary" style="color:#b3261e"
+              onclick="sacarDelEquipo('${_esc(f.user_id)}', '${_esc((f.nombre || '').replace(/'/g, ''))}')"
+              title="Sacar a esta persona de este equipo, fuera de la política">Sacar</button>
+    </td>` : ''}</tr>`;
+}
+
+// Buscar por número o por nombre, del lector o del legajo: cuando alguien
+// pregunta "¿estoy cargado?" da el número o el apellido, cualquiera de los dos.
+function filtrarCargados() {
+  const q = (document.getElementById('cargados-buscar')?.value || '').trim().toLowerCase();
+  const filas = !q ? _cargadosFilas : _cargadosFilas.filter(f =>
+    String(f.user_id).toLowerCase().includes(q)
+    || (f.nombre || '').toLowerCase().includes(q)
+    || (f.empleado?.nombre || '').toLowerCase().includes(q));
+  const tb = document.getElementById('cargados-tbody');
+  if (tb) tb.innerHTML = filas.length
+    ? filas.map(_cargadosFilaHtml).join('')
+    : `<tr><td colspan="6" style="padding:14px;color:#999;text-align:center">
+         Nadie coincide con «${_esc(q)}» en este equipo.</td></tr>`;
+  const c = document.getElementById('cargados-contador');
+  if (c) c.textContent = q ? `${filas.length} de ${_cargadosFilas.length}` : `${_cargadosFilas.length} cargados`;
 }
 
 // ── Actualización del sistema ─────────────────────────────────────────────────

@@ -27,6 +27,14 @@ usuarios_zk.json
 registros_zk.json
 *.xls
 *.xlsx
+
+# Lo que sacan los lectores: tiene HUELLAS y claves numericas de la gente.
+# Normalmente cae al lado de la base, en ProgramData, pero si DB_PATH apunta
+# adentro del repo --o no esta definido-- termina aca. No sale de la PC.
+relevamiento/
+borrados/
+data/relevamiento/
+data/borrados/
 *.bak
 
 # Claude Code

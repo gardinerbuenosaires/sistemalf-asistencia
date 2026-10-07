@@ -1452,6 +1452,65 @@ async function cargarAccesos(id) {
 // El equipo de asistencia tiene sus propias etiquetas y no comparte ninguna con
 // las puertas: ese equipo no abre nada, y ponerle "ABRE" —aunque sea por reusar
 // un cartel— es decir algo falso de un equipo.
+// Lo ultimo que contestaron los equipos sobre la persona abierta, para que los
+// botones de cargar sepan sobre que actuar sin volver a preguntar.
+let _accUserId = null, _accUltimo = [];
+
+// Cargar a UNA persona en las puertas que le faltan, desde su propio legajo.
+//
+// Es el camino corto del caso más común: entra alguien, se le asigna el perfil,
+// y hay que llevarlo a los lectores. Por el plan de cambios habría que buscarlo
+// entre todas las filas de todas las puertas y apretar Cargar en cada una; acá
+// la lista de las que le faltan ya está en pantalla.
+//
+// Usa el mismo endpoint que el plan, así que respeta lo mismo: solo carga donde
+// le corresponde según su perfil, y no carga si no hay huella para copiar.
+async function cargarEnEstaPuerta(eid, dispositivoId, nombrePuerta, boton) {
+  if (boton) { boton.disabled = true; boton.textContent = 'Cargando…'; }
+  let r = {};
+  try {
+    const res = await fetch('/api/accesos/cargar', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ dispositivo_id: dispositivoId, user_id: _accUserId }),
+    });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo cargar');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    toast('Error en ' + nombrePuerta + ': ' + e.message);
+    return false;
+  }
+  if (boton) boton.textContent = 'Listo';
+  // El horario del grupo se dice siempre que restrinja: es lo único que puede
+  // dejar afuera a alguien que el sistema da por cargado.
+  toast(`Cargado en ${r.equipo}, ${r.huellas} huella(s)`
+        + (r.horario_restringe ? ` — ojo: el grupo ${r.grupo} abre ${r.horario}` : ''));
+  return true;
+}
+
+// Las que faltan, de a una y en orden. En serie y no en paralelo porque son
+// equipos viejos: pedirles todo junto es la forma de que alguno no conteste.
+async function cargarEnLasQueFaltan(eid, boton) {
+  const puertas = (_accUltimo || []).filter(
+    e => e.estado === 'falta' && e.es_puerta && e.ok);
+  if (!puertas.length) return;
+  if (!confirm(`Cargar a esta persona en ${puertas.length} puerta(s):\n\n`
+      + puertas.map(p => '  · ' + p.nombre).join('\n')
+      + `\n\nSe le copia la huella del equipo de fichaje a cada una.`)) return;
+
+  if (boton) { boton.disabled = true; }
+  let hechas = 0;
+  for (const p of puertas) {
+    if (boton) boton.textContent = `Cargando en ${p.nombre}…`;
+    if (await cargarEnEstaPuerta(eid, p.id, p.nombre, null)) hechas++;
+  }
+  if (boton) { boton.disabled = false; boton.textContent = 'Volver a consultar'; }
+  toast(`${hechas} de ${puertas.length} puerta(s)`);
+  // Se vuelve a leer de los equipos: lo que se muestra es lo comprobado, no lo
+  // que se pidió.
+  verificarEnLectores(eid);
+}
+
 const _ACC_ESTADOS = {
   falta:              { color: '#b3261e', fondo: '#fbe9e7', texto: 'FALTA' },
   sin_huella:         { color: '#b3261e', fondo: '#fbe9e7', texto: 'SIN HUELLA' },
@@ -1495,6 +1554,11 @@ async function verificarEnLectores(id) {
     return;
   }
 
+  // Se guardan para los botones de cargar: el numero con el que buscar en
+  // los equipos, y cuales le faltan segun lo que se acaba de leer.
+  _accUserId = d.user_id;
+  _accUltimo = d.equipos;
+
   const r = d.resumen;
   const problemas = r.falta + r.sin_huella + r.sobra;
   // Sin perfil, el sistema no sabe qué le corresponde, así que TODO lo que tenga
@@ -1531,6 +1595,14 @@ async function verificarEnLectores(id) {
           ${e.ubicacion ? `<span style="color:#bbb;font-size:.74rem"> · ${e.ubicacion}</span>` : ''}
         </span>
         <span style="flex:1;color:#777">${detalle}</span>
+        ${/* El camino corto para una persona sola. Sin esto habria que abrir el
+             plan de cambios, buscarla entre todas las filas de todas las
+             puertas y apretar Cargar en cada una. Aca ya esta la lista de las
+             que le faltan, que es exactamente lo que hay que hacer. */''}
+        ${e.estado === 'falta' && e.es_puerta && e.ok && canDo('accesos','aplicar')
+          ? `<button class="btn btn-sm btn-secondary" style="flex:none"
+                     onclick="cargarEnEstaPuerta(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Cargar</button>`
+          : ''}
       </div>
       ${e.es_puerta ? '' : `<div style="font-size:.74rem;color:#aaa;padding:0 0 6px 87px">
         Solo registra la asistencia. Se muestra porque de acá sale la huella que
@@ -1563,6 +1635,15 @@ async function verificarEnLectores(id) {
         «SOBRA». No significa que haya que sacarla de esas puertas — significa que
         falta decidir su perfil. Asignándoselo, estas filas se acomodan solas.</div>` : ''}
       <div style="margin-top:7px">${filas}</div>
+      ${r.falta && canDo('accesos','aplicar')
+        ? `<div style="margin-top:8px">
+             <button class="btn btn-sm btn-primary"
+                     onclick="cargarEnLasQueFaltan(${id}, this)">
+               Cargar en las ${r.falta} que faltan</button>
+             <span style="font-size:.76rem;color:#888;margin-left:8px">
+               copia su huella del equipo de fichaje a esas puertas</span>
+           </div>`
+        : ''}
       <div style="font-size:.74rem;color:#aaa;margin-top:6px">
         Leído recién de los equipos. No se cambió nada en ninguno.</div>
     </div>`;

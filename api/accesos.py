@@ -1372,6 +1372,75 @@ def huellas_respaldar(usuario=Depends(require_permiso("accesos", "aplicar"))):
     return {**r, "equipo": equipo["nombre"]}
 
 
+@router.post("/actualizar")
+def actualizar_en_puerta(data: CargarEnPuertaIn,
+                         usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Lleva a un equipo el nombre corto y el nivel que tiene la persona en el legajo.
+
+    El nombre corto es lo que el lector muestra al apoyar el dedo; el nivel es
+    quien puede administrar el equipo parado frente a el. Los dos se deciden en
+    el legajo y hasta ahora no habia forma de llevarlos: el plan compara
+    presencia, y esa persona esta presente, asi que nunca aparecia.
+
+    No cambia a quien abre que: no toca el grupo, ni la franja, ni las huellas.
+    Por eso alcanza con `aplicar` y no hace falta nada mas: lo unico que puede
+    pasar es que en la pantalla del lector diga otra cosa.
+
+    Si la persona no esta cargada ahi, no la carga: eso es otra operacion y
+    tiene su propio boton. Aca el silencio seria peor que el error, porque
+    «actualice y no pasa nada» es indistinguible de «lo cargue».
+    """
+    from sync.escritura import actualizar_en_puerta as escribir
+
+    numero = str(data.user_id).strip()
+    with db_session() as conn:
+        equipo = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
+                      es_acceso, cuenta_asistencia
+                 FROM dispositivos WHERE id = ? AND activo = 1""",
+            (data.dispositivo_id,)).fetchone()
+        if not equipo:
+            raise HTTPException(404, "Ese equipo no existe o está desactivado")
+        if equipo["protocolo"] != "pull":
+            raise HTTPException(400, f"{equipo['nombre']} es un equipo push: no "
+                                     f"atiende llamadas.")
+        emp = conn.execute(
+            """SELECT id, nombre, apellido, nombre_lector, nivel_lector
+                 FROM empleados WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
+        if not emp:
+            raise HTTPException(404, f"El {numero} no existe en el sistema.")
+        equipo, emp = dict(equipo), dict(emp)
+
+    # El nivel solo al equipo de fichaje: es el unico con pantalla, asi que es
+    # el unico donde administrar parado enfrente significa algo.
+    nivel = emp["nivel_lector"] if equipo["cuenta_asistencia"] else None
+    r = escribir(equipo, numero, nombre=emp["nombre_lector"], privilegio=nivel)
+
+    with db_session() as conn:
+        if not r.get("sin_cambios"):
+            _registrar_operacion(
+                conn, dispositivo_id=equipo["id"], equipo=equipo["nombre"],
+                user_id=numero, empleado_id=emp["id"],
+                nombre_equipo=r.get("nombre_escrito"), accion="actualizar",
+                motivo=(f"nombre: {r.get('nombre_anterior')} -> "
+                        f"{r.get('nombre_escrito')}" if r.get("nombre_escrito") else None),
+                resultado="actualizado" if r["ok"] else "falló",
+                detalle=r.get("error"),
+                usuario_id=int(usuario.get("sub") or 0) or None)
+
+    if r.get("no_estaba"):
+        raise HTTPException(404, r["error"])
+    if not r["ok"]:
+        raise HTTPException(400, f"No se pudo actualizar en {equipo['nombre']}: "
+                                 f"{r['error']}")
+    return {"ok": True, "equipo": equipo["nombre"],
+            "empleado": f"{emp['apellido']}, {emp['nombre']}".strip(", "),
+            **{k: r.get(k) for k in ("sin_cambios", "nombre_escrito",
+                                     "nombre_anterior", "huellas",
+                                     "huellas_repuestas", "otros")}}
+
+
 @router.get("/sin-perfil")
 def sin_perfil(_user=Depends(require_permiso("accesos", "ver"))):
     """

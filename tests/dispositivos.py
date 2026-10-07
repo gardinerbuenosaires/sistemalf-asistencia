@@ -3279,6 +3279,106 @@ _em._conectar = _conectar_real
 _em._escribir_usuario = _escribir_real
 
 
+# --- Cambiarle el nombre a alguien que ya esta cargado ----------------------
+# El nombre corto se decide en el legajo y hay que poder llevarlo al equipo. Lo
+# delicado es que reescribir el registro de un usuario PUEDE borrarle las
+# huellas: el protocolo manda usuario y huellas en el mismo paquete y nunca se
+# probo sobre alguien que ya las tenia. Se hace a prueba de las dos respuestas.
+
+
+class _PuertaParaActualizar:
+    """`borra_huellas` simula el firmware que las pierde al reescribir."""
+
+    user_packet_size = 28
+    encoding = "latin-1"
+
+    def __init__(s, borra_huellas=False, nombre="VIEJO", huellas=2):
+        s.borra_huellas = borra_huellas
+        s._u = [type("U", (), {"uid": 1, "user_id": "100", "name": nombre,
+                               "group_id": "1", "privilege": 0})(),
+                type("U", (), {"uid": 2, "user_id": "101", "name": "OTRO",
+                               "group_id": "1", "privilege": 0})()]
+        s._h = {1: huellas, 2: 1}
+        s.escrituras, s.templates_grabados = [], 0
+
+    @property
+    def users(s): return len(s._u)
+    def get_users(s): return list(s._u)
+    def get_templates(s):
+        return [type("H", (), {"uid": uid, "valid": 1,
+                               "json_pack": lambda s2: {"t": "x"}})()
+                for uid, n in s._h.items() for _ in range(n)]
+    def refresh_data(s): pass
+    def save_user_template(s, u, huellas):
+        s.templates_grabados += 1
+        s._h[u.uid] = len(huellas)
+    def disconnect(s): pass
+
+
+def _preparar_act(equipo):
+    _em._conectar = lambda *a, **kw: (equipo, "udp")
+    def _esc(conexion, uid, nombre, privilegio, grupo, numero, franja=0):
+        conexion.escrituras.append((uid, numero, nombre, privilegio, grupo))
+        for u in conexion._u:
+            if u.uid == uid:
+                u.name, u.privilege, u.group_id = nombre, privilegio, grupo
+        if conexion.borra_huellas:
+            conexion._h[uid] = 0
+    _em._escribir_usuario = _esc
+
+_PUERTA_A = {"nombre": "Puerta A", "ip": "10.0.0.7"}
+
+# Caso normal: el equipo conserva las huellas al reescribir.
+_eq = _PuertaParaActualizar()
+_preparar_act(_eq)
+_ra = _em.actualizar_en_puerta(_PUERTA_A, "100", nombre="NUEVO")
+chequear("cambia el nombre", _ra["ok"] is True, _ra)
+chequear("y lo dice", _ra["nombre_escrito"] == "NUEVO", _ra)
+chequear("diciendo cual era antes", _ra["nombre_anterior"] == "VIEJO", _ra)
+chequear("las huellas quedaron", _ra["huellas"] == 2, _ra)
+chequear("y no hizo falta reponerlas", _ra["huellas_repuestas"] is False, _ra)
+chequear("el grupo se reescribe igual, no se decide de nuevo",
+         _eq.escrituras[0][4] == "1", _eq.escrituras)
+chequear("y el indice interno es el que ya tenia", _eq.escrituras[0][0] == 1,
+         _eq.escrituras)
+
+# El caso que justifica la funcion: el equipo le borra las huellas.
+_eq = _PuertaParaActualizar(borra_huellas=True)
+_preparar_act(_eq)
+_ra = _em.actualizar_en_puerta(_PUERTA_A, "100", nombre="NUEVO")
+chequear("si el equipo borra las huellas al reescribir, se reponen",
+         _ra["huellas_repuestas"] is True, _ra)
+chequear("y la persona termina con las que tenia", _ra["huellas"] == 2, _ra)
+chequear("la operacion se da por buena", _ra["ok"] is True, _ra)
+chequear("se grabaron los templates una vez", _eq.templates_grabados == 1,
+         _eq.templates_grabados)
+
+# Sin cambios no se escribe nada: reescribir por las dudas es arriesgar las
+# huellas de alguien a cambio de nada.
+_eq = _PuertaParaActualizar(nombre="IGUAL")
+_preparar_act(_eq)
+_ra = _em.actualizar_en_puerta(_PUERTA_A, "100", nombre="IGUAL")
+chequear("si el nombre ya es ese, no se escribe", _ra.get("sin_cambios") is True, _ra)
+chequear("y no se le pidio nada al equipo", _eq.escrituras == [], _eq.escrituras)
+
+# A quien no esta cargado no se lo carga: eso es otra operacion.
+_eq = _PuertaParaActualizar()
+_preparar_act(_eq)
+_ra = _em.actualizar_en_puerta(_PUERTA_A, "999777", nombre="X")
+chequear("a quien no esta cargado no lo crea", _ra.get("no_estaba") is True, _ra)
+chequear("y no escribio nada", _eq.escrituras == [], _eq.escrituras)
+
+# Y los demas tienen que quedar enteros, como en todo lo que escribe.
+_eq = _PuertaParaActualizar()
+_preparar_act(_eq)
+_ra = _em.actualizar_en_puerta(_PUERTA_A, "100", nombre="NUEVO")
+chequear("los demas quedan intactos", _ra["problemas"] == [], _ra["problemas"])
+chequear("e informa cuantos son", _ra["otros"] == 1, _ra)
+
+_em._conectar = _conectar_real
+_em._escribir_usuario = _escribir_real
+
+
 # --- Sacar a alguien, y verificar que los demas quedaron enteros -------------
 # Que la persona ya no este es la parte facil. Lo que hay que probar es que el
 # borrado no se llevo puesto a nadie mas: estos equipos borran por indice, y un

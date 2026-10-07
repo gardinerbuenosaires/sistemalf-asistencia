@@ -644,3 +644,97 @@ def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list,
                 conexion.disconnect()
             except Exception:
                 pass
+
+
+def actualizar_en_puerta(puerta: dict, numero: str, nombre: str = None,
+                         privilegio: int = None) -> dict:
+    """
+    Le cambia el nombre o el nivel a alguien que YA está cargado en una puerta.
+
+    Para qué. El nombre corto es lo que el lector muestra al apoyar el dedo, y
+    el nivel es quién puede administrar el equipo parado frente a él. Los dos se
+    deciden en el legajo, y hasta ahora no había forma de llevarlos al equipo:
+    el plan compara presencia, y esa persona está presente. El rodeo era sacarla
+    y volver a cargarla, o sea borrarle y recopiarle la huella para cambiar un
+    texto.
+
+    **El cuidado que justifica esta función.** Reescribir el registro de un
+    usuario puede borrarle las huellas en ese equipo: el protocolo manda usuario
+    y huellas en el mismo paquete, y nunca lo probamos sobre alguien que ya las
+    tenía. En vez de averiguarlo y confiar, se hace a prueba de las dos
+    respuestas: se leen sus huellas antes, se reescribe, se relee, y **si
+    desaparecieron se vuelven a grabar en el acto**. Si el equipo las conserva,
+    el repuesto no se usa nunca; si las borra, nadie se queda afuera.
+
+    Lo que NO cambia, y es a propósito: el índice interno, el grupo y la franja
+    se releen del equipo y se reescriben iguales. Cambiar el grupo sin querer le
+    cambiaría el horario a alguien, y eso no da ningún error.
+    """
+    numero = str(numero).strip()
+    conexion = None
+    try:
+        conexion, transporte = _conectar(puerta)
+        antes = _foto(conexion)
+        cierra, detalle = _lectura_cierra(antes)
+        if not cierra:
+            return {"ok": False, "error": f"Lectura no confiable: {detalle}. "
+                                          f"No se escribió nada."}
+        actual = antes["usuarios"].get(numero)
+        if actual is None:
+            return {"ok": False, "no_estaba": True,
+                    "error": f"El {numero} no está cargado en {puerta['nombre']}."}
+
+        texto = (nombre or "").strip() or actual["nombre"]
+        nivel = actual["privilegio"] if privilegio is None else int(privilegio)
+        if texto == actual["nombre"] and nivel == actual["privilegio"]:
+            return {"ok": True, "sin_cambios": True, "nombre_escrito": texto,
+                    "nivel": nivel, "huellas": actual["huellas"],
+                    "error": None}
+
+        # Sus huellas, por si la reescritura se las lleva puestas.
+        suyas = antes["huellas_crudas"].get(actual["uid"], [])
+
+        _escribir_usuario(conexion, actual["uid"], texto, nivel,
+                          actual["grupo"], numero)
+
+        despues = _foto(conexion)
+        quedo = despues["usuarios"].get(numero)
+        if quedo is None:
+            return {"ok": False, "error": "se reescribió el usuario y ya no "
+                                          "aparece al releer el equipo"}
+
+        # El repuesto. Si el equipo conserva las huellas al reescribir, esto no
+        # corre nunca; si las borra, se reponen antes de que nadie lo note.
+        repuestas = False
+        if quedo["huellas"] < len(suyas) and suyas:
+            recien = next((u for u in conexion.get_users()
+                           if str(u.user_id).strip() == numero), None)
+            if recien is not None:
+                conexion.save_user_template(recien, suyas)
+                despues = _foto(conexion)
+                quedo = despues["usuarios"].get(numero)
+                repuestas = True
+
+        problemas = _intactos(antes, despues, numero)
+        bien = (quedo is not None and quedo["nombre"] == texto
+                and quedo["huellas"] == len(suyas) and not problemas)
+        return {"ok": bien, "transporte": transporte, "nombre_escrito": texto,
+                "nombre_anterior": actual["nombre"], "nivel": nivel,
+                "huellas": quedo["huellas"] if quedo else 0,
+                "huellas_antes": len(suyas), "huellas_repuestas": repuestas,
+                "grupo": actual["grupo"], "otros": len(antes["usuarios"]) - 1,
+                "problemas": problemas,
+                "error": None if bien else (
+                    "; ".join(problemas) if problemas else
+                    f"quedó con {quedo['huellas'] if quedo else 0} de "
+                    f"{len(suyas)} huella(s)")}
+    except Exception as exc:
+        logger.warning("No se pudo actualizar %s en %s: %s",
+                       numero, puerta.get("ip"), exc)
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass

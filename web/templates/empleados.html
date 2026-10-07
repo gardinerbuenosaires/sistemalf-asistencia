@@ -1488,6 +1488,31 @@ async function cargarEnEstaPuerta(eid, dispositivoId, nombrePuerta, boton) {
   return true;
 }
 
+// Llevar al equipo el nombre corto que la persona tiene en el legajo. No toca
+// el grupo, ni la franja, ni las huellas: lo unico que cambia es lo que el
+// lector muestra al apoyar el dedo.
+async function actualizarEnEstaPuerta(eid, dispositivoId, nombrePuerta, boton) {
+  if (boton) { boton.disabled = true; boton.textContent = 'Escribiendo...'; }
+  let r = {};
+  try {
+    const res = await fetch('/api/accesos/actualizar', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ dispositivo_id: dispositivoId, user_id: _accUserId }),
+    });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo actualizar');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error en ' + nombrePuerta + ': ' + e.message);
+  }
+  if (boton) boton.textContent = 'Listo';
+  // Si el equipo borro las huellas al reescribir y hubo que reponerlas, se
+  // dice: es la primera vez que se sabe como se comporta ese modelo.
+  toast(`${nombrePuerta}: ahora figura como "${r.nombre_escrito}"`
+        + (r.huellas_repuestas ? ' — el equipo le borro las huellas al reescribir y se repusieron' : ''));
+  verificarEnLectores(eid);
+}
+
 // Las que faltan, de a una y en orden. En serie y no en paralelo porque son
 // equipos viejos: pedirles todo junto es la forma de que alguno no conteste.
 async function cargarEnLasQueFaltan(eid, boton) {
@@ -1602,6 +1627,13 @@ async function verificarEnLectores(id) {
         ${e.estado === 'falta' && e.es_puerta && e.ok && canDo('accesos','aplicar')
           ? `<button class="btn btn-sm btn-secondary" style="flex:none"
                      onclick="cargarEnEstaPuerta(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Cargar</button>`
+          : ''}
+        ${/* El nombre corto se decide en el legajo y hay que poder llevarlo al
+             equipo. El plan no lo muestra nunca: compara presencia, y esta
+             persona esta presente. */''}
+        ${e.cargado && e.nombre_ok === false && e.ok && canDo('accesos','aplicar')
+          ? `<button class="btn btn-sm btn-secondary" style="flex:none"
+                     onclick="actualizarEnEstaPuerta(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Escribir el nombre</button>`
           : ''}
       </div>
       ${e.es_puerta ? '' : `<div style="font-size:.74rem;color:#aaa;padding:0 0 6px 87px">

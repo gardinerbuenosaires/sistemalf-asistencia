@@ -572,7 +572,15 @@ def por_cargo(_user=Depends(require_permiso("accesos", "ver"))):
         filas = conn.execute(
             """SELECT c.id AS cargo_id, c.nombre AS cargo,
                       COUNT(*)                                        AS total,
-                      SUM(e.perfil_acceso_id IS NULL)                 AS sin_perfil
+                      SUM(e.perfil_acceso_id IS NULL)                 AS sin_perfil,
+                      -- Los legajos que existen solo para abrir puertas, no para
+                      -- fichar. Van contados aparte porque si no el total no se
+                      -- parece a la cantidad de gente que uno tiene en la cabeza:
+                      -- «Gerente 3» cuando hay un gerente y dos accesos.
+                      -- No se los excluye: son justamente los que necesitan
+                      -- perfil, y sacarlos de esta pantalla los dejaria sin
+                      -- ninguna forma de asignarselo en masa.
+                      SUM(e.tipo = 'acceso')                          AS solo_acceso
                  FROM empleados e
                  LEFT JOIN cargos c ON c.id = e.cargo_id
                 WHERE e.activo = 1
@@ -626,6 +634,37 @@ def por_cargo(_user=Depends(require_permiso("accesos", "ver"))):
     return {"cargos": cargos, "perfiles": perfiles,
             "activos": sum(c["total"] for c in cargos),
             "sin_perfil": sum(c["sin_perfil"] for c in cargos)}
+
+
+@router.get("/por-cargo/{cargo_id}/empleados")
+def empleados_del_cargo(cargo_id: int,
+                        _user=Depends(require_permiso("accesos", "ver"))):
+    """
+    Quienes son los activos de un cargo, con su perfil y su tipo.
+
+    Existe porque la pantalla mostraba un numero y nada mas, y un numero que no
+    coincide con lo que uno sabe no se puede resolver mirandolo: «Gerente 3»
+    cuando hay un gerente manda a buscar un error que puede no existir. Aca
+    estan los nombres, y ahi se ve de una que los otros dos son legajos de solo
+    acceso.
+
+    `cargo_id` en 0 son los que no tienen cargo cargado.
+    """
+    with db_session() as conn:
+        filas = conn.execute(
+            """SELECT e.id, e.user_id, e.nombre, e.apellido, e.tipo,
+                      p.nombre AS perfil
+                 FROM empleados e
+                 LEFT JOIN perfiles_acceso p ON p.id = e.perfil_acceso_id
+                WHERE e.activo = 1
+                  AND (e.cargo_id = ? OR (? = 0 AND e.cargo_id IS NULL))
+             ORDER BY e.apellido, e.nombre""",
+            (cargo_id, cargo_id)).fetchall()
+    return {"empleados": [
+        {"id": f["id"], "user_id": f["user_id"],
+         "nombre": f"{f['apellido']}, {f['nombre']}".strip(", "),
+         "solo_acceso": f["tipo"] == "acceso", "tipo": f["tipo"],
+         "perfil": f["perfil"]} for f in filas]}
 
 
 @router.post("/por-cargo/aplicar")

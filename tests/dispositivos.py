@@ -2653,6 +2653,57 @@ if len(_fh) >= 2:
     _lr_h._conectar = _real_con
 
 
+print("\n=== QUIENES SON LOS DE CADA CARGO ===")
+# La pantalla mostraba un total que no coincidia con la realidad del local:
+# "Gerente 3" cuando hay un gerente. Los otros dos eran legajos de tipo
+# `acceso`, que existen solo para abrir puertas y no para fichar. No se los
+# excluye --son justamente los que necesitan perfil-- pero se cuentan aparte.
+
+_cc = sqlite3.connect(DB)
+_cargo_id = _cc.execute(
+    "SELECT id FROM cargos LIMIT 1").fetchone()
+_cc.close()
+
+if _cargo_id:
+    _cid = _cargo_id[0]
+    _cc = sqlite3.connect(DB)
+    # Dos personas en ese cargo: una normal y una de solo acceso.
+    _eids = [r[0] for r in _cc.execute(
+        "SELECT id FROM empleados WHERE activo=1 LIMIT 2").fetchall()]
+    _antes = [_cc.execute("SELECT cargo_id, tipo FROM empleados WHERE id=?", (e,)).fetchone()
+              for e in _eids]
+    _cc.execute("UPDATE empleados SET cargo_id=?, tipo='normal' WHERE id=?", (_cid, _eids[0]))
+    _cc.execute("UPDATE empleados SET cargo_id=?, tipo='acceso' WHERE id=?", (_cid, _eids[1]))
+    _cc.commit(); _cc.close()
+
+    _pc = cli.get("/api/accesos/por-cargo").json()
+    _fila = next(c for c in _pc["cargos"] if c["cargo_id"] == _cid)
+    chequear("el total cuenta a los dos", _fila["total"] >= 2, _fila)
+    chequear("y dice cuantos son de solo acceso",
+             _fila["solo_acceso"] >= 1, _fila)
+
+    _ge = cli.get(f"/api/accesos/por-cargo/{_cid}/empleados").json()["empleados"]
+    chequear("se puede ver quienes son", len(_ge) >= 2, len(_ge))
+    chequear("y cual de ellos es de solo acceso",
+             any(x["solo_acceso"] for x in _ge)
+             and any(not x["solo_acceso"] for x in _ge), _ge[:3])
+    chequear("con su numero y su perfil",
+             all("user_id" in x and "perfil" in x for x in _ge), _ge[:1])
+
+    # Los que no tienen cargo se piden con 0.
+    _sc = cli.get("/api/accesos/por-cargo/0/empleados")
+    chequear("el cargo 0 son los que no tienen cargo", _sc.status_code == 200,
+             _sc.status_code)
+
+    chequear("ver quienes alcanza con accesos:ver",
+             _aplica.get(f"/api/accesos/por-cargo/{_cid}/empleados").status_code == 200)
+
+    _cc = sqlite3.connect(DB)
+    for _e, _a in zip(_eids, _antes):
+        _cc.execute("UPDATE empleados SET cargo_id=?, tipo=? WHERE id=?", (_a[0], _a[1], _e))
+    _cc.commit(); _cc.close()
+
+
 print("\n=== LA BAJA ADELANTADA ===")
 # Se puede dar de baja a alguien hoy con fecha futura, para adelantarle la
 # liquidacion final, y esa persona sigue trabajando hasta la vispera. Si el plan

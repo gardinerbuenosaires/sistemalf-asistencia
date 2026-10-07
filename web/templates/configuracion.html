@@ -2804,7 +2804,18 @@ async function pintarPorCargo() {
     return `<tr style="border-bottom:1px solid #f4f4f4">
       <td style="padding:7px 10px">
         ${c.cargo_id === null ? '<i style="color:#888">Sin cargo</i>' : _esc(c.cargo)}
-        <div style="font-size:.74rem;color:#aaa">${c.total} activo${c.total === 1 ? '' : 's'}</div>
+        <div style="font-size:.74rem;color:#aaa">
+          ${c.total} activo${c.total === 1 ? '' : 's'}
+          ${/* Los legajos que existen solo para abrir puertas van contados
+                aparte: si no, el total no se parece a la cantidad de gente que
+                uno tiene en la cabeza. «Gerente 3» cuando hay un gerente manda
+                a buscar un error que no existe. */''}
+          ${c.solo_acceso ? `<span style="color:#8a5d06">· ${c.total - c.solo_acceso} de personal
+             + ${c.solo_acceso} de solo acceso</span>` : ''}
+          <a href="#" style="margin-left:6px;color:#4a6b8a"
+             onclick="verEmpleadosDelCargo(${c.cargo_id || 0}, '${clave}');return false">ver quiénes</a>
+        </div>
+        <div id="cargo-gente-${clave}" style="font-size:.76rem;color:#666;margin-top:4px"></div>
       </td>
       <td style="padding:7px 10px;text-align:center">
         ${c.sin_perfil
@@ -2863,6 +2874,34 @@ function pintarAvisoPisar() {
         a propósito. Las excepciones no se borran, pero algunas pueden quedar sin efecto
         contra el perfil nuevo.</div>`
     : '';
+}
+
+// Quiénes son los de un cargo. La pantalla mostraba un número y nada más, y un
+// número que no coincide con lo que uno sabe no se resuelve mirándolo: hay que
+// poder ver los nombres y darse cuenta de que los que sobran son legajos de
+// solo acceso.
+async function verEmpleadosDelCargo(cargoId, clave) {
+  const caja = document.getElementById(`cargo-gente-${clave}`);
+  if (!caja) return;
+  if (caja.innerHTML) { caja.innerHTML = ''; return; }   // segundo clic: cerrar
+  caja.textContent = 'Buscando…';
+  let d;
+  try {
+    const res = await fetch(`/api/accesos/por-cargo/${cargoId}/empleados`);
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    caja.innerHTML = `<span style="color:#c0392b">${_esc(e.message)}</span>`;
+    return;
+  }
+  caja.innerHTML = d.empleados.map(e => `
+    <div style="padding:1px 0">
+      <span style="font-family:monospace;color:#999">${_esc(e.user_id || '—')}</span>
+      ${_esc(e.nombre)}
+      ${e.solo_acceso ? '<span style="background:#f6e9ce;color:#8a5d06;padding:1px 6px;border-radius:3px;font-size:.7rem">solo acceso</span>' : ''}
+      ${e.perfil ? `<span style="color:#4a6b8a">· ${_esc(e.perfil)}</span>`
+                 : '<span style="color:#bbb">· sin perfil</span>'}
+    </div>`).join('');
 }
 
 async function aplicarPorCargo(cargoId) {

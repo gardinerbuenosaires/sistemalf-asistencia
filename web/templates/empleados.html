@@ -1488,6 +1488,30 @@ async function cargarEnEstaPuerta(eid, dispositivoId, nombrePuerta, boton) {
   return true;
 }
 
+// Sacar a esta persona de una puerta que ya no le corresponde. El espejo de
+// cargar: usa el mismo endpoint que el plan, que recalcula el motivo y se niega
+// si segun su perfil esa puerta SI le corresponde.
+async function sacarDeEstaPuerta(eid, dispositivoId, nombrePuerta, boton) {
+  if (!confirm(`Sacar a esta persona de ${nombrePuerta}.\n\n`
+      + `Se le borra el usuario y las huellas de ese lector. Antes se guarda un `
+      + `respaldo en la PC, pero volver atrás no es un botón.\n\n¿La saco?`)) return;
+  if (boton) { boton.disabled = true; boton.textContent = 'Sacando...'; }
+  let r = {};
+  try {
+    const res = await fetch('/api/accesos/sacar', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ dispositivo_id: dispositivoId, user_id: _accUserId }),
+    });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo sacar');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error en ' + nombrePuerta + ': ' + e.message);
+  }
+  toast(`Sacado de ${r.equipo} — ${r.motivo}`);
+  verificarEnLectores(eid);
+}
+
 // Llevar al equipo el nombre corto que la persona tiene en el legajo. No toca
 // el grupo, ni la franja, ni las huellas: lo unico que cambia es lo que el
 // lector muestra al apoyar el dedo.
@@ -1634,6 +1658,13 @@ async function verificarEnLectores(id) {
         ${e.cargado && e.nombre_ok === false && e.ok && canDo('accesos','aplicar')
           ? `<button class="btn btn-sm btn-secondary" style="flex:none"
                      onclick="actualizarEnEstaPuerta(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Escribir el nombre</button>`
+          : ''}
+        ${/* El espejo de Cargar. Sin esto, quitarle una puerta a alguien --por
+             excepcion o por cambio de perfil-- obligaba a ir al plan y buscarlo
+             entre todas las filas, teniendo la respuesta ya en pantalla. */''}
+        ${e.estado === 'sobra' && e.es_puerta && e.ok && canDo('accesos','aplicar')
+          ? `<button class="btn btn-sm btn-secondary" style="flex:none"
+                     onclick="sacarDeEstaPuerta(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Sacar</button>`
           : ''}
       </div>
       ${e.es_puerta ? '' : `<div style="font-size:.74rem;color:#aaa;padding:0 0 6px 87px">

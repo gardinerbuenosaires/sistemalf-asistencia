@@ -146,8 +146,29 @@ def _escribir_usuario(conexion, uid, nombre, privilegio, grupo, numero, franja=0
     from zk import const
 
     if conexion.user_packet_size != 28:
-        raise RuntimeError("Este equipo usa el formato de 72 bytes; esta función "
-                           "es para las puertas, que usan el de 28")
+        # El equipo de fichaje usa otro formato de registro, de 72 bytes, con
+        # el nombre de 24 caracteres en vez de 8. Armarlo a mano seria inventar
+        # un empaquetado que nunca probamos contra el equipo que sostiene la
+        # asistencia de todos, asi que se usa `set_user`, que es el camino de
+        # la libreria y el que ya conoce los dos formatos.
+        #
+        # Con una condicion. `set_user` deja en usuario comun a cualquiera que
+        # no sea 0 o 14, sin avisar, y este es justamente el unico equipo con
+        # pantalla: el unico donde ser enrolador o administrador significa
+        # algo. Sobre esos no se escribe, y se dice por que.
+        if int(privilegio) not in (0, 14):
+            raise RuntimeError(
+                f"Esta persona tiene nivel {privilegio} en el equipo de "
+                f"fichaje ({NIVELES.get(int(privilegio), 'desconocido')}). "
+                f"Escribirle desde acá la dejaría en usuario común y perdería "
+                f"el nivel sin aviso, así que no se toca: eso se cambia en el "
+                f"menú del equipo.")
+        conexion.set_user(uid=int(uid), name=(nombre or ""),
+                          privilege=int(privilegio), user_id=str(numero),
+                          group_id=str(grupo or ""))
+        conexion.refresh_data()
+        return
+
     codificacion = getattr(conexion, "encoding", "latin-1")
     paquete = pack("HB5s8sIxBHI", int(uid), int(privilegio), b"",
                    (nombre or "").encode(codificacion, errors="ignore"),

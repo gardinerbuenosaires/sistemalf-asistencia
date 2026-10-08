@@ -66,8 +66,35 @@ def _foto(conexion):
     }
 
 
+def _aviso_lista_corta(cierra, detalle):
+    """
+    Lo que hay que decir cuando la lista no cerro y se siguio igual.
+
+    Importa que se vea: con una lista corta, la verificacion de «los demas
+    quedaron enteros» puede acusar a alguien de haber desaparecido cuando lo
+    unico que paso es que esa vez no se leyo.
+    """
+    if cierra:
+        return None
+    return (f"la lista del equipo no cierra ({detalle}). Se hizo igual porque "
+            f"esta operación no calcula ningún índice, pero si abajo figura "
+            f"que alguien desapareció, puede ser de la lectura y no del equipo.")
+
+
 def _lectura_cierra(f):
-    """El equipo dice cuántos tiene; si no coincide, la lectura vino cortada."""
+    """
+    El equipo dice cuántos tiene; si no coincide, la lectura vino cortada.
+
+    Importa **al crear** un usuario: el índice libre se calcula de esa lista, y
+    con una lista corta se le escribe encima a alguien.
+
+    No importa al cambiarle algo a quien ya está, ni al borrarlo: ahí se usa el
+    índice que esa persona ya tiene y no se calcula ninguno. Frenar también
+    esos casos dejaba sin arreglar el nombre de una persona porque el equipo
+    dice tener 150 usuarios y lista 149 —un contador del propio equipo, que
+    después de muchos borrados puede quedar corrido— y eso es negarse a hacer
+    algo inofensivo por un número que ni siquiera es nuestro.
+    """
     leidos, dice = len(f["usuarios"]), f["declarados"]
     if dice is None:
         return False, "el equipo no dijo cuántos usuarios tiene"
@@ -244,10 +271,10 @@ def sacar_de_puerta(puerta: dict, numero: str) -> dict:
     try:
         conexion, transporte = _conectar(puerta)
         antes = _foto(conexion)
+        # No se frena: se borra por el índice que esa persona ya tiene, no por
+        # uno calculado de la lista. Se informa, porque explica un «desapareció
+        # fulano» en la verificación de abajo que puede ser de la lectura.
         cierra, detalle = _lectura_cierra(antes)
-        if not cierra:
-            return {"ok": False, "error": f"Lectura no confiable: {detalle}. "
-                                          f"No se borró nada."}
         objetivo = antes["usuarios"].get(numero)
         if objetivo is None:
             return {"ok": False, "no_estaba": True,
@@ -264,6 +291,7 @@ def sacar_de_puerta(puerta: dict, numero: str) -> dict:
         problemas = _intactos(antes, despues, numero)
         bien = not sigue and not problemas
         return {"ok": bien, "transporte": transporte, "respaldo": respaldo,
+                "aviso_lista": _aviso_lista_corta(cierra, detalle),
                 "nombre_equipo": objetivo["nombre"], "uid": objetivo["uid"],
                 "huellas": len(huellas), "otros": len(antes["usuarios"]) - 1,
                 "problemas": problemas,
@@ -705,10 +733,8 @@ def actualizar_en_puerta(puerta: dict, numero: str, nombre: str = None,
     try:
         conexion, transporte = _conectar(puerta)
         antes = _foto(conexion)
+        # No se frena: se reescribe sobre el índice que esa persona ya tiene.
         cierra, detalle = _lectura_cierra(antes)
-        if not cierra:
-            return {"ok": False, "error": f"Lectura no confiable: {detalle}. "
-                                          f"No se escribió nada."}
         actual = antes["usuarios"].get(numero)
         if actual is None:
             return {"ok": False, "no_estaba": True,
@@ -749,6 +775,7 @@ def actualizar_en_puerta(puerta: dict, numero: str, nombre: str = None,
         bien = (quedo is not None and quedo["nombre"] == texto
                 and quedo["huellas"] == len(suyas) and not problemas)
         return {"ok": bien, "transporte": transporte, "nombre_escrito": texto,
+                "aviso_lista": _aviso_lista_corta(cierra, detalle),
                 "nombre_anterior": actual["nombre"], "nivel": nivel,
                 "huellas": quedo["huellas"] if quedo else 0,
                 "huellas_antes": len(suyas), "huellas_repuestas": repuestas,
@@ -799,10 +826,8 @@ def sincronizar_huellas(puerta: dict, maestro: dict, numero: str,
         # el de producción y está tomando asistencia mientras tanto.
         conexion, transporte = _conectar(puerta)
         antes = _foto(conexion)
+        # No se frena: se reescribe sobre el índice que esa persona ya tiene.
         cierra, detalle = _lectura_cierra(antes)
-        if not cierra:
-            return {"ok": False, "error": f"Lectura no confiable: {detalle}. "
-                                          f"No se escribió nada."}
         actual = antes["usuarios"].get(numero)
         if actual is None:
             return {"ok": False, "no_estaba": True,
@@ -835,6 +860,7 @@ def sincronizar_huellas(puerta: dict, maestro: dict, numero: str,
         bien = (quedo is not None and quedo["huellas"] == len(delmaestro)
                 and not problemas)
         return {"ok": bien, "transporte": transporte,
+                "aviso_lista": _aviso_lista_corta(cierra, detalle),
                 "huellas": quedo["huellas"] if quedo else 0,
                 "huellas_antes": len(suyas), "huellas_maestro": len(delmaestro),
                 "nuevas": len(deberia - tiene), "quitadas": len(tiene - deberia),

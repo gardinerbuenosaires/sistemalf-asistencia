@@ -3666,12 +3666,22 @@ chequear("y se dice a quien y que le cambio",
 chequear("eso si es una falla, no algo pendiente",
          _em.resultado_de_sacar(_rs) == "falló", _rs)
 
-# Si la lista vino corta no se borra NADA: el indice se calcula de esa lista.
+# Una lista corta NO frena el borrado: se borra por el indice que esa persona
+# ya tiene, no por uno calculado de la lista. Frenarlo era negarse a hacer algo
+# inofensivo por un contador del propio equipo, que despues de muchos borrados
+# puede quedar corrido --el caso real fue "dice tener 150 y leyo 149".
 _eq, _rs = _probar_sacar(rompe="lista_corta")
-chequear("con la lista incompleta no se borra nada", _rs["ok"] is False, _rs)
-chequear("y no se le pidio nada al equipo", _eq.borrados == [], _eq.borrados)
-chequear("diciendo que la lectura no cierra",
-         "no confiable" in _rs["error"], _rs["error"])
+chequear("con la lista incompleta se borra igual", _rs["ok"] is True, _rs)
+chequear("y se le pidio al equipo", _eq.borrados == [1], _eq.borrados)
+# Pero se avisa, porque explica un falso "desaparecio fulano" en la
+# verificacion de los demas: puede ser de la lectura y no del equipo.
+chequear("avisando que la lista no cerraba",
+         _rs["aviso_lista"] and "no cierra" in _rs["aviso_lista"],
+         _rs["aviso_lista"])
+chequear("y diciendo los dos numeros",
+         "4" in _rs["aviso_lista"] and "3" in _rs["aviso_lista"], _rs["aviso_lista"])
+chequear("cuando la lista cierra, no hay aviso",
+         _probar_sacar()[1]["aviso_lista"] is None)
 
 _eqv = _PuertaParaBorrar()
 _em._conectar = lambda d: (_eqv, "udp")

@@ -943,6 +943,11 @@ MOTIVOS_QUE_SE_APLICAN = {
     "desconocido": True,
     # Esta activa y su perfil no incluye esta puerta: el perfil ya decidio.
     "sin_derecho": True,
+    # Esta activa y NADIE le asigno perfil. Termina en "no deberia estar" igual
+    # que el anterior, pero no es lo mismo: aca no hay ninguna decision tomada,
+    # hay una que falta. Sacarla seria dejar afuera a alguien que entro la
+    # semana pasada porque todavia no le tocaron el legajo.
+    "sin_perfil": False,
     # Ningun perfil incluye esta puerta. Eso no es "sacar a toda esta gente",
     # es que la politica todavia no contempla la puerta. Aplicarlo la dejaria
     # vacia y sin que nadie pueda entrar.
@@ -1036,7 +1041,7 @@ def sacar_por_plan(data: CargarEnPuertaIn,
 
         emp = conn.execute(
             f"""SELECT id, nombre, apellido, activo, fecha_egreso,
-                        {trabaja_hoy()} AS trabaja
+                        perfil_acceso_id, {trabaja_hoy()} AS trabaja
                    FROM empleados WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
         emp = dict(emp) if emp else None
 
@@ -1073,6 +1078,8 @@ def sacar_por_plan(data: CargarEnPuertaIn,
                 motivo = "egresado"
             elif puerta["id"] not in con_perfil:
                 motivo = "sin_politica"
+            elif not emp["perfil_acceso_id"]:
+                motivo = "sin_perfil"
             else:
                 motivo = "sin_derecho"
 
@@ -1158,7 +1165,7 @@ def aplicar_puerta(did: int, usuario=Depends(require_permiso("accesos", "aplicar
         deseado = estado_deseado(conn).get(did, {})
         empleados = {str(e["user_id"]).strip(): dict(e) for e in conn.execute(
             f"""SELECT id, user_id, nombre, apellido, activo, nombre_lector,
-                        {trabaja_hoy()} AS trabaja
+                        perfil_acceso_id, {trabaja_hoy()} AS trabaja
                    FROM empleados
                   WHERE user_id IS NOT NULL AND TRIM(user_id) <> ''""")}
         con_perfil = {r["dispositivo_id"] for r in conn.execute(
@@ -1181,6 +1188,8 @@ def aplicar_puerta(did: int, usuario=Depends(require_permiso("accesos", "aplicar
             motivo = "egresado"
         elif did not in con_perfil:
             motivo = "sin_politica"
+        elif not emp["perfil_acceso_id"]:
+            motivo = "sin_perfil"
         else:
             motivo = "sin_derecho"
         if MOTIVOS_QUE_SE_APLICAN.get(motivo):

@@ -112,6 +112,7 @@ MOTIVOS_SACAR = {
     "egresado":     "Dado de baja en el sistema",
     "desconocido":  "No existe en el sistema",
     "sin_derecho":  "Su perfil ya no incluye esta puerta",
+    "sin_perfil":   "Todavía no tiene perfil asignado",
     "sin_politica": "Ningún perfil incluye esta puerta todavía",
 }
 
@@ -211,7 +212,7 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
         str(r["user_id"]).strip(): dict(r)
         for r in conn.execute(
             f"""SELECT id, user_id, nombre, apellido, activo, fecha_egreso,
-                       {trabaja_hoy()} AS trabaja
+                       perfil_acceso_id, {trabaja_hoy()} AS trabaja
                   FROM empleados WHERE user_id IS NOT NULL"""
         )
     }
@@ -281,6 +282,13 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
                 motivo = "egresado"
             elif d["id"] not in con_perfil:
                 motivo = "sin_politica"
+            elif not emp["perfil_acceso_id"]:
+                # Aparte de «su perfil no incluye esta puerta», aunque las dos
+                # terminen en «no deberia estar». Una es una decision tomada; la
+                # otra es que nadie decidio todavia. Confundirlas hace que
+                # aplicar una puerta saque a quien entro la semana pasada y a
+                # quien nadie le asigno nada, con el mismo boton y sin aviso.
+                motivo = "sin_perfil"
             else:
                 motivo = "sin_derecho"
             # Estar en una puerta y NO estar en el equipo de asistencia es una
@@ -307,7 +315,8 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
                 "en_maestro": esta_en_maestro,
             })
 
-        orden = {"egresado": 0, "desconocido": 1, "sin_politica": 2, "sin_derecho": 3}
+        orden = {"egresado": 0, "desconocido": 1, "sin_perfil": 2,
+                 "sin_politica": 3, "sin_derecho": 4}
         fila["sacar"].sort(key=lambda s: (orden[s["motivo"]], len(s["user_id"]), s["user_id"]))
         total["agregar"] += len(fila["agregar"])
         total["sacar"] += len(fila["sacar"])

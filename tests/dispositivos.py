@@ -1099,8 +1099,23 @@ _p1 = plan2["puertas"][0]
 chequear("con la puerta en un perfil ya no se marca",
          _p1["en_algun_perfil"] is True, _p1.get("en_algun_perfil"))
 _s2 = next((x for x in _p1["sacar"] if x["user_id"] == _uid_real), None)
-chequear("y el motivo pasa a ser el de siempre",
-         _s2 is None or _s2["motivo"] == "sin_derecho", _s2)
+# Deja de ser «ningun perfil incluye esta puerta» y pasa a ser algo sobre esa
+# persona. Cual de los dos depende de si tiene perfil: «su perfil no la
+# incluye» es una decision tomada, «todavia no tiene perfil» es una que falta.
+chequear("y el motivo pasa a hablar de la persona, no de la puerta",
+         _s2 is None or _s2["motivo"] in ("sin_derecho", "sin_perfil"), _s2)
+
+# Y los dos casos se distinguen, que es lo que importa: «su perfil no la
+# incluye» es una decision tomada; «todavia no tiene perfil» es una que falta, y
+# sacar a alguien por eso seria dejar afuera a quien entro la semana pasada.
+if _s2 is not None:
+    _cnp = sqlite3.connect(DB)
+    _tiene = _cnp.execute("SELECT perfil_acceso_id FROM empleados WHERE id=?",
+                          (_s2["empleado_id"],)).fetchone()[0]
+    _cnp.close()
+    chequear("sin perfil asignado el motivo lo dice asi",
+             _s2["motivo"] == ("sin_derecho" if _tiene else "sin_perfil"),
+             (_tiene, _s2["motivo"]))
 
 
 

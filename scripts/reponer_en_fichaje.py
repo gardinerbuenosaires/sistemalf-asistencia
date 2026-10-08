@@ -91,8 +91,8 @@ def equipos():
             if not puerta:
                 salir(f"No tengo cargada ninguna puerta con la IP {ip_puerta}.")
         quien = conn.execute(
-            "SELECT nombre, apellido, activo FROM empleados WHERE TRIM(user_id)=?",
-            (NUMERO,)).fetchone()
+            """SELECT nombre, apellido, activo, nombre_lector
+                 FROM empleados WHERE TRIM(user_id)=?""", (NUMERO,)).fetchone()
     return (dict(maestro), dict(puerta) if puerta else None,
             dict(quien) if quien else None)
 
@@ -139,6 +139,7 @@ def de_la_puerta(puerta):
         return {"origen": f"{puerta['nombre']} ({puerta['ip']})",
                 "equipo": puerta["nombre"],
                 "nombre": (quien.name or "").strip() or NUMERO,
+                "nombre_corto": True,
                 "grupo": 0, "privilegio": 0, "huellas": suyas}
     finally:
         if conexion:
@@ -172,6 +173,20 @@ def main():
               "     scripts\\reponer_en_fichaje.bat " + NUMERO +
               " --desde-puerta 192.168.1.208")
 
+    # Las puertas guardan 8 caracteres y el equipo de fichaje 24. Copiar el
+    # nombre de una puerta lo dejaria recortado en el equipo que si tiene lugar
+    # --«SEBA» en vez del nombre entero-- y eso es lo que la persona ve en
+    # pantalla al fichar. El del legajo le gana.
+    if datos.get("nombre_corto") and quien and (quien.get("nombre_lector") or "").strip():
+        print(f"     el nombre de la puerta viene recortado a 8 caracteres "
+              f"(«{datos['nombre']}»)")
+        datos["nombre"] = quien["nombre_lector"].strip()[:24]
+        print(f"     se usa el del legajo: «{datos['nombre']}»")
+    elif datos.get("nombre_corto"):
+        print(f"     OJO: el nombre viene de una puerta, recortado a 8 "
+              f"caracteres. El equipo de fichaje guarda 24.")
+        print(f"     Si querés el entero, ponéselo en el legajo "
+              f"(Accesos -> nombre que muestra el lector) y volvé a correr esto.")
     print(f"     nombre «{datos['nombre']}», {len(datos['huellas'])} huella(s)")
     if datos["privilegio"] not in (0,):
         salir(f"Tenía nivel {datos['privilegio']} (no es usuario común). "

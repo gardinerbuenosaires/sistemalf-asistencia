@@ -2597,6 +2597,67 @@ if _cargo_id:
     _cc.commit(); _cc.close()
 
 
+print("\n=== UNA LISTA QUE VINO CORTADA NO ES UNA LECTURA ===")
+# El equipo dice cuantos usuarios tiene. Si se leyeron menos, la lista vino
+# cortada y todo lo que se concluya de ella es falso para el lado peor: la gente
+# que falta parece no estar cargada. El plan propondria cargar a quien ya esta,
+# y la ficha diria "no enrolado" de alguien que si esta.
+from sync.plan_accesos import lectura_confiable as _conf, plan_fichaje as _pf3
+
+chequear("una lectura entera sirve",
+         _conf({"ok": True, "completa": True, "usuarios": []}) is True)
+chequear("una cortada no",
+         _conf({"ok": True, "completa": False, "declarados": 200,
+                "usuarios": [{"user_id": "1"}]}) is False)
+chequear("una que fallo tampoco", _conf({"ok": False, "usuarios": []}) is False)
+# Un equipo que no dice cuantos tiene no se puede comprobar, y negarlo dejaria
+# el modulo sin funcionar contra un equipo que quizas este bien.
+chequear("si el equipo no dice cuantos tiene, se acepta",
+         _conf({"ok": True, "completa": None, "usuarios": []}) is True)
+
+_MAESTRO_C = {"id": 95, "nombre": "Reloj"}
+_PUERTAS_C = [{"id": p_personal, "nombre": "Personal"}]
+
+def _lec_c(usuarios, completa=True, declarados=None):
+    return {"ok": True, "error": None, "completa": completa,
+            "declarados": declarados if declarados is not None else len(usuarios),
+            "usuarios": [{"user_id": u} for u in usuarios]}
+
+# El caso real: el maestro contesta pero con la lista corta. Sin la
+# comprobacion, los que faltan aparecen como "activos sin enrolar" y el plan
+# propone cargarlos en puertas donde ya estan.
+with db_session() as _cn:
+    _rc = _pf3(_cn, _MAESTRO_C, _lec_c(["1"], completa=False, declarados=200),
+               {p_personal: _lec_c([])}, _PUERTAS_C)
+chequear("con la lista cortada, no hay plan para el equipo de fichaje",
+         _rc["ok"] is False, _rc)
+chequear("ni se acusa a nadie de no estar enrolado",
+         _rc["sin_enrolar"] == [] and _rc["sacar"] == [], _rc)
+chequear("y se dice que vino cortada y cuanto falto",
+         "cortada" in (_rc["error"] or "") and "200" in (_rc["error"] or ""),
+         _rc["error"])
+
+# Y una entera sigue funcionando igual.
+with db_session() as _cn:
+    _rc2 = _pf3(_cn, _MAESTRO_C, _lec_c(["777222"]), {p_personal: _lec_c([])},
+                _PUERTAS_C)
+chequear("una lectura entera si produce plan", _rc2["ok"] is True, _rc2)
+chequear("y encuentra al desconocido",
+         any(x["user_id"] == "777222" for x in _rc2["sacar"]), _rc2["sacar"][:2])
+
+# Lo mismo para una puerta: una lista corta se informa como no leida.
+from sync.plan_accesos import armar_plan as _ap3
+_PU_C = [{"id": p_personal, "nombre": "Personal", "ubicacion": None}]
+with db_session() as _cn:
+    _pc = _ap3(_cn, _PU_C, {p_personal: _lec_c(["1"], completa=False, declarados=27)},
+               {"ok": True, "usuarios": []})
+_fc = _pc["puertas"][0]
+chequear("una puerta con la lista cortada no produce plan",
+         _fc["ok"] is False and _fc["agregar"] == [] and _fc["sacar"] == [], _fc)
+chequear("y cuenta como no leida", _pc["total"]["sin_leer"] == 1, _pc["total"])
+chequear("diciendo que vino cortada", "cortada" in (_fc["error"] or ""), _fc["error"])
+
+
 print("\n=== LIMPIAR EL EQUIPO DE FICHAJE DE UNA PASADA ===")
 # Las bajas que nunca se quitaron, acumuladas de anios. De a una es inviable y
 # no por el equipo de fichaje: cada borrado lee las SEIS puertas antes, para

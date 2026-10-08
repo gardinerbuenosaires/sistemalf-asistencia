@@ -100,6 +100,22 @@ logger = logging.getLogger(__name__)
 # `fecha_egreso` es el primer día NO trabajado, que es la convención que ya usa
 # todo el resto del sistema. Y trae algo gratis: el día que llega esa fecha, el
 # plan propone sacarlo solo, sin que nadie tenga que acordarse.
+def lectura_confiable(lectura) -> bool:
+    """
+    Si de esa lectura se puede concluir quién NO está cargado.
+
+    Una lista que vino cortada miente para el lado peor: la gente que falta
+    parece no estar. Y las dos mitades del plan dependen de eso —a quién
+    agregar y a quién sacar— así que una lectura incompleta no es "casi" una
+    lectura, es ninguna.
+
+    `completa` en None es un equipo que no dijo cuántos tiene. Ahí no se puede
+    comprobar y se acepta: es el estado de siempre, y negarlo dejaría el módulo
+    sin funcionar contra un equipo que quizás esté bien.
+    """
+    return bool(lectura) and bool(lectura.get("ok")) and lectura.get("completa") is not False
+
+
 def trabaja_hoy(alias=None):
     """El mismo criterio para todas las consultas, con el alias de cada una."""
     p = f"{alias}." if alias else ""
@@ -239,7 +255,7 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
     # Las dos en None si el maestro no contestó: sin leerlo no se sabe, y el plan
     # lo dice en vez de suponer.
     en_maestro = con_huella = None
-    if maestro and maestro.get("ok"):
+    if lectura_confiable(maestro):
         en_maestro = {u["user_id"] for u in maestro["usuarios"]}
         if maestro.get("huellas_leidas"):
             con_huella = {u["user_id"] for u in maestro["usuarios"]
@@ -256,7 +272,12 @@ def armar_plan(conn, puertas: list, lecturas: dict, maestro: dict | None) -> dic
                 "en_algun_perfil": d["id"] in con_perfil,
                 "agregar": [], "sacar": []}
 
-        if not lectura["ok"]:
+        if not lectura_confiable(lectura):
+            fila["ok"] = False
+            if lectura.get("ok") and lectura.get("completa") is False:
+                fila["error"] = (f"la lista vino cortada: el equipo dice tener "
+                                 f"{lectura.get('declarados')} usuarios y se "
+                                 f"leyeron {len(lectura['usuarios'])}")
             total["sin_leer"] += 1
             salida.append(fila)
             continue
@@ -378,9 +399,14 @@ def plan_fichaje(conn, equipo: dict, lectura: dict, lecturas: dict,
         )
     }
 
+    completa = lectura_confiable(lectura)
     salida = {"id": equipo["id"], "nombre": equipo["nombre"],
-              "ok": bool(lectura and lectura.get("ok")),
-              "error": (lectura or {}).get("error"),
+              "ok": completa,
+              "error": ((lectura or {}).get("error") if not (lectura or {}).get("ok")
+                        else (f"la lista vino cortada: el equipo dice tener "
+                              f"{(lectura or {}).get('declarados')} usuarios y se "
+                              f"leyeron {len((lectura or {}).get('usuarios') or [])}")
+                        if not completa else None),
               "sacar": [], "sin_enrolar": [], "puertas_sin_leer": []}
     if not salida["ok"]:
         return salida

@@ -249,6 +249,14 @@ def leer_cargados(dispositivo: dict, con_huellas: bool = False,
             }
             for u in conexion.get_users()
         ]
+        # Que la lista haya venido entera. El equipo dice cuantos usuarios
+        # tiene; si se leyeron menos, la lectura vino cortada y todo lo que se
+        # concluya de ella es falso al reves: la gente que falta parece no
+        # estar cargada. El camino de escritura ya hacia esta comprobacion
+        # antes de tocar nada; el de lectura no, y de ahi salen el plan y la
+        # ficha de cada persona.
+        dice = getattr(conexion, "users", None)
+        completa = None if dice is None else len(usuarios) == dice
         huellas = _contar_huellas(conexion) if con_huellas else None
         if con_huellas:
             for u in usuarios:
@@ -257,8 +265,13 @@ def leer_cargados(dispositivo: dict, con_huellas: bool = False,
             franjas = _leer_franjas(conexion)
             for u in usuarios:
                 u["franja"] = franjas.get(u["uid"]) if franjas is not None else None
+        if completa is False:
+            logger.warning("Lectura incompleta de %s: dice tener %s usuarios y "
+                           "se leyeron %s", dispositivo.get("ip"), dice,
+                           len(usuarios))
         return {"ok": True, "transporte": transporte, "usuarios": usuarios,
-                "error": None, "huellas_leidas": None if not con_huellas else huellas is not None}
+                "error": None, "declarados": dice, "completa": completa,
+                "huellas_leidas": None if not con_huellas else huellas is not None}
     except Exception as exc:
         logger.warning("No se pudo leer el lista de %s: %s", dispositivo.get("ip"), exc)
         return {"ok": False, "usuarios": [], "transporte": None,

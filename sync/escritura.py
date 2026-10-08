@@ -499,7 +499,10 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
 def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list,
                       guardadas: dict = None) -> dict:
     """
-    Aplica de una vez todo lo que el plan pide para una puerta.
+    Aplica de una vez todo lo que el plan pide para un equipo.
+
+    Se usa para una puerta —cargar y sacar gente según los perfiles— y también
+    para limpiar el equipo de fichaje, que solo tiene bajas.
 
     Por qué junto y no fila por fila. Cada fila suelta es conectarse, leer los
     usuarios y las huellas del equipo entero, escribir, y volver a leer todo
@@ -538,8 +541,14 @@ def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list,
         # todos los que entran a esta puerta, y preguntarlo por persona serían
         # dos comandos más contra el equipo por cada uno.
         from collections import Counter
-        reparto = Counter(u["grupo"] for u in antes["usuarios"].values() if u["grupo"])
-        grupo, ventana, aviso_grupo = _elegir_grupo(conexion, reparto)
+        # Solo si hay alguien que cargar. Averiguar el grupo son dos comandos
+        # mas por cada grupo en uso, y una pasada de puras bajas --limpiar
+        # egresados-- no los necesita para nada.
+        grupo, ventana, aviso_grupo = None, None, None
+        if altas:
+            reparto = Counter(u["grupo"] for u in antes["usuarios"].values()
+                              if u["grupo"])
+            grupo, ventana, aviso_grupo = _elegir_grupo(conexion, reparto)
 
         tocados, usados = set(), {u["uid"] for u in antes["usuarios"].values()}
 

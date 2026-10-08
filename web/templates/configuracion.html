@@ -3086,6 +3086,16 @@ async function verPlan() {
     : `<div style="margin-top:12px;border:1px solid #eee;border-radius:4px;padding:10px 12px">
         <b>${_esc(f.nombre)}</b>
         <span style="color:#888;font-size:.8rem">· equipo de fichaje · ${f.sacar.length} a sacar</span>
+        ${/* Las que se pueden, de una. De a una cada borrado lee las seis
+             puertas antes --la compuerta-- asi que cuarenta personas son
+             doscientas cuarenta lecturas. Juntas, las puertas se leen una vez. */''}
+        ${(() => {
+          const listas = f.sacar.filter(s => s.se_puede).length;
+          return listas && canDo('accesos','aplicar')
+            ? `<button class="btn btn-sm" style="margin-left:10px" id="aplicar-fichaje"
+                       onclick="aplicarFichaje(this, ${listas}, ${f.id})">Sacar las ${listas}</button>`
+            : '';
+        })()}
         ${!f.sacar.length ? `<div style="color:#2e7d4f;font-size:.84rem;margin-top:4px">
             Nadie que no trabaje está pudiendo fichar.</div>` : ''}
         ${f.sacar.map(s => `<div style="padding:4px 0 4px 14px;font-size:.83rem" id="sacar-${f.id}-${s.user_id}">
@@ -3232,6 +3242,57 @@ async function sacarPorPlan(dispositivoId, userId, boton) {
       + `<div style="font-size:.72rem;color:#bbb;margin-left:72px">respaldo guardado en la PC</div>`;
   }
   toast(`${r.empleado || userId} sacado de ${r.equipo}`);
+}
+
+// Limpiar el equipo de fichaje de una pasada. Es la limpieza de las bajas que
+// nunca se quitaron: de a una es inviable, no por el equipo sino por la
+// compuerta, que lee las seis puertas antes de cada borrado.
+async function aplicarFichaje(boton, cuantas, equipoId) {
+  if (!confirm(`${cuantas} persona(s) van a perder el acceso al equipo de fichaje.
+
+`
+      + `Son bajas y números que no existen en el sistema. De cada uno se guarda un `
+      + `respaldo con sus huellas en la PC antes de borrar, pero volver atrás no es un botón.`
+      + `
+
+Antes se leen todas las puertas: si alguna no contesta, no se borra ninguno.`
+      + `
+
+¿Los saco?`)) return;
+
+  if (boton) { boton.disabled = true; boton.textContent = 'Leyendo las puertas…'; }
+  let r = {};
+  try {
+    const res = await fetch('/api/accesos/aplicar-fichaje', { method: 'POST' });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo aplicar');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error: ' + e.message);
+  }
+
+  (r.resultados || []).forEach(x => {
+    const fila = document.getElementById(`sacar-${equipoId}-${x.user_id}`);
+    if (!fila) return;
+    fila.style.opacity = '.55';
+    const quien = _esc(x.empleado) || `«${_esc(x.nombre_equipo || '')}»`;
+    fila.innerHTML = x.ok
+      ? `<span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">sacado</span>`
+        + `<span style="font-family:monospace;color:#888">${_esc(x.user_id)}</span> ${quien}`
+        + `<span style="color:#888;margin-left:6px">· respaldo guardado</span>`
+      : `<span style="color:#b3261e;font-weight:600;min-width:62px;display:inline-block">no se pudo</span>`
+        + `<span style="font-family:monospace;color:#888">${_esc(x.user_id)}</span> ${quien}`
+        + `<div style="font-size:.76rem;color:#b3261e;margin-left:72px">${_esc(x.error || '')}</div>`;
+  });
+
+  const hechos = (r.resultados || []).filter(x => x.ok).length;
+  const fallados = (r.resultados || []).length - hechos;
+  if (boton) {
+    boton.disabled = fallados === 0;
+    boton.textContent = fallados ? `Reintentar ${fallados}` : 'Listo';
+  }
+  toast(`${hechos} sacado(s) del equipo de fichaje`
+        + (fallados ? `, ${fallados} sin poder` : ''));
 }
 
 // Aplicar todo el plan de una puerta. Va por puerta y no por todas juntas: cada

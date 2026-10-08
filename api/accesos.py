@@ -1302,6 +1302,110 @@ def huellas_respaldar(usuario=Depends(require_permiso("accesos", "aplicar"))):
     return {**r, "equipo": equipo["nombre"]}
 
 
+@router.post("/aplicar-fichaje")
+def aplicar_fichaje(usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Saca del equipo de fichaje, de una sola pasada, a todos los que ya no van.
+
+    Existe por una limpieza puntual que de a uno es inviable: las bajas que
+    nunca se quitaron, acumuladas de anios. Y no es inviable por el equipo de
+    fichaje sino por la compuerta: cada borrado lee las SEIS puertas antes, para
+    confirmar que ese numero no quedo en ninguna. De a uno, cuarenta personas
+    son doscientas cuarenta lecturas de puertas.
+
+    Aca las puertas se leen UNA vez y despues se procesa la tanda. La compuerta
+    sigue siendo por persona contra esa lectura: si alguno quedo en una puerta,
+    ese no se borra y los demas si. Juntarlos no puede volverse la excusa para
+    saltearla.
+
+    Y si alguna puerta no contesta no se borra NINGUNO. Sin poder leerla, no se
+    puede afirmar de nadie que no haya quedado ahi, y esta es la decision donde
+    esa diferencia deja de ser una sutileza: borrar del equipo de fichaje
+    devuelve el numero a circulacion.
+    """
+    from sync.escritura import aplicar_en_puerta
+    from sync.lectores import leer_cargados_varios
+    from sync.plan_accesos import MOTIVOS_SACAR, trabaja_hoy
+
+    with db_session() as conn:
+        maestro = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo
+                 FROM dispositivos
+                WHERE activo=1 AND cuenta_asistencia=1 AND protocolo='pull'
+                  AND ip IS NOT NULL ORDER BY orden, id LIMIT 1""").fetchone()
+        if not maestro:
+            raise HTTPException(400, "No hay equipo de fichaje cargado.")
+        puertas = [dict(r) for r in conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo
+                 FROM dispositivos
+                WHERE activo=1 AND es_acceso=1 AND protocolo='pull'
+                  AND ip IS NOT NULL ORDER BY orden, id""")]
+        empleados = {str(e["user_id"]).strip(): dict(e) for e in conn.execute(
+            f"""SELECT id, user_id, nombre, apellido, {trabaja_hoy()} AS trabaja
+                  FROM empleados
+                 WHERE user_id IS NOT NULL AND TRIM(user_id) <> ''""")}
+        maestro = dict(maestro)
+
+    # Todo en una tanda: el equipo de fichaje y las puertas, una vez cada uno.
+    lecturas = leer_cargados_varios([maestro] + puertas)
+    suya = lecturas.get(maestro["id"], {})
+    if not suya.get("ok"):
+        raise HTTPException(400, f"{maestro['nombre']} no contestó: "
+                                 f"{suya.get('error')}")
+
+    sin_leer = [d["nombre"] for d in puertas
+                if not (lecturas.get(d["id"]) or {}).get("ok")]
+    if sin_leer:
+        raise HTTPException(
+            400, f"No contestaron {', '.join(sin_leer)}, así que no se puede "
+                 f"confirmar que estas personas no hayan quedado ahí. No se "
+                 f"borra del equipo de fichaje hasta poder comprobarlo.")
+
+    en_puertas: dict = {}
+    for d in puertas:
+        for u in lecturas[d["id"]]["usuarios"]:
+            en_puertas.setdefault(u["user_id"], []).append(d["nombre"])
+
+    bajas, trabadas = [], []
+    for u in suya["usuarios"]:
+        numero = u["user_id"]
+        emp = empleados.get(numero)
+        if emp and emp["trabaja"]:
+            continue
+        quien = (f"{emp['apellido']}, {emp['nombre']}".strip(", ") if emp else None)
+        if numero in en_puertas:
+            trabadas.append({"user_id": numero, "nombre": quien,
+                             "en_puertas": en_puertas[numero]})
+            continue
+        bajas.append({"user_id": numero, "nombre": quien,
+                      "motivo": MOTIVOS_SACAR["egresado" if emp else "desconocido"]})
+
+    if not bajas:
+        return {"ok": True, "equipo": maestro["nombre"], "sin_cambios": True,
+                "resultados": [], "trabadas": trabadas}
+
+    r = aplicar_en_puerta(maestro, maestro, [], bajas)
+
+    with db_session() as conn:
+        for x in r["resultados"]:
+            emp = empleados.get(x["user_id"])
+            _registrar_operacion(
+                conn, dispositivo_id=maestro["id"], equipo=maestro["nombre"],
+                user_id=x["user_id"], empleado_id=emp["id"] if emp else None,
+                nombre_equipo=x.get("nombre_equipo"), accion="sacar",
+                motivo=x.get("motivo"), resultado=_resultado(x),
+                detalle=x.get("error"), respaldo=x.get("respaldo"),
+                usuario_id=int(usuario.get("sub") or 0) or None)
+
+    for x in r["resultados"]:
+        emp = empleados.get(x["user_id"])
+        x["empleado"] = (f"{emp['apellido']}, {emp['nombre']}".strip(", ")
+                         if emp else None)
+    return {"ok": r["ok"], "equipo": maestro["nombre"], "error": r.get("error"),
+            "resultados": r["resultados"], "problemas": r.get("problemas", []),
+            "trabadas": trabadas, "otros_intactos": r.get("otros")}
+
+
 @router.post("/sincronizar-huellas")
 def sincronizar_huellas_en_puerta(data: CargarEnPuertaIn,
                                   usuario=Depends(require_permiso("accesos", "aplicar"))):

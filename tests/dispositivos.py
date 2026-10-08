@@ -2597,6 +2597,100 @@ if _cargo_id:
     _cc.commit(); _cc.close()
 
 
+print("\n=== LIMPIAR EL EQUIPO DE FICHAJE DE UNA PASADA ===")
+# Las bajas que nunca se quitaron, acumuladas de anios. De a una es inviable y
+# no por el equipo de fichaje: cada borrado lee las SEIS puertas antes, para
+# confirmar que ese numero no quedo en ninguna. Cuarenta personas serian
+# doscientas cuarenta lecturas de puertas.
+import sync.lectores as _lecF
+import sync.escritura as _escF
+
+_cf2 = sqlite3.connect(DB)
+_mid2 = _cf2.execute(
+    "SELECT id FROM dispositivos WHERE cuenta_asistencia=1 AND es_acceso=0 LIMIT 1").fetchone()
+_bajaf2 = _cf2.execute(
+    "SELECT user_id FROM empleados WHERE activo=0 AND user_id IS NOT NULL LIMIT 1").fetchone()
+_cf2.close()
+
+if _mid2 and _bajaf2:
+    _mid2, _bajaf2 = _mid2[0], str(_bajaf2[0]).strip()
+    _real_lcv = _lecF.leer_cargados_varios
+    _real_aplicar = _escF.aplicar_en_puerta
+    _pedido = {}
+
+    def _lecturas(equipos, **kw):
+        """El egresado esta en el fichaje; las puertas contestan vacias."""
+        salida = {}
+        for d in equipos:
+            usuarios = ([{"user_id": _bajaf2, "nombre": "X", "uid": 1, "huellas": 1}]
+                        if d["id"] == _mid2 else [])
+            salida[d["id"]] = {"ok": True, "error": None, "usuarios": usuarios}
+        return salida
+
+    _lecF.leer_cargados_varios = _lecturas
+    _escF.aplicar_en_puerta = lambda eq, ma, altas, bajas, g=None: (
+        _pedido.update({"bajas": [b["user_id"] for b in bajas], "altas": altas}),
+        {"ok": True, "resultados": [{"user_id": b["user_id"], "accion": "sacar",
+                                     "ok": True, "respaldo": "x.json",
+                                     "motivo": b["motivo"], "error": None}
+                                    for b in bajas],
+         "problemas": [], "otros": 20})[1]
+
+    r = cli.post("/api/accesos/aplicar-fichaje")
+    chequear("saca al egresado del equipo de fichaje", r.status_code == 200, r.text[:200])
+    chequear("y se lo pidio a la escritura", _bajaf2 in _pedido.get("bajas", []), _pedido)
+    chequear("sin cargar a nadie: el fichaje solo tiene bajas",
+             _pedido.get("altas") == [], _pedido)
+    _opsF = cli.get("/api/dispositivos/operaciones").json()["operaciones"]
+    chequear("queda registrado por persona, no como tanda",
+             _opsF[0]["accion"] == "sacar" and _opsF[0]["user_id"] == _bajaf2, _opsF[0])
+
+    # La compuerta, que es lo que no puede aflojarse por juntarlos.
+    def _lecturas_con_puerta(equipos, **kw):
+        salida = {}
+        for d in equipos:
+            salida[d["id"]] = {"ok": True, "error": None,
+                               "usuarios": [{"user_id": _bajaf2, "nombre": "X",
+                                             "uid": 1, "huellas": 1}]}
+        return salida
+
+    _lecF.leer_cargados_varios = _lecturas_con_puerta
+    _pedido.clear()
+    r = cli.post("/api/accesos/aplicar-fichaje")
+    chequear("si quedo en una puerta, no se lo saca del fichaje",
+             r.status_code == 200 and not _pedido.get("bajas"), (r.status_code, _pedido))
+    chequear("y se lo informa como trabado, diciendo en que puertas",
+             any(x["user_id"] == _bajaf2 and x["en_puertas"]
+                 for x in r.json().get("trabadas", [])), r.json().get("trabadas"))
+
+    # Una puerta que no contesta frena TODO: sin leerla no se puede afirmar de
+    # nadie que no haya quedado ahi.
+    def _lecturas_muda(equipos, **kw):
+        salida = {}
+        for d in equipos:
+            if d["id"] == _mid2:
+                salida[d["id"]] = {"ok": True, "error": None,
+                                   "usuarios": [{"user_id": _bajaf2, "nombre": "X",
+                                                 "uid": 1, "huellas": 1}]}
+            else:
+                salida[d["id"]] = {"ok": False, "error": "no contesta", "usuarios": []}
+        return salida
+
+    _lecF.leer_cargados_varios = _lecturas_muda
+    _pedido.clear()
+    r = cli.post("/api/accesos/aplicar-fichaje")
+    chequear("si una puerta no contesta, no se borra ninguno",
+             r.status_code == 400 and not _pedido.get("bajas"), r.text[:200])
+    chequear("y se dice cual no contesto", "no contestaron" in r.json()["detail"].lower(),
+             r.text[:200])
+
+    chequear("limpiar el fichaje necesita accesos:aplicar",
+             _aplica.post("/api/accesos/aplicar-fichaje").status_code == 403)
+
+    _lecF.leer_cargados_varios = _real_lcv
+    _escF.aplicar_en_puerta = _real_aplicar
+
+
 print("\n=== LA BAJA ADELANTADA ===")
 # Se puede dar de baja a alguien hoy con fecha futura, para adelantarle la
 # liquidacion final, y esa persona sigue trabajando hasta la vispera. Si el plan

@@ -130,6 +130,28 @@ def _intactos(antes, despues, excepto):
     return problemas
 
 
+def _recortar_nombre(conexion, nombre):
+    """
+    El nombre como va a quedar en ESE equipo.
+
+    El de fichaje guarda 24 caracteres y las puertas 8. `pack` recorta solo y
+    sin avisar, asi que escribir nunca fallaba: lo que fallaba era la
+    verificacion de despues, que comparaba lo leido —«JORGE SE»— contra lo
+    pedido —«JORGE SEBASTIAN»— y concluia que no se habia escrito.
+
+    Recortar aca, antes de escribir y antes de comparar, arregla las dos
+    puntas: se escribe lo mismo que antes y se verifica contra lo que de verdad
+    entra. El campo del legajo sigue aceptando 24, porque el equipo con
+    pantalla es el de fichaje y ahi hay lugar.
+
+    Se recorta en bytes y no en caracteres: el campo del equipo mide bytes.
+    """
+    limite = 8 if getattr(conexion, "user_packet_size", 28) == 28 else 24
+    codificacion = getattr(conexion, "encoding", "latin-1")
+    crudo = (nombre or "").encode(codificacion, errors="ignore")[:limite]
+    return crudo.decode(codificacion, errors="ignore")
+
+
 def _nombre_para_el_lector(configurado, del_maestro, numero):
     """
     Qué nombre se le escribe a una persona en una puerta, y si hubo que inventarlo.
@@ -506,6 +528,7 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
         # se tiene que ver para que alguien lo arregle. Pasa en un solo caso
         # —sin nombre en el legajo Y con el equipo de fichaje caido— y se avisa.
         texto, por_defecto = _nombre_para_el_lector(nombre, quien, numero)
+        texto = _recortar_nombre(conexion, texto)
 
         _escribir_usuario(conexion, uid, texto, 0, grupo, numero)
         recien = next((u for u in conexion.get_users()
@@ -639,6 +662,7 @@ def aplicar_en_puerta(puerta: dict, maestro: dict, altas: list, bajas: list,
             quien, suyas = traidas[numero]
             texto, por_defecto = _nombre_para_el_lector(
                 alta.get("nombre"), quien, numero)
+            texto = _recortar_nombre(conexion, texto)
             try:
                 uid = max(usados) + 1 if usados else 1
                 _escribir_usuario(conexion, uid, texto, 0, grupo, numero)
@@ -740,7 +764,7 @@ def actualizar_en_puerta(puerta: dict, numero: str, nombre: str = None,
             return {"ok": False, "no_estaba": True,
                     "error": f"El {numero} no está cargado en {puerta['nombre']}."}
 
-        texto = (nombre or "").strip() or actual["nombre"]
+        texto = _recortar_nombre(conexion, (nombre or "").strip() or actual["nombre"])
         nivel = actual["privilegio"] if privilegio is None else int(privilegio)
         if texto == actual["nombre"] and nivel == actual["privilegio"]:
             return {"ok": True, "sin_cambios": True, "nombre_escrito": texto,

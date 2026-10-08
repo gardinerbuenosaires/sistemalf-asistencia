@@ -3327,6 +3327,40 @@ _em._conectar = _conectar_real
 _em._escribir_usuario = _escribir_real
 
 
+# --- El nombre, recortado a lo que entra en cada equipo ---------------------
+# El de fichaje guarda 24 caracteres y las puertas 8. `pack` recorta solo y sin
+# avisar, asi que escribir nunca fallaba: fallaba la verificacion de despues,
+# que comparaba lo leido --«JORGE SE»-- contra lo pedido --«JORGE SEBASTIAN»--
+# y concluia que no se habia escrito. El caso aparecio en produccion.
+
+
+class _Equipo28:
+    user_packet_size = 28
+    encoding = "latin-1"
+
+
+class _Equipo72:
+    user_packet_size = 72
+    encoding = "latin-1"
+
+
+_rec = _em._recortar_nombre
+chequear("en una puerta entran 8",
+         _rec(_Equipo28(), "JORGE SEBASTIAN") == "JORGE SE",
+         _rec(_Equipo28(), "JORGE SEBASTIAN"))
+chequear("en el equipo de fichaje entran 24",
+         _rec(_Equipo72(), "JORGE SEBASTIAN") == "JORGE SEBASTIAN",
+         _rec(_Equipo72(), "JORGE SEBASTIAN"))
+chequear("y ahi tambien se recorta si se pasa",
+         len(_rec(_Equipo72(), "A" * 40)) == 24)
+chequear("uno corto no se toca", _rec(_Equipo28(), "SEBA") == "SEBA")
+chequear("vacio no revienta", _rec(_Equipo28(), None) == "")
+# Se recorta en bytes porque el campo del equipo mide bytes.
+chequear("con acentos tambien entran 8",
+         len(_rec(_Equipo28(), "MUÑOZ RODRIGUEZ").encode("latin-1")) == 8,
+         _rec(_Equipo28(), "MUÑOZ RODRIGUEZ"))
+
+
 # --- Escribirle al equipo de fichaje ----------------------------------------
 # Usa otro formato de registro --72 bytes, con el nombre de 24 caracteres en vez
 # de 8-- y nuestro empaquetado solo sabe el de las puertas. Para ese se usa
@@ -3594,6 +3628,24 @@ _preparar_act(_eq)
 _ra = _em.actualizar_en_puerta(_PUERTA_A, "100", nombre="NUEVO")
 chequear("los demas quedan intactos", _ra["problemas"] == [], _ra["problemas"])
 chequear("e informa cuantos son", _ra["otros"] == 1, _ra)
+
+# Y la verificacion de actualizar deja de dar falso negativo.
+_eqN = _PuertaParaActualizar(nombre="VIEJO")
+_preparar_act(_eqN)
+_rn = _em.actualizar_en_puerta(_PUERTA_A, "100", nombre="JORGE SEBASTIAN")
+chequear("cambiar a un nombre largo ya no falla", _rn["ok"] is True, _rn)
+chequear("y se informa lo que de verdad quedo",
+         _rn["nombre_escrito"] == "JORGE SE", _rn)
+
+# Y si el equipo ya tiene el recortado, no se reescribe: antes lo intentaba
+# cada vez porque nunca podia dar por igual.
+_eqN = _PuertaParaActualizar(nombre="JORGE SE")
+_preparar_act(_eqN)
+_rn = _em.actualizar_en_puerta(_PUERTA_A, "100", nombre="JORGE SEBASTIAN")
+chequear("si ya tiene el recortado, no se reescribe",
+         _rn.get("sin_cambios") is True, _rn)
+chequear("y no se le pidio nada al equipo", _eqN.escrituras == [], _eqN.escrituras)
+
 
 _em._conectar = _conectar_real
 _em._escribir_usuario = _escribir_real

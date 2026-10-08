@@ -1194,9 +1194,14 @@ chequear("y se marca como la causa de raiz",
 chequear("y va primero en la lista",
          _v0["equipos"][0]["id"] == 9, [e["id"] for e in _v0["equipos"]])
 _v0b = verificar("42", _eq, {**_lecturas, 9: _lec()}, {1})
-chequear("no estar enrolado en el maestro tambien se avisa",
+# Las dos situaciones del maestro van por separado. Antes compartian una sola
+# bandera y el cartel decia "no tiene huella" de alguien que ni siquiera estaba
+# cargado: las dos impiden copiar a una puerta, pero se arreglan al reves.
+chequear("no estar enrolado en el maestro se avisa aparte",
          {e["id"]: e["estado"] for e in _v0b["equipos"]}[9] == "no_enrolado"
-         and _v0b["resumen"]["sin_huella_maestro"] is True, _v0b["resumen"])
+         and _v0b["resumen"]["no_en_maestro"] is True, _v0b["resumen"])
+chequear("y no se lo confunde con estar cargado sin huella",
+         _v0b["resumen"]["sin_huella_maestro"] is False, _v0b["resumen"])
 chequear("con huella en el maestro no se avisa nada",
          _v["resumen"]["sin_huella_maestro"] is False, _v["resumen"])
 chequear("trae el nombre con el que figura en el equipo",

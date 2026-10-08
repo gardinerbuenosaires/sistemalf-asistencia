@@ -78,7 +78,8 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
     user_id = str(user_id).strip()
     filas = []
     resumen = {"abre": 0, "falta": 0, "sobra": 0, "sin_huella": 0, "sin_leer": 0,
-               "sin_huella_maestro": False, "nombre_distinto": 0}
+               "sin_huella_maestro": False, "no_en_maestro": False,
+               "nombre_distinto": 0}
 
     for d in equipos:
         lectura = lecturas.get(d["id"]) or {
@@ -128,10 +129,19 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
             # está por fichar— y sobre todo no se dice que abre: no abre nada.
             fila["estado"] = ("maestro_sin_huella" if sin_huella
                               else "enrolado" if encontrado else "no_enrolado")
-            if sin_huella or not encontrado:
-                # Sin huella en el maestro no hay nada que copiar a ninguna
-                # puerta: es la causa de raíz de que falte en todas.
+            # Dos situaciones distintas, y antes compartían una sola bandera:
+            # el cartel decía «no tiene huella» de alguien que ni siquiera
+            # estaba cargado. Las dos impiden copiar a una puerta, pero se
+            # arreglan de forma opuesta.
+            if sin_huella:
+                # Está en el equipo y sin ninguna huella: hay que enrolarlo.
                 resumen["sin_huella_maestro"] = True
+            elif not encontrado:
+                # No está en el equipo de asistencia. Puede ser normal —un
+                # legajo que existe solo para abrir puertas y nunca ficha— o
+                # puede ser que lo hayan borrado de ahí y haya quedado en las
+                # puertas. Decir cuál de las dos no le toca al sistema.
+                resumen["no_en_maestro"] = True
         elif debe and encontrado and sin_huella:
             fila["estado"] = "sin_huella"
             resumen["sin_huella"] += 1

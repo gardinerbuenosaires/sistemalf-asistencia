@@ -1690,8 +1690,19 @@ async function verificarEnLectores(id) {
         No le impide abrir —el equipo identifica por número, no por nombre— pero es lo que
         se va a ver en pantalla al apoyar el dedo hasta que se le escriba el nuevo.</div>` : ''}
       ${r.sin_huella_maestro ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:5px">
-        En el equipo de asistencia no tiene huella, así que no hay ninguna huella
-        para copiar a las puertas. Esto se arregla primero: hay que enrolarlo ahí.</div>` : ''}
+        Está cargado en el equipo de asistencia <b>sin ninguna huella</b>, así que no hay
+        nada para copiar a las puertas. Se arregla enrolándolo ahí.</div>` : ''}
+      ${/* No es lo mismo que lo anterior y antes compartían cartel: el texto
+            decía «no tiene huella» de alguien que ni siquiera estaba cargado.
+            Acá hay dos causas posibles y opuestas, y el sistema no puede saber
+            cuál es. */''}
+      ${r.no_en_maestro ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:8px 11px;font-size:.8rem;color:#6b5a26;margin-top:5px">
+        <b>No está cargado en el equipo de asistencia.</b> Puede ser normal —un legajo que
+        existe solo para abrir puertas y nunca ficha— o puede ser que lo hayan borrado de ahí
+        y haya quedado en las puertas.
+        <div style="margin-top:3px">En cualquiera de los dos casos, el sistema no puede
+        cargarlo en una puerta nueva: la huella que copia sale de ese equipo. Si tiene huellas
+        en alguna puerta, son de antes y siguen sirviendo donde están.</div></div>` : ''}
       ${sinPerfil ? `<div style="background:#f6f2e6;border-left:3px solid #c8a951;padding:8px 11px;font-size:.8rem;color:#6b5a26;margin-top:5px">
         Esta persona no tiene perfil, así que el sistema todavía no sabe qué le
         corresponde: por eso todo lo que los equipos tienen cargado figura como

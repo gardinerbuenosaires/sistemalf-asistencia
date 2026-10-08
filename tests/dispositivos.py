@@ -1117,6 +1117,14 @@ if _s2 is not None:
              _s2["motivo"] == ("sin_derecho" if _tiene else "sin_perfil"),
              (_tiene, _s2["motivo"]))
 
+    # Y se ejecuta: en este local no tener perfil es una decision normal, no una
+    # que falta. Frenarlo dejaba sin aplicar el caso mas comun.
+    from api.accesos import MOTIVOS_QUE_SE_APLICAN as _MQA
+    chequear("y aun asi se saca, porque no tener perfil es no abrir nada",
+             _MQA["sin_perfil"] is True, _MQA)
+    chequear("lo unico que no se ejecuta es la puerta sin politica",
+             _MQA["sin_politica"] is False, _MQA)
+
 
 
 print("\n=== UNA PERSONA CONTRA LOS LECTORES ===")

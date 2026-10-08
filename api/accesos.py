@@ -943,11 +943,16 @@ MOTIVOS_QUE_SE_APLICAN = {
     "desconocido": True,
     # Esta activa y su perfil no incluye esta puerta: el perfil ya decidio.
     "sin_derecho": True,
-    # Esta activa y NADIE le asigno perfil. Termina en "no deberia estar" igual
-    # que el anterior, pero no es lo mismo: aca no hay ninguna decision tomada,
-    # hay una que falta. Sacarla seria dejar afuera a alguien que entro la
-    # semana pasada porque todavia no le tocaron el legajo.
-    "sin_perfil": False,
+    # Esta activa y no tiene perfil. Se ejecuta, porque en este local NO tener
+    # perfil es una decision normal y frecuente: la mayoria de la gente no
+    # necesita abrir ninguna puerta. Tratarlo como "falta decidir" y frenar el
+    # borrado dejaba sin aplicar el caso mas comun.
+    #
+    # Se distingue de `sin_derecho` igual, pero solo para informar: una cosa es
+    # "su perfil excluye esta puerta" y otra "no tiene perfil", y al mirar una
+    # lista de veinte nombres antes de borrarlos esa diferencia ayuda a detectar
+    # al que se te paso asignar.
+    "sin_perfil": True,
     # Ningun perfil incluye esta puerta. Eso no es "sacar a toda esta gente",
     # es que la politica todavia no contempla la puerta. Aplicarlo la dejaria
     # vacia y sin que nadie pueda entrar.

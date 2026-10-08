@@ -3019,7 +3019,7 @@ async function verPlan() {
         <span style="font-family:monospace;color:#888">${_esc(s.user_id)}</span> ${_esc(s.nombre) || '<i style="color:#999">sin legajo</i>'}
         <span style="color:#999;margin-left:6px">· ${_esc(s.motivo_texto)}</span>
         ${s.fecha_egreso ? `<span style="color:#b3261e;font-size:.75rem"> (egreso ${_esc(s.fecha_egreso)})</span>` : ''}
-        ${canDo('accesos','aplicar') && !['sin_politica','sin_perfil'].includes(s.motivo)
+        ${canDo('accesos','aplicar') && s.motivo !== 'sin_politica'
           ? `<button class="btn btn-sm btn-secondary" style="margin-left:8px"
                      onclick="sacarPorPlan(${p.id}, '${_esc(s.user_id)}', this)">Sacar</button>` : ''}
         ${s.en_maestro === false ? '<span style="background:#f6dedc;color:#b3261e;padding:2px 7px;border-radius:3px;font-size:.72rem;margin-left:6px" title="La baja se sincronizó con el equipo de asistencia pero en esta puerta quedó">tampoco está en asistencia</span>' : ''}
@@ -3036,9 +3036,9 @@ async function verPlan() {
     const sinPerfil = p.sacar.filter(s => s.motivo === 'sin_perfil');
     const avisoSinPerfil = sinPerfil.length
       ? `<div style="background:#f6e9ce;color:#6b5a26;padding:7px 10px;border-radius:4px;font-size:.8rem;margin-top:6px">
-           <b>${sinPerfil.length} persona(s) de esta puerta no tienen perfil asignado.</b>
-           Figuran para sacar porque el sistema no sabe qué les corresponde, pero eso no es
-           una baja: es que falta decidirlo. No se las saca hasta que tengan perfil.
+           <b>${sinPerfil.length} persona(s) de esta puerta no tienen perfil asignado</b>,
+           así que al aplicar se las saca. Normalmente está bien —no tener perfil es
+           no abrir nada— pero mirá la lista por si a alguno le faltaba asignárselo:
            <div style="margin-top:3px">${sinPerfil.slice(0, 10).map(s => _esc(s.nombre) || _esc(s.user_id)).join(' · ')}${
              sinPerfil.length > 10 ? ` y ${sinPerfil.length - 10} más` : ''}</div></div>`
       : '';
@@ -3052,8 +3052,7 @@ async function verPlan() {
     // por persona: con ochenta cargados, fila por fila se hace tan largo que
     // nadie lo usa. Las filas que el sistema no ejecuta no cuentan para el botón.
     const vanACargar = p.agregar.filter(a => !a.sin_huella).length;
-    const NO_SE_APLICAN = ['sin_politica', 'sin_perfil'];
-    const vanASacar = p.sacar.filter(s => !NO_SE_APLICAN.includes(s.motivo)).length;
+    const vanASacar = p.sacar.filter(s => s.motivo !== 'sin_politica').length;
     const aplicables = vanACargar + vanASacar;
     // El botón dice cuántas entran y cuántas salen, no un total: "Aplicar las
     // 70" esconde que las 70 son bajas, y es un número lo que se mira antes de

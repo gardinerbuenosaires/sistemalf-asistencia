@@ -1302,6 +1302,78 @@ def huellas_respaldar(usuario=Depends(require_permiso("accesos", "aplicar"))):
     return {**r, "equipo": equipo["nombre"]}
 
 
+@router.post("/sincronizar-huellas")
+def sincronizar_huellas_en_puerta(data: CargarEnPuertaIn,
+                                  usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Le lleva a una puerta las huellas que la persona tiene hoy en el fichaje.
+
+    El caso real y frecuente: a alguien se le gasta un dedo, enrola otro en el
+    equipo de asistencia, y esa huella nueva tiene que llegar a las puertas
+    donde ya esta cargado. Cargarlo de nuevo no sirve --ya esta-- y sacarlo y
+    volver a cargarlo lo deja sin poder abrir en el medio.
+
+    Solo sobre quien YA esta cargado en esa puerta. Si no esta, lo que
+    corresponde es cargarlo, y eso tiene su propio boton: hacer las dos cosas
+    con el mismo haria que "sincronizar" a veces agregue acceso donde no habia.
+    """
+    from sync.escritura import sincronizar_huellas
+    from sync.huellas import guardadas_de as huellas_guardadas
+
+    numero = str(data.user_id).strip()
+    with db_session() as conn:
+        puerta = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
+                      es_acceso FROM dispositivos
+                WHERE id = ? AND activo = 1""", (data.dispositivo_id,)).fetchone()
+        if not puerta:
+            raise HTTPException(404, "Esa puerta no existe o está desactivada")
+        if not puerta["es_acceso"]:
+            raise HTTPException(400, f"{puerta['nombre']} no es una puerta.")
+        if puerta["protocolo"] != "pull":
+            raise HTTPException(400, f"{puerta['nombre']} es un equipo push: no "
+                                     f"atiende llamadas.")
+        maestro = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo
+                 FROM dispositivos
+                WHERE activo=1 AND cuenta_asistencia=1 AND protocolo='pull'
+                  AND ip IS NOT NULL ORDER BY orden, id LIMIT 1""").fetchone()
+        if not maestro:
+            raise HTTPException(400, "No hay equipo de fichaje cargado: de ahí "
+                                     "salen las huellas.")
+        emp = conn.execute(
+            """SELECT id, nombre, apellido FROM empleados
+                WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
+        if not emp:
+            raise HTTPException(404, f"El {numero} no existe en el sistema.")
+        puerta, maestro, emp = dict(puerta), dict(maestro), dict(emp)
+        guardadas = huellas_guardadas(conn, [numero])
+
+    r = sincronizar_huellas(puerta, maestro, numero, guardadas)
+
+    with db_session() as conn:
+        if not r.get("sin_cambios"):
+            _registrar_operacion(
+                conn, dispositivo_id=puerta["id"], equipo=puerta["nombre"],
+                user_id=numero, empleado_id=emp["id"], accion="sincronizar huellas",
+                motivo=(f"{r.get('huellas_antes')} -> {r.get('huellas')} huella(s)"
+                        if r.get("huellas") is not None else None),
+                resultado="actualizado" if r["ok"] else "falló",
+                detalle=r.get("error"),
+                usuario_id=int(usuario.get("sub") or 0) or None)
+
+    if r.get("no_estaba"):
+        raise HTTPException(404, r["error"])
+    if not r["ok"]:
+        raise HTTPException(400, f"No se pudieron sincronizar las huellas en "
+                                 f"{puerta['nombre']}: {r['error']}")
+    return {"ok": True, "equipo": puerta["nombre"],
+            "empleado": f"{emp['apellido']}, {emp['nombre']}".strip(", "),
+            **{k: r.get(k) for k in ("sin_cambios", "huellas", "huellas_antes",
+                                     "huellas_maestro", "nuevas", "quitadas",
+                                     "otros")}}
+
+
 @router.post("/actualizar")
 def actualizar_en_puerta(data: CargarEnPuertaIn,
                          usuario=Depends(require_permiso("accesos", "aplicar"))):

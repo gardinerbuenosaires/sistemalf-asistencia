@@ -738,3 +738,88 @@ def actualizar_en_puerta(puerta: dict, numero: str, nombre: str = None,
                 conexion.disconnect()
             except Exception:
                 pass
+
+
+def sincronizar_huellas(puerta: dict, maestro: dict, numero: str,
+                        guardadas: dict = None) -> dict:
+    """
+    Le lleva a una puerta las huellas que la persona tiene hoy en el fichaje.
+
+    El caso real: a alguien se le gasta un dedo, enrola otro en el equipo de
+    asistencia, y esa huella nueva tiene que llegar a las puertas donde ya está
+    cargado. Cargarlo de nuevo no sirve —ya está— y sacarlo y volver a cargarlo
+    lo deja sin poder abrir en el medio, además de borrarle el índice interno.
+
+    Compara **el contenido**, no la cantidad. Dos huellas distintas son dos
+    huellas igual, y alguien que cambió un dedo por otro tiene el mismo número
+    de antes: contar daría "no hay nada que hacer" sobre la persona que vino a
+    decir que no le lee el dedo.
+
+    Lo que no toca: el índice interno, el nombre, el grupo y la franja se releen
+    del equipo y se mandan tal cual. Lo único que cambia es el juego de huellas.
+
+    Y lo verifica releyendo: si el equipo las acumula en vez de reemplazarlas,
+    la cuenta final no va a dar y se informa en vez de darlo por hecho.
+    """
+    numero = str(numero).strip()
+    conexion = None
+    try:
+        # La puerta primero. Si la persona no está cargada ahí, esta operación
+        # no corresponde y no hay por qué molestar al equipo de fichaje, que es
+        # el de producción y está tomando asistencia mientras tanto.
+        conexion, transporte = _conectar(puerta)
+        antes = _foto(conexion)
+        cierra, detalle = _lectura_cierra(antes)
+        if not cierra:
+            return {"ok": False, "error": f"Lectura no confiable: {detalle}. "
+                                          f"No se escribió nada."}
+        actual = antes["usuarios"].get(numero)
+        if actual is None:
+            return {"ok": False, "no_estaba": True,
+                    "error": f"El {numero} no está cargado en {puerta['nombre']}. "
+                             f"Para eso está cargarlo, no sincronizarle huellas."}
+
+        traidas, faltan = huellas_de_varios(maestro, [numero], guardadas)
+        if numero not in traidas:
+            return {"ok": False, "error": f"No hay huella para copiar: "
+                                          f"{faltan.get(numero, 'no se pudo leer')}"}
+        _quien, delmaestro = traidas[numero]
+
+        suyas = antes["huellas_crudas"].get(actual["uid"], [])
+        # Por contenido. Un dedo cambiado por otro no mueve la cuenta.
+        tiene = {getattr(h, "template", b"") for h in suyas}
+        deberia = {getattr(h, "template", b"") for h in delmaestro}
+        if tiene == deberia:
+            return {"ok": True, "sin_cambios": True, "huellas": len(suyas),
+                    "huellas_maestro": len(delmaestro), "error": None}
+
+        recien = next((u for u in conexion.get_users()
+                       if str(u.user_id).strip() == numero), None)
+        if recien is None:
+            return {"ok": False, "error": "no se pudo releer al usuario del equipo"}
+        conexion.save_user_template(recien, delmaestro)
+
+        despues = _foto(conexion)
+        quedo = despues["usuarios"].get(numero)
+        problemas = _intactos(antes, despues, numero)
+        bien = (quedo is not None and quedo["huellas"] == len(delmaestro)
+                and not problemas)
+        return {"ok": bien, "transporte": transporte,
+                "huellas": quedo["huellas"] if quedo else 0,
+                "huellas_antes": len(suyas), "huellas_maestro": len(delmaestro),
+                "nuevas": len(deberia - tiene), "quitadas": len(tiene - deberia),
+                "otros": len(antes["usuarios"]) - 1, "problemas": problemas,
+                "error": None if bien else (
+                    "; ".join(problemas) if problemas else
+                    f"quedó con {quedo['huellas'] if quedo else 0} de "
+                    f"{len(delmaestro)} huella(s)")}
+    except Exception as exc:
+        logger.warning("No se pudieron sincronizar las huellas de %s en %s: %s",
+                       numero, puerta.get("ip"), exc)
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        if conexion:
+            try:
+                conexion.disconnect()
+            except Exception:
+                pass

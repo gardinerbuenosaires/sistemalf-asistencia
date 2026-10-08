@@ -1488,6 +1488,30 @@ async function cargarEnEstaPuerta(eid, dispositivoId, nombrePuerta, boton) {
   return true;
 }
 
+// Llevarle a una puerta las huellas que tiene hoy en el equipo de fichaje. No
+// la saca ni la vuelve a cargar: le reemplaza el juego de huellas y le deja el
+// indice interno, el nombre y el grupo como estaban.
+async function sincronizarHuellas(eid, dispositivoId, nombrePuerta, boton) {
+  if (boton) { boton.disabled = true; boton.textContent = 'Copiando...'; }
+  let r = {};
+  try {
+    const res = await fetch('/api/accesos/sincronizar-huellas', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ dispositivo_id: dispositivoId, user_id: _accUserId }),
+    });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudieron copiar');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error en ' + nombrePuerta + ': ' + e.message);
+  }
+  toast(r.sin_cambios
+    ? `${nombrePuerta}: ya tenía las mismas huellas`
+    : `${nombrePuerta}: ${r.huellas_antes} → ${r.huellas} huella(s)`
+      + (r.nuevas ? `, ${r.nuevas} nueva(s)` : ''));
+  verificarEnLectores(eid);
+}
+
 // Sacar a esta persona de una puerta que ya no le corresponde. El espejo de
 // cargar: usa el mismo endpoint que el plan, que recalcula el motivo y se niega
 // si segun su perfil esa puerta SI le corresponde.
@@ -1621,7 +1645,9 @@ async function verificarEnLectores(id) {
     const huella = !e.cargado ? ''
       : e.huellas === null ? '<span style="color:#b98900">huella: no se pudo leer</span>'
       : e.huellas === 0 ? '<span style="color:#b3261e;font-weight:600">sin huella</span>'
-      : `<span style="color:#666">${e.huellas} huella${e.huellas === 1 ? '' : 's'}</span>`;
+      : `<span style="color:${e.huellas_de_menos ? '#b3261e' : '#666'}">${e.huellas} huella${e.huellas === 1 ? '' : 's'}`
+        + (e.huellas_de_menos ? ` de ${e.huellas_maestro} que tiene en el fichaje` : '')
+        + '</span>';
     // El nombre solo se marca si se pidió uno. Sin pedido, lo que tenga el
     // equipo está bien por definición.
     const comoFigura = e.cargado
@@ -1662,6 +1688,12 @@ async function verificarEnLectores(id) {
         ${/* El espejo de Cargar. Sin esto, quitarle una puerta a alguien --por
              excepcion o por cambio de perfil-- obligaba a ir al plan y buscarlo
              entre todas las filas, teniendo la respuesta ya en pantalla. */''}
+        ${/* Le faltan huellas de las que tiene en el fichaje: se le gasto un
+             dedo, enrolo otro, y esta puerta se quedo con el juego viejo. */''}
+        ${e.huellas_de_menos && e.ok && canDo('accesos','aplicar')
+          ? `<button class="btn btn-sm btn-secondary" style="flex:none"
+                     onclick="sincronizarHuellas(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Traer sus huellas</button>`
+          : ''}
         ${e.estado === 'sobra' && e.es_puerta && e.ok && canDo('accesos','aplicar')
           ? `<button class="btn btn-sm btn-secondary" style="flex:none"
                      onclick="sacarDeEstaPuerta(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Sacar</button>`
@@ -1682,6 +1714,11 @@ async function verificarEnLectores(id) {
           : 'Los equipos coinciden con lo que le corresponde.'}
         ${r.sin_leer ? ` ${r.sin_leer} equipo(s) no contestaron, así que de esos no se sabe nada.` : ''}
       </div>
+      ${r.huellas_de_menos ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:5px">
+        En ${r.huellas_de_menos} puerta(s) tiene <b>menos huellas</b> que en el equipo de
+        fichaje. Pasa cuando se le gasta un dedo y enrola otro: las puertas se quedan con el
+        juego viejo, y nadie lo nota hasta que apoya el dedo que ya no le lee.
+        «Traer sus huellas» las iguala sin sacarlo ni volver a cargarlo.</div>` : ''}
       ${r.sin_huella ? `<div style="background:#fbe9e7;border-left:3px solid #b3261e;padding:8px 11px;font-size:.8rem;color:#8c1d18;margin-top:5px">
         Ojo con «SIN HUELLA»: figura en la lista del equipo, así que revisando el
         lista parece resuelto, pero sin huella no abre.</div>` : ''}

@@ -79,7 +79,26 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
     filas = []
     resumen = {"abre": 0, "falta": 0, "sobra": 0, "sin_huella": 0, "sin_leer": 0,
                "sin_huella_maestro": False, "no_en_maestro": False,
-               "nombre_distinto": 0}
+               "nombre_distinto": 0, "huellas_de_menos": 0}
+
+    # Cuantas huellas tiene en el equipo de asistencia. Es la referencia para
+    # las puertas: a alguien se le gasta un dedo, enrola otro ahi, y las puertas
+    # donde ya esta cargado se quedan con el juego viejo. Nadie lo nota hasta
+    # que esa persona apoya el dedo que ya no le lee.
+    #
+    # En None si no se pudo leer. No saber no es lo mismo que no tener, y con
+    # None no se compara nada.
+    huellas_maestro = None
+    for d in equipos:
+        if d.get("es_acceso"):
+            continue
+        lec = lecturas.get(d["id"]) or {}
+        if not lec.get("ok"):
+            continue
+        suyo = next((u for u in lec["usuarios"] if u["user_id"] == user_id), None)
+        if suyo and suyo.get("huellas") is not None:
+            huellas_maestro = suyo["huellas"]
+            break
 
     for d in equipos:
         lectura = lecturas.get(d["id"]) or {
@@ -93,7 +112,8 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
             "es_asistencia": bool(d.get("cuenta_asistencia")),
             "deberia": debe if es_puerta else None,
             "ok": lectura["ok"], "error": lectura.get("error"),
-            "cargado": None, "huellas": None, "nombre_en_equipo": None,
+            "cargado": None, "huellas": None, "huellas_maestro": None,
+            "huellas_de_menos": False, "nombre_en_equipo": None,
             "grupo": None, "uid": None, "nombre_ok": None,
         }
 
@@ -111,6 +131,17 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
             fila["nombre_en_equipo"] = encontrado.get("nombre")
             fila["grupo"] = encontrado.get("grupo")
             fila["huellas"] = encontrado.get("huellas")
+            fila["huellas_maestro"] = huellas_maestro
+            # Menos huellas que en el fichaje: le falta al menos la ultima que
+            # enrolo. Se compara por cantidad porque es lo que la lectura trae;
+            # al sincronizar se compara el contenido, que ademas detecta el dedo
+            # cambiado por otro.
+            fila["huellas_de_menos"] = bool(
+                es_puerta and huellas_maestro
+                and encontrado.get("huellas") is not None
+                and encontrado["huellas"] < huellas_maestro)
+            if fila["huellas_de_menos"]:
+                resumen["huellas_de_menos"] += 1
             # El nombre solo se juzga si se pidió uno. Sin pedido, lo que tenga
             # el equipo está bien por definición: eso es lo que significa dejar
             # el campo vacío.

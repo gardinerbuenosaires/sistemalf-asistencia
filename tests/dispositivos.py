@@ -3172,6 +3172,109 @@ _em._conectar = _conectar_real
 _em._escribir_usuario = _escribir_real
 
 
+# --- Llevar a una puerta las huellas nuevas ---------------------------------
+# A alguien se le gasta un dedo, enrola otro en el equipo de asistencia, y las
+# puertas donde ya esta cargado se quedan con el juego viejo. Cargarlo de nuevo
+# no sirve --ya esta-- y sacarlo y recargarlo lo deja sin abrir en el medio.
+
+
+class _PuertaConHuellas:
+    """`acumula` simula el firmware que suma en vez de reemplazar."""
+
+    user_packet_size = 28
+    encoding = "latin-1"
+
+    def __init__(s, templates=(b"A", b"B"), acumula=False):
+        s.acumula = acumula
+        s._u = [type("U", (), {"uid": 1, "user_id": "100", "name": "N",
+                               "group_id": "1", "privilege": 0})(),
+                type("U", (), {"uid": 2, "user_id": "101", "name": "OTRO",
+                               "group_id": "1", "privilege": 0})()]
+        s._t = {1: list(templates), 2: [b"Z"]}
+        s.grabados = []
+
+    @property
+    def users(s): return len(s._u)
+    def get_users(s): return list(s._u)
+    def get_templates(s):
+        return [type("H", (), {"uid": uid, "valid": 1, "template": tpl,
+                               "json_pack": lambda s2: {"t": "x"}})()
+                for uid, tpls in s._t.items() for tpl in tpls]
+    def refresh_data(s): pass
+    def save_user_template(s, u, huellas):
+        s.grabados.append(len(huellas))
+        nuevas = [getattr(h, "template", b"") for h in huellas]
+        s._t[u.uid] = (s._t[u.uid] + nuevas) if s.acumula else nuevas
+    def disconnect(s): pass
+
+
+def _maestro_con(*templates):
+    """Lo que el equipo de fichaje tiene para esa persona."""
+    def _falso(disp, numeros, guardadas=None):
+        hs = [type("H", (), {"uid": 9, "valid": 1, "template": tpl,
+                             "json_pack": lambda s2: {"t": "x"}})()
+              for tpl in templates]
+        return ({"100": (type("Q", (), {"name": "N"})(), hs)}, {})
+    return _falso
+
+_PUERTA_H = {"nombre": "Puerta H", "ip": "10.0.0.6"}
+_MAESTRO_H = {"nombre": "Reloj", "ip": "10.0.0.1"}
+_real_hdv = _em.huellas_de_varios
+
+# El caso: en el fichaje enrolo un dedo mas.
+_eq = _PuertaConHuellas(templates=(b"A", b"B"))
+_em._conectar = lambda *a, **kw: (_eq, "udp")
+_em.huellas_de_varios = _maestro_con(b"A", b"B", b"C")
+_rs = _em.sincronizar_huellas(_PUERTA_H, _MAESTRO_H, "100")
+chequear("le lleva la huella nueva a la puerta", _rs["ok"] is True, _rs)
+chequear("de dos a tres", _rs["huellas_antes"] == 2 and _rs["huellas"] == 3, _rs)
+chequear("y dice cuantas eran nuevas", _rs["nuevas"] == 1, _rs)
+chequear("los demas quedan intactos", _rs["problemas"] == [], _rs["problemas"])
+
+# Lo que contar no detecta: cambio un dedo por otro, misma cantidad.
+_eq = _PuertaConHuellas(templates=(b"A", b"B"))
+_em._conectar = lambda *a, **kw: (_eq, "udp")
+_em.huellas_de_varios = _maestro_con(b"A", b"C")
+_rs = _em.sincronizar_huellas(_PUERTA_H, _MAESTRO_H, "100")
+chequear("un dedo cambiado por otro tambien se detecta", _rs["ok"] is True, _rs)
+chequear("aunque la cantidad sea la misma",
+         _rs["huellas_antes"] == 2 and _rs["huellas"] == 2, _rs)
+chequear("se dice cual entro y cual salio",
+         _rs["nuevas"] == 1 and _rs["quitadas"] == 1, _rs)
+
+# Si ya son las mismas no se escribe: reescribir por las dudas es arriesgar las
+# huellas de alguien a cambio de nada.
+_eq = _PuertaConHuellas(templates=(b"A", b"B"))
+_em._conectar = lambda *a, **kw: (_eq, "udp")
+_em.huellas_de_varios = _maestro_con(b"A", b"B")
+_rs = _em.sincronizar_huellas(_PUERTA_H, _MAESTRO_H, "100")
+chequear("si ya tiene las mismas, no se escribe",
+         _rs.get("sin_cambios") is True, _rs)
+chequear("y no se le pidio nada al equipo", _eq.grabados == [], _eq.grabados)
+
+# Si el equipo acumula en vez de reemplazar, la cuenta no da y se informa.
+_eq = _PuertaConHuellas(templates=(b"A", b"B"), acumula=True)
+_em._conectar = lambda *a, **kw: (_eq, "udp")
+_em.huellas_de_varios = _maestro_con(b"A", b"B", b"C")
+_rs = _em.sincronizar_huellas(_PUERTA_H, _MAESTRO_H, "100")
+chequear("si el equipo acumula en vez de reemplazar, no se da por hecho",
+         _rs["ok"] is False, _rs)
+chequear("diciendo cuantas quedaron de cuantas",
+         "de 3" in (_rs["error"] or ""), _rs["error"])
+
+# A quien no esta cargado no se lo carga: eso es otra operacion.
+_eq = _PuertaConHuellas()
+_em._conectar = lambda *a, **kw: (_eq, "udp")
+_em.huellas_de_varios = _maestro_con(b"A")
+_rs = _em.sincronizar_huellas(_PUERTA_H, _MAESTRO_H, "999777")
+chequear("a quien no esta cargado no lo crea", _rs.get("no_estaba") is True, _rs)
+chequear("y lo dice derivando al boton que corresponde",
+         "cargarlo" in (_rs["error"] or ""), _rs["error"])
+
+_em.huellas_de_varios = _real_hdv
+_em._conectar = _conectar_real
+
+
 # --- Cambiarle el nombre a alguien que ya esta cargado ----------------------
 # El nombre corto se decide en el legajo y hay que poder llevarlo al equipo. Lo
 # delicado es que reescribir el registro de un usuario PUEDE borrarle las

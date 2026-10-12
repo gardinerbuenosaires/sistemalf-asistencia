@@ -549,10 +549,29 @@ def _ejecutar_confirmacion(conn, semana, uid: int):
                 estado_dia[key][f'{det["turno"]}_horario'] = det["horario_id"]
         dias_a_tocar = {(eid, f) for (eid, f) in estado_dia} | bloqueantes
         all_plan = conn.execute(
-            f"""SELECT id, empleado_id, fecha FROM planificacion
+            f"""SELECT id, empleado_id, fecha, horario_id, es_franco FROM planificacion
                 WHERE fecha >= ? AND fecha <= ? AND empleado_id IN ({ph})""",
             [lunes_str, domingo_str] + emp_ids
         ).fetchall()
+        # Horario que el día ya tenía: sirve cuando la celda trabaja pero no trae
+        # horario propio (ej. un medio día con franco en la otra mitad).
+        horario_previo = {(r["empleado_id"], r["fecha"]): r["horario_id"]
+                          for r in all_plan if r["horario_id"] and not r["es_franco"]}
+
+        def _horario_vigente(emp_id, dia, cortado=False):
+            """Último horario trabajado por el empleado, para no perder el día.
+            Con cortado=True, el último que tenga los dos bloques."""
+            r = conn.execute(
+                f"""SELECT p.horario_id FROM planificacion p
+                    JOIN horarios h ON h.id = p.horario_id
+                    WHERE p.empleado_id=? AND p.es_franco=0 AND p.fecha<?
+                    {"AND h.tipo='cortado'" if cortado else ""}
+                    ORDER BY p.fecha DESC LIMIT 1""", (emp_id, dia)).fetchone()
+            return r["horario_id"] if r else None
+
+        def _bloques_horario(hid):
+            return {b["bloque"] for b in conn.execute(
+                "SELECT bloque FROM horarios_bloques WHERE horario_id=? AND aplica=1", (hid,))}
         ids_borrar = [r["id"] for r in all_plan
                       if (r["empleado_id"], r["fecha"]) in dias_a_tocar
                       and (r["empleado_id"], r["fecha"]) not in bloqueantes
@@ -598,7 +617,34 @@ def _ejecutar_confirmacion(conn, semana, uid: int):
                         horario_id = estados.get('TM_horario') or horario_tm
                     else:
                         horario_id = estados.get('TN_horario') or horario_tn
+                    medio_dia = tm_trabaja != tn_trabaja
+                    if horario_id is None:
+                        # Sin horario en la celda: el día conserva el que ya tenía.
+                        # Nunca se descarta un día trabajado (caía al calendario y
+                        # aparecía como franco completo).
+                        previo = horario_previo.get((emp_id, dia))
+                        if medio_dia:
+                            # Medio día: tiene que ser un horario con los dos bloques
+                            # para que la mitad libre se vea como F.
+                            if previo and not (_bloques_horario(previo) >= {1, 2}):
+                                previo = None
+                            horario_id = (previo or _horario_vigente(emp_id, dia, True)
+                                          or horario_ct or _horario_vigente(emp_id, dia))
+                        else:
+                            horario_id = previo or _horario_vigente(emp_id, dia)
                     if horario_id is not None:
+                        if medio_dia:
+                            # La otra mitad es franco/libre: si el horario es cortado
+                            # conserva sus dos bloques y la mitad que no trabaja
+                            # queda con F en ese bloque.
+                            libre, estado_libre = (2, tn) if tm_trabaja else (1, tm)
+                            if estado_libre in ('F', 'FD') and _bloques_horario(horario_id) >= {1, 2}:
+                                conn.execute(
+                                    """INSERT OR IGNORE INTO novedades
+                                       (empleado_id, fecha, bloque, tipo, descripcion, creado_por)
+                                       VALUES (?,?,?,?,'Desde mozos',?)""",
+                                    (emp_id, dia, libre, estado_libre, uid)
+                                )
                         conn.execute(
                             """INSERT INTO planificacion
                                (empleado_id, fecha, es_franco, horario_id, origen)

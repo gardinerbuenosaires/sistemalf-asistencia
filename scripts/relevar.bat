@@ -13,6 +13,11 @@
 setlocal
 cd /d "%~dp0.."
 
+:: Encontrar el interprete: en una de las maquinas `python` no esta en el
+:: PATH y Windows lo resuelve al alias del Microsoft Store.
+call "%~dp0_python.bat"
+if not defined PY exit /b 1
+
 if "%~1"=="" goto :uso
 
 echo.
@@ -20,7 +25,7 @@ echo   Relevando: %*
 echo   Solo lectura: a los equipos no se les escribe nada.
 echo.
 
-python scripts\relevar_lectores.py %*
+%PY% scripts\relevar_lectores.py %*
 
 echo.
 pause

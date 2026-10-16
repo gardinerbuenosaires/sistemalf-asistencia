@@ -141,8 +141,9 @@ def _recortar_nombre(conexion, nombre):
 
     Recortar aca, antes de escribir y antes de comparar, arregla las dos
     puntas: se escribe lo mismo que antes y se verifica contra lo que de verdad
-    entra. El campo del legajo sigue aceptando 24, porque el equipo con
-    pantalla es el de fichaje y ahi hay lugar.
+    entra. El campo del legajo ahora acepta 8 --lo que entra en una puerta-- asi
+    que en la practica no recorta nada: queda por si un equipo trae un nombre
+    largo de antes.
 
     Se recorta en bytes y no en caracteres: el campo del equipo mide bytes.
     """

@@ -1830,6 +1830,30 @@ if emp_id:
                          json={"nombre_lector": "A"}).status_code == 200)
     cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector", json={"nombre_lector": None})
 
+    # El limite nuevo gobierna lo que se edita de ahora en mas; los nombres de 9
+    # o mas que quedaron guardados de antes los recorta la migracion. Si no, la
+    # ficha compara el guardado entero contra el del equipo --que tiene 8-- y
+    # marca una diferencia que apretar el boton no arregla: al escribir se
+    # compara contra el recortado, coincide, y concluye que no hay nada que
+    # hacer. Un pendiente eterno.
+    _c = sqlite3.connect(DB)
+    _c.execute("UPDATE empleados SET nombre_lector = 'FRANCISCO' WHERE id = ?", (emp_id,))
+    _c.execute("UPDATE empleados SET nombre_lector = 'FRANCISC' WHERE id = ?", (_e2,))
+    _c.commit()
+    _c.close()
+    from db.database import init_db
+    init_db()
+    _c = sqlite3.connect(DB)
+    _quedo = dict(_c.execute(
+        "SELECT id, nombre_lector FROM empleados WHERE id IN (?, ?)",
+        (emp_id, _e2)).fetchall())
+    _c.close()
+    chequear("un nombre guardado de 9 lo recorta la migracion a 8",
+             _quedo[emp_id] == "FRANCISC", _quedo)
+    chequear("y al que ya medía 8 no lo toca", _quedo[_e2] == "FRANCISC", _quedo)
+    cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector", json={"nombre_lector": None})
+    cli.put(f"/api/accesos/empleado/{_e2}/nombre-lector", json={"nombre_lector": None})
+
 
 print("\n=== PASADAS POR UN LECTOR ===")
 # Quien apoyo el dedo y a que hora. Se lee del equipo en el momento y no se

@@ -173,19 +173,17 @@ def main():
               "     scripts\\reponer_en_fichaje.bat " + NUMERO +
               " --desde-puerta 192.168.1.208")
 
-    # Las puertas guardan 8 caracteres y el equipo de fichaje 24. Copiar el
-    # nombre de una puerta lo dejaria recortado en el equipo que si tiene lugar
-    # --«SEBA» en vez del nombre entero-- y eso es lo que la persona ve en
-    # pantalla al fichar. El del legajo le gana.
+    # El nombre de pantalla se limita a 8 en todos los equipos, asi que el de
+    # una puerta entra igual en el de fichaje. Aun asi gana el del legajo: el de
+    # la puerta pudo quedar cortado de antes, cuando se permitian 24.
     if datos.get("nombre_corto") and quien and (quien.get("nombre_lector") or "").strip():
-        print(f"     el nombre de la puerta viene recortado a 8 caracteres "
-              f"(«{datos['nombre']}»)")
-        datos["nombre"] = quien["nombre_lector"].strip()[:24]
+        print(f"     la puerta dice «{datos['nombre']}»")
+        datos["nombre"] = quien["nombre_lector"].strip()[:8]
         print(f"     se usa el del legajo: «{datos['nombre']}»")
     elif datos.get("nombre_corto"):
-        print(f"     OJO: el nombre viene de una puerta, recortado a 8 "
-              f"caracteres. El equipo de fichaje guarda 24.")
-        print(f"     Si querés el entero, ponéselo en el legajo "
+        print(f"     OJO: el nombre viene de una puerta y pudo quedar cortado "
+              f"de antes, cuando se permitian 24.")
+        print(f"     Si no es el que querés, ponéselo en el legajo "
               f"(Accesos -> nombre que muestra el lector) y volvé a correr esto.")
     print(f"     nombre «{datos['nombre']}», {len(datos['huellas'])} huella(s)")
     if datos["privilegio"] not in (0,):

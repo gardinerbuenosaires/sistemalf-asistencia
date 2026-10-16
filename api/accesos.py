@@ -670,9 +670,11 @@ def _leer_niveles_del_maestro():
     Lee el equipo de asistencia y cruza con los legajos lo que él sabe y el
     sistema no: el nivel de administración y el nombre que muestra en pantalla.
 
-    Del equipo de asistencia y no de las puertas, a propósito: el maestro guarda
-    24 caracteres y las puertas 8. Adoptar el de una puerta congelaría en el
-    legajo un nombre que ya venía cortado.
+    Del equipo de asistencia y no de las puertas, a propósito: es el único con
+    pantalla, es donde vive el nivel de administración, y es el que puede traer
+    nombres enteros de la época de Enterprise. El sistema los recorta a 8 al
+    importarlos, que es lo que entra en una puerta y lo que se usa en todos
+    lados.
     """
     from sync.lectores import leer_cargados
 

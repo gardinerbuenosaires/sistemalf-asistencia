@@ -219,8 +219,8 @@ def _migrar_perfiles(conn):
 
     # El nombre corto que el lector muestra en pantalla al apoyar el dedo. Lo
     # elige una persona para que sea reconocible ahí, que no es lo mismo que el
-    # nombre del legajo: el equipo de asistencia lo corta a 24 caracteres y las
-    # puertas a 8, así que "Gómez Castro, Ana María" no sirve de nada.
+    # nombre del legajo: una puerta guarda 8 caracteres, así que "Gómez Castro,
+    # Ana María" no sirve de nada.
     #
     # Vacío significa "no opinamos": al escribir se conserva el nombre que el
     # equipo ya tenga. Eso evita tener que adoptar los nombres de todos antes de
@@ -228,6 +228,21 @@ def _migrar_perfiles(conn):
     if "nombre_lector" not in cols:
         conn.execute("ALTER TABLE empleados ADD COLUMN nombre_lector TEXT")
         logger.info("Migración: columna nombre_lector agregada a empleados")
+
+    # El nombre de pantalla se limita a 8, que es lo que guarda una puerta.
+    # Los que quedaron mas largos de antes hay que recortarlos: si no, la ficha
+    # los compara enteros contra el equipo --que tiene 8-- y marca una
+    # diferencia; y al escribir se compara contra el recortado, que SI coincide,
+    # asi que concluye que no hay nada que hacer. Un pendiente que no se puede
+    # resolver apretando el boton.
+    largos = conn.execute(
+        "SELECT COUNT(*) FROM empleados WHERE LENGTH(nombre_lector) > 8"
+    ).fetchone()[0]
+    if largos:
+        conn.execute("""UPDATE empleados SET nombre_lector = substr(nombre_lector, 1, 8)
+                         WHERE LENGTH(nombre_lector) > 8""")
+        logger.info("Migración: %s nombre(s) de pantalla recortados a 8, que es "
+                    "lo que guardan las puertas", largos)
 
     # De quién era un número antes de liberarlo.
     #

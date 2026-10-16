@@ -45,8 +45,41 @@ def preparar(migrar=True):
     # pruebas saldrían a buscar lectores de verdad en la red del restaurante.
     dst.execute("UPDATE configuracion SET valor='127.0.0.1' WHERE clave='device_ip'")
     dst.execute("UPDATE configuracion SET valor='0' WHERE clave='limpiar_dispositivo_auto'")
+    # Las pruebas de accesos arman sus propios equipos y perfiles, asi que la
+    # copia arranca sin los de produccion. Antes no hacia falta --esas tablas no
+    # existian en la base de origen-- y dejo de ser cierto el dia que se
+    # desplegó el modulo y se refresco la copia desde produccion: las pruebas
+    # chocaban contra los ocho lectores reales.
+    #
+    # Borra tambien las huellas, y eso es aparte: son datos biometricos, y sin
+    # esto cada corrida los copiaba a una carpeta temporal.
+    for tabla in ("huellas", "accesos_operaciones", "accesos_excepciones",
+                  "perfiles_dispositivos", "perfiles_acceso", "dispositivos"):
+        try:
+            dst.execute(f"DELETE FROM {tabla}")
+        except sqlite3.OperationalError:
+            pass           # copia anterior a esa tabla
+    # Y los campos de accesos que viven en el legajo. Son del mismo modulo que
+    # las tablas de arriba: las pruebas los escriben y verifican, y heredar los
+    # de produccion hace fallar "arranca vacio" sobre algo que vino lleno.
+    # `nivel_lector` vuelve a su default --cero, no administra-- y no a NULL,
+    # que la columna no lo acepta.
+    for columna, vacio in (("perfil_acceso_id", "NULL"), ("nivel_lector", "0"),
+                           ("nombre_lector", "NULL"), ("user_id_anterior", "NULL"),
+                           ("user_id_liberado_en", "NULL")):
+        try:
+            dst.execute(f"UPDATE empleados SET {columna} = {vacio}")
+        except sqlite3.OperationalError:
+            pass           # copia anterior a esa columna
+
     try:
-        dst.execute("UPDATE dispositivos SET ip='127.0.0.1'")
+        # Una IP distinta para cada uno, dentro del loopback. Ponerles la misma
+        # a todos choca con el indice unico de (ip, puerto): con un solo equipo
+        # cargado funcionaba, y dejo de funcionar el dia que la base de origen
+        # vino de una produccion con las puertas ya cargadas. Todo 127.x.x.x es
+        # loopback, asi que ninguna contesta igual.
+        dst.execute("""UPDATE dispositivos
+                          SET ip = '127.0.' || ((id / 256) % 256) || '.' || (id % 256)""")
     except sqlite3.OperationalError:
         pass  # copia anterior a la tabla; la crea init_db() y la siembra ya sale con la IP de arriba
     dst.commit()

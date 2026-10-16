@@ -1518,10 +1518,18 @@ def actualizar_en_puerta(data: CargarEnPuertaIn,
             raise HTTPException(404, f"El {numero} no existe en el sistema.")
         equipo, emp = dict(equipo), dict(emp)
 
-    # El nivel solo al equipo de fichaje: es el unico con pantalla, asi que es
-    # el unico donde administrar parado enfrente significa algo.
-    nivel = emp["nivel_lector"] if equipo["cuenta_asistencia"] else None
-    r = escribir(equipo, numero, nombre=emp["nombre_lector"], privilegio=nivel)
+    # El nivel NO se escribe desde aca, aunque el legajo lo tenga.
+    #
+    # Este boton dice "escribir el nombre" y escribia tambien el nivel de
+    # administracion. El default del legajo es "no administra", asi que
+    # apretarlo sobre alguien que en el equipo es enrolador o super admin lo
+    # degradaba en silencio: el boton decia una cosa y hacia dos.
+    #
+    # Es la misma separacion que ya existe al traer: nombres y niveles son dos
+    # botones distintos a proposito, porque un nombre no le da permisos a nadie
+    # y un nivel si. Cambiar el nivel de alguien es una decision propia y le
+    # corresponde su propia accion.
+    r = escribir(equipo, numero, nombre=emp["nombre_lector"], privilegio=None)
 
     with db_session() as conn:
         if not r.get("sin_cambios"):

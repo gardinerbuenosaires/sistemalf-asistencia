@@ -3428,6 +3428,35 @@ for _nivel in (0, 2, 6, 14):
 chequear("y no se pasa por set_user, que es quien lo recortaria",
          _m.uso_set_user is False)
 
+# El formato no se adivina. pyzk lo deduce dividiendo el tamanio de los datos
+# por la cantidad de usuarios que el equipo DECLARA, y ya vimos un contador que
+# decia 150 teniendo 149. Para leer, equivocarse muestra basura y se nota; para
+# escribir, el paquete del formato equivocado le entra al equipo como datos
+# validos de otra cosa.
+class _Equipo_raro:
+    user_packet_size = 27.81
+    encoding = "latin-1"
+
+try:
+    _escribir_real(_Equipo_raro(), 7, "X", 0, "1", "57")
+    _raro = None
+except RuntimeError as _e:
+    _raro = str(_e)
+chequear("si el formato no da exacto, no se escribe", _raro is not None, _raro)
+chequear("y se explica que el contador del equipo esta corrido",
+         _raro and "contador" in _raro and "Reiniciar" in _raro, _raro)
+
+# La division de pyzk devuelve float: 28.0 tiene que seguir valiendo.
+class _Equipo28f(_Equipo_raro):
+    user_packet_size = 28.0
+_e28 = _Equipo28f()
+_e28.paquete = None
+_e28._ZK__send_command = lambda c, d, r: (setattr(_e28, "paquete", d), {"status": True})[1]
+_e28.refresh_data = lambda: None
+_escribir_real(_e28, 7, "X", 0, "1", "57")
+chequear("28.0 cuenta como 28, que es lo que devuelve la division",
+         _e28.paquete is not None and len(_e28.paquete) == 28, _e28.paquete)
+
 # Y la ficha compara el nivel del legajo contra el del equipo, solo en el de
 # fichaje: una puerta no tiene pantalla, ahi no hay nada que administrar.
 from sync.verificar_acceso import verificar as _ver_nivel

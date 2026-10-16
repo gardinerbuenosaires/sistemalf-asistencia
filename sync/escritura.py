@@ -194,7 +194,25 @@ def _escribir_usuario(conexion, uid, nombre, privilegio, grupo, numero, franja=0
     from struct import pack
     from zk import const
 
-    if conexion.user_packet_size != 28:
+    # De que formato es el registro de este equipo. pyzk no lo pregunta: lo
+    # DEDUCE dividiendo el tamanio total de los datos por la cantidad de
+    # usuarios que el equipo dice tener. Si ese contador esta corrido --y ya
+    # vimos uno que decia 150 teniendo 149-- la division no da ni 28 ni 72, y
+    # la libreria cae igual en la rama de 72.
+    #
+    # Para leer, equivocarse muestra basura y se nota. Para escribir, mandar el
+    # paquete del formato equivocado le entra al equipo como datos validos de
+    # otra cosa. Asi que si no da exacto, no se escribe.
+    tamanio = getattr(conexion, "user_packet_size", None)
+    if tamanio not in (28, 72):
+        raise RuntimeError(
+            f"No se puede saber de qué formato es el registro de este equipo "
+            f"(dio {tamanio}, y tiene que ser 28 o 72). Sale de dividir los "
+            f"datos por la cantidad de usuarios que el equipo declara, así que "
+            f"un número raro significa que ese contador está corrido. "
+            f"Reiniciar el lector lo vuelve a sincronizar.")
+
+    if tamanio != 28:
         # El equipo de fichaje usa otro formato de registro: 72 bytes, con el
         # nombre de 24 caracteres en vez de 8.
         #

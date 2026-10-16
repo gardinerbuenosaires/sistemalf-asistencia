@@ -195,26 +195,31 @@ def _escribir_usuario(conexion, uid, nombre, privilegio, grupo, numero, franja=0
     from zk import const
 
     if conexion.user_packet_size != 28:
-        # El equipo de fichaje usa otro formato de registro, de 72 bytes, con
-        # el nombre de 24 caracteres en vez de 8. Armarlo a mano seria inventar
-        # un empaquetado que nunca probamos contra el equipo que sostiene la
-        # asistencia de todos, asi que se usa `set_user`, que es el camino de
-        # la libreria y el que ya conoce los dos formatos.
+        # El equipo de fichaje usa otro formato de registro: 72 bytes, con el
+        # nombre de 24 caracteres en vez de 8.
         #
-        # Con una condicion. `set_user` deja en usuario comun a cualquiera que
-        # no sea 0 o 14, sin avisar, y este es justamente el unico equipo con
-        # pantalla: el unico donde ser enrolador o administrador significa
-        # algo. Sobre esos no se escribe, y se dice por que.
-        if int(privilegio) not in (0, 14):
-            raise RuntimeError(
-                f"Esta persona tiene nivel {privilegio} en el equipo de "
-                f"fichaje ({NIVELES.get(int(privilegio), 'desconocido')}). "
-                f"Escribirle desde acá la dejaría en usuario común y perdería "
-                f"el nivel sin aviso, así que no se toca: eso se cambia en el "
-                f"menú del equipo.")
-        conexion.set_user(uid=int(uid), name=(nombre or ""),
-                          privilege=int(privilegio), user_id=str(numero),
-                          group_id=str(grupo or ""))
+        # Se arma acá por lo mismo que el de las puertas. `set_user` de pyzk
+        # sabe empaquetar los dos, pero antes hace:
+        #
+        #     if privilege not in [USER_DEFAULT, USER_ADMIN]: privilege = USER_DEFAULT
+        #
+        # o sea que a un enrolador (2) o a un administrador (6) los deja en
+        # usuario común sin avisar. Y este es el ÚNICO equipo con pantalla:
+        # el único donde ese nivel significa algo. Usarlo tal cual dejaba al
+        # sistema sin poder darle ni sacarle el permiso a nadie acá.
+        #
+        # El empaquetado es el mismo que hace la librería; lo único que no se
+        # hace es recortar el nivel.
+        nombre_24 = (nombre or "").encode(
+            getattr(conexion, "encoding", "latin-1"),
+            errors="ignore").ljust(24, bytes(1))[:24]
+        paquete = pack("HB8s24s4sx7sx24s", int(uid), int(privilegio), b"",
+                       nombre_24, pack("<I", 0), str(grupo or "").encode(),
+                       str(numero).encode())
+        respuesta = getattr(conexion, "_ZK__send_command")(
+            const.CMD_USER_WRQ, paquete, 1024)
+        if not respuesta.get("status"):
+            raise RuntimeError("El equipo rechazó la escritura del usuario")
         conexion.refresh_data()
         return
 

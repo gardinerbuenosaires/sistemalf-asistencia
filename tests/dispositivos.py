@@ -3370,44 +3370,54 @@ chequear("con acentos tambien entran 8",
 
 
 class _Maestro72:
-    """Como el .201: formato de 72 bytes."""
+    """Como el .201: formato de 72 bytes. Guarda el paquete tal cual se manda."""
 
     user_packet_size = 72
     encoding = "latin-1"
 
     def __init__(s):
-        s.escrito = None
-    def set_user(s, uid=None, name="", privilege=0, password="", group_id="",
-                 user_id="", card=0):
-        s.escrito = {"uid": uid, "name": name, "privilege": privilege,
-                     "user_id": user_id, "group_id": group_id}
+        s.paquete, s.uso_set_user = None, False
+
+    def set_user(s, **kw):
+        s.uso_set_user = True          # no deberia usarse: recorta el nivel
+
     def refresh_data(s): pass
+
+    def _ZK__send_command(s, comando, datos, respuesta):
+        s.paquete = datos
+        return {"status": True}
+
+
+def _leer72(p):
+    """Lo que dice un paquete de 72 bytes: HB8s24s4sx7sx24s."""
+    return {"uid": int.from_bytes(p[0:2], "little"), "privilegio": p[2],
+            "nombre": p[11:35].rstrip(bytes(1)).decode("latin-1"),
+            "grupo": p[40:47].rstrip(bytes(1)).decode("latin-1"),
+            "user_id": p[48:72].rstrip(bytes(1)).decode("latin-1")}
 
 
 _m72 = _Maestro72()
 _escribir_real(_m72, 7, "JORGE SEBASTIAN L", 0, "1", "57")
-chequear("a un usuario comun se le escribe con set_user",
-         _m72.escrito and _m72.escrito["user_id"] == "57", _m72.escrito)
-chequear("con el nombre entero, que ahi entran 24",
-         _m72.escrito["name"] == "JORGE SEBASTIAN L", _m72.escrito)
-chequear("y sin tocarle el nivel", _m72.escrito["privilege"] == 0, _m72.escrito)
+_d = _leer72(_m72.paquete)
+chequear("el paquete del equipo de fichaje mide 72 bytes",
+         len(_m72.paquete) == 72, len(_m72.paquete))
+chequear("con el numero de la persona", _d["user_id"] == "57", _d)
+chequear("y el nombre entero, que ahi entran 24",
+         _d["nombre"] == "JORGE SEBASTIAN L", _d)
 
-_m72b = _Maestro72()
-_escribir_real(_m72b, 7, "X", 14, "1", "57")
-chequear("al super admin tambien, que set_user lo respeta",
-         _m72b.escrito and _m72b.escrito["privilege"] == 14, _m72b.escrito)
-
-# El caso que no se toca: set_user lo dejaria en usuario comun sin avisar.
-_m72c = _Maestro72()
-try:
-    _escribir_real(_m72c, 7, "X", 6, "1", "57")
-    _fallo = None
-except RuntimeError as _e:
-    _fallo = str(_e)
-chequear("a un administrador NO se le escribe desde aca", _fallo is not None, _fallo)
-chequear("y se explica que perderia el nivel",
-         _fallo and "nivel" in _fallo and "menú del equipo" in _fallo, _fallo)
-chequear("y no se escribio nada", _m72c.escrito is None, _m72c.escrito)
+# Lo que motivo armar el paquete a mano. `set_user` de pyzk hace, antes de
+# empaquetar: if privilege not in [0, 14]: privilege = 0. O sea que al
+# enrolador y al administrador los deja en usuario comun sin avisar, y son
+# justo los dos niveles que sirven para administrar el unico equipo con
+# pantalla. Usandolo, el sistema no podia dar ni sacar ese permiso.
+for _nivel in (0, 2, 6, 14):
+    _m = _Maestro72()
+    _escribir_real(_m, 7, "X", _nivel, "1", "57")
+    chequear(f"el nivel {_nivel} llega como se pide",
+             _leer72(_m.paquete)["privilegio"] == _nivel,
+             _leer72(_m.paquete))
+chequear("y no se pasa por set_user, que es quien lo recortaria",
+         _m.uso_set_user is False)
 
 # Y las puertas siguen por el camino propio, que es el que no recorta el nivel.
 class _Puerta28:

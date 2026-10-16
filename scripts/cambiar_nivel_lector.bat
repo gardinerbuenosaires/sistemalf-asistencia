@@ -5,9 +5,7 @@
 :: frente a el: entrar al menu, dar de alta gente, tomarle la huella. No tiene
 :: nada que ver con abrir puertas.
 ::
-:: Solo puede poner 0 (usuario comun) o 14 (super admin). El 2 y el 6 hay que
-:: ponerlos en el menu del equipo: la libreria que sabe escribir el formato del
-:: equipo de fichaje los dejaria en usuario comun sin avisar.
+:: Niveles: 0 usuario comun, 2 enrolador, 6 administrador, 14 super admin.
 ::
 :: Avisa si el cambio deja al equipo sin ningun administrador --ahi el menu
 :: queda abierto para cualquiera-- y verifica releyendo.
@@ -38,8 +36,10 @@ echo   Faltan datos: el numero de la persona y el nivel.
 echo.
 echo       scripts\cambiar_nivel_lector.bat 8 0
 echo.
-echo   Niveles que se pueden poner desde aca:
+echo   Niveles:
 echo       0   usuario comun, no administra
+echo       2   enrolador: puede dar de alta y tomar huellas
+echo       6   administrador del lector
 echo       14  super admin
 echo.
 pause

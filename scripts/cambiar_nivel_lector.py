@@ -9,11 +9,11 @@ ofrece el 14, super admin, a propósito: no se usa acá, y una opción que nadie
 necesita en una lista de permisos es una invitación a elegirla por error. Pero
 un equipo puede traer un 14 de antes, y entonces hace falta poder bajarlo.
 
-**Solo puede poner 0 o 14**, y eso no es una decisión nuestra. Para el formato
-del equipo de fichaje hay que usar `set_user` de la librería, que deja en
-usuario común a cualquier nivel que no sea uno de esos dos. Poner un 2 o un 6
-desde acá escribiría otra cosa que la pedida, así que no se intenta: eso se
-hace en el menú del equipo.
+Pone cualquiera de los niveles que el equipo entiende: 0, 2, 6 y 14. Durante un
+rato solo pudo poner 0 y 14, porque la función de la librería recorta a usuario
+común cualquier otro valor sin avisar — justo los dos que sirven para
+administrar. Ahora el registro se arma acá, igual que para las puertas, y el 2
+y el 6 llegan como se piden.
 
 Lo que cuida:
 
@@ -71,14 +71,10 @@ def main():
     try:
         nivel = int(NIVEL)
     except ValueError:
-        salir(f"«{NIVEL}» no es un nivel. Los que se pueden poner desde acá son "
-              f"0 (usuario común) y 14 (super admin).")
-    if nivel not in (0, 14):
-        salir(f"Desde acá solo se puede poner 0 o 14.\n"
-              f"     El {nivel} —{NIVELES.get(nivel, 'desconocido')}— hay que "
-              f"ponerlo en el menú del equipo: la librería que sabe escribir el\n"
-              f"     formato del equipo de fichaje lo dejaría en usuario común "
-              f"sin avisar, o sea otra cosa que la pedida.")
+        salir(f"«{NIVEL}» no es un número de nivel.")
+    if nivel not in NIVELES:
+        salir(f"«{nivel}» no es un nivel que el equipo entienda. Son:\n"
+              + "\n".join(f"     {k:>2}  {v}" for k, v in NIVELES.items()))
 
     ip = argumento("--equipo")
     with db_solo_lectura() as conn:

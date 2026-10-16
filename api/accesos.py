@@ -36,6 +36,13 @@ router = APIRouter(prefix="/api/accesos", tags=["accesos"])
 # se ofrece: no se usa acá, y una opción que nadie necesita en una lista de
 # permisos es una invitación a elegirla por error. Si un equipo trae un 14, se
 # lee y se informa; otra cosa es ponerlo desde acá.
+# Cuanto se guarda del nombre de pantalla. El equipo de fichaje aguanta 24 y
+# las puertas 8; se usa 8 en todos lados para que sea el mismo en todas partes.
+# Con largos distintos hay que tolerar el recorte al comparar, y esa tolerancia
+# tapa diferencias reales: «FRANCISC» es el comienzo de «FRANCISCO», asi que
+# agregarle la ultima letra no se veia como un cambio y nunca se escribia.
+LARGO_NOMBRE = 8
+
 NIVELES_LECTOR = {0: "No administra el lector",
                   2: "Enrolador — puede dar de alta y tomar huellas",
                   6: "Administrador del lector"}
@@ -52,8 +59,10 @@ class NombreLectorIn(BaseModel):
     @classmethod
     def _nombre(cls, v):
         v = (v or "").strip()
-        if len(v) > 24:
-            raise ValueError("El equipo de asistencia guarda hasta 24 caracteres")
+        if len(v) > LARGO_NOMBRE:
+            raise ValueError(f"Hasta {LARGO_NOMBRE} caracteres: es lo que guarda "
+                             f"una puerta, y asi el nombre es el mismo en todos "
+                             f"los equipos")
         return v or None
 
 
@@ -154,7 +163,7 @@ def puertas_de(conn, eid) -> dict:
     return {
         "empleado": emp,
         "niveles_lector": NIVELES_LECTOR,
-        "largo_nombre": {"asistencia": 24, "puertas": 8},
+        "largo_nombre": LARGO_NOMBRE,
         "perfil": perfil,
         "puertas_del_perfil": sorted(del_perfil),
         "excepciones": excepciones,
@@ -198,9 +207,14 @@ def nombre_lector(eid: int, data: NombreLectorIn,
     Cómo se llama esta persona dentro de los equipos.
 
     Es el texto que el lector muestra en pantalla al apoyar el dedo, y lo elige
-    alguien para que sea reconocible ahí. No es el nombre del legajo: el equipo
-    de asistencia guarda 24 caracteres y las puertas 8, así que un nombre
-    completo llega cortado y deja de identificar a nadie.
+    alguien para que sea reconocible ahí. No es el nombre del legajo: una
+    puerta guarda 8 caracteres, así que un nombre completo llega cortado y deja
+    de identificar a nadie.
+
+    Se limita a 8 aunque el equipo de fichaje aguante 24, para que sea el mismo
+    en todos los equipos. Con largos distintos había que tolerar el recorte al
+    comparar, y esa tolerancia tapaba diferencias de verdad: agregarle una letra
+    a un nombre de 8 no se veía como un cambio.
 
     Vacío significa que no opinamos: al escribir se conserva el que el equipo ya
     tenga. Así una columna vacía no le borra el nombre a nadie.
@@ -728,7 +742,7 @@ def niveles_lector(_user=Depends(require_permiso("accesos", "ver"))):
         })
     filas.sort(key=lambda f: (-f["en_el_equipo"], f["nombre"]))
     return {"ok": True, "equipo": maestro["nombre"], "diferencias": filas,
-            "ajenos": ajenos, "largo_nombre": 24,
+            "ajenos": ajenos, "largo_nombre": LARGO_NOMBRE,
             "iguales": len(lectura["usuarios"]) - len(filas) - len(ajenos)}
 
 
@@ -801,7 +815,7 @@ def importar_nombres(data: ImportarNivelesIn,
             if not nombre:
                 continue
             conn.execute("UPDATE empleados SET nombre_lector=? WHERE id=?",
-                         (nombre[:24], eid))
+                         (nombre[:LARGO_NOMBRE], eid))
             cambiados += 1
     return {"ok": True, "importados": cambiados,
             "sin_tocar": len(data.empleados) - cambiados}

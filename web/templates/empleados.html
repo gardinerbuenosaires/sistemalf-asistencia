@@ -1364,15 +1364,15 @@ async function cargarAccesos(id) {
       <div style="margin-top:4px">
         <div style="font-size:.78rem;color:#888;margin-bottom:5px">
           Nombre que muestra el lector</div>
-        <input type="text" id="f-nombre-lector" maxlength="24" style="max-width:260px"
+        <input type="text" id="f-nombre-lector" maxlength="8" style="max-width:150px"
                value="${(datos.empleado.nombre_lector || '').replace(/"/g, '&quot;')}"
                placeholder="— se respeta el del equipo —"
                ${puede ? '' : 'disabled'}
                onchange="guardarNombreLector(${id}, this.value)">
         <div id="nombre-lector-corte" style="font-size:.76rem;color:#999;margin-top:4px"></div>
         <div style="font-size:.76rem;color:#999;margin-top:3px">
-          Es lo que aparece en pantalla al apoyar el dedo. Hasta 24 caracteres, que es lo
-          que guarda el equipo de fichaje; las puertas guardan 8 y cortan el resto.
+          Es lo que aparece en pantalla al apoyar el dedo. <b>Hasta 8 caracteres</b>, que es
+          lo que guarda una puerta: así el nombre es el mismo en todos los equipos.
           Vacío no borra nada: el sistema deja el nombre que cada equipo ya tenga.
           Para ver cuál es, «Ver qué tienen los lectores» más abajo.
         </div>
@@ -1797,23 +1797,18 @@ async function verificarEnLectores(id) {
     </div>`;
 }
 
-// Cada equipo corta el nombre a un largo distinto —24 el de asistencia, 8 las
-// puertas— así que escribirlo entero y que llegue cortado es lo que hace que
-// deje de identificar a nadie. Mejor verlo antes de guardarlo.
+// El campo ya no deja pasar mas de 8, asi que no hay recorte que anticipar.
+// Queda contar los que faltan, que es lo util cuando uno busca un nombre corto
+// y reconocible.
 function mostrarCorteNombre() {
   const campo = document.getElementById('f-nombre-lector');
   const caja = document.getElementById('nombre-lector-corte');
-  if (!campo || !caja || !_accDatos) return;
-  const largos = _accDatos.largo_nombre || { asistencia: 24, puertas: 8 };
+  if (!campo || !caja) return;
+  const largo = (_accDatos && _accDatos.largo_nombre) || 8;
   const texto = (campo.value || '').trim();
-  if (!texto) { caja.innerHTML = ''; return; }
-  const corte = (n) => texto.length > n
-    ? `<b>${_esc(texto.slice(0, n))}</b><span style="color:#c8a951">${_esc(texto.slice(n))}</span>`
-    : `<b>${_esc(texto)}</b>`;
-  caja.innerHTML = `Se va a ver así — fichaje: ${corte(largos.asistencia)}`
-    + ` · puertas: ${corte(largos.puertas)}`
-    + (texto.length > largos.puertas
-        ? ' <span style="color:#8a5d06">(lo amarillo no entra)</span>' : '');
+  caja.textContent = texto
+    ? `${texto.length} de ${largo} caracteres`
+    : '';
 }
 
 async function guardarNombreLector(id, valor) {

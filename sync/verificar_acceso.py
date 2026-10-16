@@ -44,13 +44,14 @@ def _nombre_coincide(en_el_equipo: str, pedido: str) -> bool:
     """
     ¿El equipo tiene el nombre que se le pidió?
 
-    No alcanza con compararlos: cada equipo corta el nombre a un largo distinto
-    —24 el de fichaje, 8 las puertas— así que el que se pidió casi nunca entra
-    entero. Que el del equipo sea el COMIENZO del pedido es lo que significa que
-    está bien y solo quedó cortado.
+    Se comparan enteros, y eso vale porque el nombre se limita a 8 —lo que
+    guarda una puerta— así que entra igual en todos los equipos.
 
-    Así no hace falta saber de antemano cuánto corta cada modelo, que es el tipo
-    de constante que se descubre estando mal.
+    Antes se aceptaba que el del equipo fuera el COMIENZO del pedido, para
+    tolerar el recorte de cada modelo. Esa tolerancia tapaba diferencias reales:
+    «FRANCISC» es el comienzo de «FRANCISCO», así que agregarle la última letra
+    no contaba como un cambio, el botón de escribir nunca aparecía, y parecía
+    que la escritura fallaba en silencio cuando en realidad no se intentaba.
     """
     a = (en_el_equipo or "").strip().upper()
     b = (pedido or "").strip().upper()
@@ -58,7 +59,7 @@ def _nombre_coincide(en_el_equipo: str, pedido: str) -> bool:
         return True          # no se pidió nada: no hay nada que incumplir
     if not a:
         return False         # se pidió un nombre y el equipo no tiene ninguno
-    return b.startswith(a)
+    return a == b
 
 
 def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,

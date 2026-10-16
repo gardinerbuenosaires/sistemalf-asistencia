@@ -1785,13 +1785,17 @@ if len(_tres) >= 2:
 
 print("\n=== NOMBRE QUE MUESTRA EL LECTOR ===")
 # Es el texto que el equipo muestra al apoyar el dedo. No es el nombre del
-# legajo: el de asistencia guarda 24 caracteres y las puertas 8, asi que un
-# nombre completo llega cortado y deja de identificar a nadie.
+# legajo: una puerta guarda 8 caracteres, asi que un nombre completo llega
+# cortado y deja de identificar a nadie.
+#
+# Se limita a 8 aunque el equipo de fichaje aguante 24, para que sea el mismo
+# en todos los equipos: con largos distintos habia que tolerar el recorte al
+# comparar, y esa tolerancia tapaba diferencias reales.
 if emp_id:
     r = cli.get(f"/api/accesos/empleado/{emp_id}")
-    chequear("la ficha trae el nombre del lector y los largos",
+    chequear("la ficha trae el nombre del lector y el largo",
              "nombre_lector" in r.json()["empleado"]
-             and r.json()["largo_nombre"]["puertas"] == 8, list(r.json()))
+             and r.json()["largo_nombre"] == 8, list(r.json()))
     chequear("arranca vacio", r.json()["empleado"]["nombre_lector"] is None,
              r.json()["empleado"]["nombre_lector"])
 
@@ -1812,11 +1816,11 @@ if emp_id:
     # Mas largo de lo que el equipo guarda se rechaza en vez de recortarse solo:
     # recortar en silencio deja un nombre que nadie eligio.
     r = cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector",
-                json={"nombre_lector": "X" * 25})
-    chequear("mas de 24 caracteres se rechaza", r.status_code == 422, r.status_code)
+                json={"nombre_lector": "X" * 9})
+    chequear("mas de 8 caracteres se rechaza", r.status_code == 422, r.status_code)
     r = cli.put(f"/api/accesos/empleado/{emp_id}/nombre-lector",
-                json={"nombre_lector": "X" * 24})
-    chequear("exactamente 24 entra", r.status_code == 200, r.status_code)
+                json={"nombre_lector": "X" * 8})
+    chequear("exactamente 8 entra", r.status_code == 200, r.status_code)
 
     chequear("necesita accesos:asignar",
              _mirar.put(f"/api/accesos/empleado/{emp_id}/nombre-lector",
@@ -2108,14 +2112,19 @@ chequear("dos minutos adelante si, que es el tiempo de la propia lectura",
 print("\n=== EL NOMBRE QUE TIENE EL EQUIPO CONTRA EL QUE SE PIDIO ===")
 from sync.verificar_acceso import _nombre_coincide
 
-# Cada equipo corta a un largo distinto, asi que el pedido casi nunca entra
-# entero. Que el del equipo sea el COMIENZO del pedido es lo que significa que
-# esta bien y solo quedo cortado.
+# Se comparan enteros, y eso vale porque el nombre se limita a 8 --lo que
+# guarda una puerta-- asi que entra igual en todos los equipos.
+#
+# Antes se aceptaba que el del equipo fuera el COMIENZO del pedido, para
+# tolerar el recorte de cada modelo. Esa tolerancia tapaba diferencias reales:
+# agregarle la ultima letra a un nombre de 8 no contaba como cambio, el boton
+# de escribir no aparecia, y parecia que la escritura fallaba en silencio.
 chequear("igual coincide", _nombre_coincide("STEHLE F", "STEHLE F"))
-chequear("cortado por la puerta coincide", _nombre_coincide("STEHLE F", "STEHLE FEDERICO"))
-chequear("cortado a 8 coincide", _nombre_coincide("GOMEZ CA", "GOMEZ CASTRO ANA"))
-chequear("sin importar mayusculas", _nombre_coincide("stehle f", "STEHLE FEDERICO"))
-chequear("con espacios de sobra tambien", _nombre_coincide("  STEHLE F  ", "STEHLE FEDERICO"))
+chequear("sin importar mayusculas", _nombre_coincide("stehle f", "STEHLE F"))
+chequear("con espacios de sobra tambien", _nombre_coincide("  STEHLE F  ", "STEHLE F"))
+chequear("una letra de mas YA no se da por igual",
+         not _nombre_coincide("FRANCISC", "FRANCISCO"))
+chequear("ni uno mas corto", not _nombre_coincide("STEHLE F", "STEHLE"))
 
 chequear("otro nombre NO coincide", not _nombre_coincide("FEDERICO", "STEHLE F"))
 chequear("ni uno parecido al medio", not _nombre_coincide("TEHLE F", "STEHLE F"))

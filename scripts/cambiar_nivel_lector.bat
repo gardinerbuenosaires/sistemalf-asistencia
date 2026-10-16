@@ -1,0 +1,41 @@
+@echo off
+:: SistemAlf -- Cambiar el nivel de administracion de alguien en un lector
+::
+:: ESCRIBE EN EL EQUIPO. El nivel es quien puede administrar el lector parado
+:: frente a el: entrar al menu, dar de alta gente, tomarle la huella. No tiene
+:: nada que ver con abrir puertas.
+::
+:: Solo puede poner 0 (usuario comun) o 14 (super admin). El 2 y el 6 hay que
+:: ponerlos en el menu del equipo: la libreria que sabe escribir el formato del
+:: equipo de fichaje los dejaria en usuario comun sin avisar.
+::
+:: Avisa si el cambio deja al equipo sin ningun administrador --ahi el menu
+:: queda abierto para cualquiera-- y verifica releyendo.
+::
+:: Uso:
+::    scripts\cambiar_nivel_lector.bat 8 0
+::    scripts\cambiar_nivel_lector.bat 8 0 --equipo 192.168.1.209
+
+setlocal
+cd /d "%~dp0.."
+
+if "%~2"=="" goto :uso
+
+python scripts\cambiar_nivel_lector.py %*
+
+echo.
+pause
+exit /b
+
+:uso
+echo.
+echo   Faltan datos: el numero de la persona y el nivel.
+echo.
+echo       scripts\cambiar_nivel_lector.bat 8 0
+echo.
+echo   Niveles que se pueden poner desde aca:
+echo       0   usuario comun, no administra
+echo       14  super admin
+echo.
+pause
+exit /b 1

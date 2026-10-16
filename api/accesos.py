@@ -1427,12 +1427,23 @@ def aplicar_fichaje(usuario=Depends(require_permiso("accesos", "aplicar"))):
 def escribir_nivel(data: CargarEnPuertaIn,
                    usuario=Depends(require_permiso("accesos", "editar"))):
     """
-    Lleva al equipo el nivel de administracion que la persona tiene en el legajo.
+    Lleva al equipo el nivel de administracion que a esa persona le corresponde.
 
     El nivel es quien puede administrar el lector parado frente a el: entrar al
     menu, dar de alta gente, tomarle la huella. No tiene nada que ver con abrir
     puertas, y por eso pide `editar` y no `aplicar`: lo que se esta dando no es
     un acceso sino la posibilidad de repartir accesos.
+
+    **Cual es el nivel que corresponde depende del equipo.** En el de fichaje es
+    el del legajo: es el unico con pantalla, ahi el nivel es una decision. En una
+    puerta es 0 y no se pregunta: no hay nada que administrar, asi que nadie
+    tiene por que estar por encima de usuario comun.
+
+    Las puertas estuvieron rechazadas aca justamente por eso --si no hay nada
+    que administrar, no hay nada que escribir-- y era un error. Vienen con
+    «super admin» de la epoca de Enterprise, la ficha lo muestra con todas las
+    letras y no habia manera de bajarlo. Un cartel que no se puede resolver
+    termina enseñando a ignorar los carteles.
 
     Va aparte del boton del nombre. Los dos escriben el mismo registro, pero un
     nombre no le da permisos a nadie y un nivel si; tenerlos juntos hacia que
@@ -1444,15 +1455,11 @@ def escribir_nivel(data: CargarEnPuertaIn,
     with db_session() as conn:
         equipo = conn.execute(
             """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
-                      cuenta_asistencia
+                      cuenta_asistencia, es_acceso
                  FROM dispositivos WHERE id = ? AND activo = 1""",
             (data.dispositivo_id,)).fetchone()
         if not equipo:
             raise HTTPException(404, "Ese equipo no existe o está desactivado")
-        if not equipo["cuenta_asistencia"]:
-            raise HTTPException(
-                400, f"{equipo['nombre']} no es el equipo de fichaje. Una puerta "
-                     f"no tiene pantalla, así que ahí no hay nada que administrar.")
         if equipo["protocolo"] != "pull":
             raise HTTPException(400, f"{equipo['nombre']} es un equipo push.")
         emp = conn.execute(
@@ -1462,7 +1469,11 @@ def escribir_nivel(data: CargarEnPuertaIn,
             raise HTTPException(404, f"El {numero} no existe en el sistema.")
         equipo, emp = dict(equipo), dict(emp)
 
-    nivel = int(emp["nivel_lector"] or 0)
+    # En el de fichaje, el del legajo. En una puerta, 0: no hay nada que
+    # administrar ahi, y el nivel del legajo habla del equipo con pantalla.
+    # Llevarlo a una puerta seria repartir un permiso que esa puerta no da.
+    es_puerta = not equipo["cuenta_asistencia"]
+    nivel = 0 if es_puerta else int(emp["nivel_lector"] or 0)
     r = actualizar_en_puerta(equipo, numero, nombre=None, privilegio=nivel)
 
     with db_session() as conn:
@@ -1470,7 +1481,9 @@ def escribir_nivel(data: CargarEnPuertaIn,
             _registrar_operacion(
                 conn, dispositivo_id=equipo["id"], equipo=equipo["nombre"],
                 user_id=numero, empleado_id=emp["id"], accion="cambiar nivel",
-                motivo=f"nivel {nivel} — {NIVELES.get(nivel, '?')}",
+                motivo=(f"nivel {nivel} — {NIVELES.get(nivel, '?')}"
+                        + (" (en una puerta no hay nada que administrar)"
+                           if es_puerta else "")),
                 resultado="actualizado" if r["ok"] else "falló",
                 detalle=r.get("error"),
                 usuario_id=int(usuario.get("sub") or 0) or None)
@@ -1481,7 +1494,7 @@ def escribir_nivel(data: CargarEnPuertaIn,
         raise HTTPException(400, f"No se pudo escribir el nivel en "
                                  f"{equipo['nombre']}: {r['error']}")
     return {"ok": True, "equipo": equipo["nombre"], "nivel": nivel,
-            "nivel_texto": NIVELES.get(nivel, "?"),
+            "nivel_texto": NIVELES.get(nivel, "?"), "es_puerta": es_puerta,
             "empleado": f"{emp['apellido']}, {emp['nombre']}".strip(", "),
             **{k: r.get(k) for k in ("sin_cambios", "huellas",
                                      "huellas_repuestas", "otros")}}

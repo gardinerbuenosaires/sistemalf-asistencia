@@ -1715,9 +1715,12 @@ async function verificarEnLectores(id) {
         ${/* Aparte del nombre a proposito: un nombre no le da permisos a nadie
              y un nivel si. Tenerlos juntos hacia que escribir un nombre
              degradara en silencio a un administrador. Y pide otro permiso. */''}
+        ${/* En una puerta el nivel siempre se baja: lo correcto ahi es 0, asi
+             que el boton dice que va a hacer en vez de decir «escribir». */''}
         ${e.nivel_distinto && e.ok && canDo('accesos','editar')
           ? `<button class="btn btn-sm btn-secondary" style="flex:none"
-                     onclick="escribirNivel(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Escribir el nivel</button>`
+                     onclick="escribirNivel(${id}, ${e.id}, '${_esc(e.nombre)}', this)">${
+                       e.es_puerta ? 'Bajar a usuario común' : 'Escribir el nivel'}</button>`
           : ''}
         ${/* El espejo de Cargar. Sin esto, quitarle una puerta a alguien --por
              excepcion o por cambio de perfil-- obligaba a ir al plan y buscarlo
@@ -1733,9 +1736,15 @@ async function verificarEnLectores(id) {
                      onclick="sacarDeEstaPuerta(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Sacar</button>`
           : ''}
       </div>
+      ${/* Por que corresponde ese nivel y no otro, que no es lo mismo en los dos
+           equipos: en el de fichaje lo dice el legajo, y en una puerta es 0
+           siempre porque ahi no hay menu que administrar. Sin esta linea, un
+           «super admin» en una puerta parece un permiso que alguien decidio. */''}
       ${e.nivel_distinto ? `<div style="font-size:.76rem;color:#8a5d06;padding:0 0 4px 87px">
         administración: el equipo dice <b>${_esc(_NIVEL_LECTOR[e.privilegio] || e.privilegio)}</b>
-        y el legajo dice <b>${_esc(_NIVEL_LECTOR[d.ficha.empleado.nivel_lector || 0] || '?')}</b></div>` : ''}
+        ${e.es_puerta
+          ? 'y en una puerta no hay nada que administrar: corresponde <b>no administra</b>'
+          : `y el legajo dice <b>${_esc(_NIVEL_LECTOR[e.nivel_esperado || 0] || '?')}</b>`}</div>` : ''}
       ${e.es_puerta ? '' : `<div style="font-size:.74rem;color:#aaa;padding:0 0 6px 87px">
         Solo registra la asistencia. Se muestra porque de acá sale la huella que
         se copia a las puertas.</div>`}`;

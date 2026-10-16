@@ -3481,8 +3481,10 @@ _escribir_real(_e28, 7, "X", 0, "1", "57")
 chequear("28.0 cuenta como 28, que es lo que devuelve la division",
          _e28.paquete is not None and len(_e28.paquete) == 28, _e28.paquete)
 
-# Y la ficha compara el nivel del legajo contra el del equipo, solo en el de
-# fichaje: una puerta no tiene pantalla, ahi no hay nada que administrar.
+# Y la ficha compara el nivel que el equipo le da contra el que corresponde, que
+# no es el mismo dato en los dos: en el de fichaje lo dice el legajo --es el
+# unico con pantalla y menu-- y en una puerta es 0 siempre, porque ahi no hay
+# nada que administrar.
 from sync.verificar_acceso import verificar as _ver_nivel
 
 _EQ_NIV = [{"id": 90, "nombre": "Reloj", "es_acceso": 0, "cuenta_asistencia": 1},
@@ -3499,12 +3501,29 @@ chequear("si el equipo dice 6 y el legajo 0, se marca",
          _filas_n[90]["nivel_distinto"] is True, _filas_n[90])
 chequear("y se informa el nivel que tiene el equipo",
          _filas_n[90]["privilegio"] == 6, _filas_n[90])
-chequear("en una puerta no se compara: no tiene pantalla",
-         _filas_n[91]["nivel_distinto"] is False, _filas_n[91])
+# En una puerta antes no se comparaba nada --si no hay nada que administrar, el
+# dato no importa-- y eso dejaba a los «super admin» que traen las puertas de la
+# epoca de Enterprise a la vista en la ficha y sin forma de bajarlos.
+chequear("en una puerta un nivel arriba de cero tambien se marca",
+         _filas_n[91]["nivel_distinto"] is True, _filas_n[91])
+chequear("y lo que corresponde en una puerta es cero, no el del legajo",
+         _filas_n[91]["nivel_esperado"] == 0, _filas_n[91])
+chequear("en el de fichaje, el que corresponde es el del legajo",
+         _filas_n[90]["nivel_esperado"] == 0, _filas_n[90])
 
-_vn2 = _ver_nivel("42", _EQ_NIV, {90: _lec_niv(6), 91: _lec_niv(6)}, {91}, None, 6)
-chequear("si coinciden, no se marca",
-         {f["id"]: f for f in _vn2["equipos"]}[90]["nivel_distinto"] is False)
+# El legajo pide 6 y la puerta tiene 6: igual se marca, porque el nivel del
+# legajo habla del equipo con pantalla y no se reparte a las puertas.
+_vnp = _ver_nivel("42", _EQ_NIV, {90: _lec_niv(6), 91: _lec_niv(6)}, {91}, None, 6)
+_fp = {f["id"]: f for f in _vnp["equipos"]}
+chequear("el nivel del legajo no se lleva a las puertas",
+         _fp[91]["nivel_distinto"] is True and _fp[91]["nivel_esperado"] == 0, _fp[91])
+chequear("y una puerta en cero no se marca",
+         {f["id"]: f for f in _ver_nivel(
+             "42", _EQ_NIV, {90: _lec_niv(0), 91: _lec_niv(0)}, {91}, None, 0)
+          ["equipos"]}[91]["nivel_distinto"] is False)
+
+chequear("si en el de fichaje coinciden, no se marca",
+         _fp[90]["nivel_distinto"] is False, _fp[90])
 # Sin nivel pedido no se opina: es el caso de una ficha vieja sin el dato.
 _vn3 = _ver_nivel("42", _EQ_NIV, {90: _lec_niv(6), 91: _lec_niv(6)}, {91})
 chequear("sin nivel en el legajo no se compara nada",
@@ -4010,6 +4029,71 @@ chequear("y diciendo que no se pudo comprobar",
 _g, _v, _av = _em._elegir_grupo(_PuertaConGrupos(), _Cnt())
 chequear("en una puerta vacia no hay de donde copiar: va el 1", _g == "1", _g)
 chequear("y no se inventa un horario", _v is None, _v)
+
+
+print("\n=== ESCRIBIR EL NIVEL EN UNA PUERTA ===")
+# El caso que lo motivo: dos personas a las que se les bajo el nivel en el
+# equipo de fichaje seguian leyendose como «super admin» en las tres puertas.
+# Las puertas estaban rechazadas en este endpoint a proposito --no tienen
+# pantalla, no hay nada que administrar ahi-- y eso dejaba el cartel puesto y
+# sin ninguna forma de resolverlo.
+_cn = sqlite3.connect(DB)
+_mid_n = _cn.execute(
+    "SELECT id FROM dispositivos WHERE cuenta_asistencia=1 AND es_acceso=0 LIMIT 1").fetchone()
+_pid_n = _cn.execute(
+    "SELECT id FROM dispositivos WHERE es_acceso=1 AND activo=1 LIMIT 1").fetchone()
+_emp_n = _cn.execute(
+    """SELECT id, TRIM(user_id) FROM empleados
+        WHERE user_id IS NOT NULL AND TRIM(user_id) <> '' LIMIT 1""").fetchone()
+_cn.close()
+
+if _mid_n and _pid_n and _emp_n:
+    _mid_n, _pid_n = _mid_n[0], _pid_n[0]
+    _eid_n, _num_n = _emp_n[0], str(_emp_n[1]).strip()
+    _real_act = _escF.actualizar_en_puerta
+    _pedido_n = {}
+    _escF.actualizar_en_puerta = lambda eq, numero, nombre=None, privilegio=None: (
+        _pedido_n.update({"equipo": eq["id"], "numero": numero,
+                          "nombre": nombre, "privilegio": privilegio}),
+        {"ok": True, "nivel": privilegio, "huellas": 2, "otros": 20,
+         "huellas_repuestas": False, "error": None})[1]
+
+    cli.put(f"/api/accesos/empleado/{_eid_n}/nivel-lector", json={"nivel_lector": 6})
+
+    r = cli.post("/api/accesos/escribir-nivel",
+                 json={"dispositivo_id": _pid_n, "user_id": _num_n})
+    chequear("una puerta ya no se rechaza", r.status_code == 200, r.text[:220])
+    chequear("y se le escribe cero, no el nivel del legajo",
+             _pedido_n.get("privilegio") == 0, _pedido_n)
+    chequear("se avisa que es una puerta",
+             r.json().get("es_puerta") is True, r.text[:200])
+    chequear("y no se le toca el nombre de pantalla",
+             _pedido_n.get("nombre") is None, _pedido_n)
+    _ops_n = cli.get("/api/dispositivos/operaciones").json()["operaciones"]
+    chequear("queda registrado por que fue cero",
+             _ops_n[0]["accion"] == "cambiar nivel"
+             and "nada que administrar" in (_ops_n[0]["motivo"] or ""), _ops_n[0])
+
+    # En el de fichaje sigue siendo el del legajo: ahi hay pantalla, hay menu, y
+    # el nivel es una decision de alguien.
+    _pedido_n.clear()
+    r = cli.post("/api/accesos/escribir-nivel",
+                 json={"dispositivo_id": _mid_n, "user_id": _num_n})
+    chequear("en el de fichaje se escribe el del legajo",
+             r.status_code == 200 and _pedido_n.get("privilegio") == 6,
+             (r.status_code, _pedido_n))
+    chequear("y ahi no se dice que sea una puerta",
+             r.json().get("es_puerta") is False, r.text[:200])
+
+    chequear("sigue pidiendo accesos:editar, no alcanza con aplicar",
+             _aplica.post("/api/accesos/escribir-nivel",
+                          json={"dispositivo_id": _pid_n,
+                                "user_id": _num_n}).status_code == 403)
+
+    _escF.actualizar_en_puerta = _real_act
+    cli.put(f"/api/accesos/empleado/{_eid_n}/nivel-lector", json={"nivel_lector": 0})
+else:
+    print("  (la copia no tiene equipo de fichaje, puerta y legajo con numero)")
 
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")

@@ -3419,6 +3419,35 @@ for _nivel in (0, 2, 6, 14):
 chequear("y no se pasa por set_user, que es quien lo recortaria",
          _m.uso_set_user is False)
 
+# Y la ficha compara el nivel del legajo contra el del equipo, solo en el de
+# fichaje: una puerta no tiene pantalla, ahi no hay nada que administrar.
+from sync.verificar_acceso import verificar as _ver_nivel
+
+_EQ_NIV = [{"id": 90, "nombre": "Reloj", "es_acceso": 0, "cuenta_asistencia": 1},
+           {"id": 91, "nombre": "Puerta", "es_acceso": 1, "cuenta_asistencia": 0}]
+
+def _lec_niv(priv):
+    return {"ok": True, "error": None, "completa": True,
+            "usuarios": [{"user_id": "42", "nombre": "X", "uid": 1,
+                          "huellas": 2, "grupo": "1", "privilegio": priv}]}
+
+_vn = _ver_nivel("42", _EQ_NIV, {90: _lec_niv(6), 91: _lec_niv(6)}, {91}, None, 0)
+_filas_n = {f["id"]: f for f in _vn["equipos"]}
+chequear("si el equipo dice 6 y el legajo 0, se marca",
+         _filas_n[90]["nivel_distinto"] is True, _filas_n[90])
+chequear("y se informa el nivel que tiene el equipo",
+         _filas_n[90]["privilegio"] == 6, _filas_n[90])
+chequear("en una puerta no se compara: no tiene pantalla",
+         _filas_n[91]["nivel_distinto"] is False, _filas_n[91])
+
+_vn2 = _ver_nivel("42", _EQ_NIV, {90: _lec_niv(6), 91: _lec_niv(6)}, {91}, None, 6)
+chequear("si coinciden, no se marca",
+         {f["id"]: f for f in _vn2["equipos"]}[90]["nivel_distinto"] is False)
+# Sin nivel pedido no se opina: es el caso de una ficha vieja sin el dato.
+_vn3 = _ver_nivel("42", _EQ_NIV, {90: _lec_niv(6), 91: _lec_niv(6)}, {91})
+chequear("sin nivel en el legajo no se compara nada",
+         {f["id"]: f for f in _vn3["equipos"]}[90]["nivel_distinto"] is False)
+
 # Y las puertas siguen por el camino propio, que es el que no recorta el nivel.
 class _Puerta28:
     """Formato de 28 bytes. Tiene set_user para comprobar que NO se usa."""

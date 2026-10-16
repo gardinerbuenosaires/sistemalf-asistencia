@@ -256,7 +256,8 @@ def empleado_en_lectores(eid: int, _user=Depends(require_permiso("accesos", "ver
     lecturas = leer_cargados_varios(equipos, con_huellas=True)
     return {"ficha": ficha,
             **verificar(user_id, equipos, lecturas, set(ficha["puertas"]),
-                        ficha["empleado"].get("nombre_lector"))}
+                        ficha["empleado"].get("nombre_lector"),
+                        ficha["empleado"].get("nivel_lector"))}
 
 
 @router.put("/empleado/{eid}/perfil")
@@ -1404,6 +1405,70 @@ def aplicar_fichaje(usuario=Depends(require_permiso("accesos", "aplicar"))):
     return {"ok": r["ok"], "equipo": maestro["nombre"], "error": r.get("error"),
             "resultados": r["resultados"], "problemas": r.get("problemas", []),
             "trabadas": trabadas, "otros_intactos": r.get("otros")}
+
+
+@router.post("/escribir-nivel")
+def escribir_nivel(data: CargarEnPuertaIn,
+                   usuario=Depends(require_permiso("accesos", "editar"))):
+    """
+    Lleva al equipo el nivel de administracion que la persona tiene en el legajo.
+
+    El nivel es quien puede administrar el lector parado frente a el: entrar al
+    menu, dar de alta gente, tomarle la huella. No tiene nada que ver con abrir
+    puertas, y por eso pide `editar` y no `aplicar`: lo que se esta dando no es
+    un acceso sino la posibilidad de repartir accesos.
+
+    Va aparte del boton del nombre. Los dos escriben el mismo registro, pero un
+    nombre no le da permisos a nadie y un nivel si; tenerlos juntos hacia que
+    escribir un nombre degradara en silencio a un administrador.
+    """
+    from sync.escritura import NIVELES, actualizar_en_puerta
+
+    numero = str(data.user_id).strip()
+    with db_session() as conn:
+        equipo = conn.execute(
+            """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
+                      cuenta_asistencia
+                 FROM dispositivos WHERE id = ? AND activo = 1""",
+            (data.dispositivo_id,)).fetchone()
+        if not equipo:
+            raise HTTPException(404, "Ese equipo no existe o está desactivado")
+        if not equipo["cuenta_asistencia"]:
+            raise HTTPException(
+                400, f"{equipo['nombre']} no es el equipo de fichaje. Una puerta "
+                     f"no tiene pantalla, así que ahí no hay nada que administrar.")
+        if equipo["protocolo"] != "pull":
+            raise HTTPException(400, f"{equipo['nombre']} es un equipo push.")
+        emp = conn.execute(
+            """SELECT id, nombre, apellido, nivel_lector FROM empleados
+                WHERE TRIM(user_id) = ?""", (numero,)).fetchone()
+        if not emp:
+            raise HTTPException(404, f"El {numero} no existe en el sistema.")
+        equipo, emp = dict(equipo), dict(emp)
+
+    nivel = int(emp["nivel_lector"] or 0)
+    r = actualizar_en_puerta(equipo, numero, nombre=None, privilegio=nivel)
+
+    with db_session() as conn:
+        if not r.get("sin_cambios"):
+            _registrar_operacion(
+                conn, dispositivo_id=equipo["id"], equipo=equipo["nombre"],
+                user_id=numero, empleado_id=emp["id"], accion="cambiar nivel",
+                motivo=f"nivel {nivel} — {NIVELES.get(nivel, '?')}",
+                resultado="actualizado" if r["ok"] else "falló",
+                detalle=r.get("error"),
+                usuario_id=int(usuario.get("sub") or 0) or None)
+
+    if r.get("no_estaba"):
+        raise HTTPException(404, r["error"])
+    if not r["ok"]:
+        raise HTTPException(400, f"No se pudo escribir el nivel en "
+                                 f"{equipo['nombre']}: {r['error']}")
+    return {"ok": True, "equipo": equipo["nombre"], "nivel": nivel,
+            "nivel_texto": NIVELES.get(nivel, "?"),
+            "empleado": f"{emp['apellido']}, {emp['nombre']}".strip(", "),
+            **{k: r.get(k) for k in ("sin_cambios", "huellas",
+                                     "huellas_repuestas", "otros")}}
 
 
 @router.post("/sincronizar-huellas")

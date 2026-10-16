@@ -1536,6 +1536,33 @@ async function sacarDeEstaPuerta(eid, dispositivoId, nombrePuerta, boton) {
   verificarEnLectores(eid);
 }
 
+// Los cuatro niveles que entiende el equipo. El 14 no se ofrece para elegir
+// --no se usa y una opcion que nadie necesita invita a elegirla por error--
+// pero un equipo puede traerlo y hay que poder nombrarlo.
+const _NIVEL_LECTOR = {0: 'no administra', 2: 'enrolador',
+                       6: 'administrador', 14: 'super admin'};
+
+// Llevar al equipo el nivel de administracion que figura en el legajo. Aparte
+// del nombre: un nombre no le da permisos a nadie y un nivel si.
+async function escribirNivel(eid, dispositivoId, nombreEquipo, boton) {
+  if (boton) { boton.disabled = true; boton.textContent = 'Escribiendo...'; }
+  let r = {};
+  try {
+    const res = await fetch('/api/accesos/escribir-nivel', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ dispositivo_id: dispositivoId, user_id: _accUserId }),
+    });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo escribir');
+  } catch (e) {
+    if (boton) { boton.disabled = false; boton.textContent = 'Reintentar'; }
+    return toast('Error en ' + nombreEquipo + ': ' + e.message);
+  }
+  toast(`${nombreEquipo}: ahora es «${r.nivel_texto}»`
+        + (r.huellas_repuestas ? ' — el equipo le borró las huellas al reescribir y se repusieron' : ''));
+  verificarEnLectores(eid);
+}
+
 // Llevar al equipo el nombre corto que la persona tiene en el legajo. No toca
 // el grupo, ni la franja, ni las huellas: lo unico que cambia es lo que el
 // lector muestra al apoyar el dedo.
@@ -1685,6 +1712,13 @@ async function verificarEnLectores(id) {
           ? `<button class="btn btn-sm btn-secondary" style="flex:none"
                      onclick="actualizarEnEstaPuerta(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Escribir el nombre</button>`
           : ''}
+        ${/* Aparte del nombre a proposito: un nombre no le da permisos a nadie
+             y un nivel si. Tenerlos juntos hacia que escribir un nombre
+             degradara en silencio a un administrador. Y pide otro permiso. */''}
+        ${e.nivel_distinto && e.ok && canDo('accesos','editar')
+          ? `<button class="btn btn-sm btn-secondary" style="flex:none"
+                     onclick="escribirNivel(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Escribir el nivel</button>`
+          : ''}
         ${/* El espejo de Cargar. Sin esto, quitarle una puerta a alguien --por
              excepcion o por cambio de perfil-- obligaba a ir al plan y buscarlo
              entre todas las filas, teniendo la respuesta ya en pantalla. */''}
@@ -1699,6 +1733,9 @@ async function verificarEnLectores(id) {
                      onclick="sacarDeEstaPuerta(${id}, ${e.id}, '${_esc(e.nombre)}', this)">Sacar</button>`
           : ''}
       </div>
+      ${e.nivel_distinto ? `<div style="font-size:.76rem;color:#8a5d06;padding:0 0 4px 87px">
+        administración: el equipo dice <b>${_esc(_NIVEL_LECTOR[e.privilegio] || e.privilegio)}</b>
+        y el legajo dice <b>${_esc(_NIVEL_LECTOR[d.ficha.empleado.nivel_lector || 0] || '?')}</b></div>` : ''}
       ${e.es_puerta ? '' : `<div style="font-size:.74rem;color:#aaa;padding:0 0 6px 87px">
         Solo registra la asistencia. Se muestra porque de acá sale la huella que
         se copia a las puertas.</div>`}`;

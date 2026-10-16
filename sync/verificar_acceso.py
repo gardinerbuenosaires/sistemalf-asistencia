@@ -62,7 +62,7 @@ def _nombre_coincide(en_el_equipo: str, pedido: str) -> bool:
 
 
 def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
-              nombre_pedido: str = None) -> dict:
+              nombre_pedido: str = None, nivel_pedido: int = None) -> dict:
     """
     Cruza a una persona contra cada equipo leído.
 
@@ -79,7 +79,8 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
     filas = []
     resumen = {"abre": 0, "falta": 0, "sobra": 0, "sin_huella": 0, "sin_leer": 0,
                "sin_huella_maestro": False, "no_en_maestro": False,
-               "nombre_distinto": 0, "huellas_de_menos": 0}
+               "nombre_distinto": 0, "huellas_de_menos": 0,
+               "nivel_distinto": 0}
 
     # Cuantas huellas tiene en el equipo de asistencia. Es la referencia para
     # las puertas: a alguien se le gasta un dedo, enrola otro ahi, y las puertas
@@ -113,6 +114,7 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
             "deberia": debe if es_puerta else None,
             "ok": lectura["ok"], "error": lectura.get("error"),
             "cargado": None, "huellas": None, "huellas_maestro": None,
+            "privilegio": None, "nivel_distinto": False,
             "huellas_de_menos": False, "nombre_en_equipo": None,
             "grupo": None, "uid": None, "nombre_ok": None,
         }
@@ -130,6 +132,10 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
             fila["uid"] = encontrado.get("uid")
             fila["nombre_en_equipo"] = encontrado.get("nombre")
             fila["grupo"] = encontrado.get("grupo")
+            # El nivel que el equipo le da: quien puede administrarlo parado
+            # frente a el. Solo importa en el de fichaje, que es el unico con
+            # pantalla, y se informa para poder compararlo con el del legajo.
+            fila["privilegio"] = encontrado.get("privilegio")
             fila["huellas"] = encontrado.get("huellas")
             fila["huellas_maestro"] = huellas_maestro
             # Menos huellas que en el fichaje: le falta al menos la ultima que
@@ -158,6 +164,13 @@ def verificar(user_id, equipos: list, lecturas: dict, deseadas: set,
         if not es_puerta:
             # El equipo de asistencia. No se juzga si debería estar o no —ahí
             # está por fichar— y sobre todo no se dice que abre: no abre nada.
+            # El nivel del legajo contra el del equipo. Solo acá: en una
+            # puerta no hay nada que administrar, no tiene pantalla.
+            if encontrado is not None and nivel_pedido is not None:
+                fila["nivel_distinto"] = (
+                    (encontrado.get("privilegio") or 0) != int(nivel_pedido))
+                if fila["nivel_distinto"]:
+                    resumen["nivel_distinto"] += 1
             fila["estado"] = ("maestro_sin_huella" if sin_huella
                               else "enrolado" if encontrado else "no_enrolado")
             # Dos situaciones distintas, y antes compartían una sola bandera:

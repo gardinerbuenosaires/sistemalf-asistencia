@@ -1291,6 +1291,70 @@ def bajas_pendientes(_user=Depends(require_permiso("accesos", "ver"))):
         return {"personas": pendientes(conn), "resumen": resumen(conn)}
 
 
+class CerrarBajaIn(BaseModel):
+    empleado_id: int
+
+
+@router.post("/cerrar-baja")
+def cerrar_baja(data: CerrarBajaIn,
+                usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Cierra la baja de una persona: la saca de todos los equipos y suelta su número.
+
+    Es el circuito que hacía Enterprise a mano y que nadie heredó. Saca a la
+    persona de todas las puertas y del equipo de fichaje, olvida sus huellas y
+    libera su número para que el lector lo vuelva a ofrecer.
+
+    **Todo o nada para el número.** Si algún equipo no contestó, o un borrado
+    falló, el número queda ocupado y la baja sigue en la lista de pendientes.
+    Liberarlo es lo único irreversible: el lector sugiere siempre el libre más
+    bajo, así que un número suelto se lo lleva el próximo que entre, y si la
+    persona seguía cargada en una puerta que no contestó, esa puerta queda con
+    una huella vieja abriendo bajo un nombre nuevo.
+
+    Pide `aplicar` porque escribe en los equipos. Que además toque el legajo
+    —el número— no lo convierte en otra cosa: es el mismo acto, y partirlo en
+    dos permisos sería permitir justo la mitad que desalinea la base del lector.
+    """
+    from sync.cierre_baja import cerrar
+
+    with db_session() as conn:
+        emp = conn.execute(
+            """SELECT id, nombre, apellido, user_id, activo, fecha_egreso
+                 FROM empleados WHERE id = ?""", (data.empleado_id,)).fetchone()
+        if not emp:
+            raise HTTPException(404, "Ese empleado no existe")
+        emp = dict(emp)
+        quien = f"{emp['apellido']}, {emp['nombre']}".strip(", ")
+        numero = str(emp["user_id"] or "").strip()
+
+        r = cerrar(conn, emp)
+
+        # Una constancia por equipo tocado, igual que cuando se saca a alguien a
+        # mano: la tanda se entiende, pero lo que se audita es persona y equipo.
+        for eq in r["equipos"]:
+            if eq["accion"] in ("ya no estaba", "no se tocó"):
+                continue
+            _registrar_operacion(
+                conn, dispositivo_id=eq["id"], equipo=eq["equipo"],
+                user_id=numero, empleado_id=emp["id"], accion="sacar",
+                motivo="Cierre de la baja",
+                resultado="sacado" if eq["ok"] else "falló",
+                detalle=eq.get("detalle"), respaldo=eq.get("respaldo"),
+                usuario_id=int(usuario.get("sub") or 0) or None)
+        if r.get("liberado"):
+            _registrar_operacion(
+                conn, user_id=numero, empleado_id=emp["id"], accion="cerrar baja",
+                motivo=f"Fuera de todos los equipos: número {numero} liberado",
+                resultado="cerrada",
+                detalle=f"{r['huellas_olvidadas']} huella(s) olvidadas",
+                usuario_id=int(usuario.get("sub") or 0) or None)
+
+    if r.get("no_corresponde") or r.get("sin_numero"):
+        raise HTTPException(400, r["error"])
+    return {**r, "empleado": quien}
+
+
 @router.get("/huellas")
 def huellas_resumen(_user=Depends(require_permiso("accesos", "ver"))):
     """Cuantas huellas hay respaldadas, de cuando, y a quien le falta."""

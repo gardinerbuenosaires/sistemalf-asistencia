@@ -68,6 +68,43 @@ def _connect():
     return zk.connect()
 
 
+def revincular_huerfanos(conn) -> int:
+    """Fichajes sin dueño que ahora se pueden atribuir. Devuelve cuántos.
+
+    Aparte para poder probarla: lo que decide es a quién se le cuelgan
+    días de trabajo, y eso no se puede verificar solo contra un lector.
+    """
+    # Revincular fichajes huérfanos con todos los empleados (no solo los
+    # recién creados).
+    #
+    # Nunca por encima de la fecha en que ese número se liberó. El lector
+    # sugiere siempre el número libre más bajo, así que un número soltado
+    # vuelve a circulación enseguida y con otra persona. Sin ese corte, las
+    # fichadas viejas del anterior --que quedan huérfanas si llegaron
+    # mientras el número no tenía dueño-- se le colgarían al nuevo: días de
+    # trabajo de uno sumados a otro, sin que nada lo marque.
+    #
+    # El corte sale de `user_id_liberado_en` del empleado ANTERIOR, que es
+    # justo el dato que se guarda al soltar el número.
+    cur = conn.execute("""
+        UPDATE fichajes
+        SET empleado_id = (
+            SELECT id FROM empleados WHERE empleados.user_id = fichajes.user_id
+        )
+        WHERE empleado_id IS NULL
+          AND EXISTS (
+            SELECT 1 FROM empleados WHERE empleados.user_id = fichajes.user_id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM empleados ant
+             WHERE ant.user_id_anterior = fichajes.user_id
+               AND ant.user_id_liberado_en IS NOT NULL
+               AND fichajes.timestamp < ant.user_id_liberado_en
+          )
+    """)
+    return cur.rowcount
+
+
 def sync_attendances() -> dict:
     """
     Conecta al dispositivo, descarga todos los registros y guarda los nuevos.
@@ -302,18 +339,7 @@ def _save_users(users) -> dict:
         if fuera_ids:
             logger.warning("Empleados activos no encontrados en dispositivo: %s", fuera_ids)
 
-        # Revincular fichajes huérfanos con todos los empleados (no solo los recién creados)
-        cur = conn.execute("""
-            UPDATE fichajes
-            SET empleado_id = (
-                SELECT id FROM empleados WHERE empleados.user_id = fichajes.user_id
-            )
-            WHERE empleado_id IS NULL
-              AND EXISTS (
-                SELECT 1 FROM empleados WHERE empleados.user_id = fichajes.user_id
-              )
-        """)
-        vinculados = cur.rowcount
+        vinculados = revincular_huerfanos(conn)
 
     return {"nuevos": len(nuevos_ids), "nuevos_ids": nuevos_ids,
             "fichajes_vinculados": vinculados, "fuera_de_dispositivo": fuera_ids}

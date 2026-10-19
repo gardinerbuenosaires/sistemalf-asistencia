@@ -3812,8 +3812,9 @@ async function pintarBajas() {
 
   cuerpo.innerHTML = encabezado + `
     <div style="margin-top:10px">${d.personas.map(p => `
-      <div style="padding:8px 0;border-bottom:1px solid #f4f4f4;font-size:.86rem">
-        <div>
+      <div style="padding:8px 0;border-bottom:1px solid #f4f4f4;font-size:.86rem;
+                  display:flex;gap:10px;align-items:center">
+        <div style="flex:1;min-width:0">
           <b>${_esc(p.apellido || '')}, ${_esc(p.nombre || '')}</b>
           ${p.solo_acceso ? '<span style="background:#f6e9ce;color:#8a5d06;padding:1px 6px;border-radius:3px;font-size:.7rem;margin-left:4px">solo acceso</span>' : ''}
           <span style="color:#999;font-size:.78rem;margin-left:4px">
@@ -3822,10 +3823,48 @@ async function pintarBajas() {
               : 'sin fecha de egreso cargada'}</span>
         </div>
         <div style="color:#8a5d06;font-size:.8rem;margin-top:2px">${p.falta.map(_esc).join(' · ')}</div>
+        </div>
+        ${canDo('accesos','aplicar')
+          ? `<button class="btn btn-sm btn-secondary" style="flex:none"
+                     onclick="cerrarBaja(${p.id}, this)">Cerrar la baja</button>`
+          : ''}
       </div>`).join('')}</div>
     <div style="font-size:.78rem;color:#999;margin-top:12px">
-      El numero se libera desde el legajo de la persona; las huellas se olvidan al cerrar
-      la baja. Mientras el numero siga tomado, ningun otro empleado lo puede usar.</div>`;
+      <b>Cerrar la baja</b> saca a la persona de todas las puertas y del equipo de fichaje,
+      olvida sus huellas y libera su numero. Si algun equipo no contesta, el numero queda
+      ocupado y la baja sigue aca hasta completarla: el lector sugiere siempre el libre mas
+      bajo, asi que un numero soltado se lo lleva el proximo que entre.</div>`;
+}
+
+// Cerrar la baja: el circuito completo en un acto. Todo o nada para el
+// numero, que es lo unico irreversible de los cuatro pasos.
+async function cerrarBaja(empleadoId, boton) {
+  if (!confirm('Se va a sacar a esta persona de todas las puertas y del equipo de ' +
+               'fichaje, olvidar sus huellas y liberar su numero.\n\n' +
+               'Si algun equipo no contesta, el numero queda ocupado y se puede ' +
+               'reintentar. Las huellas quedan respaldadas en los archivos de borrado.')) return;
+  boton.disabled = true;
+  boton.textContent = 'Cerrando...';
+  let r = {};
+  try {
+    const res = await fetch('/api/accesos/cerrar-baja', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ empleado_id: empleadoId }),
+    });
+    r = await res.json();
+    if (!res.ok) throw new Error(r.detail || 'no se pudo');
+  } catch (e) {
+    boton.disabled = false;
+    boton.textContent = 'Reintentar';
+    return toast('Error: ' + e.message);
+  }
+  // Que no haya terminado no es un error: es trabajo que quedo, y el numero
+  // sigue ocupado justamente para que se vea.
+  toast(r.ok
+    ? `${r.empleado}: numero ${r.numero} liberado` +
+      (r.huellas_olvidadas ? ` y ${r.huellas_olvidadas} huella(s) olvidadas` : '')
+    : `${r.empleado}: ${r.error}`);
+  pintarBajas();
 }
 
 async function verHuellas() {

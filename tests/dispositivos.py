@@ -4204,5 +4204,182 @@ chequear("ni a la baja adelantada, que sigue trabajando",
          _le[_adelantada]["baja_pendiente"] is False, _le[_adelantada].get("baja_pendiente"))
 
 
+print("\n=== CERRAR LA BAJA ===")
+# El circuito que hacia Enterprise a mano: sacarlo de todas las puertas y del
+# equipo de fichaje, olvidar las huellas y soltar el numero. La regla que lo
+# ordena es que el numero se libera ULTIMO y solo si todo lo anterior salio
+# completo: el lector sugiere siempre el libre mas bajo, asi que un numero
+# soltado se lo lleva el proximo que entre, y si la persona seguia cargada en
+# una puerta que no contesto, esa puerta queda con una huella vieja abriendo
+# bajo un nombre nuevo.
+from sync import cierre_baja as _cbj
+
+_cc = sqlite3.connect(DB)
+_cc.row_factory = sqlite3.Row
+_cc.execute("UPDATE empleados SET activo=1, fecha_egreso=NULL")
+_cc.execute("DELETE FROM huellas")
+_eid_c = _cc.execute("SELECT id FROM empleados ORDER BY id LIMIT 1").fetchone()[0]
+_cc.execute("""UPDATE empleados SET activo=0, user_id='8001',
+                      fecha_egreso=date('now','localtime','-5 days') WHERE id=?""",
+            (_eid_c,))
+_cc.execute("INSERT INTO huellas (empleado_id, dedo, plantilla, tamano) "
+            "VALUES (?, 0, 'x', 1), (?, 1, 'y', 1)", (_eid_c, _eid_c))
+_cc.commit()
+
+
+def _emp_c():
+    return dict(_cc.execute(
+        "SELECT id, nombre, apellido, user_id FROM empleados WHERE id=?",
+        (_eid_c,)).fetchone())
+
+
+def _lector(usuarios=("8001",), ok=True, completa=True, declarados=None):
+    """Una lectura como la que devuelve leer_cargados."""
+    lista = [{"user_id": u, "nombre": "X", "uid": 1, "huellas": 2} for u in usuarios]
+    return lambda eq: {"ok": ok, "error": None if ok else "no contesta",
+                       "usuarios": lista, "completa": completa,
+                       "declarados": declarados if declarados is not None else len(lista)}
+
+
+_sacados = []
+_sacar_ok = lambda eq, num: (_sacados.append((eq["id"], num)),
+                             {"ok": True, "respaldo": "x.json", "error": None})[1]
+_sync_ok = lambda: {"leidos": 10, "nuevos": 0, "error": None}
+
+# 1. Una puerta que no contesta: se saca de las demas, pero el numero NO se suelta.
+_una_muda = {"n": 0}
+def _leer_una_muda(eq):
+    _una_muda["n"] += 1
+    if _una_muda["n"] == 2:
+        return {"ok": False, "error": "timeout", "usuarios": []}
+    return _lector()(eq)
+
+_sacados.clear()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok, leer=_leer_una_muda)
+chequear("si un equipo no contesta, la baja no se cierra", _r["ok"] is False, _r["error"])
+chequear("y el numero sigue ocupado",
+         _emp_c()["user_id"] == "8001", _emp_c())
+chequear("pero se saco de los que si contestaron", len(_sacados) >= 1, _sacados)
+chequear("y se dice en cual quedo pendiente", _r["pendientes"], _r["pendientes"])
+chequear("las huellas no se olvidan hasta cerrar",
+         _cc.execute("SELECT COUNT(*) FROM huellas WHERE empleado_id=?",
+                     (_eid_c,)).fetchone()[0] == 2)
+
+# 2. Una lista incompleta tampoco autoriza a concluir que no esta.
+_sacados.clear()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok,
+                 leer=_lector(usuarios=(), completa=False, declarados=150))
+chequear("una lectura incompleta no cierra nada", _r["ok"] is False, _r["error"])
+chequear("y el numero sigue ocupado", _emp_c()["user_id"] == "8001", _emp_c())
+
+# 3. Sin sincronizar no se toca el equipo de fichaje: ahi viven sus ultimas
+#    fichadas, y si llegan despues con el numero ya reasignado se le acreditan
+#    al nuevo, que esta activo y no dispara ninguna inconsistencia.
+_sacados.clear()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=lambda: {"error": "no conecta"},
+                 sacar=_sacar_ok, leer=_lector())
+chequear("si no se pudo sincronizar, no se cierra", _r["ok"] is False, _r["error"])
+chequear("y el equipo de fichaje queda sin tocar",
+         any(e["accion"] == "no se tocó" for e in _r["equipos"]), _r["equipos"])
+chequear("el numero sigue ocupado", _emp_c()["user_id"] == "8001", _emp_c())
+
+# 4. Todo sale bien: recien ahi se olvida la huella y se suelta el numero.
+_sacados.clear()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok, leer=_lector())
+chequear("con todos los equipos limpios la baja se cierra", _r["ok"] is True, _r["error"])
+chequear("se lo saco de cada equipo donde estaba", len(_sacados) >= 1, _sacados)
+chequear("se olvidaron sus huellas", _r["huellas_olvidadas"] == 2, _r)
+chequear("y la tabla quedo sin ninguna suya",
+         _cc.execute("SELECT COUNT(*) FROM huellas WHERE empleado_id=?",
+                     (_eid_c,)).fetchone()[0] == 0)
+_e = _cc.execute("SELECT user_id, user_id_anterior, user_id_liberado_en "
+                 "FROM empleados WHERE id=?", (_eid_c,)).fetchone()
+chequear("el numero quedo libre", _e["user_id"] is None, dict(_e))
+chequear("pero se guardo de quien era, que es lo unico que explica un numero "
+         "huerfano en una puerta", _e["user_id_anterior"] == "8001", dict(_e))
+chequear("con la fecha en que se solto", _e["user_id_liberado_en"], dict(_e))
+
+# 5. La baja adelantada: activo=0 con egreso futuro sigue entrando hasta la
+#    vispera. Cerrarla el dia que se carga la deja afuera antes de tiempo.
+_cc.execute("""UPDATE empleados SET activo=0, user_id='8002',
+                      fecha_egreso=date('now','localtime','+7 days') WHERE id=?""",
+            (_eid_c,))
+_cc.commit()
+_sacados.clear()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok, leer=_lector())
+chequear("una baja adelantada no se puede cerrar todavia",
+         _r.get("no_corresponde") is True, _r)
+chequear("y no se toco ningun equipo", _sacados == [], _sacados)
+chequear("el numero sigue siendo suyo", _emp_c()["user_id"] == "8002", _emp_c())
+
+# 6. Sin numero no hay nada que liberar, y conviene decirlo en vez de fallar.
+_cc.execute("UPDATE empleados SET user_id=NULL, fecha_egreso=date('now','localtime','-5 days') "
+            "WHERE id=?", (_eid_c,))
+_cc.commit()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok, leer=_lector())
+chequear("sin numero asignado lo dice en vez de romperse",
+         _r.get("sin_numero") is True, _r)
+_cc.close()
+
+# El endpoint y su permiso.
+_rc = cli.post("/api/accesos/cerrar-baja", json={"empleado_id": 999999})
+chequear("un empleado que no existe da 404", _rc.status_code == 404, _rc.status_code)
+chequear("pide accesos:aplicar",
+         _mirar.post("/api/accesos/cerrar-baja",
+                     json={"empleado_id": _eid_c}).status_code == 403)
+
+
+print("\n=== UN NUMERO REUSADO NO HEREDA HISTORIA ===")
+# El lector sugiere siempre el numero libre mas bajo, asi que un numero soltado
+# vuelve a circulacion enseguida y con otra persona. Las fichadas del anterior
+# que hayan quedado huerfanas --llegaron cuando el numero ya no tenia dueño-- no
+# se le pueden colgar al nuevo: serian dias de trabajo de uno sumados a otro, y
+# el nuevo esta activo asi que no se marca ninguna inconsistencia.
+from sync.downloader import revincular_huerfanos as _revincular
+
+_cr = sqlite3.connect(DB)
+_cr.row_factory = sqlite3.Row
+_cr.execute("DELETE FROM fichajes")
+_viejo_r, _nuevo_r = [r[0] for r in _cr.execute(
+    "SELECT id FROM empleados ORDER BY id LIMIT 2").fetchall()]
+
+# El que se fue: tenia el 9100 y se lo solto el dia 10.
+_cr.execute("""UPDATE empleados SET user_id=NULL, user_id_anterior='9100',
+                      user_id_liberado_en='2026-03-10 09:00:00' WHERE id=?""",
+            (_viejo_r,))
+# El que entro despues y se quedo con ese numero.
+_cr.execute("UPDATE empleados SET user_id='9100', user_id_anterior=NULL, "
+            "user_id_liberado_en=NULL WHERE id=?", (_nuevo_r,))
+# Dos fichadas sin dueño: una de antes de soltarlo --del que se fue-- y otra de
+# despues, que solo puede ser del nuevo.
+for _ts in ("2026-03-05 08:00:00", "2026-03-20 08:00:00"):
+    _cr.execute("INSERT INTO fichajes (empleado_id, user_id, timestamp) "
+                "VALUES (NULL, '9100', ?)", (_ts,))
+_cr.commit()
+
+_n = _revincular(_cr)
+_quedo = {r["timestamp"]: r["empleado_id"] for r in _cr.execute(
+    "SELECT timestamp, empleado_id FROM fichajes WHERE user_id='9100'")}
+chequear("la fichada posterior a la liberacion se le da al nuevo",
+         _quedo["2026-03-20 08:00:00"] == _nuevo_r, _quedo)
+chequear("y la anterior NO: era del que se fue",
+         _quedo["2026-03-05 08:00:00"] is None, _quedo)
+chequear("se informa cuantas se vincularon", _n == 1, _n)
+
+# Sin numero reusado se comporta como siempre: el corte no puede frenar el caso
+# normal, que es una fichada que llego antes de que el legajo existiera.
+_cr.execute("DELETE FROM fichajes")
+_cr.execute("UPDATE empleados SET user_id_anterior=NULL, user_id_liberado_en=NULL "
+            "WHERE id=?", (_viejo_r,))
+_cr.execute("INSERT INTO fichajes (empleado_id, user_id, timestamp) "
+            "VALUES (NULL, '9100', '2026-03-05 08:00:00')")
+_cr.commit()
+chequear("sin numero reusado, la huerfana se vincula igual que siempre",
+         _revincular(_cr) == 1)
+_cr.execute("DELETE FROM fichajes")
+_cr.commit()
+_cr.close()
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

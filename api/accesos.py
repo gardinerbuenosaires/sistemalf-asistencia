@@ -1291,6 +1291,23 @@ def bajas_pendientes(_user=Depends(require_permiso("accesos", "ver"))):
         return {"personas": pendientes(conn), "resumen": resumen(conn)}
 
 
+@router.get("/revision")
+def revision(usuario=Depends(get_current_user)):
+    """
+    El informe de la ultima revision nocturna, filtrado por lo que ese usuario ve.
+
+    Sin permiso propio: cualquiera que entre al sistema puede ver la linea del
+    tablero, pero solo cuenta los hallazgos de los modulos que esa persona
+    puede mirar. Si no, la linea diria «3 cosas» y al abrirla mostraria una.
+    """
+    from auth.core import get_permisos_rol
+    from sync.revision import ultima
+
+    permisos = {f"{m}:{a}" for m, a in get_permisos_rol(int(usuario.get("rol_id") or 0))}
+    with db_session() as conn:
+        return ultima(conn, permisos)
+
+
 def _leer_para_bajas():
     """Los equipos que el sistema administra, leídos de una sola vez.
 

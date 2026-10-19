@@ -47,6 +47,20 @@
   .filters label { font-size: 0.85rem; color: #666; }
   .filters input, .filters select { display: block; padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 0.9rem; margin-top: 4px; }
   #toast { position: fixed; bottom: 24px; right: 24px; background: #2c3e50; color: white; padding: 12px 20px; border-radius: 8px; display: none; }
+  /* La revision de anoche. Ancho completo y arriba de todo lo que hay que
+     scrollear: es lo unico de esta pantalla que pide que alguien haga algo.
+     Cuando no hay nada queda la linea gris, que ocupa casi nada y confirma que
+     la revision corrio -- sin eso, «no hay nada» y «no corrio» se ven igual. */
+  .revision { border-radius: 8px; padding: 10px 16px; margin-bottom: 18px;
+              font-size: .88rem; display: flex; align-items: center; gap: 10px; }
+  .revision.ok { background: #f6f7f8; color: #999; font-size: .8rem; padding: 6px 16px; }
+  .revision.hay { cursor: pointer; }
+  .revision.rojo { background: #fbe9e7; color: #8c1d18; border-left: 4px solid #b3261e; }
+  .revision.ambar { background: #f6e9ce; color: #6b5a26; border-left: 4px solid #d6a52a; }
+  .revision b { font-weight: 700; }
+  .revision .ver { margin-left: auto; font-size: .78rem; text-decoration: underline; }
+  .revision-item { padding: 9px 0; border-bottom: 1px solid #f0f0f0; font-size: .88rem; }
+  .revision-item .donde { color: #999; font-size: .78rem; }
   .presencia-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
   .presencia-cargo { margin-bottom: 20px; }
   .presencia-cargo h3 { font-size: 0.8rem; font-weight: bold; text-transform: uppercase; color: #888; letter-spacing: .05em; margin-bottom: 8px; }
@@ -147,6 +161,8 @@
       <div class="value" style="font-size:1rem;margin-top:4px" id="ultima-sync">—</div>
     </div>
   </div>
+
+  <div id="revision-franja"></div>
 
   <div class="section">
     <h2>Presencia ahora <span id="cnt-presentes" style="font-size:.85rem;color:#888;font-weight:normal;margin-left:8px"></span></h2>
@@ -400,8 +416,87 @@ async function loadPresencia(opts = {}) {
   }
 }
 
+function _revEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+// La revision de anoche. Lo que muestra no es lo que encontro sino lo que
+// necesita que alguien haga algo: si la franja apareciera todos los dias, en
+// quince dias no la mira nadie.
+let _revision = null;
+
+async function loadRevision(opts) {
+  const caja = document.getElementById("revision-franja");
+  if (!caja) return;
+  try {
+    const res = await fetch("/api/accesos/revision", opts);
+    if (!res.ok) { caja.innerHTML = ""; return; }
+    _revision = await res.json();
+  } catch (e) { caja.innerHTML = ""; return; }
+
+  const d = _revision;
+
+  // Que no haya corrido nunca, o que se haya roto, no puede verse igual que
+  // «no encontro nada». Un proceso que se calla cuando falla deja tranquilo
+  // justo cuando no hay que estarlo.
+  if (!d.corrio) {
+    caja.innerHTML = `<div class="revision ok">La revisión nocturna todavía no corrió.
+      Corre todos los días a las 3.</div>`;
+    return;
+  }
+  if (d.error) {
+    caja.innerHTML = `<div class="revision rojo"><b>La revisión de anoche falló.</b>
+      <span>${_revEsc(d.error)}</span></div>`;
+    return;
+  }
+  if (!d.hallazgos.length) {
+    caja.innerHTML = `<div class="revision ok">Revisión de
+      ${_revEsc(d.corrida_en || '')} — todo en orden.</div>`;
+    return;
+  }
+
+  const partes = [];
+  if (d.rojos)   partes.push(`<b>${d.rojos} cosa(s) para mirar hoy</b>`);
+  if (d.ambares) partes.push(`${d.ambares} para esta semana`);
+  caja.innerHTML = `
+    <div class="revision hay ${d.rojos ? 'rojo' : 'ambar'}" onclick="verRevision()">
+      <span>${partes.join(' · ')}</span>
+      <span class="ver">Ver el informe</span>
+    </div>`;
+}
+
+function verRevision() {
+  if (!_revision) return;
+  const d = _revision;
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:640px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Revisión del ${_revEsc(d.corrida_en || '')}</div>
+      <div style="font-size:.8rem;color:#888;margin-top:4px">
+        Corre todos los días a las 3 y sólo mira: no cambia nada en ningún equipo.
+        Cada línea dice dónde se arregla.</div>
+      <div style="margin-top:12px;flex:1 1 auto;min-height:0;overflow-y:auto">
+        ${d.hallazgos.map(h => `
+          <div class="revision-item">
+            <div><span style="color:${h.nivel === 'rojo' ? '#b3261e' : '#8a5d06'};font-weight:700">
+              ${h.cuantos}</span> ${_revEsc(h.titulo)}</div>
+            ${h.detalle ? `<div style="color:#666;font-size:.82rem">${_revEsc(h.detalle)}</div>` : ''}
+            <div class="donde">${_revEsc(h.donde)}</div>
+          </div>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex:none">
+        <button class="btn btn-primary"
+                onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
 async function init() {
-  await Promise.all([loadEmpleados(), loadAltasBajasMes(), loadPresencia(), loadCntHoy(), loadSyncLog()]);
+  await Promise.all([loadEmpleados(), loadAltasBajasMes(), loadPresencia(),
+                     loadCntHoy(), loadSyncLog(), loadRevision()]);
 }
 
 init();

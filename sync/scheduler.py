@@ -269,6 +269,69 @@ def _sincronizar_hora_auto():
 _fecha_ultimo_sync_puertas = None
 
 
+_fecha_ultima_revision = None
+
+
+def _revision_nocturna():
+    """
+    Una vez por dia, de madrugada: mira todo y deja un informe. SOLO LEE.
+
+    Existe porque media docena de pantallas del sistema solo hablan si alguien
+    las abre --el plan de cambios, las bajas pendientes, el respaldo de huellas--
+    y con una baja por mes es perfectamente posible que pasen seis meses sin que
+    nadie entre. Lo que se acumula ahi no es desprolijidad: es gente que sigue
+    abriendo puertas despues de irse.
+
+    No aplica nada y no va a aplicar nunca. Un proceso que corrige solo a las
+    tres de la maniana es el que deja a alguien afuera un domingo a las siete
+    sin que nadie sepa por que.
+
+    A las 3, cuando el local esta cerrado y los equipos sin uso: leer los ocho
+    lectores mientras alguien esta fichando es pelearle el equipo a la gente que
+    entra a trabajar.
+    """
+    global _fecha_ultima_revision
+    ahora = datetime.now()
+    hoy = str(ahora.date())
+    if _fecha_ultima_revision == hoy or ahora.hour != 3:
+        return
+
+    try:
+        from db.database import db_session
+        from sync.cierre_baja import _lista_equipos
+        from sync.lectores import leer_cargados_varios
+        from sync.plan_accesos import armar_plan
+        from sync.revision import correr, guardar
+
+        with db_session() as conn:
+            equipos = _lista_equipos(conn)
+        if not equipos:
+            return
+
+        lecturas = leer_cargados_varios(equipos)
+        puertas = [e for e in equipos if e["es_acceso"]]
+        maestros = [e for e in equipos if e["cuenta_asistencia"] and not e["es_acceso"]]
+        with db_session() as conn:
+            plan = armar_plan(conn, puertas, lecturas,
+                              lecturas.get(maestros[0]["id"]) if maestros else None)
+            hallazgos = correr(conn, lecturas, equipos, plan)
+            guardar(conn, hallazgos)
+        _fecha_ultima_revision = hoy
+        logger.info("Revision nocturna: %s hallazgo(s)", len(hallazgos))
+    except Exception as e:
+        logger.error("Error en la revision nocturna: %s", e)
+        # Que falle tiene que quedar escrito: un informe que no aparece y una
+        # revision que se rompio se ven igual desde el tablero.
+        try:
+            from db.database import db_session
+            from sync.revision import guardar
+            with db_session() as conn:
+                guardar(conn, [], error=f"{type(e).__name__}: {e}")
+            _fecha_ultima_revision = hoy
+        except Exception:
+            pass
+
+
 def _sincronizar_hora_puertas():
     """
     Les pone la hora a los lectores de puerta, una vez por día, de madrugada.
@@ -672,6 +735,7 @@ def start_scheduler():
             _cerrar_premios_periodo_auto()
             _evaluar_barrido_manana()
             _limpiar_registros_dispositivo_auto()
+            _revision_nocturna()
             time.sleep(3600)
 
     threading.Thread(target=sync_loop, daemon=True, name="sync-scheduler").start()

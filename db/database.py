@@ -288,6 +288,28 @@ def init_db():
             );
 
             -- ================================================================
+            -- REVISIONES
+            -- ================================================================
+            -- Lo que la revision nocturna encontro. Se guarda en vez de
+            -- calcularse cuando alguien abre el tablero porque leer los ocho
+            -- lectores son varios segundos, y el tablero se abre cien veces
+            -- por dia.
+            --
+            -- Guardar la corrida da ademas lo otro que hace falta: CUANDO
+            -- corrio. Sin eso no se puede distinguir «no encontro nada» de
+            -- «no corrio», y la segunda es la peligrosa -- un proceso que se
+            -- calla cuando se rompe deja tranquilo justo cuando no hay que
+            -- estarlo.
+            CREATE TABLE IF NOT EXISTS revisiones (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                corrida_en  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                hallazgos   TEXT NOT NULL,
+                rojos       INTEGER NOT NULL DEFAULT 0,
+                ambares     INTEGER NOT NULL DEFAULT 0,
+                error       TEXT
+            );
+
+            -- ================================================================
             -- INCONSISTENCIAS
             -- ================================================================
             CREATE TABLE IF NOT EXISTS inconsistencias (

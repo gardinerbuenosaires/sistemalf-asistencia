@@ -4499,5 +4499,122 @@ chequear("y cerrar en tanda pide accesos:aplicar",
          _mirar.post("/api/accesos/bajas-pendientes/cerrar-afuera").status_code == 403)
 
 
+print("\n=== LA REVISION NOCTURNA ===")
+# Media docena de pantallas del sistema solo hablan si alguien las abre. Con una
+# baja por mes es posible que pasen seis meses sin que nadie entre, y lo que se
+# acumula ahi no es desprolijidad: es gente que sigue abriendo puertas despues
+# de irse. La revision mira todo una vez por dia y deja un informe. SOLO LEE.
+from sync import revision as _rev
+
+_cv = sqlite3.connect(DB)
+_cv.row_factory = sqlite3.Row
+_cv.execute("DELETE FROM revisiones")
+_cv.execute("DELETE FROM huellas")
+_cv.execute("DELETE FROM inconsistencias")
+_cv.execute("UPDATE empleados SET activo=1, fecha_egreso=NULL")
+_eqs_v = _cbj._lista_equipos(_cv)
+_cv.commit()
+
+# Sin nada que informar, la lista sale vacia.
+_lec_v = {eq["id"]: {"ok": True, "error": None, "completa": True,
+                     "declarados": 0, "usuarios": []} for eq in _eqs_v}
+# Con todos los equipos leidos y sin bajas pendientes no hay NADA en rojo. Que
+# haya algo en ambar es correcto: nadie tiene la huella respaldada en la copia.
+chequear("sin equipos mudos ni bajas sin cerrar, no hay nada en rojo",
+         not [x for x in _rev.correr(_cv, _lec_v, _eqs_v, None) if x["nivel"] == "rojo"],
+         [x["clave"] for x in _rev.correr(_cv, _lec_v, _eqs_v, None)])
+
+# Un equipo mudo: rojo. Es lo que significa que el sistema perdio contacto.
+_lec_mudo = dict(_lec_v)
+_lec_mudo[_eqs_v[0]["id"]] = {"ok": False, "error": "timeout", "usuarios": []}
+_h = _rev.correr(_cv, _lec_mudo, _eqs_v, None)
+chequear("un equipo que no contesta va en rojo",
+         any(x["clave"] == "equipos_mudos" and x["nivel"] == "rojo" for x in _h), _h)
+chequear("y dice cual y por que",
+         _eqs_v[0]["nombre"] in next(x for x in _h if x["clave"] == "equipos_mudos")["detalle"], _h)
+
+# Una lista corta cuenta igual que no contestar: parece una respuesta y no lo es.
+_lec_corta = dict(_lec_v)
+_lec_corta[_eqs_v[0]["id"]] = {"ok": True, "error": None, "completa": False,
+                               "declarados": 150, "usuarios": []}
+chequear("una lista corta tambien es un equipo sin leer",
+         any(x["clave"] == "equipos_mudos"
+             for x in _rev.correr(_cv, _lec_corta, _eqs_v, None)))
+
+# Una baja sin cerrar: rojo, porque sigue con el numero tomado.
+_eid_v = _cv.execute("SELECT id FROM empleados ORDER BY id LIMIT 1").fetchone()[0]
+_cv.execute("""UPDATE empleados SET activo=0, user_id='8201',
+                      fecha_egreso=date('now','localtime','-30 days') WHERE id=?""",
+            (_eid_v,))
+_cv.commit()
+_h = _rev.correr(_cv, _lec_v, _eqs_v, None)
+_bj = next((x for x in _h if x["clave"] == "bajas_sin_cerrar"), None)
+chequear("una baja sin cerrar va en rojo", _bj and _bj["nivel"] == "rojo", _h)
+chequear("contada, no listada", _bj["cuantos"] == 1, _bj)
+
+# Una fichada de alguien dado de baja: rojo. Se venia registrando desde siempre
+# y no habia ninguna pantalla que la mostrara.
+_cv.execute("""INSERT INTO inconsistencias (empleado_id, user_id, fecha, tipo, motivo)
+               VALUES (?, '8201', date('now'), 'fichaje_baja', 'x')""", (_eid_v,))
+_cv.commit()
+_fb = next((x for x in _rev.correr(_cv, _lec_v, _eqs_v, None)
+            if x["clave"] == "fichaje_baja"), None)
+chequear("una fichada de alguien de baja va en rojo",
+         _fb and _fb["nivel"] == "rojo" and _fb["cuantos"] == 1, _fb)
+chequear("y se mira con permiso de asistencia, no de accesos",
+         _fb["permiso"] == "asistencia:ver", _fb)
+
+# Cargados donde no corresponde: un renglon por puerta con el numero, no una
+# linea por persona. Una puerta con 80 de mas tiene que entrar en la pantalla.
+_plan_v = {"puertas": [{"id": 1, "nombre": "Vinos", "agregar": [],
+                        "sacar": [{"user_id": str(n), "motivo": "sin_derecho"}
+                                  for n in range(80)]
+                                 + [{"user_id": "999", "motivo": "sin_perfil"}]}]}
+_h = _rev.correr(_cv, _lec_v, _eqs_v, _plan_v)
+_so = next((x for x in _h if x["clave"].startswith("sobran:")), None)
+chequear("los cargados de mas van en rojo, contados por puerta",
+         _so and _so["nivel"] == "rojo" and _so["cuantos"] == 80, _so)
+chequear("en un solo renglon, no ochenta",
+         sum(1 for x in _h if x["clave"].startswith("sobran:")) == 1, _h)
+_sp = next((x for x in _h if x["clave"] == "sin_perfil"), None)
+chequear("y el que no tiene perfil va en ambar, que es trabajo y no urgencia",
+         _sp and _sp["nivel"] == "ambar" and _sp["cuantos"] == 1, _sp)
+chequear("lo rojo va primero", _h[0]["nivel"] == "rojo", [x["clave"] for x in _h])
+
+# Guardar y leer: lo que distingue «no encontro nada» de «no corrio».
+chequear("sin ninguna corrida, el tablero sabe que no corrio",
+         _rev.ultima(_cv)["corrio"] is False)
+_rev.guardar(_cv, _h)
+_cv.commit()
+_u = _rev.ultima(_cv)
+chequear("despues de guardar, corrio", _u["corrio"] is True, _u)
+chequear("con la cuenta de rojos y ambares separada",
+         _u["rojos"] >= 2 and _u["ambares"] >= 1, _u)
+chequear("y con la fecha de cuando fue", bool(_u["corrida_en"]), _u)
+
+# Cada uno ve lo que puede ver: si la linea dice «3 cosas» y al abrirla hay una,
+# la proxima vez nadie la abre.
+_solo_asist = _rev.ultima(_cv, permisos={"asistencia:ver"})
+chequear("sin accesos:ver no se ven los hallazgos de accesos",
+         all(x["permiso"] == "asistencia:ver" for x in _solo_asist["hallazgos"]),
+         _solo_asist["hallazgos"])
+chequear("y la cuenta acompania a lo que se ve",
+         _solo_asist["rojos"] == len([x for x in _solo_asist["hallazgos"]
+                                      if x["nivel"] == "rojo"]), _solo_asist)
+
+# Una corrida que fallo se guarda como fallada: un informe que no aparece y una
+# revision rota se ven igual desde el tablero si no se anota.
+_rev.guardar(_cv, [], error="no conecta")
+_cv.commit()
+chequear("una revision que fallo queda anotada como tal",
+         _rev.ultima(_cv)["error"] == "no conecta", _rev.ultima(_cv))
+_cv.close()
+
+_rv = cli.get("/api/accesos/revision")
+chequear("el endpoint del tablero responde 200", _rv.status_code == 200, _rv.text[:160])
+chequear("y no pide ningun permiso propio: filtra por lo que cada uno ve",
+         _rrhh.get("/api/accesos/revision").status_code == 200)
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

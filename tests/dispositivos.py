@@ -4390,5 +4390,114 @@ _cr.commit()
 _cr.close()
 
 
+print("\n=== CERRAR EN TANDA LAS QUE YA SALIERON ===")
+# El caso de la puesta en marcha: se juntaron anios de bajas que nadie podia
+# cerrar porque no habia con que. Cerrarlas de a una lee los ocho equipos cada
+# vez; para cuarenta y siete son cientos de conexiones para contestar algo que
+# una sola lectura ya contesta.
+_ct = sqlite3.connect(DB)
+_ct.row_factory = sqlite3.Row
+_ct.execute("UPDATE empleados SET activo=1, fecha_egreso=NULL")
+_ct.execute("DELETE FROM huellas")
+_afuera_t, _dentro_t = [r[0] for r in _ct.execute(
+    "SELECT id FROM empleados ORDER BY id LIMIT 2").fetchall()]
+for _eid, _num in ((_afuera_t, "8101"), (_dentro_t, "8102")):
+    _ct.execute("""UPDATE empleados SET activo=0, user_id=?,
+                          fecha_egreso=date('now','localtime','-20 days') WHERE id=?""",
+                (_num, _eid))
+    _ct.execute("INSERT INTO huellas (empleado_id, dedo, plantilla, tamano) "
+                "VALUES (?, 0, 'x', 1)", (_eid,))
+_ct.commit()
+
+_eqs_t = _cbj._lista_equipos(_ct)
+chequear("hay equipos que el sistema administra para preguntarles",
+         len(_eqs_t) >= 2, len(_eqs_t))
+
+
+def _lect_t(cargados, mudo=None, corta=None):
+    """Una lectura por equipo; `mudo` y `corta` por id de equipo."""
+    salida = {}
+    for eq in _eqs_t:
+        if eq["id"] == mudo:
+            salida[eq["id"]] = {"ok": False, "error": "timeout", "usuarios": []}
+        elif eq["id"] == corta:
+            salida[eq["id"]] = {"ok": True, "error": None, "completa": False,
+                                "declarados": 150,
+                                "usuarios": [{"user_id": u} for u in cargados]}
+        else:
+            salida[eq["id"]] = {"ok": True, "error": None, "completa": True,
+                                "declarados": len(cargados),
+                                "usuarios": [{"user_id": u} for u in cargados]}
+    return salida
+
+
+# Comprobar: dice donde sigue cargado cada uno, sin cerrar nada.
+_cmp = _cbj.comprobar(_ct, _lect_t(["8102"]), _eqs_t)
+_pc = {p["id"]: p for p in _cmp["personas"]}
+chequear("comprobar dice que el que no esta, no esta",
+         _pc[_afuera_t]["afuera"] is True and _pc[_afuera_t]["en_equipos"] == [],
+         _pc[_afuera_t])
+chequear("y en que equipos sigue el otro",
+         _pc[_dentro_t]["afuera"] is False
+         and len(_pc[_dentro_t]["en_equipos"]) == len(_eqs_t), _pc[_dentro_t])
+chequear("con todos los equipos leidos, la comprobacion es confiable",
+         _cmp["confiable"] is True, _cmp["equipos_con_problema"])
+chequear("y no cerro nada: sigue teniendo su numero",
+         _ct.execute("SELECT user_id FROM empleados WHERE id=?",
+                     (_afuera_t,)).fetchone()[0] == "8101")
+
+_cmp2 = _cbj.comprobar(_ct, _lect_t(["8102"], mudo=_eqs_t[0]["id"]), _eqs_t)
+chequear("con un equipo mudo la comprobacion se declara no confiable",
+         _cmp2["confiable"] is False and _cmp2["equipos_con_problema"], _cmp2)
+
+# Un equipo mudo frena la tanda ENTERA. «No aparece» en una lectura que fallo no
+# significa «no esta», y soltar el numero de alguien que sigue cargado en esa
+# puerta lo pone en circulacion con la huella vieja todavia abriendo.
+_r = _cbj.cerrar_afuera(_ct, _lect_t(["8102"], mudo=_eqs_t[0]["id"]), _eqs_t)
+chequear("con un equipo mudo no se cierra NINGUNA", _r["ok"] is False, _r["error"])
+chequear("y se dice cual fue", _r["equipos_con_problema"], _r)
+chequear("nadie perdio su numero",
+         _ct.execute("SELECT COUNT(*) FROM empleados WHERE user_id IN ('8101','8102')"
+                     ).fetchone()[0] == 2)
+
+# Una lista corta cuenta igual que no leida: el que falta puede ser justo este.
+_r = _cbj.cerrar_afuera(_ct, _lect_t(["8102"], corta=_eqs_t[0]["id"]), _eqs_t)
+chequear("una lista corta tambien frena la tanda", _r["ok"] is False, _r["error"])
+
+# Con todo leido: cierra al que salio y no toca al que sigue cargado.
+_r = _cbj.cerrar_afuera(_ct, _lect_t(["8102"]), _eqs_t)
+chequear("cierra al que ya no esta en ningun lado", _r["cerradas"] == 1, _r)
+chequear("y deja al que sigue cargado", _r["siguen"] == 1, _r)
+_fa = _ct.execute("SELECT user_id, user_id_anterior FROM empleados WHERE id=?",
+                  (_afuera_t,)).fetchone()
+chequear("al cerrado se le solto el numero", _fa["user_id"] is None, dict(_fa))
+chequear("guardando cual era", _fa["user_id_anterior"] == "8101", dict(_fa))
+chequear("y se le olvidaron las huellas",
+         _ct.execute("SELECT COUNT(*) FROM huellas WHERE empleado_id=?",
+                     (_afuera_t,)).fetchone()[0] == 0)
+_fd = _ct.execute("SELECT user_id FROM empleados WHERE id=?", (_dentro_t,)).fetchone()
+chequear("al que sigue cargado no se le toco el numero", _fd[0] == "8102", dict(_fd))
+chequear("ni sus huellas",
+         _ct.execute("SELECT COUNT(*) FROM huellas WHERE empleado_id=?",
+                     (_dentro_t,)).fetchone()[0] == 1)
+
+# Y una baja adelantada no entra en la tanda: todavia trabaja.
+_ct.execute("""UPDATE empleados SET activo=0, user_id='8103',
+                      fecha_egreso=date('now','localtime','+9 days') WHERE id=?""",
+            (_afuera_t,))
+_ct.commit()
+_r = _cbj.cerrar_afuera(_ct, _lect_t(["8102"]), _eqs_t)
+chequear("una baja adelantada no se cierra en tanda",
+         _ct.execute("SELECT user_id FROM empleados WHERE id=?",
+                     (_afuera_t,)).fetchone()[0] == "8103", _r)
+_ct.close()
+
+# Los permisos de los dos endpoints.
+chequear("comprobar pide accesos:ver",
+         _rrhh.get("/api/accesos/bajas-pendientes/comprobar").status_code == 403)
+chequear("y cerrar en tanda pide accesos:aplicar",
+         _mirar.post("/api/accesos/bajas-pendientes/cerrar-afuera").status_code == 403)
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

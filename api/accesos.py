@@ -1291,6 +1291,82 @@ def bajas_pendientes(_user=Depends(require_permiso("accesos", "ver"))):
         return {"personas": pendientes(conn), "resumen": resumen(conn)}
 
 
+def _leer_para_bajas():
+    """Los equipos que el sistema administra, leídos de una sola vez.
+
+    Una lectura para toda la lista, no una por persona. El cierre de a uno lee
+    los ocho equipos cada vez, que está bien para una persona y es inviable
+    para cuarenta: serían cientos de conexiones para contestar algo que una
+    sola lectura ya contesta.
+    """
+    from sync.cierre_baja import _lista_equipos
+    from sync.lectores import leer_cargados_varios
+
+    with db_session() as conn:
+        equipos = _lista_equipos(conn)
+    if not equipos:
+        return [], {}
+    return equipos, leer_cargados_varios(equipos)
+
+
+@router.get("/bajas-pendientes/comprobar")
+def bajas_pendientes_comprobar(_user=Depends(require_permiso("accesos", "ver"))):
+    """
+    Dónde sigue cargada cada baja pendiente, preguntándoselo a los equipos.
+
+    Es lo que la lista sola no puede decir: ella mira la base, y la base no
+    sabe qué tiene cargado un lector. Va aparte y a pedido porque son ocho
+    equipos y varios segundos; la lista se abre a mirar y tiene que abrir ya.
+    """
+    from sync.cierre_baja import comprobar
+
+    equipos, lecturas = _leer_para_bajas()
+    if not equipos:
+        raise HTTPException(400, "No hay ningún lector que el sistema administre.")
+    with db_session() as conn:
+        return comprobar(conn, lecturas, equipos)
+
+
+@router.post("/bajas-pendientes/cerrar-afuera")
+def bajas_pendientes_cerrar_afuera(
+        usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Cierra de una vez todas las bajas que ya no están en ningún equipo.
+
+    No le escribe nada a los lectores: esa gente ya salió, lo que queda es la
+    parte de base —olvidar las huellas y soltar el número—. Es el caso de la
+    puesta en marcha, donde se juntaron años de bajas que nadie podía cerrar
+    porque no había con qué.
+
+    Hace su propia lectura en vez de confiar en la que mostró la pantalla: entre
+    que alguien miró la lista y apretó el botón pudo pasar cualquier cosa, y lo
+    que se decide acá —soltar un número— es lo único irreversible del circuito.
+
+    Si algún equipo no contestó no cierra a nadie, y lo dice. Con un lector sin
+    leer no se puede afirmar de NADIE que esté afuera.
+    """
+    from sync.cierre_baja import cerrar_afuera
+
+    equipos, lecturas = _leer_para_bajas()
+    if not equipos:
+        raise HTTPException(400, "No hay ningún lector que el sistema administre.")
+
+    with db_session() as conn:
+        r = cerrar_afuera(conn, lecturas, equipos)
+        for d in r["detalle"]:
+            if not d["cerrada"]:
+                continue
+            _registrar_operacion(
+                conn, user_id=d.get("numero"), empleado_id=d["empleado_id"],
+                accion="cerrar baja",
+                motivo=f"Fuera de todos los equipos: número "
+                       f"{d.get('numero') or '(sin número)'} liberado",
+                resultado="cerrada",
+                detalle=f"{d['huellas_olvidadas']} huella(s) olvidadas · en tanda",
+                usuario_id=int(usuario.get("sub") or 0) or None)
+    return r
+
+
 class CerrarBajaIn(BaseModel):
     empleado_id: int
 

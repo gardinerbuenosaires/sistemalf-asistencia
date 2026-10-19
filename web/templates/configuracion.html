@@ -3766,6 +3766,14 @@ async function verBajas() {
       <div id="bajas-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
         Consultando…</div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex:none">
+        ${/* La lectura se paga a pedido. La lista se abre a mirar y tiene que
+             abrir ya; preguntarle a los ocho equipos son varios segundos. */''}
+        <button class="btn btn-secondary btn-sm" id="btn-bajas-comprobar"
+                onclick="comprobarBajas(this)">Comprobar en los equipos</button>
+        ${canDo('accesos','aplicar')
+          ? `<button class="btn btn-primary btn-sm" id="btn-bajas-tanda"
+                     onclick="cerrarBajasAfuera(this)">Cerrar las que ya están afuera</button>`
+          : ''}
         <button class="btn btn-secondary btn-sm"
                 onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
       </div>
@@ -3780,6 +3788,10 @@ function _soloFecha(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : String(iso || '');
 }
+
+// Lo ultimo que contestaron los equipos, si se pregunto. Null = no se
+// pregunto, y entonces no se afirma nada sobre donde esta cada uno.
+let _bajasComprobado = null;
 
 async function pintarBajas() {
   const cuerpo = document.getElementById('bajas-cuerpo');
@@ -3823,6 +3835,14 @@ async function pintarBajas() {
               : 'sin fecha de egreso cargada'}</span>
         </div>
         <div style="color:#8a5d06;font-size:.8rem;margin-top:2px">${p.falta.map(_esc).join(' · ')}</div>
+        ${/* Solo si se comprobo. Sin lectura no se dice ni que esta ni que no
+             esta: no saber no es lo mismo que saber que no. */''}
+        ${_bajasComprobado && _bajasComprobado[p.id]
+          ? (_bajasComprobado[p.id].length
+              ? `<div style="color:#b3261e;font-size:.8rem">sigue cargado en: ${
+                   _bajasComprobado[p.id].map(_esc).join(', ')}</div>`
+              : `<div style="color:#2e7d4f;font-size:.8rem">ya no está en ningún lector</div>`)
+          : ''}
         </div>
         ${canDo('accesos','aplicar')
           ? `<button class="btn btn-sm btn-secondary" style="flex:none"
@@ -3834,6 +3854,63 @@ async function pintarBajas() {
       olvida sus huellas y libera su numero. Si algun equipo no contesta, el numero queda
       ocupado y la baja sigue aca hasta completarla: el lector sugiere siempre el libre mas
       bajo, asi que un numero soltado se lo lleva el proximo que entre.</div>`;
+}
+
+// Preguntarle a los equipos donde sigue cargado cada uno. No cierra nada:
+// sirve para saber antes de apretar cuales van a salir limpias.
+async function comprobarBajas(boton) {
+  const antes = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'Leyendo los equipos...';
+  let d;
+  try {
+    const res = await fetch('/api/accesos/bajas-pendientes/comprobar');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    boton.disabled = false;
+    boton.textContent = antes;
+    return toast('No se pudo leer: ' + e.message);
+  }
+  _bajasComprobado = {};
+  d.personas.forEach(p => { _bajasComprobado[p.id] = p.en_equipos; });
+  boton.disabled = false;
+  boton.textContent = antes;
+  if (!d.confiable) {
+    toast('Ojo: ' + d.equipos_con_problema.map(x => `${x.equipo} (${x.motivo})`).join(', '));
+  }
+  pintarBajas();
+}
+
+// Cerrar de una todas las que ya salieron de todos lados. No le escribe nada a
+// ningun lector: esa gente ya no esta, lo que queda es la parte de base.
+async function cerrarBajasAfuera(boton) {
+  if (!confirm('Se van a cerrar todas las bajas que ya no estén en ningún lector: ' +
+               'se olvidan sus huellas y se liberan sus números.\n\n' +
+               'A los que todavía estén cargados no se los toca. Si algún equipo ' +
+               'no contesta no se cierra ninguna.')) return;
+  const antes = boton.textContent;
+  boton.disabled = true;
+  boton.textContent = 'Cerrando...';
+  let d;
+  try {
+    const res = await fetch('/api/accesos/bajas-pendientes/cerrar-afuera', {method: 'POST'});
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    boton.disabled = false;
+    boton.textContent = antes;
+    return toast('Error: ' + e.message);
+  }
+  boton.disabled = false;
+  boton.textContent = antes;
+  toast(d.ok
+    ? `${d.cerradas} baja(s) cerradas` +
+      (d.siguen ? ` · ${d.siguen} siguen cargadas en algún lector` : '')
+    : d.error);
+  // Lo comprobado quedo viejo: los que se cerraron ya no estan en la lista.
+  _bajasComprobado = null;
+  pintarBajas();
 }
 
 // Cerrar la baja: el circuito completo en un acto. Todo o nada para el

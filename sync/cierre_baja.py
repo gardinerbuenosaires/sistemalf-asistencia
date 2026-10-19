@@ -178,3 +178,118 @@ def cerrar(conn, empleado: dict, sincronizar=None, sacar=None, leer=None) -> dic
     return {"ok": True, "equipos": resultados, "pendientes": [],
             "liberado": True, "numero": numero, "huellas_olvidadas": olvidadas,
             "error": None}
+
+
+def _donde_esta(numero, lecturas, equipos):
+    """En qué equipos figura ese número, según una lectura ya hecha."""
+    estaba = []
+    for eq in equipos:
+        lec = lecturas.get(eq["id"]) or {}
+        if not lec.get("ok"):
+            continue
+        if any(u["user_id"] == numero for u in lec["usuarios"]):
+            estaba.append(eq["nombre"])
+    return estaba
+
+
+def _lecturas_confiables(lecturas, equipos):
+    """Los equipos que no se pudieron leer enteros, con el motivo.
+
+    Una lista corta cuenta como no leída. Que alguien no aparezca en los 149
+    usuarios que se leyeron de los 150 que el equipo dice tener no significa
+    que no esté: puede estar en el que falta.
+    """
+    problemas = []
+    for eq in equipos:
+        lec = lecturas.get(eq["id"]) or {}
+        if not lec.get("ok"):
+            problemas.append((eq["nombre"], lec.get("error") or "no contestó"))
+        elif lec.get("completa") is False:
+            problemas.append((eq["nombre"],
+                              f"dice tener {lec.get('declarados')} y se leyeron "
+                              f"{len(lec['usuarios'])}"))
+    return problemas
+
+
+def comprobar(conn, lecturas, equipos) -> dict:
+    """Para cada baja pendiente, en qué equipos sigue cargada.
+
+    Es lo que la lista sola no puede decir: ella mira la base, y la base no
+    sabe qué tiene cargado un lector. Se hace a pedido y no al abrir la lista
+    porque son ocho equipos y varios segundos; pagarlo siempre, para una
+    pantalla que se abre a mirar, sería cobrarle a todos lo que necesita uno.
+
+    No cierra nada. Sirve para saber antes de apretar cuáles van a salir
+    limpias y cuáles tienen trabajo.
+    """
+    from sync.bajas import pendientes as _pendientes
+
+    personas = []
+    for p in _pendientes(conn):
+        numero = (p["user_id"] or "").strip()
+        donde = _donde_esta(numero, lecturas, equipos) if numero else []
+        personas.append({**p, "en_equipos": donde, "afuera": not donde})
+    problemas = _lecturas_confiables(lecturas, equipos)
+    return {"personas": personas,
+            "equipos_con_problema": [{"equipo": n, "motivo": m} for n, m in problemas],
+            "confiable": not problemas}
+
+
+def cerrar_afuera(conn, lecturas, equipos) -> dict:
+    """Cierra de una vez todas las bajas que ya no están en ningún equipo.
+
+    No le escribe nada a ningún lector: esta gente ya salió, lo único que
+    queda es la parte de base —olvidar las huellas y soltar el número—. Es el
+    caso de la puesta en marcha, donde se juntaron años de bajas que nadie
+    podía cerrar porque no había con qué.
+
+    **Si algún equipo no contestó, no cierra a nadie.** No es exceso de celo:
+    «no aparece» en una lectura que falló no significa «no está», y soltar un
+    número mientras la persona sigue cargada en esa puerta lo pone en
+    circulación con la huella vieja todavía abriendo. Con un equipo mudo no se
+    puede afirmar de NADIE que esté afuera, así que la tanda entera espera.
+
+    A los que siguen cargados no los toca. Para ésos el camino es el plan de
+    cambios, que los saca de cada puerta en una sola conexión, y después esta
+    misma tanda los cierra.
+    """
+    from sync.huellas import olvidar
+
+    problemas = _lecturas_confiables(lecturas, equipos)
+    if problemas:
+        return {"ok": False, "cerradas": 0, "siguen": 0, "detalle": [],
+                "equipos_con_problema": [{"equipo": n, "motivo": m}
+                                         for n, m in problemas],
+                "error": "No se pudo leer entero: "
+                         + ", ".join(n for n, _ in problemas)
+                         + ". Con un equipo sin leer no se puede afirmar que "
+                           "nadie esté afuera, así que no se cerró ninguna."}
+
+    from sync.bajas import pendientes as _pendientes
+
+    cerradas, siguen, detalle = 0, 0, []
+    for p in _pendientes(conn):
+        numero = (p["user_id"] or "").strip()
+        quien = f"{p['apellido']}, {p['nombre']}".strip(", ")
+        donde = _donde_esta(numero, lecturas, equipos) if numero else []
+        if donde:
+            siguen += 1
+            detalle.append({"empleado_id": p["id"], "empleado": quien,
+                            "cerrada": False, "en_equipos": donde})
+            continue
+
+        olvidadas = olvidar(conn, p["id"])
+        if numero:
+            conn.execute("""UPDATE empleados
+                               SET user_id_anterior = user_id,
+                                   user_id_liberado_en = datetime('now','localtime'),
+                                   user_id = NULL
+                             WHERE id = ?""", (p["id"],))
+        cerradas += 1
+        detalle.append({"empleado_id": p["id"], "empleado": quien, "cerrada": True,
+                        "numero": numero or None, "huellas_olvidadas": olvidadas})
+
+    logger.info("Cierre en tanda: %s baja(s) cerradas, %s siguen cargadas",
+                cerradas, siguen)
+    return {"ok": True, "cerradas": cerradas, "siguen": siguen,
+            "detalle": detalle, "equipos_con_problema": [], "error": None}

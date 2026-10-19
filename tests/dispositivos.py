@@ -4096,5 +4096,113 @@ else:
     print("  (la copia no tiene equipo de fichaje, puerta y legajo con numero)")
 
 
+print("\n=== BAJAS PENDIENTES DE CERRAR ===")
+# Dar de baja es activo=0, y eso significaba dos cosas al mismo tiempo: «lo di
+# de baja hace cinco minutos y sigue con el numero tomado y las huellas
+# guardadas» --que es trabajo-- y «se fue hace dos anios y no queda nada suyo»
+# --que es historia--. Esconder a los inactivos de una lista escondia a los dos
+# por igual, y el primero es justo el que hay que mirar.
+#
+# Va al final del archivo a proposito: deja la copia con todos activos para
+# poder contar sin que los empleados de verdad entren en la cuenta.
+from sync.bajas import ids_pendientes as _ids_pend, pendientes as _pend, resumen as _res_baja
+
+_cb = sqlite3.connect(DB)
+_cb.row_factory = sqlite3.Row
+_cb.execute("DELETE FROM huellas")
+_cb.execute("UPDATE empleados SET activo=1, fecha_egreso=NULL")
+
+# Cuatro casos, que son los cuatro que hay que distinguir.
+_ids_b = [r[0] for r in _cb.execute(
+    "SELECT id FROM empleados ORDER BY id LIMIT 5").fetchall()]
+_trabaja, _adelantada, _pendiente, _cerrada, _cerrada_real = _ids_b
+
+_cb.execute("UPDATE empleados SET user_id='7001' WHERE id=?", (_trabaja,))
+# Baja adelantada: activo=0 con egreso futuro. SIGUE trabajando hasta la
+# vispera, asi que no es ninguna baja todavia y no puede figurar como pendiente.
+_cb.execute("""UPDATE empleados SET activo=0, user_id='7002',
+                      fecha_egreso=date('now','localtime','+10 days') WHERE id=?""",
+            (_adelantada,))
+# Ya no trabaja y le quedo el numero tomado.
+_cb.execute("""UPDATE empleados SET activo=0, user_id='7003',
+                      fecha_egreso=date('now','localtime','-30 days') WHERE id=?""",
+            (_pendiente,))
+# Ya no trabaja y no queda nada suyo: numero liberado, sin huellas.
+_cb.execute("""UPDATE empleados SET activo=0, user_id=NULL, user_id_anterior='7004',
+                      fecha_egreso=date('now','localtime','-200 days') WHERE id=?""",
+            (_cerrada,))
+# Y uno que quedo cerrado de verdad y asi se queda: es el que hace que la
+# cuenta de cerradas signifique algo.
+_cb.execute("""UPDATE empleados SET activo=0, user_id=NULL, user_id_anterior='7005',
+                      fecha_egreso=date('now','localtime','-400 days') WHERE id=?""",
+            (_cerrada_real,))
+_cb.commit()
+
+_p = _ids_pend(_cb)
+chequear("el que trabaja no es ninguna baja", _trabaja not in _p, _p)
+chequear("una baja adelantada tampoco: sigue entrando hasta la vispera",
+         _adelantada not in _p, _p)
+chequear("el que dejo el numero tomado queda pendiente", _pendiente in _p, _p)
+chequear("el que no dejo nada queda cerrado", _cerrada not in _p, _p)
+chequear("y el otro cerrado tampoco figura", _cerrada_real not in _p, _p)
+
+# Las huellas solas tambien alcanzan: es un dato biometrico de alguien que ya no
+# tiene nada que ver con el local, y mientras este guardado la baja no termino.
+_cb.execute("INSERT INTO huellas (empleado_id, dedo, plantilla, tamano) "
+            "VALUES (?, 0, 'x', 1)", (_cerrada,))
+_cb.commit()
+chequear("con huellas guardadas vuelve a estar pendiente, aunque no tenga numero",
+         _cerrada in _ids_pend(_cb), _ids_pend(_cb))
+
+_lista = _pend(_cb)
+_por_id = {p["id"]: p for p in _lista}
+chequear("la lista trae a los dos pendientes y a nadie mas",
+         set(_por_id) == {_pendiente, _cerrada}, set(_por_id))
+chequear("y dice que es lo que le falta a cada uno",
+         "7003" in " ".join(_por_id[_pendiente]["falta"])
+         and "huella" in " ".join(_por_id[_cerrada]["falta"]), _lista)
+chequear("las mas viejas primero, que son las que peor se ven",
+         [p["id"] for p in _lista] == [_cerrada, _pendiente],
+         [(p["id"], p["fecha_egreso"]) for p in _lista])
+chequear("con los dias que pasaron desde el egreso",
+         _por_id[_pendiente]["dias"] >= 29, _por_id[_pendiente]["dias"])
+
+_rb = _res_baja(_cb)
+chequear("el resumen cuenta pendientes y cerradas por separado",
+         _rb["pendientes"] == 2 and _rb["cerradas"] == 1, _rb)
+chequear("y la adelantada no cuenta como baja: todavia trabaja",
+         _rb["bajas"] == 3, _rb)
+
+# Una base sin el modulo de accesos migrado no tiene la tabla de huellas. No
+# saber de huellas no puede ser lo mismo que romperse.
+_cb.execute("ALTER TABLE huellas RENAME TO huellas_guardada")
+_cb.commit()
+chequear("sin la tabla de huellas no se rompe: contesta con lo que puede saber",
+         _ids_pend(_cb) == {_pendiente}, _ids_pend(_cb))
+_cb.execute("ALTER TABLE huellas_guardada RENAME TO huellas")
+_cb.commit()
+_cb.close()
+
+# El endpoint, que es por donde lo ve la pantalla.
+_rb2 = cli.get("/api/accesos/bajas-pendientes")
+chequear("GET bajas-pendientes responde 200", _rb2.status_code == 200, _rb2.text[:200])
+chequear("con la lista y el resumen",
+         len(_rb2.json()["personas"]) == 2
+         and _rb2.json()["resumen"]["pendientes"] == 2, _rb2.text[:220])
+chequear("pide accesos:ver", _mirar.get("/api/accesos/bajas-pendientes").status_code == 200)
+chequear("y sin ese permiso no se ve",
+         _rrhh.get("/api/accesos/bajas-pendientes").status_code == 403)
+
+# Y el listado de empleados marca a cada uno, que es lo que la pantalla usa para
+# avisar que el filtro esta escondiendo a alguien con cosas sin cerrar.
+_le = {e["id"]: e for e in cli.get("/api/empleados?todos=true").json()}
+chequear("el listado marca al que tiene la baja a medio cerrar",
+         _le[_pendiente]["baja_pendiente"] is True, _le[_pendiente].get("baja_pendiente"))
+chequear("y no marca al que trabaja",
+         _le[_trabaja]["baja_pendiente"] is False, _le[_trabaja].get("baja_pendiente"))
+chequear("ni a la baja adelantada, que sigue trabajando",
+         _le[_adelantada]["baja_pendiente"] is False, _le[_adelantada].get("baja_pendiente"))
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

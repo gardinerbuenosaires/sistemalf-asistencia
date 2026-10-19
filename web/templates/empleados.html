@@ -99,6 +99,10 @@
   .filtros-bar .filtros-footer { display: flex; justify-content: flex-end; padding-top: 2px; }
   .filtros-bar .btn-clear { background: none; border: none; padding: 0; cursor: pointer; font-size: .78rem; color: #bbb; text-decoration: underline; }
   .filtros-bar .btn-clear:hover { color: #555; }
+  /* Una baja a medio cerrar: queda algo suyo en el sistema --el numero
+     tomado, huellas guardadas-- asi que todavia es trabajo, no historia. */
+  .badge-sincerrar { background: #f6e9ce; color: #6b5a26; font-size: .66rem; font-weight: 700;
+                     padding: 1px 6px; border-radius: 3px; vertical-align: middle; }
   .banner-importados { background: #fff3cd; color: #856404; padding: 8px 14px; font-size: .82rem; display: none; align-items: center; gap: 8px; border-bottom: 1px solid #ffc107; }
   .banner-importados button { margin-left: auto; background: none; border: 1px solid #856404; border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: .78rem; color: #856404; }
 
@@ -245,11 +249,11 @@
     <div class="buscar-zona">
       <div class="buscar-row">
         <input class="buscar" id="buscar" type="text" placeholder="Buscar..." oninput="filtrar()">
-        <button class="btn-toggle-filtros solo-personal" id="btn-toggle-filtros" onclick="toggleFiltrosBar()" title="Mostrar filtros">
+        <button class="btn-toggle-filtros" id="btn-toggle-filtros" onclick="toggleFiltrosBar()" title="Mostrar filtros">
           <span class="dot"></span><span class="lbl-toggle">Filtros ▾</span>
         </button>
       </div>
-      <div id="filtros-bar" class="filtros-bar solo-personal">
+      <div id="filtros-bar" class="filtros-bar">
         <div class="fg">
           <label>Estado</label>
           <select id="f-estado" onchange="filtrar()">
@@ -258,7 +262,7 @@
             <option value="inactivo">Inactivos</option>
           </select>
         </div>
-        <div class="fg">
+        <div class="fg solo-personal">
           <label>Tipo</label>
           <select id="f-tipo-filtro" onchange="filtrar()">
             <option value="">Todos</option>
@@ -266,35 +270,35 @@
             <option value="jerarquico">Jerárquico</option>
           </select>
         </div>
-        <div class="fg">
+        <div class="fg solo-personal">
           <label>Cargo</label>
           <select id="f-cargo-filtro" onchange="filtrar()">
             <option value="">Todos</option>
             <option value="__vacio__">— Sin cargo asignado —</option>
           </select>
         </div>
-        <div class="fg">
+        <div class="fg solo-personal">
           <label>Dpto.</label>
           <select id="f-depto-filtro" onchange="filtrar()">
             <option value="">Todos</option>
             <option value="__vacio__">— Sin dpto. —</option>
           </select>
         </div>
-        <div class="fg">
+        <div class="fg solo-personal">
           <label>Categ.</label>
           <select id="f-categoria-filtro" onchange="filtrar()">
             <option value="">Todas</option>
             <option value="__vacio__">— Sin categ. —</option>
           </select>
         </div>
-        <div class="fg">
+        <div class="fg solo-personal">
           <label>Turno</label>
           <select id="f-turno-filtro" onchange="filtrar()">
             <option value="">Todos</option>
             <option value="__vacio__">— Sin turno —</option>
           </select>
         </div>
-        <div class="fg">
+        <div class="fg solo-personal">
           <label>Datos</label>
           <select id="f-datos-filtro" onchange="filtrar()">
             <option value="">Todos</option>
@@ -306,6 +310,10 @@
           <button class="btn-clear" onclick="limpiarFiltros()">Limpiar filtros</button>
         </div>
       </div>
+    </div>
+    <div id="banner-pendientes" class="banner-importados">
+      <span id="banner-pendientes-texto"></span>
+      <button onclick="verBajasPendientes()">Ver</button>
     </div>
     <div id="banner-importados" class="banner-importados">
       <span id="banner-texto"></span>
@@ -492,6 +500,14 @@ function cambiarTab(tab) {
   document.getElementById("tab-parking").classList.toggle("activo", tab === "parking");
   document.getElementById("tab-accesos").classList.toggle("activo", tab === "accesos");
   document.querySelectorAll(".solo-personal").forEach(el => el.style.display = tab === "personal" ? "" : "none");
+  // Los filtros que no aplican a la pestaña se esconden, pero siguen puestos y
+  // seguirian filtrando sin que se vean. Se limpian para que lo que se ve en
+  // pantalla sea todo lo que esta filtrando.
+  if (tab !== "personal") {
+    ["f-tipo-filtro", "f-cargo-filtro", "f-depto-filtro",
+     "f-categoria-filtro", "f-turno-filtro", "f-datos-filtro"]
+      .forEach(id => { document.getElementById(id).value = ""; });
+  }
   document.getElementById("buscar").value = "";
   filtroImportadosIds = null;
   document.getElementById("banner-importados").style.display = "none";
@@ -531,17 +547,22 @@ function _actualizarIndicadorFiltros() {
 function filtrar() {
   const q = document.getElementById("buscar").value.toLowerCase();
 
+  // El estado vale en las tres pestañas. Antes solo en Personal, y por eso un
+  // registro de solo acceso dado de baja se quedaba en la lista para siempre:
+  // no es que se hubiera decidido mostrarlo, es que ahi no habia filtro.
+  const estadoTab = document.getElementById("f-estado").value;
+
   if (tabActiva === "accesos") {
     let base = todos.filter(e => e.tipo === "acceso");
     if (q) base = base.filter(e => `${e.apellido} ${e.nombre} ${e.user_id||""}`.toLowerCase().includes(q));
-    renderListaAccesos(base);
+    renderListaAccesos(_porEstado(base, estadoTab));
     return;
   }
 
   if (tabActiva === "parking") {
     let base = todos.filter(e => e.tipo === "parking");
     if (q) base = base.filter(e => `${e.apellido} ${e.nombre} ${e.user_id||""}`.toLowerCase().includes(q));
-    renderListaParking(base);
+    renderListaParking(_porEstado(base, estadoTab));
     return;
   }
 
@@ -555,6 +576,10 @@ function filtrar() {
 
   let base = todos.filter(e => e.tipo !== "acceso" && e.tipo !== "parking");
   if (filtroImportadosIds) base = base.filter(e => filtroImportadosIds.has(e.id));
+  // El mismo aviso que en las otras dos pestañas: a quien esconde el filtro y
+  // todavia tiene la baja sin cerrar. Si no se recalculara aca, el aviso de una
+  // pestaña se quedaria colgado al volver a esta.
+  _avisarPendientes(_ocultosSinCerrar(base, estado));
   if (estado === "activo")        base = base.filter(e => e.activo);
   if (estado === "inactivo")      base = base.filter(e => !e.activo);
   if (datos === "pendiente")       base = base.filter(e => e.user_id && !e.fecha_ingreso);
@@ -593,6 +618,44 @@ function limpiarFiltroImportados() {
   filtrar();
 }
 
+// El estado, y el aviso de lo que esconde. Esconder a un inactivo esta bien
+// cuando ya no queda nada suyo; mientras quede algo --el numero tomado, huellas
+// guardadas-- esconderlo seria taparse un pendiente. Por eso no se cambia lo
+// que el filtro hace, se avisa de lo que se llevo puesto.
+function _porEstado(base, estado) {
+  _avisarPendientes(_ocultosSinCerrar(base, estado));
+  return estado === "activo"   ? base.filter(e => e.activo)
+       : estado === "inactivo" ? base.filter(e => !e.activo)
+       : base;
+}
+
+// Cuantos de los que el filtro deja afuera tienen la baja sin cerrar. Una baja
+// pendiente siempre esta inactiva --si todavia trabaja no es ninguna baja-- asi
+// que las esconde solo el filtro de activos.
+function _ocultosSinCerrar(base, estado) {
+  return estado === "activo" ? base.filter(e => e.baja_pendiente).length : 0;
+}
+
+function _avisarPendientes(cuantos) {
+  const banner = document.getElementById("banner-pendientes");
+  if (!banner) return;
+  banner.style.display = cuantos ? "flex" : "none";
+  if (cuantos) {
+    document.getElementById("banner-pendientes-texto").textContent =
+      cuantos === 1
+        ? "Hay 1 persona de baja que todavia tiene algo sin cerrar y el filtro la esconde."
+        : `Hay ${cuantos} personas de baja que todavia tienen algo sin cerrar y el filtro las esconde.`;
+  }
+}
+
+// Pasa el filtro a Inactivos, que es donde estan. No abre otra pantalla: lo que
+// se pidio ver esta en esta misma lista, a un filtro de distancia.
+function verBajasPendientes() {
+  document.getElementById("f-estado").value = "inactivo";
+  _actualizarIndicadorFiltros();
+  filtrar();
+}
+
 function renderListaAccesos(lista) {
   const cont = document.getElementById("emp-list");
   if (!lista.length) {
@@ -603,7 +666,7 @@ function renderListaAccesos(lista) {
     <div class="emp-item${e.id === editandoId ? " activo" : ""}" id="emp-item-${e.id}" onclick="editarEmpleado(${e.id})">
       <div class="emp-avatar" style="background:#7f8c8d">${iniciales(e.apellido, e.nombre)}</div>
       <div class="emp-info">
-        <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}</div>
+        <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}${e.baja_pendiente ? ' <span class="badge-sincerrar">SIN CERRAR</span>' : ""}</div>
         <div class="emp-sub">Código: ${e.user_id || "—"}</div>
       </div>
     </div>`).join("");
@@ -619,7 +682,7 @@ function renderListaParking(lista) {
     <div class="emp-item${e.id === editandoId ? " activo" : ""}" id="emp-item-${e.id}" onclick="editarEmpleado(${e.id})">
       <div class="emp-avatar" style="background:#1a6b3c">${iniciales(e.apellido, e.nombre)}</div>
       <div class="emp-info">
-        <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}</div>
+        <div class="emp-nombre">${e.apellido}, ${e.nombre}${!e.activo ? ' <span class="badge-inactivo">Inactivo</span>' : ""}${e.baja_pendiente ? ' <span class="badge-sincerrar">SIN CERRAR</span>' : ""}</div>
         <div class="emp-sub">${e.cargo || "Sin cargo asignado"}</div>
       </div>
     </div>`).join("");
@@ -639,6 +702,9 @@ function renderLista(lista) {
     const sinDatos = _sinDatos(e);
     const badges = [];
     if (!e.activo)             badges.push('<span class="badge-inactivo">Inactivo</span>');
+    // Dado de baja y el sistema todavia conserva algo suyo. Es trabajo, no
+    // historia, y es lo que distingue una baja terminada de una a medias.
+    if (e.baja_pendiente)      badges.push('<span class="badge-sincerrar">SIN CERRAR</span>');
     if (sinDatos)              badges.push('<span class="badge-sindatos">Sin datos</span>');
     const sinDisp = e.en_dispositivo === 0 && e.user_id;
     if (sinDisp) badges.push('<span class="badge-sindisp">SIN DISPOSITIVO</span>');
@@ -694,8 +760,11 @@ async function cargar() {
   const res = await fetch("/api/empleados?todos=true");
   todos = await res.json();
   document.getElementById("cnt").textContent = todos.filter(e => e.activo && e.tipo !== "acceso" && e.tipo !== "parking").length;
-  document.getElementById("cnt-parking").textContent = todos.filter(e => e.tipo === "parking").length;
-  document.getElementById("cnt-accesos").textContent = todos.filter(e => e.tipo === "acceso").length;
+  // Los contadores cuentan activos, igual que el de Personal y igual que lo que
+  // la pestaña muestra al abrirla. Contar tambien a los de baja dejaba el
+  // numero de la solapa distinto de la cantidad de filas de la lista.
+  document.getElementById("cnt-parking").textContent = todos.filter(e => e.tipo === "parking" && e.activo).length;
+  document.getElementById("cnt-accesos").textContent = todos.filter(e => e.tipo === "acceso" && e.activo).length;
   filtrar();
 }
 

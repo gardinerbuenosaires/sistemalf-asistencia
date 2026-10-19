@@ -435,6 +435,8 @@
             <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
                     onclick="verHuellas()">Huellas</button>
             <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
+                    onclick="verBajas()">Bajas pendientes</button>
+            <button class="btn btn-secondary btn-sm" data-perm="accesos:ver"
                     onclick="verOperaciones()">Operaciones</button>
             <button class="btn btn-primary btn-sm" data-perm="dispositivos:editar"
                     onclick="nuevoDispositivo()">+ Nuevo equipo</button>
@@ -3744,6 +3746,87 @@ async function ponerEnHora(id, boton) {
 // Hoy el único lugar donde están todas es el equipo de fichaje. La otra copia la
 // tiene Enterprise, y todo esto existe para apagarlo: sin respaldo, un equipo
 // quemado son doscientas personas volviendo a enrolarse con el dedo, de a una.
+
+// A quien se dio de baja y todavia no se termino de cerrar.
+//
+// Es la contraparte de esconder a los inactivos de las listas de personas.
+// Esconderlos esta bien cuando ya no queda nada suyo; mientras quede algo,
+// esconderlos seria taparse un pendiente. Aca es donde ese pendiente reaparece:
+// lo que desaparece de una lista no se pierde de vista, cambia de lugar.
+async function verBajas() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:white;border-radius:10px;padding:24px;width:680px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,.25)">
+      <div style="font-weight:bold;font-size:1rem">Bajas pendientes de cerrar</div>
+      <div style="font-size:.8rem;color:#888;margin-top:4px">
+        Gente que ya no trabaja y de la que el sistema todavia conserva algo: el numero
+        tomado, o huellas guardadas. Mira la base, no los equipos: si ademas sigue cargado
+        en una puerta, eso lo dice el <b>Plan de cambios</b>.</div>
+      <div id="bajas-cuerpo" style="margin-top:12px;color:#888;font-size:.9rem;flex:1 1 auto;min-height:0;overflow-y:auto">
+        Consultando…</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex:none">
+        <button class="btn btn-secondary btn-sm"
+                onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  pintarBajas();
+}
+
+// La fecha sola, sin hora: fecha_egreso es un dia, y _fechaHora espera que
+// venga con hora y devuelve el texto crudo si no.
+function _soloFecha(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : String(iso || '');
+}
+
+async function pintarBajas() {
+  const cuerpo = document.getElementById('bajas-cuerpo');
+  if (!cuerpo) return;
+  let d;
+  try {
+    const res = await fetch('/api/accesos/bajas-pendientes');
+    d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+  } catch (e) {
+    cuerpo.innerHTML = `<span style="color:#c0392b">No se pudo consultar: ${_esc(e.message)}</span>`;
+    return;
+  }
+
+  const r = d.resumen;
+  // Las cerradas se informan aunque no haya nada que hacer con ellas: «3
+  // pendientes» solo no dice si el circuito se usa, «3 de 51» si.
+  const encabezado = `
+    <div style="font-size:.9rem;color:#333">
+      <b>${r.pendientes}</b> baja(s) sin cerrar
+      <span style="color:#888">· ${r.cerradas} ya cerrada(s) de ${r.bajas} en total</span>
+    </div>`;
+
+  if (!d.personas.length) {
+    cuerpo.innerHTML = encabezado + `
+      <div style="background:#dcede2;color:#2e7d4f;padding:8px 11px;border-radius:5px;font-size:.82rem;margin-top:10px">
+        No queda nada suyo en el sistema: ni numeros tomados ni huellas guardadas.</div>`;
+    return;
+  }
+
+  cuerpo.innerHTML = encabezado + `
+    <div style="margin-top:10px">${d.personas.map(p => `
+      <div style="padding:8px 0;border-bottom:1px solid #f4f4f4;font-size:.86rem">
+        <div>
+          <b>${_esc(p.apellido || '')}, ${_esc(p.nombre || '')}</b>
+          ${p.solo_acceso ? '<span style="background:#f6e9ce;color:#8a5d06;padding:1px 6px;border-radius:3px;font-size:.7rem;margin-left:4px">solo acceso</span>' : ''}
+          <span style="color:#999;font-size:.78rem;margin-left:4px">
+            ${p.fecha_egreso
+              ? `egreso ${_esc(_soloFecha(p.fecha_egreso))}${p.dias != null && p.dias > 0 ? ` · hace ${p.dias} dia(s)` : ''}`
+              : 'sin fecha de egreso cargada'}</span>
+        </div>
+        <div style="color:#8a5d06;font-size:.8rem;margin-top:2px">${p.falta.map(_esc).join(' · ')}</div>
+      </div>`).join('')}</div>
+    <div style="font-size:.78rem;color:#999;margin-top:12px">
+      El numero se libera desde el legajo de la persona; las huellas se olvidan al cerrar
+      la baja. Mientras el numero siga tomado, ningun otro empleado lo puede usar.</div>`;
+}
 
 async function verHuellas() {
   const modal = document.createElement('div');

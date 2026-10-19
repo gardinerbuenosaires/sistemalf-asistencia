@@ -6,6 +6,7 @@ from typing import Optional
 from db.database import db_session
 from auth.core import require_permiso, get_current_user, check_no_es_legajo_propio
 from config import DATA_DIR
+from sync.bajas import ids_pendientes
 
 FOTOS_DIR            = DATA_DIR / "fotos"
 FOTOS_PENDIENTES_DIR = DATA_DIR / "fotos_pendientes"
@@ -84,7 +85,18 @@ def list_empleados(todos: bool = False, sin_acceso: bool = False,
             LEFT JOIN niveles_estudio ne ON ne.id = e.nivel_estudio_id
             {where} ORDER BY e.apellido, e.nombre
         """).fetchall()
-    return [dict(r) for r in rows]
+        # Quién quedó con la baja a medio terminar. Va en el listado y no en
+        # una consulta aparte porque es lo que decide si se lo puede esconder:
+        # un inactivo sin nada pendiente es historia y estorba; uno con algo
+        # pendiente es trabajo, y esconderlo sería taparlo.
+        pendientes = ids_pendientes(conn)
+
+    salida = []
+    for r in rows:
+        fila = dict(r)
+        fila["baja_pendiente"] = fila["id"] in pendientes
+        salida.append(fila)
+    return salida
 
 
 @router.post("/conflictos/liberar/{eid}", status_code=200)

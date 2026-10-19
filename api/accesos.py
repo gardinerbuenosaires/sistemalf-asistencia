@@ -1268,6 +1268,29 @@ def _resultado(x: dict) -> str:
     return "falló"
 
 
+@router.get("/bajas-pendientes")
+def bajas_pendientes(_user=Depends(require_permiso("accesos", "ver"))):
+    """
+    A quién se dio de baja y todavía no se terminó de cerrar.
+
+    Es la contraparte de esconder a los inactivos de las listas. Esconderlos
+    está bien cuando ya no queda nada suyo; mientras quede algo, esconderlos
+    sería taparse un pendiente. Esta lista es el lugar donde ese pendiente
+    reaparece: lo que desaparece de la lista de personas no se pierde de
+    vista, cambia de lugar.
+
+    Mira la base, no los equipos. Lo que contesta es «qué conserva todavía el
+    sistema de esta persona»: el número tomado y las huellas guardadas. Si
+    además sigue cargado en una puerta, eso lo dice el Plan de cambios, que
+    para saberlo tiene que leer los ocho equipos — y esta lista se abre
+    bastante más seguido que eso.
+    """
+    from sync.bajas import pendientes, resumen
+
+    with db_session() as conn:
+        return {"personas": pendientes(conn), "resumen": resumen(conn)}
+
+
 @router.get("/huellas")
 def huellas_resumen(_user=Depends(require_permiso("accesos", "ver"))):
     """Cuantas huellas hay respaldadas, de cuando, y a quien le falta."""

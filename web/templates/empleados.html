@@ -768,19 +768,6 @@ async function cargar() {
   filtrar();
 }
 
-async function liberarId(eid, userId) {
-  if (!confirm(`¿Liberar el ID ${userId} de este empleado?\nEl próximo sync importará al nuevo empleado que tenga ese ID en el dispositivo.`)) return;
-  const res = await fetch(`/api/empleados/conflictos/liberar/${eid}`, { method: "POST" });
-  if (res.ok) {
-    toast("ID liberado. Se importará en el próximo sync.");
-    await cargar();
-    cancelar();
-  } else {
-    const err = await res.json().catch(() => ({}));
-    toast("Error: " + (err.detail || "desconocido"));
-  }
-}
-
 async function onCargoChange() {
   if (!editandoId) return;
   if (!document.getElementById("calendario-section")) return;
@@ -1238,8 +1225,22 @@ function buildForm(e = {}, asignaciones = []) {
       <div class="form-footer">
         ${!e.activo && editandoId && canDo('empleados','editar') ? `
         <button class="btn btn-success btn-sm" onclick="toggleActivo()">Reactivar</button>` : ''}
-        ${!e.activo && e.user_id && canDo('empleados','editar') ? `
-        <button class="btn btn-sm" style="background:#856404;color:white" onclick="liberarId(${e.id}, '${e.user_id}')">Liberar ID dispositivo</button>` : ''}
+        ${/* Hubo aca un boton «Liberar ID». Existia para alinearse con
+             Enterprise: si Enterprise borraba un ID y ese numero se le daba a
+             alguien nuevo, el sistema lo tomaba como la misma persona dada de
+             baja y no la consideraba. Soltar el numero a mano era la unica
+             forma de evitarlo.
+
+             Ya no: el sistema borra de los equipos, asi que el numero se suelta
+             solo al cerrar la baja, despues de comprobar que la persona no esta
+             en ningun lector. Soltarlo por separado era el unico camino que
+             podia dejar al lector ofreciendo un numero de alguien que sigue
+             abriendo puertas. */''}
+        ${!e.activo && e.user_id ? `
+        <div style="flex:1;font-size:.76rem;color:#856404">
+          El número <b>${e.user_id}</b> sigue tomado. Se libera al cerrar la baja,
+          en Configuración → Dispositivos → Bajas pendientes, que antes lo saca de
+          todos los lectores.</div>` : ''}
         ${editandoId ? `<a href="/empleados/${e.id}/legajo" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">Legajo</a>` : ''}
         <button class="btn btn-secondary" onclick="cancelar()">Cancelar</button>
         ${canDo('empleados','editar') ? `<button id="btn-guardar" class="btn btn-primary" onclick="guardar()">Guardar</button>` : ''}

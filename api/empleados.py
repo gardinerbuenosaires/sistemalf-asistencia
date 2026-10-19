@@ -99,28 +99,17 @@ def list_empleados(todos: bool = False, sin_acceso: bool = False,
     return salida
 
 
-@router.post("/conflictos/liberar/{eid}", status_code=200)
-def liberar_id_dispositivo(eid: int, _user=Depends(require_permiso("empleados", "editar"))):
-    with db_session() as conn:
-        emp = conn.execute(
-            "SELECT id, activo, user_id FROM empleados WHERE id=?", (eid,)
-        ).fetchone()
-        if not emp:
-            raise HTTPException(404, "Empleado no encontrado")
-        if emp["activo"]:
-            raise HTTPException(400, "Solo se puede liberar el ID de un empleado inactivo")
-        if not emp["user_id"]:
-            raise HTTPException(400, "Este empleado no tiene ID de dispositivo asignado")
-        # Se anota de quién era antes de soltarlo. Después de esto, ese número
-        # puede aparecer cargado en una puerta sin dueño, y esto es lo único que
-        # va a explicar quién era.
-        conn.execute(
-            """UPDATE empleados
-                  SET user_id_anterior = user_id,
-                      user_id_liberado_en = datetime('now','localtime'),
-                      user_id = NULL
-                WHERE id = ?""", (eid,))
-    return {"ok": True, "user_id_anterior": emp["user_id"]}
+# Hubo acá un endpoint «liberar el ID», que soltaba el número de un inactivo sin
+# mirar nada más. Existía para alinearse con Enterprise: si Enterprise borraba un
+# ID y ese número se le daba a alguien nuevo, el sistema lo tomaba como la misma
+# persona dada de baja y no la consideraba. Soltarlo a mano era la única forma de
+# evitarlo.
+#
+# Ya no hace falta y era peligroso tenerlo suelto: el lector sugiere siempre el
+# número libre más bajo, así que soltar uno mientras la persona sigue cargada en
+# una puerta lo pone en circulación con la huella vieja todavía abriendo. Ahora
+# el número lo suelta el cierre de la baja (`sync/cierre_baja.py`), que primero
+# comprueba que no esté en ningún lector — y si alguno no contesta, no lo suelta.
 
 
 @router.get("/fotos-pendientes")

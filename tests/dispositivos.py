@@ -2346,20 +2346,29 @@ _lr15._conectar = _conec15
 
 
 print("\n=== DE QUIEN ERA UN NUMERO LIBERADO ===")
-# Liberar el ID suelta el numero para que el lector lo reuse, pero la huella
-# sigue cargada en las puertas. Sin guardar de quien era, ese numero pasa a ser
-# un misterio en la proxima auditoria.
+# Cerrar la baja suelta el numero para que el lector lo reuse, pero la huella
+# puede seguir cargada en algun lado. Sin guardar de quien era, ese numero pasa
+# a ser un misterio la proxima vez que aparezca.
+#
+# El estado se arma por SQL y no llamando a un endpoint: el unico camino para
+# soltar un numero es el cierre de la baja, que antes verifica contra los
+# equipos. El boton suelto que habia --«Liberar ID»-- existia para alinearse con
+# Enterprise y se saco: era el unico que podia dejar al lector ofreciendo el
+# numero de alguien que sigue abriendo puertas.
 _c16 = sqlite3.connect(DB)
 _f16 = _c16.execute(
     """SELECT id, user_id FROM empleados
         WHERE activo=0 AND user_id IS NOT NULL LIMIT 1""").fetchone()
-_c16.close()
 
 if _f16:
     _eid16, _uid16 = _f16[0], str(_f16[1]).strip()
-    r = cli.post(f"/api/empleados/conflictos/liberar/{_eid16}")
-    chequear("liberar el id responde 200", r.status_code == 200, r.text[:160])
-    chequear("y devuelve cual era", r.json().get("user_id_anterior") == _uid16, r.json())
+    _c16.execute("""UPDATE empleados
+                       SET user_id_anterior = user_id,
+                           user_id_liberado_en = datetime('now','localtime'),
+                           user_id = NULL
+                     WHERE id = ?""", (_eid16,))
+    _c16.commit()
+    _c16.close()
 
     _c16 = sqlite3.connect(DB)
     _fila = _c16.execute(

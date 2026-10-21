@@ -4616,5 +4616,38 @@ chequear("y no pide ningun permiso propio: filtra por lo que cada uno ve",
          _rrhh.get("/api/accesos/revision").status_code == 200)
 
 
+print("\n=== LA REVISION ARMA EL PLAN CON LOS EQUIPOS DE VERDAD ===")
+# La primera corrida en produccion fallo con KeyError: 'ubicacion'. Las pruebas
+# pasaban porque a `correr` se le pasaba un plan escrito a mano, asi que la
+# costura entre el trabajo nocturno y `armar_plan` --que es por donde se rompio--
+# no la ejercitaba nadie.
+#
+# Esto corre el mismo camino que el trabajo de las 3: toma los equipos como los
+# arma `_lista_equipos` y se los da a `armar_plan` tal cual, sin retocar nada.
+# Si manana `armar_plan` necesita otra columna, se cae aca y no en produccion.
+_cs = sqlite3.connect(DB)
+_cs.row_factory = sqlite3.Row
+_eqs_s = _cbj._lista_equipos(_cs)
+
+_lec_s = {eq["id"]: {"ok": True, "error": None, "completa": True,
+                     "declarados": 0, "usuarios": []} for eq in _eqs_s}
+_puertas_s = [e for e in _eqs_s if e["es_acceso"]]
+_maestros_s = [e for e in _eqs_s if e["cuenta_asistencia"] and not e["es_acceso"]]
+
+with db_session() as _cn:
+    _plan_s = armar_plan(_cn, _puertas_s, _lec_s,
+                         _lec_s.get(_maestros_s[0]["id"]) if _maestros_s else None)
+chequear("el plan se arma con las filas que trae _lista_equipos",
+         "puertas" in _plan_s, list(_plan_s)[:5])
+chequear("y cada puerta sale nombrada",
+         all(p.get("nombre") for p in _plan_s["puertas"]),
+         [p.get("nombre") for p in _plan_s["puertas"]][:3])
+
+with db_session() as _cn:
+    _h_s = _rev.correr(_cn, _lec_s, _eqs_s, _plan_s)
+chequear("y la revision digiere ese plan sin romperse", isinstance(_h_s, list), _h_s)
+_cs.close()
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

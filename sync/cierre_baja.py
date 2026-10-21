@@ -44,9 +44,14 @@ def _lista_equipos(conn):
     Todos los que el sistema administra por pull y tienen IP. Un equipo que el
     sistema no administra no puede afirmar nada sobre él, y por eso tampoco
     puede decir que alguien ya no está en ningún lado.
+
+    Trae `ubicacion` aunque acá no se use: estas filas se le pasan tal cual a
+    `armar_plan`, que la necesita para nombrar cada puerta. Son las columnas
+    que un equipo tiene que tener para poder entrar en el plan, no las que esta
+    función mira.
     """
     return [dict(r) for r in conn.execute(
-        """SELECT id, nombre, ip, puerto, password, timeout, protocolo,
+        """SELECT id, nombre, ubicacion, ip, puerto, password, timeout, protocolo,
                   es_acceso, cuenta_asistencia
              FROM dispositivos
             WHERE activo = 1 AND protocolo = 'pull' AND ip IS NOT NULL

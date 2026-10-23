@@ -184,3 +184,49 @@ def ultima(conn, permisos=None) -> dict:
             "rojos": sum(1 for h in hallazgos if h["nivel"] == ROJO),
             "ambares": sum(1 for h in hallazgos if h["nivel"] == AMBAR),
             "error": fila["error"]}
+
+
+def corrida_completa() -> dict:
+    """Lee todo, arma el informe y lo guarda. Es lo que corre de madrugada.
+
+    Vive aca y no en el scheduler para que el boton de «correr ahora» haga
+    EXACTAMENTE lo mismo que el trabajo de las 3. Si fueran dos caminos, el
+    boton probaria uno y el que corre todas las noches seria el otro -- y lo
+    que se quiere verificar apretandolo es justamente el de la madrugada.
+
+    Devuelve {ok, hallazgos, error}. Si algo falla, lo guarda como corrida
+    fallada: un informe que no aparece y una revision rota se ven igual desde
+    el tablero si no se anota.
+    """
+    from db.database import db_session
+    from sync.cierre_baja import _lista_equipos
+    from sync.lectores import leer_cargados_varios
+    from sync.plan_accesos import armar_plan
+
+    try:
+        with db_session() as conn:
+            equipos = _lista_equipos(conn)
+        if not equipos:
+            with db_session() as conn:
+                guardar(conn, [], error="No hay ningun lector que el sistema administre")
+            return {"ok": False, "hallazgos": [],
+                    "error": "No hay ningun lector que el sistema administre"}
+
+        lecturas = leer_cargados_varios(equipos)
+        puertas = [e for e in equipos if e["es_acceso"]]
+        maestros = [e for e in equipos if e["cuenta_asistencia"] and not e["es_acceso"]]
+        with db_session() as conn:
+            plan = armar_plan(conn, puertas, lecturas,
+                              lecturas.get(maestros[0]["id"]) if maestros else None)
+            hallazgos = correr(conn, lecturas, equipos, plan)
+            guardar(conn, hallazgos)
+        logger.info("Revision: %s hallazgo(s)", len(hallazgos))
+        return {"ok": True, "hallazgos": hallazgos, "error": None}
+    except Exception as e:
+        logger.error("Error en la revision: %s", e)
+        try:
+            with db_session() as conn:
+                guardar(conn, [], error=f"{type(e).__name__}: {e}")
+        except Exception:
+            pass
+        return {"ok": False, "hallazgos": [], "error": f"{type(e).__name__}: {e}"}

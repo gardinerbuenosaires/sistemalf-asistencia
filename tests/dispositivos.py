@@ -257,6 +257,26 @@ _real_emp = _con.execute(
         WHERE activo = 1 AND user_id IS NOT NULL AND apellido <> '' LIMIT 1"""
 ).fetchone()
 _con.close()
+# Y hace falta tambien alguien DE BAJA con uno de esos numeros. Antes se
+# confiaba en que la copia tuviera alguno: eso ato la prueba a los datos y se
+# rompio el dia que ese numero paso a ser de alguien activo. Ahora se arma.
+_con = sqlite3.connect(DB)
+_con.execute("UPDATE empleados SET user_id = NULL WHERE TRIM(user_id) = '13'")
+# Sin cargo y el de id mas alto: las demas pruebas eligen con LIMIT 1 sobre
+# consultas parecidas, y si esta se queda con el mismo de siempre les cambia el
+# escenario por abajo. Elegir del otro extremo las deja en paz.
+_baja_rev = _con.execute(
+    """SELECT id FROM empleados
+        WHERE activo = 0 AND (user_id IS NULL OR TRIM(user_id) = '')
+          AND apellido <> '' AND cargo_id IS NULL
+     ORDER BY id DESC LIMIT 1""").fetchone()
+if _baja_rev:
+    _con.execute("""UPDATE empleados SET user_id = '13',
+                           fecha_egreso = date('now','localtime','-30 days')
+                     WHERE id = ?""", (_baja_rev[0],))
+_con.commit()
+_con.close()
+
 CARGADOS_REV = list(CARGADOS)
 if _real_emp:
     CARGADOS_REV.append({"uid": 9, "user_id": str(_real_emp[0]).strip(),
@@ -4647,6 +4667,102 @@ with db_session() as _cn:
     _h_s = _rev.correr(_cn, _lec_s, _eqs_s, _plan_s)
 chequear("y la revision digiere ese plan sin romperse", isinstance(_h_s, list), _h_s)
 _cs.close()
+
+
+print("\n=== UNA BAJA ADELANTADA NO ES UNA FICHADA IRREGULAR ===")
+# El importador marcaba «ficho estando de baja» mirando solo activo=0. Una baja
+# adelantada --cargada hoy con fecha futura-- deja el legajo inactivo mientras
+# la persona sigue trabajando con todo derecho hasta la vispera, asi que cada
+# pasada suya generaba un aviso falso. De 101 avisos acumulados en produccion,
+# 19 eran eso.
+from sync.downloader import _save_attendances
+
+class _Pasada:
+    def __init__(s, user_id, cuando, punch=0, status=0):
+        from datetime import datetime
+        s.user_id, s.punch, s.status = user_id, punch, status
+        s.timestamp = datetime.strptime(cuando, "%Y-%m-%d %H:%M:%S")
+
+_ci = sqlite3.connect(DB)
+_ci.execute("DELETE FROM inconsistencias")
+_ci.execute("DELETE FROM fichajes")
+_eid_i = _ci.execute("SELECT id FROM empleados ORDER BY id LIMIT 1").fetchone()[0]
+# Baja adelantada: inactivo, pero con egreso dentro de 10 dias.
+_ci.execute("""UPDATE empleados SET activo=0, user_id='7777',
+                      fecha_egreso=date('now','localtime','+10 days') WHERE id=?""",
+            (_eid_i,))
+_ci.commit()
+_ci.close()
+
+from datetime import datetime, timedelta
+_hoy = datetime.now().strftime("%Y-%m-%d")
+_save_attendances([_Pasada("7777", f"{_hoy} 08:30:00")])
+
+_ci = sqlite3.connect(DB)
+_n = _ci.execute("""SELECT COUNT(*) FROM inconsistencias
+                     WHERE tipo='fichaje_baja' AND empleado_id=?""", (_eid_i,)).fetchone()[0]
+chequear("una baja adelantada que ficha hoy NO genera aviso", _n == 0, _n)
+chequear("pero la fichada se guarda igual",
+         _ci.execute("SELECT COUNT(*) FROM fichajes WHERE empleado_id=?",
+                     (_eid_i,)).fetchone()[0] == 1)
+
+# La misma persona, pero una fichada POSTERIOR a su egreso: eso si se avisa.
+_ci.execute("""UPDATE empleados SET fecha_egreso=date('now','localtime','-5 days')
+                WHERE id=?""", (_eid_i,))
+_ci.commit()
+_ci.close()
+_save_attendances([_Pasada("7777", f"{_hoy} 19:30:00")])
+_ci = sqlite3.connect(DB)
+_n = _ci.execute("""SELECT COUNT(*) FROM inconsistencias
+                     WHERE tipo='fichaje_baja' AND empleado_id=?""", (_eid_i,)).fetchone()[0]
+chequear("si ya se habia ido, la fichada SI se avisa", _n == 1, _n)
+
+# Un inactivo sin fecha de egreso: no hay con que comparar, se avisa igual.
+_ci.execute("DELETE FROM inconsistencias")
+_ci.execute("UPDATE empleados SET fecha_egreso=NULL WHERE id=?", (_eid_i,))
+_ci.commit()
+_ci.close()
+_save_attendances([_Pasada("7777", f"{_hoy} 21:45:00")])
+_ci = sqlite3.connect(DB)
+_n = _ci.execute("""SELECT COUNT(*) FROM inconsistencias
+                     WHERE tipo='fichaje_baja' AND empleado_id=?""", (_eid_i,)).fetchone()[0]
+chequear("un inactivo sin fecha de egreso se avisa igual: no hay con que comparar",
+         _n == 1, _n)
+
+
+print("\n=== DAR POR VISTOS LOS AVISOS VIEJOS ===")
+# Sin forma de cerrarlos, el informe mostraria el mismo numero en rojo todas
+# las noches aunque no pase nada nuevo. Un cartel que siempre esta es un cartel
+# que nadie mira.
+_ci.execute("DELETE FROM inconsistencias")
+for _f in ("2026-06-01", "2026-08-15", "2026-10-01"):
+    _ci.execute("""INSERT INTO inconsistencias (empleado_id, user_id, fecha, tipo, motivo)
+                   VALUES (?, '7777', ?, 'fichaje_baja', 'x')""", (_eid_i, _f))
+_ci.execute("""INSERT INTO inconsistencias (empleado_id, user_id, fecha, tipo, motivo)
+               VALUES (?, '7777', date('now','localtime'), 'fichaje_baja', 'de hoy')""",
+            (_eid_i,))
+_ci.commit()
+_ci.close()
+
+_rv = cli.post("/api/accesos/revision/resolver-viejas",
+               json={"hasta": datetime.now().strftime("%Y-%m-%d")})
+chequear("resolver-viejas responde 200", _rv.status_code == 200, _rv.text[:200])
+chequear("cierra las tres viejas", _rv.json()["resueltas"] == 3, _rv.text[:200])
+chequear("y deja la de hoy sin resolver", _rv.json()["quedan"] == 1, _rv.text[:200])
+
+_ci = sqlite3.connect(DB)
+chequear("no se borra ninguna: quedan las cuatro",
+         _ci.execute("SELECT COUNT(*) FROM inconsistencias").fetchone()[0] == 4)
+chequear("y queda anotado quien las cerro",
+         _ci.execute("""SELECT COUNT(*) FROM inconsistencias
+                         WHERE resuelta=1 AND resuelta_por IS NOT NULL""").fetchone()[0] == 3)
+_ci.close()
+
+chequear("pide asistencia:corregir",
+         _mirar.post("/api/accesos/revision/resolver-viejas",
+                     json={"hasta": "2026-01-01"}).status_code == 403)
+chequear("y correr la revision pide accesos:aplicar",
+         _mirar.post("/api/accesos/revision/correr").status_code == 403)
 
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")

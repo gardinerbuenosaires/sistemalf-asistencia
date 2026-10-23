@@ -156,13 +156,14 @@ def _save_attendances(attendances) -> int:
     ]
 
     with db_session() as conn:
-        # Cache user_id → {id, activo}
+        # Cache user_id → {id, activo, fecha_egreso}
         cache: dict[str, dict | None] = {}
 
         for user_id, ts, punch, status in rows:
             if user_id not in cache:
                 row = conn.execute(
-                    "SELECT id, activo FROM empleados WHERE user_id = ?", (user_id,)
+                    "SELECT id, activo, fecha_egreso FROM empleados WHERE user_id = ?",
+                    (user_id,)
                 ).fetchone()
                 cache[user_id] = dict(row) if row else None
 
@@ -179,9 +180,24 @@ def _save_attendances(attendances) -> int:
             )
             if cur.rowcount:
                 nuevos += 1
-                # Si el empleado está dado de baja, registrar inconsistencia
-                if emp and emp["activo"] == 0:
-                    fecha = ts[:10]
+                # Si el empleado ya se había ido el día de esta fichada, anotarlo.
+                #
+                # Se compara contra la fecha de la fichada y no contra `activo` a
+                # secas. Una baja adelantada --cargada hoy con fecha futura-- deja
+                # el legajo en activo=0 mientras la persona sigue trabajando con
+                # todo derecho hasta la víspera, y cada pasada suya generaba un
+                # aviso de "fichó estando de baja" que no era cierto. De 101
+                # avisos acumulados, 19 eran eso.
+                #
+                # Sin fecha de egreso no se puede comparar nada, así que un
+                # inactivo sin fecha se anota igual: ahí el aviso sí dice algo.
+                fecha_f = ts[:10]
+                egreso = (emp or {}).get("fecha_egreso")
+                ya_se_habia_ido = bool(
+                    emp and emp["activo"] == 0
+                    and (not egreso or fecha_f > str(egreso)[:10]))
+                if ya_se_habia_ido:
+                    fecha = fecha_f
                     conn.execute(
                         """INSERT INTO inconsistencias (empleado_id, user_id, fecha, tipo, motivo)
                            SELECT ?, ?, ?, 'fichaje_baja',

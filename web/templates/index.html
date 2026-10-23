@@ -487,11 +487,69 @@ function verRevision() {
           </div>`).join('')}
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex:none">
+        ${/* Los avisos de «fichó estando de baja» se venian guardando sin que
+             ninguna pantalla los mostrara, asi que aparecieron cien de golpe,
+             todos viejos. Sin forma de cerrarlos, el informe mostraria el mismo
+             numero en rojo todas las noches aunque no pase nada nuevo. */''}
+        ${d.hallazgos.some(h => h.clave === 'fichaje_baja')
+          ? `<button class="btn btn-primary" style="background:#8a5d06"
+                     onclick="cerrarViejas(this)">Dar por vistos los anteriores a hoy</button>`
+          : ''}
+        <button class="btn btn-primary" style="background:#5a6b7a"
+                onclick="correrRevision(this)">Correr ahora</button>
         <button class="btn btn-primary"
                 onclick="this.closest('div[style*=fixed]').remove()">Cerrar</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
+}
+
+// Correr la revision a pedido. Hace lo mismo que el trabajo de las 3, asi que
+// sirve para verificar que ese camino funciona sin esperar a la madrugada.
+async function correrRevision(boton) {
+  if (!confirm('Va a leer todos los lectores ahora. Tarda unos segundos y, en ' +
+               'hora de servicio, le pelea el lector a la gente que ficha.\n\n' +
+               'No cambia nada en ningun equipo.')) return;
+  const antes = boton.textContent;
+  boton.disabled = true; boton.textContent = 'Leyendo los equipos...';
+  try {
+    const res = await fetch('/api/accesos/revision/correr', { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+    _revision = d;
+    boton.closest('div[style*=fixed]').remove();
+    await loadRevision();
+    verRevision();
+    if (d.corrida && !d.corrida.ok) alert('La revision corrio con error: ' + d.corrida.error);
+  } catch (e) {
+    boton.disabled = false; boton.textContent = antes;
+    alert('No se pudo: ' + e.message);
+  }
+}
+
+// Dar por vistos los avisos viejos. No borra: los marca resueltos, con quien
+// lo hizo. Solo los ANTERIORES a hoy: lo de hoy tiene que seguir en rojo.
+async function cerrarViejas(boton) {
+  const hoy = new Date().toLocaleDateString('sv');
+  if (!confirm('Se van a dar por vistos todos los avisos de «fichó estando de ' +
+               'baja» anteriores a hoy.\n\nNo se borran: quedan marcados como ' +
+               'resueltos. Los de hoy no se tocan.')) return;
+  const antes = boton.textContent;
+  boton.disabled = true; boton.textContent = 'Cerrando...';
+  try {
+    const res = await fetch('/api/accesos/revision/resolver-viejas', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ hasta: hoy }),
+    });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'error');
+    alert(`${d.resueltas} aviso(s) dados por vistos. Quedan ${d.quedan} sin resolver.`);
+    boton.closest('div[style*=fixed]').remove();
+    await loadRevision();
+  } catch (e) {
+    boton.disabled = false; boton.textContent = antes;
+    alert('No se pudo: ' + e.message);
+  }
 }
 
 async function init() {

@@ -296,40 +296,10 @@ def _revision_nocturna():
     if _fecha_ultima_revision == hoy or ahora.hour != 3:
         return
 
-    try:
-        from db.database import db_session
-        from sync.cierre_baja import _lista_equipos
-        from sync.lectores import leer_cargados_varios
-        from sync.plan_accesos import armar_plan
-        from sync.revision import correr, guardar
+    from sync.revision import corrida_completa
 
-        with db_session() as conn:
-            equipos = _lista_equipos(conn)
-        if not equipos:
-            return
-
-        lecturas = leer_cargados_varios(equipos)
-        puertas = [e for e in equipos if e["es_acceso"]]
-        maestros = [e for e in equipos if e["cuenta_asistencia"] and not e["es_acceso"]]
-        with db_session() as conn:
-            plan = armar_plan(conn, puertas, lecturas,
-                              lecturas.get(maestros[0]["id"]) if maestros else None)
-            hallazgos = correr(conn, lecturas, equipos, plan)
-            guardar(conn, hallazgos)
-        _fecha_ultima_revision = hoy
-        logger.info("Revision nocturna: %s hallazgo(s)", len(hallazgos))
-    except Exception as e:
-        logger.error("Error en la revision nocturna: %s", e)
-        # Que falle tiene que quedar escrito: un informe que no aparece y una
-        # revision que se rompio se ven igual desde el tablero.
-        try:
-            from db.database import db_session
-            from sync.revision import guardar
-            with db_session() as conn:
-                guardar(conn, [], error=f"{type(e).__name__}: {e}")
-            _fecha_ultima_revision = hoy
-        except Exception:
-            pass
+    corrida_completa()
+    _fecha_ultima_revision = hoy
 
 
 def _sincronizar_hora_puertas():

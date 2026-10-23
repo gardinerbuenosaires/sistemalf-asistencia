@@ -1291,6 +1291,66 @@ def bajas_pendientes(_user=Depends(require_permiso("accesos", "ver"))):
         return {"personas": pendientes(conn), "resumen": resumen(conn)}
 
 
+class ResolverViejasIn(BaseModel):
+    hasta: str                      # AAAA-MM-DD, inclusive
+    motivo: str | None = None
+
+
+@router.post("/revision/correr")
+def revision_correr(usuario=Depends(require_permiso("accesos", "aplicar"))):
+    """
+    Corre la revision ahora, en vez de esperar a las 3.
+
+    Hace EXACTAMENTE lo mismo que el trabajo de madrugada --la misma funcion--
+    porque lo que uno quiere verificar apretando esto es justamente ese camino.
+    Si fueran dos, probarias uno y de noche correria el otro.
+
+    Pide `aplicar` aunque no escriba en ningun equipo: leer los ocho lectores
+    tiene un costo sobre ellos, y en hora de servicio es pelearle el lector a
+    la gente que esta fichando. No es una pantalla para mirar, es una accion.
+    """
+    from sync.revision import corrida_completa, ultima
+
+    r = corrida_completa()
+    from auth.core import get_permisos_rol
+    permisos = {f"{m}:{a}" for m, a in get_permisos_rol(int(usuario.get("rol_id") or 0))}
+    with db_session() as conn:
+        return {**ultima(conn, permisos), "corrida": {"ok": r["ok"], "error": r["error"]}}
+
+
+@router.post("/revision/resolver-viejas")
+def revision_resolver_viejas(data: ResolverViejasIn,
+                             usuario=Depends(require_permiso("asistencia", "corregir"))):
+    """
+    Da por cerrados los avisos de «fichó estando de baja» anteriores a una fecha.
+
+    Para que existe. Esos avisos se venian guardando desde siempre sin ninguna
+    pantalla que los mostrara, asi que el dia que la revision los saco a la luz
+    aparecieron cien de golpe, todos viejos. Sin forma de cerrarlos, el informe
+    mostraria el mismo numero en rojo todas las noches aunque no pase nada
+    nuevo -- y un cartel que siempre esta es un cartel que nadie mira.
+
+    No borra nada: los marca resueltos, con quien lo hizo. Siguen estando para
+    quien quiera mirarlos.
+
+    Solo toca los ANTERIORES a la fecha que se pide. Lo de hoy no se cierra de
+    arrastre: si algo esta pasando ahora, tiene que seguir en rojo.
+    """
+    with db_session() as conn:
+        cuantos = conn.execute(
+            """SELECT COUNT(*) FROM inconsistencias
+                WHERE tipo = 'fichaje_baja' AND resuelta = 0 AND fecha < ?""",
+            (data.hasta,)).fetchone()[0]
+        conn.execute(
+            """UPDATE inconsistencias SET resuelta = 1, resuelta_por = ?
+                WHERE tipo = 'fichaje_baja' AND resuelta = 0 AND fecha < ?""",
+            (int(usuario.get("sub") or 0) or None, data.hasta))
+        quedan = conn.execute(
+            """SELECT COUNT(*) FROM inconsistencias
+                WHERE tipo = 'fichaje_baja' AND resuelta = 0""").fetchone()[0]
+    return {"resueltas": cuantos, "quedan": quedan, "hasta": data.hasta}
+
+
 @router.get("/revision")
 def revision(usuario=Depends(get_current_user)):
     """

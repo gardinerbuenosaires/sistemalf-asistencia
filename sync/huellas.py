@@ -43,11 +43,19 @@ def respaldar_desde(conn, equipo: dict) -> dict:
 
     No borra a los que no vinieron. Una lectura parcial no es una baja, y si el
     equipo contesta de menos lo que no se leyó tiene que seguir respaldado.
+
+    **Y nunca reduce.** Si el equipo reporta menos huellas de las que hay
+    guardadas, se conserva lo guardado y se cuenta aparte. Un respaldo que
+    copia fielmente una fuente dañada destruye justo lo que hacía falta para
+    reparar: es lo que pasó esta semana con alguien a quien se le reescribió el
+    registro y el equipo quedó con una sola huella de cuatro. Que el respaldo
+    tenga un dedo viejo de más no le hace mal a nadie; que le falte uno sí.
     """
     from sync.lectores import _conectar
 
     resumen = {"ok": False, "personas": 0, "huellas": 0, "sin_legajo": 0,
-               "sin_huella": 0, "error": None}
+               "sin_huella": 0, "conservadas": 0, "quienes_conservadas": [],
+               "error": None}
     conexion = None
     try:
         conexion, _t = _conectar(equipo["ip"], equipo.get("puerto", 4370),
@@ -83,6 +91,15 @@ def respaldar_desde(conn, equipo: dict) -> dict:
             continue
         if not suyas:
             resumen["sin_huella"] += 1
+            continue
+        # Cuantas tiene guardadas hoy. Si el equipo trae menos, no se pisa.
+        tenia = conn.execute(
+            "SELECT COUNT(*) FROM huellas WHERE empleado_id = ?", (eid,)).fetchone()[0]
+        if tenia > len(suyas):
+            resumen["conservadas"] += 1
+            resumen["quienes_conservadas"].append(
+                {"empleado_id": eid, "user_id": numero,
+                 "guardadas": tenia, "en_el_equipo": len(suyas)})
             continue
         # Reemplazo completo de esta persona: el respaldo tiene que quedar igual
         # al equipo, no ser la suma de todo lo que alguna vez tuvo.

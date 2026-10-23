@@ -2564,14 +2564,25 @@ if len(_fh) >= 2:
     chequear("y con el dedo que era", sorted(f.fid for f in _g[_un1]) == [0, 1],
              [f.fid for f in _g[_un1]])
 
-    # Si alguien agrega un dedo, el respaldo tiene que quedar igual al equipo y
-    # no ser la suma de todo lo que alguna vez tuvo.
+    # Esto afirmaba lo contrario: que el respaldo quedara IGUAL al equipo, aunque
+    # eso significara bajar de dos dedos a uno. La idea era que el respaldo
+    # fuera un espejo y no la suma de todo lo que alguien tuvo alguna vez.
+    #
+    # Se revirtio despues de vivirlo: a una persona se le reescribio el registro
+    # en el lector, quedo con una huella de cuatro, y un respaldo espejo habria
+    # borrado las otras tres justo cuando eran lo unico que quedaba para
+    # repararla. Un respaldo que copia fielmente una fuente daniada no es un
+    # respaldo.
+    #
+    # Agregar dedos sigue actualizando el respaldo. Lo unico que ya no pasa es
+    # perderlos.
     _lr_h._conectar = lambda *a, **kw: (_Maestro([(_un1, 1), (_un2, 1)]), "udp")
     with db_session() as _cn:
-        _hu.respaldar_desde(_cn, _EQ_H)
+        _r2 = _hu.respaldar_desde(_cn, _EQ_H)
         _g2 = _hu.guardadas_de(_cn, [_un1])
-    chequear("si en el equipo quedo un dedo, en el respaldo queda uno",
-             len(_g2[_un1]) == 1, len(_g2[_un1]))
+    chequear("si el equipo trae menos dedos, el respaldo conserva los que tenia",
+             len(_g2[_un1]) == 2, len(_g2[_un1]))
+    chequear("y queda contado para avisarlo", _r2["conservadas"] == 1, _r2)
 
     # Una lectura que no trae a alguien NO es una baja.
     _lr_h._conectar = lambda *a, **kw: (_Maestro([(_un1, 1)]), "udp")
@@ -4763,6 +4774,96 @@ chequear("pide asistencia:corregir",
                      json={"hasta": "2026-01-01"}).status_code == 403)
 chequear("y correr la revision pide accesos:aplicar",
          _mirar.post("/api/accesos/revision/correr").status_code == 403)
+
+
+print("\n=== EL RESPALDO DE HUELLAS NUNCA REDUCE ===")
+# Un respaldo que copia fielmente una fuente daniada destruye justo lo que
+# hacia falta para reparar. Paso esta semana: a alguien se le reescribio el
+# registro en el lector, quedo con una huella de cuatro, y si el respaldo lo
+# hubiera copiado se perdian las otras tres.
+from sync.huellas import respaldar_desde as _respaldar_h
+import sync.huellas as _hmod
+
+class _Dedo:
+    def __init__(s, uid, fid, tpl=b"xxxx"):
+        s.uid, s.fid, s.template, s.valid = uid, fid, tpl, 1
+
+class _Usr:
+    def __init__(s, uid, user_id):
+        s.uid, s.user_id = uid, user_id
+
+class _Maestro:
+    """Un equipo de juguete: contesta lo que se le diga."""
+    def __init__(s, usuarios, dedos):
+        s._u, s._d = usuarios, dedos
+    def get_users(s): return s._u
+    def get_templates(s): return s._d
+    def disconnect(s): pass
+
+_ch = sqlite3.connect(DB)
+_ch.row_factory = sqlite3.Row      # respaldar_desde lee las filas por nombre
+_ch.execute("DELETE FROM huellas")
+_eid_h = _ch.execute("""SELECT id FROM empleados
+                         WHERE user_id IS NOT NULL AND TRIM(user_id) <> '' LIMIT 1""").fetchone()[0]
+_num_h = str(_ch.execute("SELECT TRIM(user_id) FROM empleados WHERE id=?",
+                         (_eid_h,)).fetchone()[0])
+_ch.commit()
+
+_real_con_h = _hmod._conectar if hasattr(_hmod, "_conectar") else None
+
+def _poner(usuarios, dedos):
+    import sync.lectores as _lec
+    _lec._conectar = lambda *a, **k: (_Maestro(usuarios, dedos), "udp")
+
+_equipo_h = {"id": 1, "ip": "127.0.0.1", "puerto": 4370, "password": 0, "timeout": 5}
+
+# Primero con cuatro dedos: se respaldan los cuatro.
+_poner([_Usr(7, _num_h)], [_Dedo(7, i) for i in range(4)])
+_r = _respaldar_h(_ch, _equipo_h)
+chequear("respalda las cuatro huellas", _r["huellas"] == 4, _r)
+chequear("y cuenta a la persona", _r["personas"] == 1, _r)
+
+# Ahora el equipo contesta con UNA sola: no se pisa.
+_poner([_Usr(7, _num_h)], [_Dedo(7, 0)])
+_r = _respaldar_h(_ch, _equipo_h)
+_quedan = _ch.execute("SELECT COUNT(*) FROM huellas WHERE empleado_id=?",
+                      (_eid_h,)).fetchone()[0]
+chequear("si el equipo trae MENOS, el respaldo se conserva", _quedan == 4, _quedan)
+chequear("y se cuenta aparte para avisarlo", _r["conservadas"] == 1, _r)
+chequear("diciendo cuantas tenia y cuantas hay en el equipo",
+         _r["quienes_conservadas"][0]["guardadas"] == 4
+         and _r["quienes_conservadas"][0]["en_el_equipo"] == 1,
+         _r["quienes_conservadas"])
+
+# Y si trae mas --le agregaron un dedo-- si se reemplaza.
+_poner([_Usr(7, _num_h)], [_Dedo(7, i) for i in range(6)])
+_r = _respaldar_h(_ch, _equipo_h)
+_quedan = _ch.execute("SELECT COUNT(*) FROM huellas WHERE empleado_id=?",
+                      (_eid_h,)).fetchone()[0]
+chequear("si el equipo trae MAS, el respaldo se actualiza", _quedan == 6, _quedan)
+chequear("y no se cuenta como conservada", _r["conservadas"] == 0, _r)
+
+# Sin ninguna huella tampoco se pisa: eso ya estaba y no se rompio.
+_poner([_Usr(7, _num_h)], [])
+_r = _respaldar_h(_ch, _equipo_h)
+_quedan = _ch.execute("SELECT COUNT(*) FROM huellas WHERE empleado_id=?",
+                      (_eid_h,)).fetchone()[0]
+chequear("si el equipo no trae ninguna, tampoco se pierde nada", _quedan == 6, _quedan)
+chequear("y se cuenta como sin huella", _r["sin_huella"] == 1, _r)
+
+# Y la revision lo informa.
+from sync import revision as _rv2
+_eqs_h = _cbj._lista_equipos(_ch)
+_lec_h = {eq["id"]: {"ok": True, "error": None, "completa": True,
+                     "declarados": 0, "usuarios": []} for eq in _eqs_h}
+_h2 = _rv2.correr(_ch, _lec_h, _eqs_h, None, {"conservadas": 2, "error": None})
+chequear("la revision avisa de las huellas conservadas",
+         any(x["clave"] == "huellas_de_menos_en_equipo" and x["cuantos"] == 2
+             for x in _h2), [x["clave"] for x in _h2])
+_h3 = _rv2.correr(_ch, _lec_h, _eqs_h, None, {"conservadas": 0, "error": "no conecta"})
+chequear("y avisa si el respaldo fallo",
+         any(x["clave"] == "respaldo_fallo" for x in _h3), [x["clave"] for x in _h3])
+_ch.close()
 
 
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")

@@ -57,7 +57,7 @@ def _equipos_mudos(lecturas, equipos):
     return mudos
 
 
-def correr(conn, lecturas, equipos, plan=None) -> list:
+def correr(conn, lecturas, equipos, plan=None, respaldo=None) -> list:
     """Arma la lista de hallazgos. No escribe nada en ningún equipo."""
     from sync.bajas import resumen as resumen_bajas
     from sync.huellas import resumen as resumen_huellas
@@ -123,6 +123,21 @@ def correr(conn, lecturas, equipos, plan=None) -> list:
                 AMBAR, "faltan_cargar", "persona(s) a las que les falta una puerta",
                 faltan, "Configuracion > Dispositivos > Plan de cambios",
                 "accesos:ver", "Su perfil se la da y el lector no las tiene"))
+
+    # Que el equipo tenga menos huellas de las respaldadas es una senial: a esa
+    # persona le pasó algo en el lector. Se conserva el respaldo y se avisa.
+    if respaldo and respaldo.get("conservadas"):
+        hallazgos.append(_hallazgo(
+            AMBAR, "huellas_de_menos_en_equipo",
+            "persona(s) con menos huellas en el equipo que en el respaldo",
+            respaldo["conservadas"], "Configuracion > Dispositivos > Huellas",
+            "accesos:ver",
+            "El respaldo se conservó. Puede que se les haya reescrito el registro"))
+    if respaldo and respaldo.get("error"):
+        hallazgos.append(_hallazgo(
+            AMBAR, "respaldo_fallo", "no se pudieron respaldar las huellas", 1,
+            "Configuracion > Dispositivos > Huellas", "accesos:ver",
+            respaldo["error"]))
 
     huellas = resumen_huellas(conn)
     if huellas.get("sin_respaldo"):
@@ -215,10 +230,22 @@ def corrida_completa() -> dict:
         lecturas = leer_cargados_varios(equipos)
         puertas = [e for e in equipos if e["es_acceso"]]
         maestros = [e for e in equipos if e["cuenta_asistencia"] and not e["es_acceso"]]
+
+        # El respaldo de huellas, antes de mirar nada. Va aca y no en un boton
+        # porque un respaldo que depende de que alguien se acuerde esta viejo
+        # justo el dia que hace falta. Y va ANTES de los hallazgos para que el
+        # informe cuente lo que quedo, no lo que habia.
+        respaldo = None
+        if maestros:
+            from sync.huellas import respaldar_desde
+            with db_session() as conn:
+                respaldo = respaldar_desde(conn, maestros[0])
+            logger.info("Respaldo de huellas: %s", respaldo)
+
         with db_session() as conn:
             plan = armar_plan(conn, puertas, lecturas,
                               lecturas.get(maestros[0]["id"]) if maestros else None)
-            hallazgos = correr(conn, lecturas, equipos, plan)
+            hallazgos = correr(conn, lecturas, equipos, plan, respaldo)
             guardar(conn, hallazgos)
         logger.info("Revision: %s hallazgo(s)", len(hallazgos))
         return {"ok": True, "hallazgos": hallazgos, "error": None}

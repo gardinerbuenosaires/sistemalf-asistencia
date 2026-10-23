@@ -229,6 +229,24 @@ def main():
 
         print("\n  Escrito. Releyendo para verificar...")
         despues = conexion.get_users()
+
+        # Cuantas fichas quedaron con ese numero. El lector no deja crear dos
+        # veces el mismo numero desde su pantalla, pero escribiendo por red no
+        # valida nada. Dos personas quedaron duplicadas asi y se descubrio
+        # semanas despues, de casualidad: las dos habian pasado por este
+        # script, que verificaba las huellas y los demas registros pero nunca
+        # conto los suyos.
+        mismas = [u for u in despues if str(u.user_id).strip() == NUMERO]
+        if len(mismas) > 1:
+            print()
+            print(f"  OJO: el equipo quedo con {len(mismas)} registros del "
+                  f"numero {NUMERO}.")
+            for u in mismas:
+                print(f"     ranura {u.uid}  «{(u.name or '').strip()}»")
+            print()
+            print("  Eso NO se arregla desde aca. Mirenlo con volcar_usuarios,")
+            print("  que lee las fichas una por una, antes de tocar nada mas:")
+            print("  un borrado por ranura puede llevarse las dos.")
         cuenta = {}
         for h in conexion.get_templates():
             if getattr(h, "valid", 1):

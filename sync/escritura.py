@@ -44,10 +44,22 @@ def _conectar(dispositivo):
 
 
 def _foto(conexion):
-    """Cómo está el equipo: cada usuario con su índice, nombre, grupo y huellas."""
+    """
+    Cómo está el equipo: cada usuario con su índice, nombre, grupo y huellas.
+
+    **`usuarios` está indexado por número, así que dos registros con el mismo
+    número colapsan en uno.** Eso es cómodo para todo lo demás y es una trampa
+    para lo que importa acá: un equipo puede tener dos fichas que digan «21» y
+    esta vista muestra una sola. Pasó, y nadie lo vio durante semanas.
+
+    Por eso se cuentan aparte, antes de colapsar, en `repetidos`. Quien escribe
+    tiene que mirarlo: una operación que deja dos registros con el mismo número
+    no salió bien, por más que al releer «la persona esté».
+    """
     from collections import Counter
 
     usuarios = conexion.get_users()
+    veces = Counter(str(u.user_id).strip() for u in usuarios)
     huellas, crudas = Counter(), {}
     for h in conexion.get_templates():
         if getattr(h, "valid", 1):
@@ -55,6 +67,7 @@ def _foto(conexion):
             crudas.setdefault(h.uid, []).append(h)
     return {
         "declarados": getattr(conexion, "users", None),
+        "repetidos": {n: c for n, c in veces.items() if c > 1},
         "crudos": {str(u.user_id).strip(): u for u in usuarios},
         "huellas_crudas": crudas,
         "usuarios": {
@@ -64,6 +77,23 @@ def _foto(conexion):
                 "huellas": huellas.get(u.uid, 0),
             } for u in usuarios},
     }
+
+
+def _aviso_repetido(despues, numero):
+    """Si la escritura dejó más de un registro con ese número, decirlo.
+
+    El lector no deja crear dos veces el mismo número desde su pantalla, pero
+    escribiendo por red no valida nada: guarda lo que le mandan. Dos registros
+    con el mismo número no rompen el fichaje --la persona apoya el dedo y el
+    equipo informa su número igual-- pero sí rompen todo lo que viene después:
+    el sistema ve uno solo, y un borrado puede llevarse el que no era.
+    """
+    cuantos = (despues.get("repetidos") or {}).get(str(numero).strip())
+    if not cuantos:
+        return None
+    return (f"El equipo quedó con {cuantos} registros del número {numero}. "
+            f"Eso no se puede arreglar desde acá: hace falta mirarlo con "
+            f"volcar_usuarios, que lee las fichas una por una.")
 
 
 def _aviso_lista_corta(cierra, detalle):
@@ -335,6 +365,11 @@ def sacar_de_puerta(puerta: dict, numero: str) -> dict:
         despues = _foto(conexion)
         sigue = numero in despues["usuarios"]
         problemas = _intactos(antes, despues, numero)
+        # Si habia dos fichas con ese numero, el borrado se lleva una y la otra
+        # queda. «Sigue cargado» no alcanza para explicarlo.
+        repetido = _aviso_repetido(despues, numero)
+        if repetido:
+            problemas = list(problemas) + [repetido]
         bien = not sigue and not problemas
         return {"ok": bien, "transporte": transporte, "respaldo": respaldo,
                 "aviso_lista": _aviso_lista_corta(cierra, detalle),
@@ -565,8 +600,12 @@ def cargar_en_puerta(puerta: dict, maestro: dict, numero: str,
         despues = _foto(conexion)
         quedo = despues["usuarios"].get(numero)
         problemas = _intactos(antes, despues, numero)
+        repetido = _aviso_repetido(despues, numero)
+        if repetido:
+            problemas = list(problemas) + [repetido]
         bien = quedo and quedo["huellas"] == len(suyas) and not problemas
         return {"ok": bool(bien), "transporte": transporte,
+                "repetido": repetido,
                 "uid": uid, "grupo": grupo, "nombre_escrito": texto,
                 "nombre_por_defecto": por_defecto,
                 "grupo_ambiguo": ambiguo,
@@ -820,9 +859,16 @@ def actualizar_en_puerta(puerta: dict, numero: str, nombre: str = None,
                 repuestas = True
 
         problemas = _intactos(antes, despues, numero)
+        # Lo que no miraba nadie: que la escritura haya dejado dos fichas con
+        # el mismo numero. Paso con dos personas y se descubrio semanas
+        # despues, de casualidad.
+        repetido = _aviso_repetido(despues, numero)
+        if repetido:
+            problemas = list(problemas) + [repetido]
         bien = (quedo is not None and quedo["nombre"] == texto
                 and quedo["huellas"] == len(suyas) and not problemas)
         return {"ok": bien, "transporte": transporte, "nombre_escrito": texto,
+                "repetido": repetido,
                 "aviso_lista": _aviso_lista_corta(cierra, detalle),
                 "nombre_anterior": actual["nombre"], "nivel": nivel,
                 "huellas": quedo["huellas"] if quedo else 0,

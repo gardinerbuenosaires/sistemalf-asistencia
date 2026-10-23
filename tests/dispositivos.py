@@ -4866,5 +4866,102 @@ chequear("y avisa si el respaldo fallo",
 _ch.close()
 
 
+print("\n=== DOS FICHAS CON EL MISMO NUMERO NO ES UNA OPERACION BUENA ===")
+# El lector no deja crear dos veces el mismo numero desde su pantalla, pero
+# escribiendo por red no valida nada. Dos personas quedaron asi en el equipo de
+# fichaje y se descubrio semanas despues, de casualidad: el sistema arma su
+# lista indexada por numero, los dos registros colapsan en uno, y todo lo
+# siguiente da por hecho que hay uno solo.
+import sync.escritura as _erep
+
+class _DedoR:
+    def __init__(s, uid, fid):
+        s.uid, s.fid, s.template, s.valid = uid, fid, b"t", 1
+    def json_pack(s): return {"uid": s.uid, "fid": s.fid}
+
+class _UsrR:
+    def __init__(s, uid, user_id, name=""):
+        s.uid, s.user_id, s.name = uid, user_id, name
+        s.group_id, s.privilege = "1", 0
+
+class _EquipoRepetido:
+    """Al reescribir deja DOS fichas con el mismo numero, como paso de verdad."""
+    user_packet_size = 28
+    encoding = "latin-1"
+
+    def __init__(s):
+        s.usuarios = [_UsrR(5, "77", "VIEJO"), _UsrR(6, "80", "OTRO")]
+        s.dedos = [_DedoR(5, 0), _DedoR(5, 1)]
+        s.duplicar = False
+
+    def get_users(s): return list(s.usuarios)
+    def get_templates(s): return list(s.dedos)
+    def refresh_data(s): pass
+    def save_user_template(s, u, huellas): s.dedos = list(huellas)
+    def delete_user(s, uid=0, user_id=""):
+        s.usuarios = [u for u in s.usuarios if u.uid != uid]
+    def set_user(s, **kw): pass
+
+    def _ZK__send_command(s, comando, datos, respuesta=8):
+        # Escribir deja la ficha actualizada y, si toca, una copia de mas.
+        s.usuarios = [u for u in s.usuarios if u.user_id != "77"]
+        s.usuarios.append(_UsrR(5, "77", "NUEVO"))
+        if s.duplicar:
+            s.usuarios.append(_UsrR(5, "77", ""))
+        return {"status": True}
+
+_eq_rep = {"id": 1, "nombre": "Puerta", "ip": "127.0.0.9", "puerto": 4370,
+           "password": 0, "timeout": 5}
+_real_con_rep = _erep._conectar
+
+# Sin duplicar: la operacion sale bien.
+_mock = _EquipoRepetido()
+_erep._conectar = lambda *a, **kw: (_mock, "udp")
+_r = _erep.actualizar_en_puerta(_eq_rep, "77", nombre="NUEVO")
+chequear("sin repetidos, actualizar sale bien", _r["ok"] is True, _r.get("error"))
+chequear("y no avisa de nada", _r.get("repetido") is None, _r.get("repetido"))
+
+# Duplicando: NO puede darse por buena.
+_mock = _EquipoRepetido()
+_mock.duplicar = True
+_erep._conectar = lambda *a, **kw: (_mock, "udp")
+_r = _erep.actualizar_en_puerta(_eq_rep, "77", nombre="NUEVO")
+chequear("si quedaron dos fichas, la operacion NO sale bien",
+         _r["ok"] is False, _r)
+chequear("y lo dice con todas las letras",
+         _r.get("repetido") and "2 registros" in _r["repetido"], _r.get("repetido"))
+chequear("el motivo llega entre los problemas",
+         any("2 registros" in p for p in (_r.get("problemas") or [])), _r.get("problemas"))
+
+# Y _foto los cuenta antes de colapsarlos, que es donde se perdian.
+_mock2 = _EquipoRepetido()
+_mock2.usuarios.append(_UsrR(5, "77", "COPIA"))
+_f = _erep._foto(_mock2)
+chequear("_foto cuenta los repetidos antes de indexar por numero",
+         _f["repetidos"].get("77") == 2, _f["repetidos"])
+chequear("aunque la vista por numero muestre uno solo",
+         len([k for k in _f["usuarios"] if k == "77"]) == 1, list(_f["usuarios"]))
+
+_erep._conectar = _real_con_rep
+
+# Y la revision lo informa en rojo.
+_cr = sqlite3.connect(DB)
+_cr.row_factory = sqlite3.Row      # _lista_equipos lee las filas por nombre
+_eqs_r = _cbj._lista_equipos(_cr)
+_lec_r = {eq["id"]: {"ok": True, "error": None, "completa": True, "declarados": 0,
+                     "usuarios": [], "repetidos": {}} for eq in _eqs_r}
+if _eqs_r:
+    _lec_r[_eqs_r[0]["id"]]["repetidos"] = {"21": 2, "57": 2}
+_hr = _rev.correr(_cr, _lec_r, _eqs_r, None)
+_cr.close()
+chequear("la revision avisa de los numeros repetidos, en rojo",
+         any(x["clave"] == "numeros_repetidos" and x["nivel"] == "rojo" for x in _hr),
+         [x["clave"] for x in _hr])
+chequear("diciendo en que lector y cuales son",
+         any("21" in (x.get("detalle") or "") for x in _hr
+             if x["clave"] == "numeros_repetidos"),
+         [x.get("detalle") for x in _hr if x["clave"] == "numeros_repetidos"])
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

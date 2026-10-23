@@ -255,6 +255,13 @@ def leer_cargados(dispositivo: dict, con_huellas: bool = False,
         # estar cargada. El camino de escritura ya hacia esta comprobacion
         # antes de tocar nada; el de lectura no, y de ahi salen el plan y la
         # ficha de cada persona.
+        # Dos fichas con el mismo numero. La lista de abajo las trae a las dos,
+        # pero todo lo que la indexa por numero las colapsa en una: hay que
+        # contarlas antes para que alguien se entere.
+        from collections import Counter
+        _veces = Counter(str(u.user_id).strip() for u in usuarios)
+        repetidos = {n: c for n, c in _veces.items() if c > 1}
+
         dice = getattr(conexion, "users", None)
         completa = None if dice is None else len(usuarios) == dice
         huellas = _contar_huellas(conexion) if con_huellas else None
@@ -270,6 +277,7 @@ def leer_cargados(dispositivo: dict, con_huellas: bool = False,
                            "se leyeron %s", dispositivo.get("ip"), dice,
                            len(usuarios))
         return {"ok": True, "transporte": transporte, "usuarios": usuarios,
+                "repetidos": repetidos,
                 "error": None, "declarados": dice, "completa": completa,
                 "huellas_leidas": None if not con_huellas else huellas is not None}
     except Exception as exc:

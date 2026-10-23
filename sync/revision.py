@@ -71,6 +71,22 @@ def correr(conn, lecturas, equipos, plan=None, respaldo=None) -> list:
             ROJO, "equipos_mudos", "equipo(s) sin leer", len(mudos),
             "Configuracion > Dispositivos", "accesos:ver", "; ".join(mudos)))
 
+    # Numeros que aparecen dos veces dentro de un mismo lector. Nadie los veia:
+    # el sistema arma su lista indexada por numero y uno pisa al otro. Va en
+    # rojo porque rompe todo lo que viene despues -- sobre todo los borrados,
+    # que van por ranura y pueden llevarse el que no era.
+    con_repetidos = []
+    for d in equipos:
+        lec = lecturas.get(d["id"]) or {}
+        if lec.get("ok") and lec.get("repetidos"):
+            con_repetidos.append(
+                f"{d['nombre']}: " + ", ".join(sorted(lec["repetidos"])))
+    if con_repetidos:
+        hallazgos.append(_hallazgo(
+            ROJO, "numeros_repetidos", "lector(es) con un numero cargado dos veces",
+            len(con_repetidos), "Configuracion > Dispositivos", "accesos:ver",
+            "; ".join(con_repetidos)))
+
     bajas = resumen_bajas(conn)
     if bajas["pendientes"]:
         hallazgos.append(_hallazgo(

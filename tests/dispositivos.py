@@ -5020,5 +5020,114 @@ chequear("y el nombre de verdad llega entero",
          _f["usuarios"]["34"]["nombre"] == "Ana", _f["usuarios"]["34"])
 
 
+print("\n=== NO SE CIERRA LA BAJA DE ALGUIEN QUE SIGUE FICHANDO ===")
+# Una baja con fichadas posteriores no es una baja: es un legajo
+# desactualizado. Cerrarla le saca el numero, lo borra de todos los equipos y
+# lo deja sin poder fichar ESTANDO EN SU PUESTO. Paso: tres personas en un dia,
+# una de ellas venia trabajando desde hacia cinco meses.
+_cg = sqlite3.connect(DB)
+_cg.row_factory = sqlite3.Row
+_cg.execute("UPDATE empleados SET activo=1, fecha_egreso=NULL")
+_cg.execute("DELETE FROM fichajes")
+_eid_g = _cg.execute("SELECT id FROM empleados ORDER BY id LIMIT 1").fetchone()[0]
+_cg.execute("""UPDATE empleados SET activo=0, user_id='8301',
+                      fecha_egreso=date('now','localtime','-30 days') WHERE id=?""",
+            (_eid_g,))
+_cg.commit()
+
+chequear("sin fichadas posteriores, no hay nada que frenar",
+         _cbj.ficho_despues_del_egreso(_cg, _eid_g) is None)
+
+# Una del MISMO dia del egreso no frena: es ambigua y frenaria siempre.
+_cg.execute("""INSERT INTO fichajes (empleado_id, user_id, timestamp)
+               VALUES (?, '8301', date('now','localtime','-30 days') || ' 22:10:00')""",
+            (_eid_g,))
+_cg.commit()
+chequear("una fichada del mismo dia del egreso no frena",
+         _cbj.ficho_despues_del_egreso(_cg, _eid_g) is None,
+         _cbj.ficho_despues_del_egreso(_cg, _eid_g))
+
+# Una POSTERIOR si.
+_cg.execute("""INSERT INTO fichajes (empleado_id, user_id, timestamp)
+               VALUES (?, '8301', date('now','localtime','-3 days') || ' 08:30:00')""",
+            (_eid_g,))
+_cg.commit()
+_s = _cbj.ficho_despues_del_egreso(_cg, _eid_g)
+chequear("una fichada posterior al egreso si frena", _s is not None, _s)
+chequear("y dice cuantas y cual fue la ultima",
+         _s["cuantas"] == 1 and _s["ultima"].startswith("20"), _s)
+
+# Las de fecha imposible no cuentan: hay equipos con el reloj en 2103.
+_cg.execute("DELETE FROM fichajes")
+_cg.execute("""INSERT INTO fichajes (empleado_id, user_id, timestamp)
+               VALUES (?, '8301', '2103-08-18 07:19:41')""", (_eid_g,))
+_cg.commit()
+chequear("una fichada con fecha imposible no frena nada",
+         _cbj.ficho_despues_del_egreso(_cg, _eid_g) is None)
+
+# Y el cierre se niega, sin tocar ningun equipo.
+_cg.execute("DELETE FROM fichajes")
+_cg.execute("""INSERT INTO fichajes (empleado_id, user_id, timestamp)
+               VALUES (?, '8301', date('now','localtime','-2 days') || ' 09:00:00')""",
+            (_eid_g,))
+_cg.commit()
+_tocados = []
+_r = _cbj.cerrar(_cg, dict(_cg.execute(
+        "SELECT id, nombre, apellido, user_id FROM empleados WHERE id=?",
+        (_eid_g,)).fetchone()),
+    sincronizar=lambda: {"error": None, "nuevos": 0},
+    sacar=lambda eq, n: (_tocados.append(n), {"ok": True})[1],
+    leer=lambda eq: {"ok": True, "error": None, "completa": True,
+                     "declarados": 1, "usuarios": [{"user_id": "8301"}]})
+chequear("el cierre se niega", _r.get("sigue_fichando") is True, _r)
+chequear("y no toca ningun equipo", _tocados == [], _tocados)
+chequear("el numero sigue siendo suyo",
+         _cg.execute("SELECT user_id FROM empleados WHERE id=?",
+                     (_eid_g,)).fetchone()[0] == "8301")
+
+
+print("\n=== SI UNA PUERTA FALLA, EL EQUIPO DE FICHAJE NO SE TOCA ===")
+# Las dos mitades no cuestan lo mismo. Que alguien siga cargado en una puerta
+# de mas es un pendiente que se ve y se retoma. Que lo saquemos del equipo de
+# fichaje lo deja sin poder marcar, y si la baja resulta estar mal eso es justo
+# lo unico que necesitaba.
+_cg.execute("DELETE FROM fichajes")
+_cg.commit()
+_eqs_g = _cbj._lista_equipos(_cg)
+_puertas_g = [e for e in _eqs_g if e["es_acceso"]]
+_maestros_g = [e for e in _eqs_g if e["cuenta_asistencia"] and not e["es_acceso"]]
+
+if _puertas_g and _maestros_g:
+    _tocados = []
+    _muda = _puertas_g[0]["id"]
+
+    def _leer_una_falla(eq):
+        if eq["id"] == _muda:
+            return {"ok": False, "error": "timeout", "usuarios": []}
+        return {"ok": True, "error": None, "completa": True, "declarados": 1,
+                "usuarios": [{"user_id": "8301"}]}
+
+    _r = _cbj.cerrar(_cg, dict(_cg.execute(
+            "SELECT id, nombre, apellido, user_id FROM empleados WHERE id=?",
+            (_eid_g,)).fetchone()),
+        sincronizar=lambda: {"error": None, "nuevos": 0},
+        sacar=lambda eq, n: (_tocados.append(eq["id"]), {"ok": True})[1],
+        leer=_leer_una_falla)
+
+    chequear("la baja no se cierra", _r["ok"] is False, _r.get("error"))
+    chequear("al equipo de fichaje NO se lo tocó",
+             _maestros_g[0]["id"] not in _tocados, _tocados)
+    _fila_m = next((e for e in _r["equipos"] if e["id"] == _maestros_g[0]["id"]), None)
+    chequear("y se dice por qué no se lo tocó",
+             _fila_m and _fila_m["accion"] == "no se tocó"
+             and "pendiente" in (_fila_m["detalle"] or ""), _fila_m)
+    chequear("las puertas que sí contestaron se limpiaron igual",
+             len(_tocados) >= 1, _tocados)
+    chequear("y el numero sigue ocupado",
+             _cg.execute("SELECT user_id FROM empleados WHERE id=?",
+                         (_eid_g,)).fetchone()[0] == "8301")
+_cg.close()
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

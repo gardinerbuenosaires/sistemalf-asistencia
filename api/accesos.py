@@ -1503,7 +1503,9 @@ def cerrar_baja(data: CerrarBajaIn,
                 detalle=f"{r['huellas_olvidadas']} huella(s) olvidadas",
                 usuario_id=int(usuario.get("sub") or 0) or None)
 
-    if r.get("no_corresponde") or r.get("sin_numero"):
+    # Los tres portones devuelven 400 con el motivo: son cosas que hay que
+    # mirar en el legajo, no reintentar.
+    if r.get("no_corresponde") or r.get("sin_numero") or r.get("sigue_fichando"):
         raise HTTPException(400, r["error"])
     return {**r, "empleado": quien}
 

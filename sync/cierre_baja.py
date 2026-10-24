@@ -59,6 +59,39 @@ def _lista_equipos(conn):
          ORDER BY es_acceso DESC, orden, id""")]
 
 
+def ficho_despues_del_egreso(conn, eid):
+    """Si siguió fichando después del día en que, según el legajo, se fue.
+
+    Una baja con fichadas posteriores no es una baja: es un legajo
+    desactualizado. Puede ser alguien a quien recontrataron y nadie reactivó, o
+    alguien que nunca se fue.
+
+    Cerrar esa baja es el peor error posible del módulo: le saca el número, lo
+    borra de todos los equipos y lo deja sin poder fichar **estando en su
+    puesto**. Pasó: tres personas en un día, y una de ellas venía trabajando
+    desde hacía cinco meses con el legajo diciendo que se había ido.
+
+    Se cuentan solo los días ESTRICTAMENTE posteriores al egreso. Una pasada el
+    mismo día del egreso es ambigua --un turno que cierra tarde, un reloj
+    corrido-- y frenar por eso sería frenar siempre.
+
+    Y se descartan las fichadas con fecha imposible: hay equipos con el reloj en
+    2103, y esas no dicen nada sobre si alguien vino a trabajar.
+    """
+    fila = conn.execute("""
+        SELECT COUNT(*) AS n, MAX(f.timestamp) AS ultima
+          FROM fichajes f
+          JOIN empleados e ON e.id = f.empleado_id
+         WHERE f.empleado_id = ?
+           AND e.fecha_egreso IS NOT NULL
+           AND date(f.timestamp) > e.fecha_egreso
+           AND f.timestamp < '2030-01-01'
+    """, (eid,)).fetchone()
+    if not fila or not fila["n"]:
+        return None
+    return {"cuantas": fila["n"], "ultima": fila["ultima"]}
+
+
 def _trabaja(conn, eid):
     from sync.plan_accesos import trabaja_hoy
     fila = conn.execute(
@@ -101,6 +134,15 @@ def cerrar(conn, empleado: dict, sincronizar=None, sacar=None, leer=None) -> dic
         return {"ok": False, "sin_numero": True, "equipos": [],
                 "error": "No tiene número asignado: no hay nada que liberar."}
 
+    # El otro portón, y el que más importa: dice que se fue pero sigue viniendo.
+    sigue = ficho_despues_del_egreso(conn, eid)
+    if sigue:
+        return {"ok": False, "sigue_fichando": True, "equipos": [],
+                "error": f"Fichó {sigue['cuantas']} vez/veces DESPUÉS de su fecha "
+                         f"de egreso, la última el {sigue['ultima']}. Esa baja no "
+                         f"es real: revisá el legajo antes de cerrarla. Cerrarla "
+                         f"lo dejaría sin poder fichar estando en su puesto."}
+
     equipos = _lista_equipos(conn)
     if not equipos:
         return {"ok": False, "equipos": [],
@@ -115,9 +157,30 @@ def cerrar(conn, empleado: dict, sincronizar=None, sacar=None, leer=None) -> dic
         except Exception as exc:
             sync = {"error": f"{type(exc).__name__}: {exc}"}
 
+    # Las puertas primero y el de fichaje al final: `_lista_equipos` ya viene
+    # ordenado así.
     resultados, pendientes = [], []
     for eq in equipos:
         es_maestro = bool(eq["cuenta_asistencia"]) and not eq["es_acceso"]
+
+        # Si alguna puerta quedó pendiente, el equipo de fichaje NO se toca.
+        #
+        # Las dos mitades no cuestan lo mismo. Que alguien siga cargado en una
+        # puerta de más es un pendiente: se ve en el plan y se retoma. Que lo
+        # saquemos del equipo de fichaje lo deja sin poder marcar, y si la baja
+        # resulta estar mal --pasó-- eso es justo lo único que necesitaba.
+        #
+        # Así que ante una limpieza incompleta se conserva lo que protege a la
+        # persona y se deja pendiente lo que protege a la puerta. Las puertas
+        # que sí se limpiaron quedan limpias: eso no se deshace.
+        if es_maestro and pendientes:
+            resultados.append({"equipo": eq["nombre"], "id": eq["id"],
+                               "accion": "no se tocó", "ok": False,
+                               "detalle": "quedó pendiente " + ", ".join(pendientes)
+                                          + ": no se lo saca del fichaje hasta "
+                                            "poder completar las puertas"})
+            pendientes.append(eq["nombre"])
+            continue
 
         # Sin un sync limpio no se saca a nadie del equipo de fichaje: sería
         # perder sus últimos días de trabajo.
@@ -273,9 +336,22 @@ def cerrar_afuera(conn, lecturas, equipos) -> dict:
     from sync.bajas import pendientes as _pendientes
 
     cerradas, siguen, detalle = 0, 0, []
+    fichando = 0
     for p in _pendientes(conn):
         numero = (p["user_id"] or "").strip()
         quien = f"{p['apellido']}, {p['nombre']}".strip(", ")
+
+        # El mismo portón que en el cierre de a uno: una baja con fichadas
+        # posteriores no es una baja. En una tanda importa más, porque nadie
+        # mira caso por caso.
+        marcando = ficho_despues_del_egreso(conn, p["id"])
+        if marcando:
+            fichando += 1
+            detalle.append({"empleado_id": p["id"], "empleado": quien,
+                            "cerrada": False, "sigue_fichando": True,
+                            "ultima_fichada": marcando["ultima"]})
+            continue
+
         donde = _donde_esta(numero, lecturas, equipos) if numero else []
         if donde:
             siguen += 1
@@ -294,7 +370,8 @@ def cerrar_afuera(conn, lecturas, equipos) -> dict:
         detalle.append({"empleado_id": p["id"], "empleado": quien, "cerrada": True,
                         "numero": numero or None, "huellas_olvidadas": olvidadas})
 
-    logger.info("Cierre en tanda: %s baja(s) cerradas, %s siguen cargadas",
-                cerradas, siguen)
+    logger.info("Cierre en tanda: %s cerradas, %s siguen cargadas, "
+                "%s fichando despues del egreso", cerradas, siguen, fichando)
     return {"ok": True, "cerradas": cerradas, "siguen": siguen,
-            "detalle": detalle, "equipos_con_problema": [], "error": None}
+            "fichando": fichando, "detalle": detalle,
+            "equipos_con_problema": [], "error": None}

@@ -41,6 +41,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def nombre_del_equipo(nombre, numero):
+    """El nombre que el lector muestra, o vacío si no tiene ninguno.
+
+    Cuando un registro no tiene nombre, la librería no devuelve vacío: devuelve
+    la cadena `NN-<numero>`. Es un relleno para que algo se vea en pantalla, no
+    un dato del equipo.
+
+    Hay que convertirlo de vuelta a vacío apenas entra, porque si se toma por
+    bueno viaja: se guarda así en el respaldo del borrado, y al reponer a esa
+    persona se le escribe al lector como si alguien lo hubiera elegido. Pasó, y
+    el equipo de fichaje quedó con «NN-21» grabado como el nombre de una
+    persona.
+
+    Vacío es la respuesta correcta: significa «este registro no tiene nombre»,
+    que es exactamente lo que el equipo tiene guardado.
+    """
+    texto = (nombre or "").strip()
+    return "" if not texto or texto == f"NN-{str(numero).strip()}" else texto
+
+
 def _conectar(ip, puerto, password, timeout):
     """
     Primero TCP y, si no contesta, UDP: los equipos viejos a veces solo hablan
@@ -242,7 +262,7 @@ def leer_cargados(dispositivo: dict, con_huellas: bool = False,
             {
                 "uid":        u.uid,
                 "user_id":    str(u.user_id).strip(),
-                "nombre":     (u.name or "").strip(),
+                "nombre":     nombre_del_equipo(u.name, u.user_id),
                 "privilegio": u.privilege,
                 "tarjeta":    u.card,
                 "grupo":      str(u.group_id).strip() if u.group_id not in (None, "") else None,

@@ -58,6 +58,8 @@ def _foto(conexion):
     """
     from collections import Counter
 
+    from sync.lectores import nombre_del_equipo
+
     usuarios = conexion.get_users()
     veces = Counter(str(u.user_id).strip() for u in usuarios)
     huellas, crudas = Counter(), {}
@@ -72,7 +74,8 @@ def _foto(conexion):
         "huellas_crudas": crudas,
         "usuarios": {
             str(u.user_id).strip(): {
-                "uid": u.uid, "nombre": (u.name or "").strip(),
+                "uid": u.uid,
+                "nombre": nombre_del_equipo(u.name, u.user_id),
                 "grupo": str(u.group_id).strip(), "privilegio": u.privilege,
                 "huellas": huellas.get(u.uid, 0),
             } for u in usuarios},
@@ -206,6 +209,12 @@ def _nombre_para_el_lector(configurado, del_maestro, numero):
 
 
 def _escribir_usuario(conexion, uid, nombre, privilegio, grupo, numero, franja=0):
+    # Ultimo filtro antes de tocar el equipo: `NN-<numero>` no se escribe nunca.
+    # Deberia venir ya convertido a vacio al leer, pero esto tambien llega desde
+    # un respaldo viejo o desde un script, y una vez escrito queda grabado en el
+    # lector como si fuera el nombre de alguien.
+    from sync.lectores import nombre_del_equipo
+    nombre = nombre_del_equipo(nombre, numero)
     """
     Crea o reescribe un usuario SIN degradarle el nivel.
 

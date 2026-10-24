@@ -4963,5 +4963,62 @@ chequear("diciendo en que lector y cuales son",
          [x.get("detalle") for x in _hr if x["clave"] == "numeros_repetidos"])
 
 
+print("\n=== «NN-numero» NO ES UN NOMBRE ===")
+# Cuando un registro del lector no tiene nombre, la libreria no devuelve vacio:
+# devuelve «NN-<numero>», un relleno para que algo se vea en pantalla. Si se
+# toma por bueno, viaja: se guarda asi en el respaldo del borrado y al reponer
+# a esa persona se le escribe al equipo como si alguien lo hubiera elegido.
+# Paso de verdad: el equipo de fichaje quedo con «NN-21» grabado, y se
+# reprodujo en vivo con un numero de prueba.
+from sync.lectores import nombre_del_equipo as _nn
+
+chequear("«NN-21» para el 21 es vacio", _nn("NN-21", "21") == "")
+chequear("y tambien si el numero viene con espacios", _nn("NN-21", " 21 ") == "")
+chequear("un nombre de verdad se respeta", _nn("Braian", "21") == "Braian")
+chequear("vacio sigue siendo vacio", _nn("", "21") == "")
+chequear("None tambien", _nn(None, "21") == "")
+# «NN-57» en el registro del 21 SI es un nombre: no es su relleno.
+chequear("«NN-57» en el 21 no es relleno: es un nombre raro pero es un nombre",
+         _nn("NN-57", "21") == "NN-57")
+chequear("se le sacan los espacios de los costados", _nn("  Jorge  ", "57") == "Jorge")
+
+# Y la escritura lo filtra aunque llegue de un respaldo viejo.
+class _EquipoNN:
+    user_packet_size = 28
+    encoding = "latin-1"
+    def __init__(s): s.paquete = None
+    def refresh_data(s): pass
+    def _ZK__send_command(s, comando, datos, respuesta=8):
+        s.paquete = datos
+        return {"status": True}
+
+_enn = _EquipoNN()
+_erep._escribir_usuario(_enn, 7, "NN-33", 0, "1", "33")
+chequear("escribir «NN-33» en el 33 guarda el nombre VACIO",
+         _enn.paquete[8:16].split(bytes(1))[0] == b"", _enn.paquete[8:16])
+
+_enn2 = _EquipoNN()
+_erep._escribir_usuario(_enn2, 7, "Pedro", 0, "1", "33")
+chequear("y un nombre de verdad se escribe igual que siempre",
+         _enn2.paquete[8:16].split(bytes(1))[0] == b"Pedro", _enn2.paquete[8:16])
+
+# La foto tambien lo normaliza, que es por donde entra a todo lo demas.
+class _UsrNN:
+    def __init__(s, uid, user_id, name):
+        s.uid, s.user_id, s.name = uid, user_id, name
+        s.group_id, s.privilege = "1", 0
+
+class _EquipoFotoNN:
+    user_packet_size = 28
+    def get_users(s): return [_UsrNN(1, "33", "NN-33"), _UsrNN(2, "34", "Ana")]
+    def get_templates(s): return []
+
+_f = _erep._foto(_EquipoFotoNN())
+chequear("en la foto, el relleno llega como vacio",
+         _f["usuarios"]["33"]["nombre"] == "", _f["usuarios"]["33"])
+chequear("y el nombre de verdad llega entero",
+         _f["usuarios"]["34"]["nombre"] == "Ana", _f["usuarios"]["34"])
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

@@ -97,6 +97,12 @@ def equipos():
             dict(quien) if quien else None)
 
 
+def _sin_relleno(nombre):
+    """«NN-<numero>» no es un nombre: es la libreria diciendo que no hay."""
+    texto = (nombre or "").strip()
+    return "" if not texto or texto == f"NN-{NUMERO}" else texto
+
+
 def del_respaldo():
     """Lo que el sistema guardó al borrarlo del equipo de fichaje."""
     import json
@@ -115,7 +121,10 @@ def del_respaldo():
     ruta = candidatos[-1]
     d = json.loads(ruta.read_text(encoding="utf-8"))
     return {"origen": str(ruta), "equipo": d.get("equipo"),
-            "nombre": d.get("nombre") or NUMERO, "grupo": d.get("grupo") or 0,
+            # Los respaldos viejos pueden traer «NN-<numero>», que no es un
+            # nombre sino el relleno de la libreria. Si se escribe, queda
+            # grabado en el lector como si alguien lo hubiera elegido.
+            "nombre": _sin_relleno(d.get("nombre")), "grupo": d.get("grupo") or 0,
             "privilegio": int(d.get("privilegio") or 0),
             "huellas": [Finger.json_unpack(h) for h in d.get("huellas", [])]}
 

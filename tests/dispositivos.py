@@ -5129,5 +5129,77 @@ if _puertas_g and _maestros_g:
 _cg.close()
 
 
+print("\n=== LEER UN LECTOR, DE PUNTA A PUNTA ===")
+# Todo lo demas de este archivo reemplaza `leer_cargados` por una funcion falsa
+# para no salir a la red. Comodo, y deja la funcion de verdad sin ejercitar
+# NUNCA: un error adentro no lo agarraba nadie.
+#
+# Paso: al agregar el conteo de numeros repetidos quedo leyendo `u.user_id`
+# sobre una lista que ya eran diccionarios. Rompio la lectura de los SIETE
+# equipos y lo descubrio la revision nocturna dos dias despues, en produccion.
+#
+# Esto corre la funcion entera contra una conexion de juguete.
+import sync.lectores as _lec_pp
+
+class _UsrPP:
+    def __init__(s, uid, user_id, name="", group="1", priv=0):
+        s.uid, s.user_id, s.name = uid, user_id, name
+        s.group_id, s.privilege, s.card = group, priv, 0
+
+class _ConexionPP:
+    def __init__(s, usuarios, declara=None):
+        s._u, s.users = usuarios, (len(usuarios) if declara is None else declara)
+    def get_users(s): return list(s._u)
+    def get_templates(s): return []
+    def disconnect(s): pass
+
+_real_con_pp = _lec_pp._conectar
+_EQ_PP = {"id": 1, "nombre": "Puerta", "ip": "127.0.0.50", "puerto": 4370,
+          "password": 0, "timeout": 5, "protocolo": "pull"}
+
+def _poner_pp(usuarios, declara=None):
+    _lec_pp._conectar = lambda *a, **kw: (_ConexionPP(usuarios, declara), "udp")
+
+# Lo normal: tres personas, lista completa.
+_poner_pp([_UsrPP(1, "10", "Perez"), _UsrPP(2, "11", "Gomez"), _UsrPP(3, "12")])
+_r = _lec_pp.leer_cargados(_EQ_PP)
+chequear("leer_cargados contesta ok", _r["ok"] is True, _r.get("error"))
+chequear("con los tres usuarios", len(_r["usuarios"]) == 3, _r["usuarios"])
+chequear("cada uno con su numero",
+         [u["user_id"] for u in _r["usuarios"]] == ["10", "11", "12"], _r["usuarios"])
+chequear("la lista cierra contra lo que declara el equipo",
+         _r["completa"] is True and _r["declarados"] == 3, _r)
+chequear("sin numeros repetidos", _r["repetidos"] == {}, _r["repetidos"])
+chequear("el que no tiene nombre llega vacio, no «NN-12»",
+         _r["usuarios"][2]["nombre"] == "", _r["usuarios"][2])
+
+# Dos fichas con el mismo numero: hay que contarlas.
+_poner_pp([_UsrPP(1, "10", "Perez"), _UsrPP(2, "21", "Braian"),
+           _UsrPP(2, "21", "")])
+_r = _lec_pp.leer_cargados(_EQ_PP)
+chequear("un numero repetido se cuenta", _r["repetidos"] == {"21": 2}, _r["repetidos"])
+chequear("y la lista los trae a los dos", len(_r["usuarios"]) == 3, _r["usuarios"])
+
+# Lista corta: el equipo dice tener mas de los que mando.
+_poner_pp([_UsrPP(1, "10", "Perez")], declara=150)
+_r = _lec_pp.leer_cargados(_EQ_PP)
+chequear("una lista corta se marca como incompleta",
+         _r["completa"] is False and _r["declarados"] == 150, _r)
+
+# Un equipo que no contesta es un resultado valido, no una excepcion.
+_lec_pp._conectar = lambda *a, **kw: (_ / 0, "udp")
+_r = _lec_pp.leer_cargados(_EQ_PP)
+chequear("un equipo caido devuelve ok=False con el motivo",
+         _r["ok"] is False and _r["error"], _r)
+chequear("y una lista vacia, sin romper nada", _r["usuarios"] == [], _r)
+
+# Un equipo push no se consulta asi.
+_r = _lec_pp.leer_cargados({**_EQ_PP, "protocolo": "push"})
+chequear("un equipo push se rechaza con su motivo",
+         _r["ok"] is False and "push" in _r["error"], _r)
+
+_lec_pp._conectar = _real_con_pp
+
+
 print(f"\n{'='*52}\n  {ok} pasaron, {fallos} fallaron\n{'='*52}")
 raise SystemExit(1 if fallos else 0)

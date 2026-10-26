@@ -275,11 +275,16 @@ def leer_cargados(dispositivo: dict, con_huellas: bool = False,
         # estar cargada. El camino de escritura ya hacia esta comprobacion
         # antes de tocar nada; el de lectura no, y de ahi salen el plan y la
         # ficha de cada persona.
-        # Dos fichas con el mismo numero. La lista de abajo las trae a las dos,
+        # Dos fichas con el mismo numero. La lista de arriba las trae a las dos,
         # pero todo lo que la indexa por numero las colapsa en una: hay que
         # contarlas antes para que alguien se entere.
+        #
+        # Se cuenta sobre `usuarios`, que ya son diccionarios -- no sobre lo que
+        # devuelve el equipo. Al reves rompia TODAS las lecturas de TODOS los
+        # equipos con «'dict' object has no attribute 'user_id'», y lo descubrio
+        # la revision nocturna dos dias despues.
         from collections import Counter
-        _veces = Counter(str(u.user_id).strip() for u in usuarios)
+        _veces = Counter(u["user_id"] for u in usuarios)
         repetidos = {n: c for n, c in _veces.items() if c > 1}
 
         dice = getattr(conexion, "users", None)

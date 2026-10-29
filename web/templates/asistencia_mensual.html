@@ -640,11 +640,12 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
   <div id="modal-aviso-propio"></div>
   <div class="modal-tab-bar" id="modal-tab-bar">
     <button class="modal-tab-btn activo" id="mtab-nov"    onclick="modalTabPlani('nov')">Novedad</button>
+    <button class="modal-tab-btn"        id="mtab-dejar-franco" onclick="modalTabPlani('dejar-franco')" style="display:none">Dejar franco</button>
+    <button class="modal-tab-btn"        id="mtab-quitar-franco" onclick="modalTabPlani('quitar-franco')" style="display:none">Quitar franco</button>
     <button class="modal-tab-btn"        id="mtab-fm"     data-perm="asistencia:fichaje_manual" onclick="modalTabPlani('fm')">Fichaje manual</button>
     <button class="modal-tab-btn"        id="mtab-co"     onclick="modalTabPlani('co')">Observación</button>
     <button class="modal-tab-btn"        id="mtab-ft"     onclick="_poblarHorariosFT();modalTabPlani('ft')" style="display:none">Asignar horario</button>
     <button class="modal-tab-btn"        id="mtab-franco" onclick="abrirPanelFranco()" style="display:none">Franco</button>
-    <button class="modal-tab-btn"        id="mtab-quitar-franco" onclick="modalTabPlani('quitar-franco')" style="display:none">Quitar franco</button>
   </div>
 
   <!-- Panel novedad -->
@@ -772,6 +773,19 @@ table.parking-grid td.col-hoy { background: #fffde7 !important; }
     </div>
     <div class="modal-actions">
       <button class="btn-guardar" onclick="quitarFrancoDia()">Quitar franco</button>
+      <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- Panel dejar franco: FT → F -->
+  <div id="mpanel-dejar-franco" style="display:none">
+    <div class="mpanel-franco-info">
+      Tenía <strong>franco</strong> planificado pero fichó, por eso figura como <em>Franco Trabajado</em>.<br>
+      Deja <span id="dejar-franco-unidad">el día</span> como <strong>Franco</strong>: no se cuenta como franco trabajado.<br>
+      El fichaje no se elimina — quedará registrado pero no afectará el resultado.
+    </div>
+    <div class="modal-actions">
+      <button class="btn-guardar" onclick="dejarFranco()">Dejar como franco</button>
       <button class="btn-cancelar" onclick="cerrarModal()">Cancelar</button>
     </div>
   </div>
@@ -1985,12 +1999,14 @@ function modalTabPlani(tab) {
   document.getElementById('mpanel-vac-excepcion').style.display = tab === 'vac-excepcion' ? 'block' : 'none';
   document.getElementById('mpanel-ausente-sc').style.display = tab === 'ausente-sc' ? 'block' : 'none';
   document.getElementById('mpanel-quitar-franco').style.display = tab === 'quitar-franco' ? 'block' : 'none';
+  document.getElementById('mpanel-dejar-franco').style.display  = tab === 'dejar-franco'  ? 'block' : 'none';
   document.getElementById('mtab-nov').className    = 'modal-tab-btn' + (tab === 'nov'    ? ' activo' : '');
   document.getElementById('mtab-fm').className     = 'modal-tab-btn' + (tab === 'fm'     ? ' activo' : '');
   document.getElementById('mtab-co').className     = 'modal-tab-btn' + (tab === 'co'     ? ' activo' : '');
   document.getElementById('mtab-ft').className     = 'modal-tab-btn' + (tab === 'ft'     ? ' activo' : '');
   document.getElementById('mtab-franco').className = 'modal-tab-btn' + (tab === 'franco' ? ' activo' : '');
   document.getElementById('mtab-quitar-franco').className = 'modal-tab-btn' + (tab === 'quitar-franco' ? ' activo' : '');
+  document.getElementById('mtab-dejar-franco').className  = 'modal-tab-btn' + (tab === 'dejar-franco'  ? ' activo' : '');
 }
 
 function _esBloqueado(celda, esCortado, bloque) {
@@ -2060,6 +2076,11 @@ function abrirModal(eid, fecha, bloqueInicial, esCortado) {
   document.getElementById('mtab-ft').style.display     = canHorario ? 'inline-block' : 'none';
   document.getElementById('mtab-franco').style.display = canFranco ? 'inline-block' : 'none';
   document.getElementById('mtab-quitar-franco').style.display = canQuitarFranco ? 'inline-block' : 'none';
+  // Dejar franco: solo sobre FT (franco planificado y fichó) → queda F. En cortado, por bloque.
+  const canDejarFranco = !bloqueado && !periodoCerrado && puedePlanif && !sinCorrPropia
+    && letraActual === 'FT' && (!esCortado || bloqueInicial > 0);
+  document.getElementById('mtab-dejar-franco').style.display = canDejarFranco ? 'inline-block' : 'none';
+  document.getElementById('dejar-franco-unidad').textContent = esCortado ? `el bloque ${bloqueInicial}` : 'el día';
 
   if (bloqueado) {
     modalTabPlani('bloqueado');
@@ -2592,6 +2613,24 @@ async function asignarFranco() {
   }
   await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, {method:'POST'}).catch(()=>{});
   toast('Franco asignado');
+  cerrarModal();
+  cargar();
+}
+
+async function dejarFranco() {
+  const { eid, fecha, esCortado, bloqueActivo } = modalCtx;
+  const res = await fetch('/api/asistencia/novedades', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({empleado_id: eid, fecha, bloque: esCortado ? bloqueActivo : 0, tipo: 'F'}),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(()=>({}));
+    toast('Error: ' + (e.detail || res.status));
+    return;
+  }
+  await fetch(`/api/resultados/procesar?fecha=${fecha}&empleado_id=${eid}`, {method:'POST'}).catch(()=>{});
+  toast('Quedó como franco');
   cerrarModal();
   cargar();
 }

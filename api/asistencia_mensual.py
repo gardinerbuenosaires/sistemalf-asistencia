@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import date, timedelta
 from collections import defaultdict
-from db.database import db_session
+from db.database import db_session, get_config
 from auth.core import require_permiso, check_asignar_vacaciones, check_no_es_correccion_propia
 
 router = APIRouter(prefix="/api/asistencia", tags=["asistencia_mensual"])
@@ -431,8 +431,95 @@ def _info_sin_calendario(conn, grupos, f1) -> dict:
     return info
 
 
+# ── Arrastre del saldo de francos ─────────────────────────────────────────────
+# El saldo con que arranca un mes es el saldo final del anterior, y así hacia
+# atrás hasta `francos_arrastre_desde`:
+#
+#   saldo final de k = el cargado a mano para k, si lo hay;
+#                      si no, saldo final de k-1 + (FD − FT de k)
+#
+# Se suma cada vez, no se guarda: cualquier cambio en un mes (una letra, un
+# saldo cargado a mano) se ve en todos los siguientes. Lo único que se guarda
+# es el FD − FT de los meses cerrados, que no pueden cambiar; reabrir un mes
+# lo descarta (ver periodos_cerrados.reabrir_periodo).
+
+def _mes_anterior(mes: str) -> str:
+    a, m = int(mes[:4]), int(mes[5:7])
+    return f"{a}-{m-1:02d}" if m > 1 else f"{a-1}-12"
+
+
+def _mes_siguiente(mes: str) -> str:
+    a, m = int(mes[:4]), int(mes[5:7])
+    return f"{a}-{m+1:02d}" if m < 12 else f"{a+1}-01"
+
+
+def _movimiento_francos(mes: str) -> dict:
+    """{empleado_id: FD − FT del mes}. Si el mes está cerrado, se calcula una
+    sola vez y queda guardado."""
+    from api.periodos_cerrados import es_periodo_cerrado
+    with db_session() as conn:
+        cerrado = es_periodo_cerrado(conn, int(mes[:4]), int(mes[5:7]))
+        if cerrado:
+            rows = conn.execute(
+                "SELECT empleado_id, movimiento FROM francos_movimiento WHERE mes=?", (mes,)
+            ).fetchall()
+            if rows:
+                return {r["empleado_id"]: r["movimiento"] for r in rows}
+
+    datos = _asistencia_datos(mes, arrastre=False)
+    mov = {
+        e["id"]: e["totales"].get("FD", 0) - e["totales"].get("FT", 0)
+        for g in ("TM", "TN", "CO", "ST") for e in datos[g]
+    }
+    if cerrado and mov:
+        with db_session() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO francos_movimiento (empleado_id, mes, movimiento) "
+                "VALUES (?,?,?)",
+                [(eid, mes, v) for eid, v in mov.items()],
+            )
+    return mov
+
+
+def _transporte_francos(mes: str, eids: list) -> dict:
+    """{empleado_id: saldo con que arranca el mes}."""
+    mes_ant = _mes_anterior(mes)
+    with db_session() as conn:
+        desde = (get_config(conn, "francos_arrastre_desde", "") or "").strip()
+        # Hasta el mes en que arranca la cuenta, como siempre: solo lo cargado
+        # a mano para el mes anterior.
+        encadena = bool(desde) and mes > desde
+        ph = ",".join("?" * len(eids))
+        manual = {
+            (r["empleado_id"], r["mes"]): r["saldo"]
+            for r in conn.execute(
+                f"SELECT empleado_id, mes, saldo FROM saldo_francos "
+                f"WHERE empleado_id IN ({ph}) AND mes>=? AND mes<=?",
+                (*eids, _mes_anterior(desde) if encadena else mes_ant, mes_ant),
+            ).fetchall()
+        }
+
+    if not encadena:
+        return {eid: manual.get((eid, mes_ant), 0) for eid in eids}
+
+    base = _mes_anterior(desde)
+    saldo = {eid: manual.get((eid, base), 0) for eid in eids}
+    k = desde
+    while k <= mes_ant:
+        mov = _movimiento_francos(k)
+        for eid in eids:
+            if (eid, k) in manual:
+                saldo[eid] = manual[(eid, k)]
+            else:
+                saldo[eid] += mov.get(eid, 0)
+        k = _mes_siguiente(k)
+    return saldo
+
+
 # ── Lógica de datos del mes (compartida entre /mensual y /mensual/excel) ───────
-def _asistencia_datos(mes: str) -> dict:
+def _asistencia_datos(mes: str, arrastre: bool = True) -> dict:
+    """`arrastre=False` deja el transporte en 0: es para calcular solo el
+    movimiento del mes sin arrastrar los anteriores (ver _movimiento_francos)."""
     try:
         año, m = int(mes[:4]), int(mes[5:7])
         primer_dia = date(año, m, 1)
@@ -449,7 +536,6 @@ def _asistencia_datos(mes: str) -> dict:
         fechas.append(d.isoformat())
         d += timedelta(days=1)
     f0, f1 = fechas[0], fechas[-1]
-    mes_ant = f"{año}-{m-1:02d}" if m > 1 else f"{año-1}-12"
 
     with db_session() as conn:
         feriados = {
@@ -537,12 +623,6 @@ def _asistencia_datos(mes: str) -> dict:
             (*eids, f0, f1)
         ).fetchall()
 
-        saldos = conn.execute(
-            f"SELECT empleado_id, saldo FROM saldo_francos "
-            f"WHERE empleado_id IN ({ph}) AND mes=?",
-            (*eids, mes_ant)
-        ).fetchall()
-
         fichajes_manuales = conn.execute(
             f"SELECT f.empleado_id, date(f.timestamp) AS fecha, "
             f"       substr(f.timestamp, 12, 5) AS hora, f.motivo_manual, "
@@ -606,7 +686,8 @@ def _asistencia_datos(mes: str) -> dict:
                 "creado_por": n["creado_por"], "reemplazante_id": n["reemplazante_id"],
             }
     ali_set       = {(a["empleado_id"], a["fecha"], a["bloque"]) for a in aliviadas}
-    transporte_map = {s["empleado_id"]: s["saldo"] for s in saldos}
+    # Fuera de la sesión de arriba: puede calcular otros meses y guardarlos.
+    transporte_map = _transporte_francos(mes, eids) if arrastre else {}
     ovr_map       = {o["empleado_id"]: o["grupo"] for o in overrides}
 
     grupos = {"TM": [], "TN": [], "CO": [], "ST": []}
@@ -1216,7 +1297,7 @@ def set_saldo_francos(empleado_id: int, mes: str, body: dict, _user=Depends(requ
     from api.periodos_cerrados import check_periodo_abierto
     with db_session() as conn:
         check_no_es_correccion_propia(conn, _user, [empleado_id])
-        check_periodo_abierto(conn, f"{mes}-01")
+        check_periodo_abierto(conn, f"{_mes_siguiente(mes)}-01")  # ver francos.upsert_saldo_inicial
         conn.execute(
             """INSERT INTO saldo_francos (empleado_id, mes, saldo) VALUES (?,?,?)
                ON CONFLICT(empleado_id, mes) DO UPDATE SET saldo=excluded.saldo""",

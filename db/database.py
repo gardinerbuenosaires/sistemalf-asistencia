@@ -578,6 +578,8 @@ def _migrate(conn):
             ('nombre_empresa',  '',              'Nombre del restaurante o empresa (aparece en login y reportes'),
             ('inactividad_minutos', '10',        'Minutos sin actividad antes de cerrar la sesión automáticamente'),
             ('dia_cierre_periodo', '6',          'Día del mes en que se cierra automáticamente el período anterior'),
+            ('francos_arrastre_desde', '2026-10',
+             'Mes (AAAA-MM) desde el que el saldo de francos se arrastra de un mes al siguiente. Lo anterior no cuenta'),
             ('dia_cierre_premios', '10',         'Día del mes en que se cierra automáticamente el período de premios del mes anterior'),
             ('distribucion_reemplaza_planificacion', '0',
              'Si está en 1, los empleados con cargo vinculado a un departamento no generan planificación automática por calendarios'),
@@ -749,6 +751,17 @@ def _migrate(conn):
             mes         TEXT NOT NULL,
             saldo       REAL NOT NULL DEFAULT 0,
             UNIQUE(empleado_id, mes)
+        )
+    """)
+
+    # FD − FT de cada mes cerrado, para no recalcularlo cada vez que se arrastra
+    # el saldo de francos. Se descarta al reabrir el mes.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS francos_movimiento (
+            empleado_id INTEGER NOT NULL REFERENCES empleados(id),
+            mes         TEXT NOT NULL,
+            movimiento  REAL NOT NULL,
+            PRIMARY KEY (empleado_id, mes)
         )
     """)
 

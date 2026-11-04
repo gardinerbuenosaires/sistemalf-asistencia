@@ -440,6 +440,8 @@ def _cerrar_periodo_auto():
                 "INSERT INTO periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,NULL)",
                 (anio, mes)
             )
+            from api.periodos_cerrados import _olvidar_movimiento_francos
+            _olvidar_movimiento_francos(conn, anio, mes)
         _mes_ultimo_cierre_auto = mes_actual
         logger.info("Cierre automático: período %d-%02d cerrado correctamente", anio, mes)
     except Exception as e:

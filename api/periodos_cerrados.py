@@ -41,6 +41,12 @@ def check_rango_abierto(conn, fecha_desde: str, fecha_hasta: str):
         cur = date(cur.year + (cur.month // 12), (cur.month % 12) + 1, 1)
 
 
+def _olvidar_movimiento_francos(conn, anio: int, mes: int):
+    """Descarta el FD − FT guardado del mes: abierto puede cambiar, y al cerrarse
+    se vuelve a calcular con lo que haya quedado (ver _movimiento_francos)."""
+    conn.execute("DELETE FROM francos_movimiento WHERE mes=?", (f"{anio}-{mes:02d}",))
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 class PeriodoIn(BaseModel):
@@ -92,6 +98,7 @@ def cerrar_periodo(data: PeriodoIn, user=Depends(require_permiso("periodos", "ce
             "INSERT INTO periodos_cerrados (anio, mes, cerrado_por) VALUES (?,?,?)",
             (data.anio, data.mes, int(user["sub"]))
         )
+        _olvidar_movimiento_francos(conn, data.anio, data.mes)
     return {"ok": True}
 
 
@@ -109,4 +116,5 @@ def reabrir_periodo(anio: int, mes: int, data: ReabrirIn,
         conn.execute(
             "DELETE FROM periodos_cerrados WHERE anio=? AND mes=?", (anio, mes)
         )
+        _olvidar_movimiento_francos(conn, anio, mes)
     return {"ok": True}

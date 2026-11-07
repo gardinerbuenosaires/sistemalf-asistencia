@@ -224,6 +224,7 @@
 <div id="toast"></div>
 
 <script src="/static/js/session.js"></script>
+<script src="/static/js/date-utils.js"></script>
 <script src="/static/js/legajo-propio.js"></script>
 <script src="/static/js/user-menu.js"></script>
 <script>
@@ -441,7 +442,7 @@ async function recalcularTodosCI() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-const _ANIO_DEFAULT = new Date().getFullYear() - 1;
+const _ANIO_DEFAULT = periodoVacaciones(todayLocal());  // en diciembre ya es el del año
 
 function _actualizarIndicadorAnio() {
   const anio = parseInt(document.getElementById('sel-anio').value);

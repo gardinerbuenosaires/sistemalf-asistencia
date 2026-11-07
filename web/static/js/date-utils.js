@@ -18,3 +18,12 @@ function ymdLocal(d = new Date()) {
 function todayLocal() {
   return ymdLocal(new Date());
 }
+
+/** Período vacacional al que se descuenta una V en esa fecha ("YYYY-MM-DD" o
+    "YYYY-MM"). El período N se gana al 31/12 de N y se toma de diciembre de N
+    a noviembre de N+1: diciembre ya es del período de su año.
+    Misma regla que api/vacaciones.periodo_vacaciones. */
+function periodoVacaciones(fecha) {
+  const anio = parseInt(fecha.slice(0, 4)), mes = parseInt(fecha.slice(5, 7));
+  return mes === 12 ? anio : anio - 1;
+}

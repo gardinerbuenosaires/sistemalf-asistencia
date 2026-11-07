@@ -266,13 +266,26 @@ def get_saldo_inicial(anio: int, _user=Depends(require_permiso("vacaciones", "ca
     return result
 
 
+def periodo_vacaciones(fecha: str) -> int:
+    """Período vacacional al que se descuenta una V en esa fecha. El período
+    `anio` se gana al 31/12 de `anio` y se toma de diciembre de `anio` a
+    noviembre de `anio+1`: una V de diciembre ya es del período de ese año."""
+    anio, mes = int(fecha[:4]), int(fecha[5:7])
+    return anio if mes == 12 else anio - 1
+
+
 @router.get("/saldo-empleado")
 def get_saldo_empleado(empleado_id: int, anio: int = 0,
                        _user=Depends(require_permiso("asistencia", "corregir"))):
     """Saldo de vacaciones de un empleado para un período (anio = año del período vacacional)."""
     if not anio:
-        anio = date.today().year - 1
+        anio = periodo_vacaciones(date.today().isoformat())
+    return saldo_vacaciones(empleado_id, anio)
 
+
+def saldo_vacaciones(empleado_id: int, anio: int, excluir: tuple | None = None) -> dict:
+    """Saldo del período `anio`. `excluir=(fecha, bloque)` no cuenta esa V:
+    es la celda que se está por guardar, y si ya era V no se cuenta dos veces."""
     with db_session() as conn:
         emp = conn.execute(
             "SELECT fecha_ingreso, fecha_recontratacion, vac_dias_jubilacion FROM empleados WHERE id=?",
@@ -296,11 +309,11 @@ def get_saldo_empleado(empleado_id: int, anio: int = 0,
                             ELSE SUM(CASE WHEN bloque IN (1,2) THEN 0.5 ELSE 0 END)
                        END AS dias_fecha
                 FROM novedades
-                WHERE tipo = 'V' AND empleado_id = ?
+                WHERE tipo = 'V' AND empleado_id = ? AND NOT (fecha = ? AND bloque = ?)
                 GROUP BY fecha
             )
             GROUP BY anio, mes
-        """, (empleado_id,)).fetchall()
+        """, (empleado_id, *(excluir or ("", -1)))).fetchall()
 
         vp_row = conn.execute("""
             SELECT COALESCE(SUM(dias), 0) AS dias FROM vacaciones_pagadas

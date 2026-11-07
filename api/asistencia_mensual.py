@@ -1151,44 +1151,17 @@ def upsert_novedad(data: NovedadIn, user=Depends(require_permiso("asistencia", "
             if existing and existing["tipo"] != "CO":
                 raise HTTPException(400, "No se puede agregar comentario: ya hay una novedad registrada para ese día")
     if data.tipo == "V":
-        from api.vacaciones import _calcular_dias_formula, _get_arrastre
-        anio_periodo = int(data.fecha[:4]) - 1
-        with db_session() as conn:
-            emp = conn.execute("SELECT fecha_ingreso FROM empleados WHERE id=?", (data.empleado_id,)).fetchone()
-            saldos = {(r["empleado_id"], r["anio"]): dict(r)
-                      for r in conn.execute("SELECT * FROM vacaciones_saldo_inicial").fetchall()}
-            dias_v_ya = conn.execute("""
-                SELECT COALESCE(SUM(dias_fecha), 0)
-                FROM (
-                    SELECT fecha,
-                           CASE WHEN SUM(bloque=0) > 0 THEN 1.0
-                                ELSE SUM(CASE WHEN bloque IN (1,2) THEN 0.5 ELSE 0 END)
-                           END AS dias_fecha
-                    FROM novedades
-                    WHERE tipo='V' AND empleado_id=? AND strftime('%Y',fecha)=?
-                      AND NOT (fecha=? AND bloque=?)
-                    GROUP BY fecha
-                )
-            """, (data.empleado_id, str(int(data.fecha[:4])),
-                  data.fecha, data.bloque)).fetchone()[0] or 0.0
-            vp_row = conn.execute("""
-                SELECT COALESCE(SUM(dias), 0) AS dias FROM vacaciones_pagadas
-                WHERE empleado_id=? AND CAST(substr(periodo, 1, 4) AS INTEGER) = ?
-            """, (data.empleado_id, int(data.fecha[:4]))).fetchone()
-            dias_vp = float(vp_row["dias"]) if vp_row else 0.0
-        fi = emp["fecha_ingreso"] if emp else None
-        _, dias_formula = _calcular_dias_formula(fi, anio_periodo)
-        saldo = saldos.get((data.empleado_id, anio_periodo))
+        # Mismo cálculo que la pantalla Vacaciones: si no, una V de diciembre
+        # se validaba contra el período anterior.
+        from api.vacaciones import periodo_vacaciones, saldo_vacaciones
+        anio_periodo = periodo_vacaciones(data.fecha)
+        dias_restan = saldo_vacaciones(data.empleado_id, anio_periodo,
+                                       excluir=(data.fecha, data.bloque))["dias_restan"]
         nueva = 0.5 if data.bloque > 0 else 1.0
-        if saldo:
-            dias_restan = saldo["dias_correspondian"] - saldo["dias_tomados"] - dias_v_ya - dias_vp
-        else:
-            arrastre = _get_arrastre(data.empleado_id, anio_periodo, fi, saldos,
-                                     {(data.empleado_id, int(data.fecha[:4])): {"01": dias_v_ya} if dias_v_ya else {}})
-            dias_restan = dias_formula + arrastre - dias_v_ya - dias_vp
-        dias_restan = round(dias_restan, 1)
         if dias_restan < nueva:
-            raise HTTPException(400, f"Sin días de vacaciones disponibles. Quedan {dias_restan:.1f} día(s).")
+            raise HTTPException(
+                400, f"Sin días de vacaciones disponibles del período {anio_periodo}. "
+                     f"Quedan {dias_restan:.1f} día(s).")
     # El reemplazante solo aplica al CP; para otros tipos queda en NULL.
     reemplazante = data.reemplazante_id if data.tipo == "CP" else None
     # CP exige reemplazante salvo que se marque explícitamente "sin reemplazante"

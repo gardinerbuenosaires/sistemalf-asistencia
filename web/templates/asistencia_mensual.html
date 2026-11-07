@@ -2254,7 +2254,7 @@ function selTipo(t) {
   // Saldo vacaciones
   const vacInfo = document.getElementById('vac-saldo-info');
   if (t === 'V') {
-    const anio = parseInt(modalCtx.fecha.slice(0, 4)) - 1;
+    const anio = periodoVacaciones(modalCtx.fecha);
     vacInfo.textContent = '…';
     vacInfo.style.display = '';
     vacInfo.style.background = '#f0f4f8';
@@ -3208,8 +3208,7 @@ function vpCeldaHtml(eid) {
 
 async function vpFocus(inp) {
   const eid = parseInt(inp.dataset.eid);
-  const [y] = mesActual.split('-').map(Number);
-  const anio = y - 1;
+  const anio = periodoVacaciones(mesActual);
   try {
     const d = await fetch(`/api/vacaciones/saldo-empleado?empleado_id=${eid}&anio=${anio}`).then(r => r.json());
     inp._saldoBase = d.dias_restan + (_vpData[eid] || 0);

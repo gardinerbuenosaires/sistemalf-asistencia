@@ -801,7 +801,7 @@ function actualizarVacInfoBar(eid, fecha, tipo) {
   const el = document.getElementById('bar-vac-info');
   _vacSaldo = null;
   if (tipo !== 'V') { el.style.display = 'none'; return; }
-  const anio = parseInt(fecha.slice(0, 4)) - 1;
+  const anio = periodoVacaciones(fecha);
   el.textContent = '…'; el.style.display = '';
   el.style.background = '#f0f4f8'; el.style.color = '#555';
   fetch(`/api/vacaciones/saldo-empleado?empleado_id=${eid}&anio=${anio}`)

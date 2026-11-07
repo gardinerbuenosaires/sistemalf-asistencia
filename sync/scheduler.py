@@ -27,7 +27,7 @@ _mes_ultimo_cierre_premios_auto: str | None = None
 _fecha_ultima_limpieza_dispositivo: str | None = None
 
 # Meses completos de planificación que se mantienen por delante del mes en curso.
-MESES_HORIZONTE_PLANIFICACION = 2
+MESES_HORIZONTE_PLANIFICACION = 3
 
 
 def _run_sync():
@@ -134,7 +134,7 @@ def _check_y_evaluar():
 def _fin_horizonte_planificacion(hoy: date) -> date:
     """
     Último día que debe tener planificación: fin del mes actual + MESES_HORIZONTE
-    meses completos. Con 2 meses, el 21/08 ya hay planificación hasta el 31/10,
+    meses completos. Con 3 meses, el 21/08 ya hay planificación hasta el 30/11,
     de modo que la planilla mensual y las vacaciones se pueden cargar con
     anticipación sin que los empleados caigan en "Sin turno".
     """

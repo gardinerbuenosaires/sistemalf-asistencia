@@ -4,7 +4,7 @@
 :: ESCRIBE EN LA PUERTA. Usa el respaldo que dejo el borrado: recrea al usuario
 :: con su nombre, su grupo y sus huellas completas.
 ::
-:: Es la vuelta atras de probar_borrado.
+:: Es la vuelta atras de cualquier borrado que dejo respaldo (ver_borrados.bat los lista).
 
 setlocal
 cd /d "%~dp0.."

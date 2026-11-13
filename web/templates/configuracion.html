@@ -3915,8 +3915,8 @@ async function cerrarBajasAfuera(boton) {
 
 // Cerrar la baja: el circuito completo en un acto. Todo o nada para el
 // numero, que es lo unico irreversible de los cuatro pasos.
-async function cerrarBaja(empleadoId, boton) {
-  if (!confirm('Se va a sacar a esta persona de todas las puertas y del equipo de ' +
+async function cerrarBaja(empleadoId, boton, forzar = false) {
+  if (!forzar && !confirm('Se va a sacar a esta persona de todas las puertas y del equipo de ' +
                'fichaje, olvidar sus huellas y liberar su numero.\n\n' +
                'Si algun equipo no contesta, el numero queda ocupado y se puede ' +
                'reintentar. Las huellas quedan respaldadas en los archivos de borrado.')) return;
@@ -3926,7 +3926,7 @@ async function cerrarBaja(empleadoId, boton) {
   try {
     const res = await fetch('/api/accesos/cerrar-baja', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ empleado_id: empleadoId }),
+      body: JSON.stringify({ empleado_id: empleadoId, forzar }),
     });
     r = await res.json();
     if (!res.ok) throw new Error(r.detail || 'no se pudo');
@@ -3934,6 +3934,18 @@ async function cerrarBaja(empleadoId, boton) {
     boton.disabled = false;
     boton.textContent = 'Reintentar';
     return toast('Error: ' + e.message);
+  }
+  // Un equipo tiene el numero a nombre de alguien que no se parece: puede ser
+  // otra persona a la que el lector le dio ese numero, y borrarlo seria sacarla
+  // a ella. Solo se sigue si quien mira confirma que es la misma.
+  if (!r.ok && r.otra_persona && r.otra_persona.length && !forzar) {
+    const lista = r.otra_persona.map(o => `  - ${o.equipo}: «${o.nombre}»`).join('\n');
+    if (confirm(`${r.empleado}: con su numero hay otro nombre cargado:\n\n${lista}\n\n` +
+                'Puede ser OTRA PERSONA a la que el lector le dio ese numero. ' +
+                'Si se sigue, se la borra de ese equipo.\n\n' +
+                'Aceptar solo si es la misma persona con otro nombre.')) {
+      return cerrarBaja(empleadoId, boton, true);
+    }
   }
   // Que no haya terminado no es un error: es trabajo que quedo, y el numero
   // sigue ocupado justamente para que se vea.

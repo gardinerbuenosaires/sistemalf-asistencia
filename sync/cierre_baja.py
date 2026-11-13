@@ -92,6 +92,42 @@ def ficho_despues_del_egreso(conn, eid):
     return {"cuantas": fila["n"], "ultima": fila["ultima"]}
 
 
+def ya_lo_sacamos(conn, eid, numero, equipo_id):
+    """Si el sistema ya sacó a esta persona de ese equipo y no la volvió a cargar.
+
+    Entonces el número que ese equipo tiene hoy es de otra persona: el lector
+    lo vio libre y se lo dio al próximo alta, porque sugiere siempre el libre
+    más bajo. Pasó (Happening, el 24): la baja quedó sin cerrar, el número se
+    reasignó, y «Cerrar la baja» habría borrado del lector a la persona nueva.
+
+    Devuelve la fecha en que se lo sacó, o None.
+    """
+    fila = conn.execute(
+        """SELECT accion, creado_en FROM accesos_operaciones
+            WHERE dispositivo_id = ? AND empleado_id = ? AND user_id = ?
+              AND ((accion = 'sacar' AND resultado = 'sacado')
+                OR (accion = 'cargar' AND resultado = 'cargado'))
+         ORDER BY id DESC LIMIT 1""", (equipo_id, eid, numero)).fetchone()
+    return fila["creado_en"] if fila and fila["accion"] == "sacar" else None
+
+
+def _nombre_ajeno(empleado, en_equipo):
+    """El nombre del equipo, si no se parece en nada al de esta persona.
+
+    Es una sospecha, no una certeza: un lector puede tener «FEDE» para
+    Federico. Por eso frena pero se puede pasar por encima (`forzar`), a
+    diferencia de `ya_lo_sacamos`, que es un hecho.
+    """
+    from sync.lectores import _mismo_nombre
+
+    propios = [n for n in ((empleado.get("nombre_lector") or "").strip(),
+                           f"{empleado.get('apellido') or ''} {empleado.get('nombre') or ''}".strip())
+               if n]
+    if not propios or any(_mismo_nombre(en_equipo or "", n) for n in propios):
+        return None
+    return en_equipo
+
+
 def _trabaja(conn, eid):
     from sync.plan_accesos import trabaja_hoy
     fila = conn.execute(
@@ -100,9 +136,15 @@ def _trabaja(conn, eid):
     return None if fila is None else bool(fila["trabaja"])
 
 
-def cerrar(conn, empleado: dict, sincronizar=None, sacar=None, leer=None) -> dict:
+def cerrar(conn, empleado: dict, sincronizar=None, sacar=None, leer=None,
+           forzar=False) -> dict:
     """
     Deja a esa persona fuera de todos los equipos y, si lo logra, suelta su número.
+
+    Antes de borrar el número de un equipo se fija que sea ella. Si el sistema
+    ya la había sacado de ahí, el que está es otro y no se lo toca. Si el
+    nombre del equipo no se parece al suyo, no se lo toca salvo `forzar`, que
+    es la respuesta de alguien que miró y dice que sí es ella.
 
     `sincronizar`, `sacar` y `leer` se pueden pasar para las pruebas; en
     producción son las funciones de verdad. No se importan arriba a propósito:
@@ -210,9 +252,28 @@ def cerrar(conn, empleado: dict, sincronizar=None, sacar=None, leer=None) -> dic
             pendientes.append(eq["nombre"])
             continue
 
-        if not any(u["user_id"] == numero for u in lectura["usuarios"]):
+        cargado = next((u for u in lectura["usuarios"] if u["user_id"] == numero), None)
+        if cargado is None:
             resultados.append({"equipo": eq["nombre"], "id": eq["id"],
                                "accion": "ya no estaba", "ok": True, "detalle": None})
+            continue
+
+        # Que el número esté no quiere decir que sea ella.
+        sacado_el = ya_lo_sacamos(conn, eid, numero, eq["id"])
+        if sacado_el:
+            resultados.append({"equipo": eq["nombre"], "id": eq["id"],
+                               "accion": "ya no estaba", "ok": True,
+                               "detalle": f"se la sacó el {sacado_el[:10]}; el {numero} "
+                                          f"que tiene ahora es otra persona"
+                                          + (f" ({cargado['nombre']})" if cargado.get("nombre") else "")})
+            continue
+        ajeno = None if forzar else _nombre_ajeno(empleado, cargado.get("nombre"))
+        if ajeno:
+            resultados.append({"equipo": eq["nombre"], "id": eq["id"],
+                               "accion": "no se tocó", "ok": False, "otra_persona": ajeno,
+                               "detalle": f"el {numero} está a nombre de «{ajeno}», "
+                                          f"que no parece ser esta persona"})
+            pendientes.append(eq["nombre"])
             continue
 
         r = sacar(eq, numero)
@@ -227,6 +288,8 @@ def cerrar(conn, empleado: dict, sincronizar=None, sacar=None, leer=None) -> dic
     if pendientes:
         return {"ok": False, "equipos": resultados, "pendientes": pendientes,
                 "liberado": False, "huellas_olvidadas": 0,
+                "otra_persona": [{"equipo": r["equipo"], "nombre": r["otra_persona"]}
+                                 for r in resultados if r.get("otra_persona")],
                 "error": "Quedó sin terminar en: " + ", ".join(pendientes)
                          + ". El número sigue ocupado hasta completarlo."}
 
@@ -248,14 +311,19 @@ def cerrar(conn, empleado: dict, sincronizar=None, sacar=None, leer=None) -> dic
             "error": None}
 
 
-def _donde_esta(numero, lecturas, equipos):
-    """En qué equipos figura ese número, según una lectura ya hecha."""
+def _donde_esta(conn, eid, numero, lecturas, equipos):
+    """En qué equipos sigue cargada esa persona, según una lectura ya hecha.
+
+    No cuenta los equipos de donde el sistema ya la sacó: si el número está
+    ahí, es de otra persona (ver `ya_lo_sacamos`).
+    """
     estaba = []
     for eq in equipos:
         lec = lecturas.get(eq["id"]) or {}
         if not lec.get("ok"):
             continue
-        if any(u["user_id"] == numero for u in lec["usuarios"]):
+        if (any(u["user_id"] == numero for u in lec["usuarios"])
+                and not ya_lo_sacamos(conn, eid, numero, eq["id"])):
             estaba.append(eq["nombre"])
     return estaba
 
@@ -295,7 +363,7 @@ def comprobar(conn, lecturas, equipos) -> dict:
     personas = []
     for p in _pendientes(conn):
         numero = (p["user_id"] or "").strip()
-        donde = _donde_esta(numero, lecturas, equipos) if numero else []
+        donde = _donde_esta(conn, p["id"], numero, lecturas, equipos) if numero else []
         personas.append({**p, "en_equipos": donde, "afuera": not donde})
     problemas = _lecturas_confiables(lecturas, equipos)
     return {"personas": personas,
@@ -352,7 +420,7 @@ def cerrar_afuera(conn, lecturas, equipos) -> dict:
                             "ultima_fichada": marcando["ultima"]})
             continue
 
-        donde = _donde_esta(numero, lecturas, equipos) if numero else []
+        donde = _donde_esta(conn, p["id"], numero, lecturas, equipos) if numero else []
         if donde:
             siguen += 1
             detalle.append({"empleado_id": p["id"], "empleado": quien,

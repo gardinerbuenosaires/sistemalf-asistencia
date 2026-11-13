@@ -1446,6 +1446,9 @@ def bajas_pendientes_cerrar_afuera(
 
 class CerrarBajaIn(BaseModel):
     empleado_id: int
+    # Alguien miró y confirma que el nombre que tiene el equipo es de esta
+    # persona aunque no se parezca (ver cierre_baja._nombre_ajeno).
+    forzar: bool = False
 
 
 @router.post("/cerrar-baja")
@@ -1473,7 +1476,7 @@ def cerrar_baja(data: CerrarBajaIn,
 
     with db_session() as conn:
         emp = conn.execute(
-            """SELECT id, nombre, apellido, user_id, activo, fecha_egreso
+            """SELECT id, nombre, apellido, user_id, activo, fecha_egreso, nombre_lector
                  FROM empleados WHERE id = ?""", (data.empleado_id,)).fetchone()
         if not emp:
             raise HTTPException(404, "Ese empleado no existe")
@@ -1481,7 +1484,7 @@ def cerrar_baja(data: CerrarBajaIn,
         quien = f"{emp['apellido']}, {emp['nombre']}".strip(", ")
         numero = str(emp["user_id"] or "").strip()
 
-        r = cerrar(conn, emp)
+        r = cerrar(conn, emp, forzar=data.forzar)
 
         # Una constancia por equipo tocado, igual que cuando se saca a alguien a
         # mano: la tanda se entiende, pero lo que se audita es persona y equipo.

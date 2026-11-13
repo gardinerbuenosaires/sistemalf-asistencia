@@ -4273,9 +4273,10 @@ def _emp_c():
         (_eid_c,)).fetchone())
 
 
-def _lector(usuarios=("8001",), ok=True, completa=True, declarados=None):
-    """Una lectura como la que devuelve leer_cargados."""
-    lista = [{"user_id": u, "nombre": "X", "uid": 1, "huellas": 2} for u in usuarios]
+def _lector(usuarios=("8001",), ok=True, completa=True, declarados=None, nombre=None):
+    """Una lectura como la que devuelve leer_cargados. Sin nombre por defecto:
+    sin nombre en el equipo no hay con qué sospechar que sea otra persona."""
+    lista = [{"user_id": u, "nombre": nombre, "uid": 1, "huellas": 2} for u in usuarios]
     return lambda eq: {"ok": ok, "error": None if ok else "no contesta",
                        "usuarios": lista, "completa": completa,
                        "declarados": declarados if declarados is not None else len(lista)}
@@ -4359,6 +4360,76 @@ _cc.commit()
 _r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok, leer=_lector())
 chequear("sin numero asignado lo dice en vez de romperse",
          _r.get("sin_numero") is True, _r)
+
+# 7. El numero esta, pero a nombre de otro. La baja quedo sin cerrar, el lector
+#    vio el numero libre y se lo dio a alguien nuevo (Happening, el 24). Borrar
+#    ese numero seria sacar del lector a la persona nueva.
+_cc.execute("UPDATE empleados SET user_id='8003', nombre='Maximiliano', apellido='Molina', "
+            "fecha_egreso=date('now','localtime','-5 days') WHERE id=?", (_eid_c,))
+_cc.commit()
+_sacados.clear()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok,
+                 leer=_lector(usuarios=("8003",), nombre="ZARATE J"))
+chequear("con otro nombre en el equipo, no se borra a nadie", _sacados == [], _sacados)
+chequear("la baja no se cierra y el numero sigue ocupado",
+         _r["ok"] is False and _emp_c()["user_id"] == "8003", _r.get("error"))
+chequear("y se dice que nombre tiene el equipo",
+         _r.get("otra_persona") and _r["otra_persona"][0]["nombre"] == "ZARATE J",
+         _r.get("otra_persona"))
+
+# Un nombre recortado o abreviado no es otra persona.
+_sacados.clear()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok,
+                 leer=_lector(usuarios=("8003",), nombre="MOLINA MAX"))
+chequear("un nombre recortado del mismo no frena", _r["ok"] is True, _r.get("error"))
+chequear("y se lo saca como siempre", len(_sacados) >= 1, _sacados)
+
+# Si quien mira dice que es el mismo con otro nombre, se sigue.
+_cc.execute("UPDATE empleados SET user_id='8004' WHERE id=?", (_eid_c,))
+_cc.commit()
+_sacados.clear()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok,
+                 leer=_lector(usuarios=("8004",), nombre="EL TANO"), forzar=True)
+chequear("confirmado que es el mismo, la baja se cierra", _r["ok"] is True, _r.get("error"))
+chequear("y se lo saca aunque el nombre no se parezca", len(_sacados) >= 1, _sacados)
+
+# 8. El sistema ya lo habia sacado de ese equipo: el numero que esta ahora es
+#    de otro, sin importar el nombre. No se lo toca y la baja se cierra.
+_cc.execute("UPDATE empleados SET user_id='8005' WHERE id=?", (_eid_c,))
+for _eq in _cbj._lista_equipos(_cc):
+    _cc.execute("""INSERT INTO accesos_operaciones (dispositivo_id, equipo, user_id,
+                       empleado_id, accion, resultado, creado_en)
+                   VALUES (?, ?, '8005', ?, 'sacar', 'sacado', '2026-10-16 14:08:34')""",
+                (_eq["id"], _eq["nombre"], _eid_c))
+_cc.commit()
+_sacados.clear()
+_r = _cbj.cerrar(_cc, _emp_c(), sincronizar=_sync_ok, sacar=_sacar_ok,
+                 leer=_lector(usuarios=("8005",), nombre="MOLINA MAX"))
+chequear("si ya lo habiamos sacado, no se borra al que esta ahora", _sacados == [], _sacados)
+chequear("y la baja se cierra: el numero suelto es lo que le falta al nuevo",
+         _r["ok"] is True and _emp_c()["user_id"] is None, _r.get("error"))
+chequear("diciendo que el numero es de otra persona",
+         all("otra persona" in (e["detalle"] or "") for e in _r["equipos"]), _r["equipos"])
+
+# Lo mismo para la lista y la tanda: ese equipo no cuenta como «sigue cargado».
+_cc.execute("UPDATE empleados SET user_id='8005', user_id_anterior=NULL WHERE id=?", (_eid_c,))
+_cc.commit()
+_eqs_c = _cbj._lista_equipos(_cc)
+_lecs_c = {e["id"]: _lector(usuarios=("8005",))(e) for e in _eqs_c}
+chequear("para la tanda ya esta afuera",
+         _cbj._donde_esta(_cc, _eid_c, "8005", _lecs_c, _eqs_c) == [],
+         _cbj._donde_esta(_cc, _eid_c, "8005", _lecs_c, _eqs_c))
+
+# Pero si despues se lo volvio a cargar, es el de nuevo.
+_eq0 = _eqs_c[0]
+_cc.execute("""INSERT INTO accesos_operaciones (dispositivo_id, equipo, user_id,
+                   empleado_id, accion, resultado)
+               VALUES (?, ?, '8005', ?, 'cargar', 'cargado')""",
+            (_eq0["id"], _eq0["nombre"], _eid_c))
+_cc.commit()
+chequear("si se lo volvio a cargar, vuelve a contar como suyo",
+         _cbj._donde_esta(_cc, _eid_c, "8005", _lecs_c, _eqs_c) == [_eq0["nombre"]],
+         _cbj._donde_esta(_cc, _eid_c, "8005", _lecs_c, _eqs_c))
 _cc.close()
 
 # El endpoint y su permiso.
